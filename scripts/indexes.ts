@@ -5,7 +5,7 @@
  * Idempotent — safe to re-run. Run after any schema change:
  *   npm run indexes
  */
-import type { IndexDescription } from 'mongodb'
+import type { CreateIndexesOptions, IndexDescription, IndexSpecification } from 'mongodb'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Order, Restaurant, User, Counter } from '../src/lib/models'
 
@@ -62,7 +62,13 @@ const USER_INDEXES: Spec[] = [
   { name: 'role_restaurant', index: { key: { role: 1, restaurantId: 1 } }, why: 'staff listing per outlet' },
 ]
 
-async function ensure(collectionName: string, model: { collection: { createIndex: Function } }, specs: Spec[]) {
+type IndexCreator = {
+  collection: {
+    createIndex(key: IndexSpecification, options?: CreateIndexesOptions): Promise<string>
+  }
+}
+
+async function ensure(collectionName: string, model: IndexCreator, specs: Spec[]) {
   console.log(`\n${collectionName}`)
   for (const spec of specs) {
     const { key, ...options } = spec.index

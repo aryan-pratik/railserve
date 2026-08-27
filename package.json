@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run verify && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "verify": "npm run lint && npm run typecheck",
     "indexes": "tsx --env-file=.env.local scripts/indexes.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "test": "vitest run",
