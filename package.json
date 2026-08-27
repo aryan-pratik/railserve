@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:orders": "tsx --env-file=.env.local scripts/demo-orders.ts",
-    "worker": "tsx --env-file=.env.local scripts/worker.ts"
+    "worker": "tsx --env-file=.env.local scripts/worker.ts",
+    "doctor": "tsx --env-file=.env.local scripts/doctor.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
