@@ -19,7 +19,7 @@ and transactions throw at runtime on a standalone `mongod`. The app asserts
 replica-set mode at boot rather than letting the first status change fail.
 
 ```bash
-docker compose up -d          # single-node rs0 replica set, self-initiating
+docker compose up -d          # Mongo (rs0 replica set) + Redis, both self-initiating
 cp .env.example .env.local    # then set AUTH_SECRET (see the file for a one-liner)
 
 npm install
@@ -28,7 +28,11 @@ npm run seed                  # 2 outlets, 1 admin, 2 store managers, 2 agents
 npm run seed:orders           # optional: a few orders so the screens aren't empty
 
 npm run dev
+npm run worker                # in a second terminal: train polling + leave-now
 ```
+
+Without the worker the app still runs; train status is then only refreshed when
+a page asks for it, and the leave-now alert cannot fire with no browser open.
 
 ### Sign in
 
@@ -54,6 +58,7 @@ Login is by **phone number**, not email. All seeded users share the password in
 | `npm run indexes` | Create every index explicitly (idempotent) |
 | `npm run seed` | Outlets and staff (idempotent) |
 | `npm run seed:orders` | Demo orders (replaces previous demo data) |
+| `npm run worker` | BullMQ worker: train polling, leave-now, cache prune |
 
 ## The two things holding this together
 
@@ -75,6 +80,24 @@ through the caller's scope, validates the edge and the caller's role against an
 allow-list, and filters the update on the expected `from` status so a concurrent
 writer loses rather than silently overwriting.
 
+## Live train status
+
+Set nothing and you get the **simulator**: deterministic per (train, date,
+station), so a demo is reproducible and the delay guard actually fires
+sometimes. It exists so the whole timing path is exercisable without a paid
+account — it is not a forecast of anything, and the UI says so.
+
+To use real data, set `TRAIN_API_PROVIDER=rapidapi` and `TRAIN_API_KEY` in
+`.env.local`. Nothing outside `src/lib/train/` imports a concrete provider, so
+swapping vendor is one function in `src/lib/train/index.ts`.
+
+Polling follows plan §8: only trains with an active order today, at 10/5/2
+minute tiers by proximity to arrival, cached per `(trainNo, serviceDate,
+stationCode)` so ten orders on one train cost one call. On provider failure the
+last known values are kept, the row is marked with the error, and every screen
+showing that ETA labels it with its age — a stale ETA is never presented as
+live.
+
 ## What is deliberately not built
 
 Stubbed or hardcoded for the MVP, and designed so none of them need a schema
@@ -85,11 +108,9 @@ change:
 - **WhatsApp paste-to-parse** for bulk enquiries. `ENQUIRY` and `QUOTED` exist in
   the status machine and are tested; no UI drives them yet. Bulk orders are
   entered directly at `RECEIVED`.
-- **Live train tracking.** `timingSource` is always `SCHEDULED`;
-  `scheduledArrival` comes from manual entry. `trainstatuses` has no model file
-  because nothing reads or writes it.
-- **Dispatch automation and the leave-now push.** Dispatch is a manual button.
-- **FCM.** Screens poll instead (15–20s).
+- **FCM push.** The leave-now alert is recorded on the order's event log by the
+  worker and rendered in-app; screens poll (15–20s). Real push needs a Firebase
+  service account.
 - **Native mobile app.** The delivery view is responsive web.
 - **Analytics, unparsed inbox, SSE.**
 

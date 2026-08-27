@@ -3,7 +3,9 @@ import { requireRole } from '@/lib/session'
 import { findRuns } from '@/lib/repo/runRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
-import { formatServiceDate, formatTimeIST, todayIST } from '@/lib/format'
+import { formatServiceDate, todayIST } from '@/lib/format'
+import { timingForOrders, timingFor } from '@/lib/train/service'
+import { TrainTiming } from '@/components/TrainTiming'
 import { Card, EmptyState, StatusBadge, inputClass } from '@/components/ui'
 import { AssignRunForm } from './AssignRunForm'
 
@@ -23,6 +25,7 @@ export default async function RunsPage(props: PageProps<'/admin/runs'>) {
   ])
 
   const agentList = agents.map((a) => ({ id: String(a._id), name: a.name }))
+  const timings = await timingForOrders(runs.flatMap((r) => r.orders))
 
   return (
     <div className="space-y-5">
@@ -74,8 +77,8 @@ export default async function RunsPage(props: PageProps<'/admin/runs'>) {
                   </span>
                   <span className="text-sm text-slate-600">{run.trainName}</span>
                   <span className="text-sm text-slate-500">{run.stationCode}</span>
-                  <span className="ml-auto text-sm font-semibold tabular-nums">
-                    {formatTimeIST(run.scheduledArrival)}
+                  <span className="ml-auto">
+                    <TrainTiming timing={timingFor(run.orders[0], timings)} />
                   </span>
                 </div>
 

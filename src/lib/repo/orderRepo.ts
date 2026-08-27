@@ -113,3 +113,84 @@ export async function insertOrder(doc: Record<string, unknown>) {
  * page or a route handler, you want `scoped()` instead.
  */
 export const __unsafeOrderModel = Order
+
+// ---------------------------------------------------------------------------
+// System-context access.
+//
+// The background worker has no logged-in user, so there is no ctx to scope by
+// and scoped() has nothing to apply. That is legitimate — a polling job is
+// meant to see every outlet — but it must not become a general escape hatch,
+// so those queries live here with the rest of the Order access rather than
+// being lint-exempted wherever they are convenient. Every function below is
+// named `system*` so it is obvious in a diff that no tenant filter applies.
+// ---------------------------------------------------------------------------
+
+import type { Types } from 'mongoose'
+import type { OrderStatus } from '../orderStatus'
+
+export type ActiveTrainGroup = {
+  _id: { trainNo: string; stationCode: string }
+  scheduledArrival: Date | null
+  orderIds: Types.ObjectId[]
+  restaurantIds: Types.ObjectId[]
+  statuses: string[]
+}
+
+/**
+ * Trains with at least one active order on a date, across all outlets.
+ * Plan §8: only these are worth polling.
+ */
+export async function systemFindActiveTrainGroups(
+  serviceDate: string,
+  statuses: OrderStatus[],
+): Promise<ActiveTrainGroup[]> {
+  return Order.aggregate<ActiveTrainGroup>([
+    {
+      $match: {
+        serviceDate,
+        status: { $in: statuses },
+        trainNo: { $ne: null, $exists: true },
+      },
+    },
+    {
+      $group: {
+        _id: { trainNo: '$trainNo', stationCode: '$stationCode' },
+        scheduledArrival: { $min: '$scheduledArrival' },
+        orderIds: { $push: '$_id' },
+        restaurantIds: { $addToSet: '$restaurantId' },
+        statuses: { $push: '$status' },
+      },
+    },
+  ])
+}
+
+/**
+ * Records the leave-now alert on each still-PREPARED order, exactly once.
+ * Returns how many orders were newly notified.
+ */
+export async function systemRecordLeaveNow(
+  orderIds: Types.ObjectId[],
+  meta: Record<string, unknown>,
+  now: Date,
+): Promise<number> {
+  const res = await Order.updateMany(
+    {
+      _id: { $in: orderIds },
+      status: 'PREPARED',
+      // Idempotent: a repeating tick must not append the same alert every minute.
+      'events.meta.action': { $ne: 'LEAVE_NOW' },
+    },
+    {
+      $push: {
+        events: {
+          fromStatus: 'PREPARED',
+          toStatus: 'PREPARED',
+          userId: null,
+          meta: { action: 'LEAVE_NOW', ...meta },
+          createdAt: now,
+        },
+      },
+    },
+  )
+  return res.modifiedCount
+}

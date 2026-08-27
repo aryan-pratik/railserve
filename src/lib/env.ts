@@ -10,6 +10,17 @@ const EnvSchema = z.object({
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 characters'),
   SEED_PASSWORD: z.string().min(1).default('password'),
+
+  REDIS_URL: z.string().min(1).default('redis://localhost:6380'),
+
+  // Live train status. Defaults to the simulator so the app runs with no
+  // third-party account; setting a key is the whole switch to real data.
+  TRAIN_API_PROVIDER: z.enum(['simulator', 'rapidapi']).default('simulator'),
+  TRAIN_API_KEY: z.string().default(''),
+  TRAIN_API_HOST: z.string().default('indianrailapi.p.rapidapi.com'),
+
+  DISPATCH_BUFFER_MINUTES: z.coerce.number().int().min(0).default(5),
+  KOT_DELAY_THRESHOLD_MINUTES: z.coerce.number().int().min(0).default(45),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 })
 

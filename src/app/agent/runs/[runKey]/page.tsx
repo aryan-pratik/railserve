@@ -2,7 +2,14 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
-import { formatMoney, formatServiceDate, formatTimeIST } from '@/lib/format'
+import { formatMoney, formatServiceDate } from '@/lib/format'
+import { timingForOrders, timingFor } from '@/lib/train/service'
+import { computeDispatchAt } from '@/lib/train/policy'
+import { connectDb } from '@/lib/db'
+import { Restaurant } from '@/lib/models'
+import { env } from '@/lib/env'
+import { TrainTiming } from '@/components/TrainTiming'
+import { LeaveNowBanner } from '@/components/LeaveNowBanner'
 import { Card, EmptyState, StatusBadge, TypeBadge } from '@/components/ui'
 import { AutoRefresh } from '@/components/AutoRefresh'
 import { DispatchRunButton } from '../../AgentActions'
@@ -19,6 +26,21 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
 
   const ready = run.statusCounts.PREPARED ?? 0
 
+  const timings = await timingForOrders(run.orders)
+  const timing = timingFor(run.orders[0], timings)
+
+  // Walk time is a property of the outlet, not the train (plan §3).
+  await connectDb()
+  const outlet = await Restaurant.findById(run.orders[0]?.restaurantId)
+    .select('walkToPlatformMinutes')
+    .lean()
+
+  const dispatchAt = computeDispatchAt({
+    etaAt: timing.effectiveArrival,
+    walkToPlatformMinutes: outlet?.walkToPlatformMinutes ?? 10,
+    bufferMinutes: env.DISPATCH_BUFFER_MINUTES,
+  })
+
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <Link href="/agent" className="text-sm text-slate-600 underline-offset-2 hover:underline">
@@ -32,17 +54,24 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm text-slate-600">
           <span>{run.stationCode}</span>
-          <span className="font-semibold text-slate-900">
-            Arrives {formatTimeIST(run.scheduledArrival)}
-          </span>
           <span>{formatServiceDate(run.serviceDate)}</span>
         </div>
-        {/* Platform is a Phase 4 field — the agent needs it, and guessing is
-            worse than admitting it is not known yet. */}
-        <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          Platform not available yet · scheduled time, not live
+
+        <div className="mt-2">
+          <TrainTiming timing={timing} />
         </div>
+
         <div className="mt-4">
+          <LeaveNowBanner
+            dispatchAt={dispatchAt ? dispatchAt.toISOString() : null}
+            platform={timing.platform}
+            trainNo={run.trainNo}
+            orderCount={ready}
+            serverNow={new Date().toISOString()}
+          />
+        </div>
+
+        <div className="mt-3">
           <DispatchRunButton runKey={run.key} readyCount={ready} />
         </div>
       </Card>
