@@ -1,4 +1,4 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
 
 /**
  * Singleton row tracking Gmail ingestion health.
