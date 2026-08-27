@@ -61,6 +61,9 @@ Login is by **phone number**, not email. All seeded users share the password in
 | `npm run worker` | BullMQ worker: train polling, leave-now, Gmail watch |
 | `cd mobile && npx expo start` | The delivery agent app |
 
+All five plan phases are implemented. See **What is deliberately not built**
+for the integrations that need credentials you supply.
+
 ## The two things holding this together
 
 MongoDB gives no row-level security and no referential integrity, so both are
@@ -131,6 +134,22 @@ reconnection cannot double-record or wedge the queue.
 it yet: that needs a Firebase service account. The leave-now countdown is on
 screen regardless, and the worker records the alert on the order's event log.
 
+## Bulk enquiries
+
+`/admin/enquiries/new` takes a pasted WhatsApp message and pre-fills the form.
+The parse is **never authoritative** (plan §7): every field stays an ordinary
+editable input, unrecognised lines land in notes rather than being dropped, and
+the pasted original is kept as the record of what was actually asked for.
+
+An enquiry lives at `ENQUIRY`, becomes `QUOTED` when an outlet, price, payment
+mode, contact and ready-by are set, and only reaches a kitchen at `RECEIVED`.
+The completeness guard is enforced inside `transitionOrder`, not by the form —
+so it holds however the transition is reached.
+
+The menu stays one block of text with `qty = pax`, never shredded into a row
+per component, and the packing checklist at confirmation becomes the KOT's
+PACKING section.
+
 ## Retail ingestion
 
 Parsing, outlet matching, idempotency and the unparsed inbox all work with no
@@ -160,9 +179,6 @@ near-miss name is a refusal.
 Stubbed or hardcoded for the MVP, and designed so none of them need a schema
 change:
 
-- **WhatsApp paste-to-parse** for bulk enquiries. `ENQUIRY` and `QUOTED` exist in
-  the status machine and are tested; no UI drives them yet. Bulk orders are
-  entered directly at `RECEIVED`.
 - **Sending FCM push.** Device tokens are registered; delivering a push needs a
   Firebase service account. The leave-now alert is recorded on the order's event
   log by the worker and shown in-app instead.
