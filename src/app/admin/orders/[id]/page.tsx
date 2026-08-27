@@ -7,6 +7,8 @@ import { Restaurant, User } from '@/lib/models'
 import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
 import { Card, CardHeader, StatusBadge, TypeBadge } from '@/components/ui'
+import { TrainTiming } from '@/components/TrainTiming'
+import { timingForOrders, timingFor } from '@/lib/train/service'
 import { EventLog } from '@/components/EventLog'
 import { AssignAgents, TransitionButtons } from './AdminOrderActions'
 
@@ -43,6 +45,8 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   ])
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
+  const timings = await timingForOrders([order])
+  const timing = timingFor(order, timings)
   const assigned = order.delivery.agentIds.map(String)
 
   const nextStatuses = allowedNextStatuses(order.status as OrderStatus, 'ADMIN')
@@ -84,17 +88,8 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             <div className="divide-y divide-slate-100">
               <Row label="Train" value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}` : 'Not specified'} />
               <Row label="Station" value={order.stationCode} />
-              <Row
-                label="Scheduled arrival"
-                value={
-                  <>
-                    {formatIST(order.scheduledArrival)}
-                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
-                      {order.timingSource}
-                    </span>
-                  </>
-                }
-              />
+              <Row label="Scheduled arrival" value={formatIST(order.scheduledArrival)} />
+              <Row label="Expected" value={<TrainTiming timing={timing} />} />
               {order.orderType === 'BULK' ? (
                 <>
                   <Row label="Pax" value={order.pax ?? '—'} />

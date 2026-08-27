@@ -3,6 +3,8 @@ import { requireRole } from '@/lib/session'
 import { findMany } from '@/lib/repo/orderRepo'
 import { todayIST, formatServiceDate } from '@/lib/format'
 import { toCardData } from '@/lib/orderView'
+import { timingForOrders, timingFor } from '@/lib/train/service'
+import { TrainTiming } from '@/components/TrainTiming'
 import { EmptyState } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
 import { AutoRefresh } from '@/components/AutoRefresh'
@@ -36,6 +38,8 @@ export default async function StorePage(props: PageProps<'/store'>) {
   const upcomingCount = (
     await findMany(ctx, { serviceDate: { $gt: today }, status: { $in: OPEN_STATUSES } }, { limit: 200 })
   ).length
+
+  const timings = await timingForOrders(orders)
 
   const tabs = [
     { key: 'today', label: 'Today', href: '/store', count: orders.length },
@@ -96,6 +100,7 @@ export default async function StorePage(props: PageProps<'/store'>) {
                 order={toCardData(o)}
                 href={`/store/orders/${id}`}
                 showServiceDate={tab === 'upcoming'}
+                timing={<TrainTiming timing={timingFor(o, timings)} showPlatform={false} />}
                 actions={
                   <>
                     {o.status === 'RECEIVED' ? <AcceptButton orderId={id} /> : null}

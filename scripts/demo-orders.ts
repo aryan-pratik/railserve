@@ -6,7 +6,7 @@ import { connectDb, disconnectDb } from '../src/lib/db'
 import { Order, Restaurant, User } from '../src/lib/models'
 import { createManualOrder } from '../src/lib/repo/createOrder'
 import { ManualOrderInput } from '../src/lib/validation/order'
-import { todayIST, shiftServiceDate } from '../src/lib/format'
+import { todayIST, shiftServiceDate, utcToIstLocal } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
 
 async function main() {
@@ -26,13 +26,17 @@ async function main() {
   const today = todayIST()
   const inTwoDays = shiftServiceDate(today, 2)
 
+  // Arrival times are relative to now rather than hardcoded clock times, so the
+  // leave-now countdown and the delay guard are meaningful whenever this is run.
+  const inMinutes = (m: number) => utcToIstLocal(new Date(Date.now() + m * 60_000))
+
   const specs = [
     {
       label: 'retail · Ganga Galaxy · today',
       input: {
         orderType: 'RETAIL', restaurantId: String(ganga._id), serviceDate: today,
         trainNo: '12506', trainName: 'NORTH EAST EXP',
-        scheduledArrival: `${today}T13:25`,
+        scheduledArrival: inMinutes(150),
         coach: 'B5', berth: '37',
         contactName: 'Neelesh Soni', contactPhone: '9752446747',
         amountRupees: '236', paymentMode: 'COD',
@@ -44,7 +48,7 @@ async function main() {
       input: {
         orderType: 'RETAIL', restaurantId: String(ganga._id), serviceDate: today,
         trainNo: '12506', trainName: 'NORTH EAST EXP',
-        scheduledArrival: `${today}T13:25`,
+        scheduledArrival: inMinutes(150),
         coach: 'S3', berth: '45',
         contactName: 'Anita Verma', contactPhone: '9839044444',
         amountRupees: '480', paymentMode: 'PREPAID',
@@ -60,7 +64,7 @@ async function main() {
       input: {
         orderType: 'RETAIL', restaurantId: String(annapurna._id), serviceDate: today,
         trainNo: '12312', trainName: 'KALKA MAIL',
-        scheduledArrival: `${today}T09:40`,
+        scheduledArrival: inMinutes(40),
         coach: 'A1', berth: '12',
         contactName: 'Rakesh Tiwari', contactPhone: '9839055555',
         amountRupees: '310', paymentMode: 'COD',

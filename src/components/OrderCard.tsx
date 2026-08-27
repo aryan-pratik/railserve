@@ -23,11 +23,13 @@ export type OrderCardData = {
 }
 
 export function OrderCard({
-  order, href, actions, showServiceDate = false,
+  order, href, actions, timing, showServiceDate = false,
 }: {
   order: OrderCardData
   href: string
   actions?: React.ReactNode
+  /** Live arrival/delay/platform, rendered by the caller so this stays presentational. */
+  timing?: React.ReactNode
   showServiceDate?: boolean
 }) {
   const kitchen = order.items.filter((i) => !i.isPacking)
@@ -68,7 +70,9 @@ export function OrderCard({
               <>Seat <span className="font-medium text-slate-900">{order.rawSeat ?? '—'}</span></>
             )}
           </div>
-          <div className="text-xs text-slate-500">Arrives {formatIST(order.scheduledArrival)}</div>
+          {timing ?? (
+            <div className="text-xs text-slate-500">Arrives {formatIST(order.scheduledArrival)}</div>
+          )}
         </div>
 
         <div className="text-sm">

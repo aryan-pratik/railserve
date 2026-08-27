@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { findRuns } from '@/lib/repo/runRepo'
-import { todayIST, formatServiceDate, formatTimeIST } from '@/lib/format'
+import { timingForOrders, timingFor } from '@/lib/train/service'
+import { todayIST, formatServiceDate } from '@/lib/format'
 import { Card, EmptyState } from '@/components/ui'
 import { AutoRefresh } from '@/components/AutoRefresh'
+import { TrainTiming } from '@/components/TrainTiming'
+import { isSimulatedProvider } from '@/lib/train'
 
 export const metadata = { title: 'My runs · RailServe' }
 
@@ -11,6 +14,9 @@ export default async function AgentRunsPage() {
   const ctx = await requireRole('DELIVERY_AGENT')
   const today = todayIST()
   const runs = await findRuns(ctx, today)
+
+  // One provider call per distinct train, not per order (plan §8).
+  const timings = await timingForOrders(runs.flatMap((r) => r.orders))
 
   return (
     <div className="space-y-5">
@@ -25,7 +31,7 @@ export default async function AgentRunsPage() {
       {runs.length === 0 ? (
         <EmptyState
           title="No runs assigned today"
-          note="Runs appear here once an admin assigns you to orders. Pull down or wait — this refreshes itself."
+          note="Runs appear here once an admin assigns you to orders. This refreshes itself."
         />
       ) : (
         <div className="space-y-3">
@@ -36,6 +42,7 @@ export default async function AgentRunsPage() {
               (run.statusCounts.RECEIVED ?? 0) +
               (run.statusCounts.ACCEPTED ?? 0) +
               (run.statusCounts.KOT_PRINTED ?? 0)
+            const timing = timingFor(run.orders[0], timings)
 
             return (
               <Link key={run.key} href={`/agent/runs/${encodeURIComponent(run.key)}`} className="block">
@@ -45,12 +52,13 @@ export default async function AgentRunsPage() {
                       {run.trainNo ?? 'No train no.'}
                     </span>
                     <span className="text-sm text-slate-600">{run.trainName}</span>
-                    <span className="ml-auto text-sm font-semibold tabular-nums text-slate-900">
-                      {formatTimeIST(run.scheduledArrival)}
-                    </span>
                   </div>
 
-                  <div className="mt-1 text-sm text-slate-500">
+                  <div className="mt-2">
+                    <TrainTiming timing={timing} />
+                  </div>
+
+                  <div className="mt-2 text-sm text-slate-500">
                     {run.stationCode} · {run.orders.length} order
                     {run.orders.length === 1 ? '' : 's'}
                   </div>
@@ -79,9 +87,11 @@ export default async function AgentRunsPage() {
         </div>
       )}
 
-      <p className="text-xs text-slate-400">
-        Times are scheduled, not live. Live train tracking arrives in a later phase.
-      </p>
+      {isSimulatedProvider() ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Train times are <strong>simulated</strong> — no TRAIN_API_KEY is configured.
+        </p>
+      ) : null}
     </div>
   )
 }

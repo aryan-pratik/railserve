@@ -6,6 +6,44 @@ import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
 import { NotFoundError } from '@/lib/authContext'
+import { timingForOrders, timingFor } from '@/lib/train/service'
+import { env } from '@/lib/env'
+import { shouldWarnAboutDelay } from '@/lib/train/policy'
+
+/**
+ * Plan §9 delay guard: before printing a KOT, check live status. If the train
+ * is late beyond the threshold, the manager is asked to confirm rather than
+ * blocked — the system does not know whether the kitchen wants to start now.
+ * This is the one place fire-and-forget cooking gets a safety net.
+ */
+export async function checkKotDelay(orderId: string): Promise<{
+  delayed: boolean
+  delayMinutes: number | null
+  trainNo: string | null
+  expected: string | null
+  thresholdMinutes: number
+}> {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const order = await findById(ctx, orderId)
+  if (!order) throw new NotFoundError('Order not found')
+
+  const threshold = env.KOT_DELAY_THRESHOLD_MINUTES
+
+  if (!order.trainNo) {
+    return { delayed: false, delayMinutes: null, trainNo: null, expected: null, thresholdMinutes: threshold }
+  }
+
+  const timings = await timingForOrders([order])
+  const t = timingFor(order, timings)
+
+  return {
+    delayed: shouldWarnAboutDelay(t.delayMinutes, threshold),
+    delayMinutes: t.delayMinutes,
+    trainNo: order.trainNo,
+    expected: t.effectiveArrival ? t.effectiveArrival.toISOString() : null,
+    thresholdMinutes: threshold,
+  }
+}
 
 export type StoreActionState = { error?: string; ok?: string }
 
