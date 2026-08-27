@@ -88,6 +88,43 @@ export async function findRestaurantIdsInScope(ctx: AuthContext) {
 }
 
 /**
+ * Scoped field update for the quote flow.
+ *
+ * Ordinary fields only — `status` is deliberately not writable here, so
+ * transitionOrder keeps its monopoly on it. Scoped like every other write, so
+ * this cannot be pointed at another outlet's order.
+ */
+export async function updateOrderFields(
+  ctx: AuthContext,
+  orderId: string,
+  fields: Record<string, unknown>,
+): Promise<boolean> {
+  if (!mongoose.isValidObjectId(orderId)) return false
+  if ('status' in fields || 'events' in fields) {
+    throw new Error('status and events are written only by transitionOrder')
+  }
+  const res = await Order.updateOne(
+    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
+    { $set: fields },
+  )
+  return res.matchedCount > 0
+}
+
+/** Scoped append of packing items to an order. */
+export async function addOrderItems(
+  ctx: AuthContext,
+  orderId: string,
+  items: Record<string, unknown>[],
+): Promise<boolean> {
+  if (!mongoose.isValidObjectId(orderId) || items.length === 0) return false
+  const res = await Order.updateOne(
+    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
+    { $push: { items: { $each: items } } },
+  )
+  return res.matchedCount > 0
+}
+
+/**
  * Mints the next human-readable manual order id: MAN-20260827-001.
  * Atomic via $inc, so two admins submitting at once cannot collide.
  */
@@ -113,6 +150,107 @@ export async function insertOrder(doc: Record<string, unknown>) {
  * page or a route handler, you want `scoped()` instead.
  */
 export const __unsafeOrderModel = Order
+
+/**
+ * Admin analytics (plan §5 phase 5). Aggregations still go through scoped(),
+ * so this is safe to widen to a store manager later without becoming a leak.
+ */
+export type OutletStats = {
+  restaurantId: string | null
+  orders: number
+  delivered: number
+  failed: number
+  cancelled: number
+  revenuePaise: number
+  avgReceivedToDeliveredMinutes: number | null
+}
+
+export async function outletAnalytics(
+  ctx: AuthContext,
+  range: { from: string; to: string },
+): Promise<OutletStats[]> {
+  return Order.aggregate<OutletStats>([
+    { $match: scoped(ctx, { serviceDate: { $gte: range.from, $lte: range.to } }) },
+    {
+      $addFields: {
+        // Received-to-delivered is measured from the event log rather than
+        // createdAt/updatedAt: updatedAt moves on any later edit, which would
+        // quietly inflate the number.
+        receivedAt: {
+          $min: {
+            $map: {
+              input: {
+                $filter: {
+                  input: '$events', as: 'e',
+                  cond: { $eq: ['$$e.toStatus', 'RECEIVED'] },
+                },
+              },
+              as: 'e', in: '$$e.createdAt',
+            },
+          },
+        },
+        deliveredAt: '$delivery.deliveredAt',
+      },
+    },
+    {
+      $group: {
+        _id: '$restaurantId',
+        orders: { $sum: 1 },
+        delivered: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] } },
+        failed: { $sum: { $cond: [{ $eq: ['$status', 'FAILED'] }, 1, 0] } },
+        cancelled: {
+          $sum: { $cond: [{ $in: ['$status', ['CANCELLED', 'LOST']] }, 1, 0] },
+        },
+        revenuePaise: {
+          $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, { $ifNull: ['$amountPaise', 0] }, 0] },
+        },
+        durations: {
+          $push: {
+            $cond: [
+              { $and: ['$receivedAt', '$deliveredAt'] },
+              { $divide: [{ $subtract: ['$deliveredAt', '$receivedAt'] }, 60000] },
+              '$$REMOVE',
+            ],
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        restaurantId: { $toString: '$_id' },
+        orders: 1, delivered: 1, failed: 1, cancelled: 1, revenuePaise: 1,
+        avgReceivedToDeliveredMinutes: {
+          $cond: [
+            { $gt: [{ $size: '$durations' }, 0] },
+            { $round: [{ $avg: '$durations' }, 0] },
+            null,
+          ],
+        },
+      },
+    },
+    { $sort: { orders: -1 } },
+  ])
+}
+
+/** Daily order counts for a simple trend line. */
+export async function dailyCounts(
+  ctx: AuthContext,
+  range: { from: string; to: string },
+): Promise<{ serviceDate: string; orders: number; delivered: number }[]> {
+  return Order.aggregate([
+    { $match: scoped(ctx, { serviceDate: { $gte: range.from, $lte: range.to } }) },
+    {
+      $group: {
+        _id: '$serviceDate',
+        orders: { $sum: 1 },
+        delivered: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] } },
+      },
+    },
+    { $project: { _id: 0, serviceDate: '$_id', orders: 1, delivered: 1 } },
+    { $sort: { serviceDate: 1 } },
+  ])
+}
 
 // ---------------------------------------------------------------------------
 // System-context access.
