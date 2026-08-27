@@ -23,9 +23,35 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* The KOT view renders to 80mm thermal paper: no chrome, maximum contrast. */
+/*
+ * The KOT view is the only printable screen, so print rules target it directly.
+ * 80mm roll, continuous length, minimal margin — a thermal printer has no
+ * concept of a page and will happily feed as far as the ticket needs.
+ */
 @media print {
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
   .no-print { display: none !important; }
-  body { background: #fff; }
-  @page { margin: 4mm; }
+
+  html, body {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Strip the app shell's layout padding so the ticket starts at the top. */
+  main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+
+  #kot {
+    width: 100% !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    /* Thermal heads render greys as mush; force true black. */
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

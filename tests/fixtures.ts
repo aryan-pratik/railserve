@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Order, Restaurant, User } from '../src/lib/models'
+import { Counter, Order, Restaurant, User } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -10,6 +10,10 @@ export async function resetDb() {
     Order.deleteMany({}),
     Restaurant.deleteMany({}),
     User.deleteMany({}),
+    // Counters are deliberately monotonic in production — an order id must
+    // never be reused after a deletion — so they survive deleteMany on orders
+    // and have to be cleared explicitly for a test to see a fresh sequence.
+    Counter.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
