@@ -19,6 +19,16 @@ const EnvSchema = z.object({
   TRAIN_API_KEY: z.string().default(''),
   TRAIN_API_HOST: z.string().default('indianrailapi.p.rapidapi.com'),
 
+  // Gmail ingestion. All blank means the transport is off and ingestion is
+  // manual; the parsers and the unparsed inbox work either way.
+  GMAIL_CLIENT_ID: z.string().default(''),
+  GMAIL_CLIENT_SECRET: z.string().default(''),
+  GMAIL_REFRESH_TOKEN: z.string().default(''),
+  GMAIL_TOPIC_NAME: z.string().default(''),
+  GMAIL_USER_ID: z.string().default('me'),
+  GMAIL_WEBHOOK_TOKEN: z.string().default(''),
+  INGEST_STALE_ALERT_HOURS: z.coerce.number().int().min(1).default(6),
+
   DISPATCH_BUFFER_MINUTES: z.coerce.number().int().min(0).default(5),
   KOT_DELAY_THRESHOLD_MINUTES: z.coerce.number().int().min(0).default(45),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

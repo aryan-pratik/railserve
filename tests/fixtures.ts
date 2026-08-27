@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Order, Restaurant, User } from '../src/lib/models'
+import { Counter, Order, Restaurant, UnparsedInbox, User } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -14,6 +14,7 @@ export async function resetDb() {
     // never be reused after a deletion — so they survive deleteMany on orders
     // and have to be cleared explicitly for a test to see a fresh sequence.
     Counter.deleteMany({}),
+    UnparsedInbox.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
@@ -23,8 +24,10 @@ export async function resetDb() {
   )
 }
 
-export async function makeRestaurant(name: string, stationCode: string) {
-  return Restaurant.create({ name, stationCode, stationName: name, walkToPlatformMinutes: 10 })
+export async function makeRestaurant(name: string, stationCode: string, aliases: string[] = []) {
+  return Restaurant.create({
+    name, stationCode, stationName: name, aliases, walkToPlatformMinutes: 10,
+  })
 }
 
 export async function makeUser(

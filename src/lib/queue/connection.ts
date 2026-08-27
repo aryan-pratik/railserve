@@ -18,3 +18,5 @@ export const QUEUE_NAMES = {
   trainPolling: 'train-polling',
   gmailWatch: 'gmail-watch',
 } as const
+
+export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES]
