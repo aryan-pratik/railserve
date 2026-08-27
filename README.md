@@ -58,7 +58,8 @@ Login is by **phone number**, not email. All seeded users share the password in
 | `npm run indexes` | Create every index explicitly (idempotent) |
 | `npm run seed` | Outlets and staff (idempotent) |
 | `npm run seed:orders` | Demo orders (replaces previous demo data) |
-| `npm run worker` | BullMQ worker: train polling, leave-now, cache prune |
+| `npm run worker` | BullMQ worker: train polling, leave-now, Gmail watch |
+| `cd mobile && npx expo start` | The delivery agent app |
 
 ## The two things holding this together
 
@@ -98,6 +99,38 @@ last known values are kept, the row is marked with the error, and every screen
 showing that ETA labels it with its age — a stale ETA is never presented as
 live.
 
+## Delivery app (Expo)
+
+`mobile/` is the React Native app for delivery agents.
+
+```bash
+cd mobile
+npm install
+npx expo start          # scan the QR with Expo Go
+```
+
+It finds the dev server automatically from the Expo host — a phone cannot reach
+`localhost`, since that is the phone. Override with `EXPO_PUBLIC_API_URL` for a
+real deployment. Sign in with an agent phone (`9000000004` / `password`); the
+app refuses other roles rather than shipping screens it does not have.
+
+**Auth** is a bearer token signed with the same `AUTH_SECRET` as the web
+session — one identity, two transports — verified by HMAC with no database round
+trip, though the user record is re-read on every request so a deactivated agent
+loses access immediately rather than at token expiry.
+
+**Offline** (plan §13.10 — station connectivity is poor): the last runs payload
+is cached, so the app opens with real content and no signal. Deliveries are
+applied to local state immediately and queued in AsyncStorage, then flushed as
+a batch when the app regains signal or comes back to the foreground. Every
+mutation carries a client id and is replay-safe server-side — a repeated
+delivery comes back `alreadyDone` rather than as an error, so a flaky
+reconnection cannot double-record or wedge the queue.
+
+**Push** registers an Expo token against the user's `fcmToken`. Nothing sends to
+it yet: that needs a Firebase service account. The leave-now countdown is on
+screen regardless, and the worker records the alert on the order's event log.
+
 ## Retail ingestion
 
 Parsing, outlet matching, idempotency and the unparsed inbox all work with no
@@ -130,10 +163,9 @@ change:
 - **WhatsApp paste-to-parse** for bulk enquiries. `ENQUIRY` and `QUOTED` exist in
   the status machine and are tested; no UI drives them yet. Bulk orders are
   entered directly at `RECEIVED`.
-- **FCM push.** The leave-now alert is recorded on the order's event log by the
-  worker and rendered in-app; screens poll (15–20s). Real push needs a Firebase
-  service account.
-- **Native mobile app.** The delivery view is responsive web.
+- **Sending FCM push.** Device tokens are registered; delivering a push needs a
+  Firebase service account. The leave-now alert is recorded on the order's event
+  log by the worker and shown in-app instead.
 - **Analytics, unparsed inbox, SSE.**
 
 Known gaps that are *not* deferred by design, just unbuilt: there is no edit flow
