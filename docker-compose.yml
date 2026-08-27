@@ -1,0 +1,29 @@
+# Single-node MongoDB replica set for local dev.
+# A replica set is mandatory, not optional: transitionOrder() runs in a
+# transaction, and transactions throw at runtime on a standalone mongod.
+services:
+  mongo:
+    image: mongo:7
+    container_name: railserve-mongo
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - railserve-mongodata:/data/db
+    healthcheck:
+      # Initiates the replica set on first healthy poll, then reports status.
+      # Member host is localhost:27017 so the driver's topology discovery
+      # returns an address reachable from the host, not just inside the container.
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok }
+          catch (e) {
+            rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok
+          }"
+      interval: 5s
+      timeout: 30s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  railserve-mongodata:
