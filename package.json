@@ -12,7 +12,8 @@
     "indexes": "tsx --env-file=.env.local scripts/indexes.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed:orders": "tsx --env-file=.env.local scripts/demo-orders.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
