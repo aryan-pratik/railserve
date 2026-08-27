@@ -1,4 +1,4 @@
-import { Placeholder } from '@/components/Placeholder'
+import { EmptyState } from '@/components/ui'
 import { requireRole } from '@/lib/session'
 import { countByStatus } from '@/lib/repo/orderRepo'
 
@@ -13,7 +13,7 @@ export default async function AgentPage() {
       <p className="text-sm text-slate-600">
         {total} order(s) assigned to you.
       </p>
-      <Placeholder
+      <EmptyState
         title="Delivery screens land in Step E"
         note="Dispatch and deliver with proof capture, once admin assignment exists."
       />

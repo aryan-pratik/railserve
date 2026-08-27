@@ -1,11 +1,12 @@
 import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
 import { ORDER_STATUSES } from '../orderStatus'
-
-export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'MANUAL'] as const
-export const ORDER_TYPES = ['RETAIL', 'BULK'] as const
-export const PAYMENT_MODES = ['PREPAID', 'COD', 'INVOICE'] as const
-export const PROOF_TYPES = ['OTP', 'PHOTO', 'SIGNATURE'] as const
-export const TIMING_SOURCES = ['LIVE', 'SCHEDULED'] as const
+import {
+  ORDER_SOURCES,
+  ORDER_TYPES,
+  PAYMENT_MODES,
+  PROOF_TYPES,
+  TIMING_SOURCES,
+} from '../orderEnums'
 
 const OrderItemSchema = new Schema(
   {

@@ -1,4 +1,4 @@
-import { Placeholder } from '@/components/Placeholder'
+import { EmptyState } from '@/components/ui'
 import { requireRole } from '@/lib/session'
 import { countByStatus } from '@/lib/repo/orderRepo'
 
@@ -13,7 +13,7 @@ export default async function StorePage() {
       <p className="text-sm text-slate-600">
         {total} order(s) visible to you — scoped to your outlet only.
       </p>
-      <Placeholder
+      <EmptyState
         title="Store dashboard lands in Step D"
         note="Accept, Generate KOT and Mark Prepared build on the transition engine that is already tested."
       />
