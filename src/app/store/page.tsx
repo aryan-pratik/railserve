@@ -7,7 +7,7 @@ import { timingForOrders, timingFor } from '@/lib/train/service'
 import { TrainTiming } from '@/components/TrainTiming'
 import { EmptyState } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
-import { AutoRefresh } from '@/components/AutoRefresh'
+import { OrderFeed } from '@/components/OrderFeed'
 import { AcceptButton, GenerateKotButton, MarkPreparedButton } from './StoreOrderActions'
 import type { OrderStatus } from '@/lib/orderStatus'
 
@@ -59,7 +59,7 @@ export default async function StorePage(props: PageProps<'/store'>) {
               : 'Booked ahead — not on today’s pass yet.'}
           </p>
         </div>
-        <AutoRefresh seconds={15} />
+        <OrderFeed />
       </div>
 
       <div className="flex gap-1 border-b border-slate-200">

@@ -98,13 +98,35 @@ last known values are kept, the row is marked with the error, and every screen
 showing that ETA labels it with its age — a stale ETA is never presented as
 live.
 
+## Retail ingestion
+
+Parsing, outlet matching, idempotency and the unparsed inbox all work with no
+Google account: paste an aggregator email at **`/admin/inbox`** and it goes
+through the identical pipeline the Gmail transport uses.
+
+To turn on live ingestion, set `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` /
+`GMAIL_REFRESH_TOKEN` / `GMAIL_TOPIC_NAME` and point a Pub/Sub push
+subscription at `POST /api/gmail/webhook`. The worker then renews the watch
+daily — it expires after 7 days and takes ingestion with it silently — and
+warns every 30 minutes if no order has arrived during business hours.
+
+An email that cannot be parsed, or names an outlet we do not recognise, lands
+in the unparsed inbox with its raw body intact. **Outlet matching is exact
+only** — name or alias, case- and space-insensitive, never fuzzy. Routing an
+order to the wrong kitchen is worse than delaying it, so an ambiguous or
+near-miss name is a refusal.
+
+> The **DailyYatri parser is a scaffold**. The plan supplies a worked sample for
+> YatriRestro only, so its field regexes are written against the layout these
+> aggregators generally use and its fixtures are invented, not observed. A real
+> DailyYatri email will most likely land in the unparsed inbox until it is
+> checked against one — which is the designed failure, not a silent misroute.
+
 ## What is deliberately not built
 
 Stubbed or hardcoded for the MVP, and designed so none of them need a schema
 change:
 
-- **Gmail ingestion** and the YatriRestro/DailyYatri parsers. The order document
-  already carries `source`, `externalOrderId`, `gmailMessageId` and `rawPayload`.
 - **WhatsApp paste-to-parse** for bulk enquiries. `ENQUIRY` and `QUOTED` exist in
   the status machine and are tested; no UI drives them yet. Bulk orders are
   entered directly at `RECEIVED`.

@@ -7,7 +7,7 @@
  */
 import type { CreateIndexesOptions, IndexDescription, IndexSpecification } from 'mongodb'
 import { connectDb, disconnectDb } from '../src/lib/db'
-import { Order, Restaurant, User, Counter } from '../src/lib/models'
+import { Order, Restaurant, User, Counter, TrainStatus, UnparsedInbox } from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
 
@@ -57,6 +57,35 @@ const RESTAURANT_INDEXES: Spec[] = [
   { name: 'aliases', index: { key: { aliases: 1 } }, why: 'email outlet-name alias matching (Phase 2)' },
 ]
 
+const TRAIN_STATUS_INDEXES: Spec[] = [
+  {
+    name: 'train_station_day_unique',
+    index: { key: { trainNo: 1, serviceDate: 1, stationCode: 1 }, unique: true },
+    why: 'one cached reading per train per station per day — ten orders, one call',
+  },
+  {
+    name: 'fetchedAt',
+    index: { key: { fetchedAt: 1 } },
+    why: 'pruning stale cache rows',
+  },
+]
+
+const UNPARSED_INBOX_INDEXES: Spec[] = [
+  {
+    name: 'open_rows',
+    index: { key: { resolved: 1, createdAt: -1 } },
+    why: 'admin inbox: what still needs attention, newest first',
+  },
+  {
+    name: 'gmailMessageId',
+    index: {
+      key: { gmailMessageId: 1 },
+      partialFilterExpression: { gmailMessageId: { $type: 'string' } },
+    },
+    why: 'a replayed bad message must not pile up duplicate inbox rows',
+  },
+]
+
 const USER_INDEXES: Spec[] = [
   { name: 'phone_unique', index: { key: { phone: 1 }, unique: true }, why: 'phone is the login identifier' },
   { name: 'role_restaurant', index: { key: { role: 1, restaurantId: 1 } }, why: 'staff listing per outlet' },
@@ -85,6 +114,8 @@ async function main() {
   await ensure('orders', Order, ORDER_INDEXES)
   await ensure('restaurants', Restaurant, RESTAURANT_INDEXES)
   await ensure('users', User, USER_INDEXES)
+  await ensure('trainstatuses', TrainStatus, TRAIN_STATUS_INDEXES)
+  await ensure('unparsedinboxes', UnparsedInbox, UNPARSED_INBOX_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })

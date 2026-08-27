@@ -10,6 +10,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/orders', label: 'Orders' },
         { href: '/admin/orders/new', label: 'New order' },
         { href: '/admin/runs', label: 'Runs' },
+        { href: '/admin/inbox', label: 'Inbox' },
         { href: '/admin/restaurants', label: 'Outlets' },
         { href: '/admin/users', label: 'Staff' },
       ]}
