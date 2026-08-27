@@ -1,7 +1,17 @@
-import React, { useEffect, useState } from 'react'
+import React, { useSyncExternalStore } from 'react'
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native'
 import type { Run, RunOrder } from '../types'
 import { Button, C, Card, Pill, Rupees, delayLabel, s, timeIST } from '../ui'
+
+const TICK = 15_000
+const subscribeToClock = (cb: () => void) => {
+  const t = setInterval(cb, TICK)
+  return () => clearInterval(t)
+}
+// Bucketed so the snapshot is stable between reads within a tick — returning a
+// fresh Date.now() on every read would spin React forever. Reading the clock
+// through a store also keeps it out of render, where it is not pure.
+const clockSnapshot = () => Math.floor(Date.now() / TICK)
 
 function LeaveNow({ dispatchAt, platform, trainNo, ready }: {
   dispatchAt: string | null
@@ -9,11 +19,7 @@ function LeaveNow({ dispatchAt, platform, trainNo, ready }: {
   trainNo: string | null
   ready: number
 }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => tick((n) => n + 1), 15_000)
-    return () => clearInterval(t)
-  }, [])
+  const bucket = useSyncExternalStore(subscribeToClock, clockSnapshot, clockSnapshot)
 
   if (!dispatchAt) {
     return (
@@ -23,7 +29,7 @@ function LeaveNow({ dispatchAt, platform, trainNo, ready }: {
     )
   }
 
-  const minsLeft = Math.round((new Date(dispatchAt).getTime() - Date.now()) / 60_000)
+  const minsLeft = Math.round((new Date(dispatchAt).getTime() - bucket * TICK) / 60_000)
 
   if (minsLeft <= 0) {
     return (

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, SafeAreaView, StatusBar, Text, View, Pressable, Platform } from 'react-native'
+import React, { useCallback, useEffect, useState } from 'react'
+import { AppState, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
 import { flushQueue, fetchRuns, newClientId, queueAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
@@ -30,9 +30,6 @@ export default function App() {
   const [queueSize, setQueueSize] = useState(0)
   const [screen, setScreen] = useState<Screen>({ name: 'runs' })
 
-  const tokenRef = useRef<string | null>(null)
-  tokenRef.current = token
-
   // --- boot ---------------------------------------------------------------
   useEffect(() => {
     ;(async () => {
@@ -47,9 +44,7 @@ export default function App() {
     })()
   }, [])
 
-  const refresh = useCallback(async (showSpinner = true) => {
-    const t = tokenRef.current
-    if (!t) return
+  const refresh = useCallback(async (t: string, showSpinner = true) => {
     if (showSpinner) setRefreshing(true)
     try {
       const fresh = await fetchRuns(t)
@@ -69,39 +64,46 @@ export default function App() {
     }
   }, [])
 
-  const sync = useCallback(async () => {
-    const t = tokenRef.current
-    if (!t) return
-    try {
-      const r = await flushQueue(t)
-      setQueueSize(r.remaining)
-      setOffline(r.offline)
-      if (r.synced > 0) await refresh(false)
-    } catch {
-      // Never let a sync failure take the screen down; the next tick retries.
-    }
-  }, [refresh])
+  const sync = useCallback(
+    async (t: string) => {
+      try {
+        const r = await flushQueue(t)
+        setQueueSize(r.remaining)
+        setOffline(r.offline)
+        if (r.synced > 0) await refresh(t, false)
+      } catch {
+        // Never let a sync failure take the screen down; the next tick retries.
+      }
+    },
+    [refresh],
+  )
 
   // Poll while signed in, and flush the queue whenever the app comes forward —
   // reconnecting after a station is exactly when a phone gets picked up again.
   useEffect(() => {
     if (!token) return
-    refresh(false)
-    sync()
+    let cancelled = false
 
-    const timer = setInterval(() => {
-      refresh(false)
-      sync()
-    }, 30_000)
+    const tick = () => {
+      if (cancelled) return
+      void refresh(token, false)
+      void sync(token)
+    }
+
+    // Deferred rather than called in the effect body: both of these set state,
+    // and doing that synchronously on mount cascades an extra render.
+    const first = setTimeout(tick, 0)
+    const timer = setInterval(tick, 30_000)
 
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        refresh(false)
-        sync()
-      }
+      // Coming back to the foreground is exactly when a phone that was in a
+      // station regains signal.
+      if (state === 'active') tick()
     })
 
     return () => {
+      cancelled = true
+      clearTimeout(first)
       clearInterval(timer)
       sub.remove()
     }
@@ -183,7 +185,7 @@ export default function App() {
           }
         : prev,
     )
-    if (!r.offline) await refresh(false)
+    if (!r.offline) await refresh(token, false)
     setBusy(false)
   }
 
@@ -279,8 +281,8 @@ export default function App() {
           refreshing={refreshing}
           queueSize={queueSize}
           onRefresh={() => {
-            refresh()
-            sync()
+            void refresh(token, true)
+            void sync(token)
           }}
           onOpen={(r: Run) => setScreen({ name: 'run', runKey: r.key })}
         />

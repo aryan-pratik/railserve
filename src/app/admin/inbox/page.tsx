@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
 import { formatIST } from '@/lib/format'
-import { Card, CardHeader, EmptyState } from '@/components/ui'
+import { Card, EmptyState } from '@/components/ui'
 import { PasteEmailForm, ResolveForm } from './InboxForms'
 import { dismissUnparsed } from './actions'
 
