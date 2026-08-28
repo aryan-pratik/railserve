@@ -27,8 +27,8 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <Link href="/store" className="text-sm text-slate-600 underline-offset-2 hover:underline">
-        ← Back to the pass
+      <Link href="/store" className="text-sm text-muted underline-offset-2 hover:underline">
+        ← Back to the board
       </Link>
 
       <OrderCard
@@ -49,7 +49,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
               <>
                 <GenerateKotButton orderId={id} reprint />
                 <span className="text-sm font-medium text-emerald-700">
-                  On the ready shelf
+                  On the ready shelf — waiting for the rider
                 </span>
               </>
             ) : null}
@@ -61,8 +61,8 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
         <Card>
           <CardHeader title="Passenger" />
           <div className="flex items-center justify-between px-4 py-3 text-sm">
-            <span className="text-slate-600">{order.contactName ?? '—'}</span>
-            <a href={`tel:${order.contactPhone}`} className="font-medium text-slate-900 underline">
+            <span className="text-muted">{order.contactName ?? '—'}</span>
+            <a href={`tel:${order.contactPhone}`} className="font-mono font-medium text-accent hover:underline">
               {order.contactPhone}
             </a>
           </div>
@@ -72,7 +72,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
       {order.notes ? (
         <Card>
           <CardHeader title="Notes" />
-          <p className="whitespace-pre-wrap px-4 py-3 text-sm text-slate-700">{order.notes}</p>
+          <p className="whitespace-pre-wrap px-4 py-3 text-sm text-muted">{order.notes}</p>
         </Card>
       ) : null}
 

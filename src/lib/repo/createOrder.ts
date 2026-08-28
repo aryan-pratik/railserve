@@ -1,5 +1,5 @@
 import { Restaurant } from '../models'
-import { ForbiddenError, type AuthContext } from '../authContext'
+import { ForbiddenError, ownsOutlet, type AuthContext } from '../authContext'
 import { istLocalToUtc, rupeesToPaise } from '../format'
 import type { ManualOrderInput } from '../validation/order'
 import { insertOrder, nextManualOrderId } from './orderRepo'
@@ -14,8 +14,15 @@ import { insertOrder, nextManualOrderId } from './orderRepo'
  * without a migration.
  */
 export async function createManualOrder(ctx: AuthContext, input: ManualOrderInput) {
-  if (ctx.role !== 'ADMIN') {
-    throw new ForbiddenError('Only an admin may create orders')
+  if (ctx.role !== 'ADMIN' && ctx.role !== 'STORE_MANAGER') {
+    throw new ForbiddenError('Only an admin or store manager may create orders')
+  }
+
+  // A store manager takes phone orders for their own counter, so they create
+  // orders too — but only into an outlet they hold. Checked before the outlet
+  // is even looked up, so an unheld id cannot be probed for existence.
+  if (!ownsOutlet(ctx, input.restaurantId)) {
+    throw new ForbiddenError('You do not have access to that outlet')
   }
 
   // Plan §2: validate restaurantId exists in the service layer. Mongo will not

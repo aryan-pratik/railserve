@@ -33,16 +33,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const ok = await bcrypt.compare(parsed.data.password, user.passwordHash)
         if (!ok) return null
 
+        // Tolerate a record that predates the migration to multi-outlet rather
+        // than throwing inside authorize, which Auth.js surfaces as an opaque
+        // CallbackRouteError. Missing outlets is "no outlets" — and the guard
+        // below then refuses the login, which is the correct outcome anyway.
+        const restaurantIds = (user.restaurantIds ?? []).map(String)
+
         // A store manager with no outlet cannot be scoped to anything, so
         // letting them in would mean deciding at read time what they can see.
         // Refuse at the door instead.
-        if (user.role === 'STORE_MANAGER' && !user.restaurantId) return null
+        if (user.role === 'STORE_MANAGER' && restaurantIds.length === 0) return null
 
         return {
           id: String(user._id),
           name: user.name,
           role: user.role,
-          restaurantId: user.restaurantId ? String(user.restaurantId) : null,
+          restaurantIds,
         }
       },
     }),

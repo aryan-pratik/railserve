@@ -130,11 +130,10 @@ describe('analytics', () => {
     admin = ctxFor(await makeUser('ADMIN', '9000000001'))
     manager = ctxFor(await makeUser('STORE_MANAGER', '9000000002', r._id))
 
-    const agent = await makeUser('DELIVERY_AGENT', '9000000004')
+    const agent = await makeUser('DELIVERY_AGENT', '9000000004', r._id)
     const agentCtx = ctxFor(agent)
 
     const { makeOrder } = await import('./fixtures')
-    const { assignAgents } = await import('../src/lib/repo/transitionOrder')
 
     // Two delivered at one outlet, one failed, one untouched at the other.
     for (const [i, outcome] of (['DELIVERED', 'DELIVERED', 'FAILED'] as const).entries()) {
@@ -143,7 +142,6 @@ describe('analytics', () => {
         stationCode: 'CNB', coach: `B${i + 1}`, amountPaise: 20000,
       })
       const id = String(o._id)
-      await assignAgents({ ctx: admin, orderId: id, agentIds: [String(agent._id)] })
       for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
         await transitionOrder({ ctx: manager, orderId: id, to })
       }

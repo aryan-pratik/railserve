@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Card, CardHeader, Field, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
 import { parseBulkEnquiry } from '@/lib/ingest/parsers/bulkEnquiry'
 import { createEnquiryAction, type EnquiryState } from '../actions'
 
@@ -44,18 +44,18 @@ export function EnquiryForm({ today }: { today: string }) {
         <CardHeader title="Paste the WhatsApp enquiry" />
         <div className="space-y-3 p-4">
           <textarea
+            aria-label="Paste the WhatsApp enquiry message"
             value={paste}
             onChange={(e) => setPaste(e.target.value)}
             rows={8}
             placeholder={'*Query*\nDate =03-Sep\nLocation =Kanpur Central\nTrain no -\nTime  = 7:30PM\nPax = 75\nMenu = ...'}
             className={`${inputClass} font-mono text-xs`}
           />
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={applyParse} disabled={!paste.trim()}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" onClick={applyParse} disabled={!paste.trim()}>
               Pre-fill the form
-            </button>
-            <span className="text-xs text-slate-500">
+            </Button>
+            <span className="text-xs text-muted">
               Everything below stays editable. A rough parse is fine.
             </span>
           </div>
@@ -76,7 +76,7 @@ export function EnquiryForm({ today }: { today: string }) {
               hint="The outlet is chosen when you quote.">
               <input id="stationCode" name="stationCode" required value={stationCode}
                 onChange={(e) => setStationCode(e.target.value)} placeholder="CNB"
-                className={`${inputClass} uppercase`} />
+                className={`${inputClass} font-mono uppercase`} />
             </Field>
             <Field label="Location as written" htmlFor="location">
               <input id="location" name="location" value={location}
@@ -85,11 +85,11 @@ export function EnquiryForm({ today }: { today: string }) {
             </Field>
             <Field label="Train number" htmlFor="trainNo" hint="Often missing on an enquiry.">
               <input id="trainNo" name="trainNo" value={trainNo}
-                onChange={(e) => setTrainNo(e.target.value)} className={inputClass} />
+                onChange={(e) => setTrainNo(e.target.value)} className={`${inputClass} font-mono`} />
             </Field>
             <Field label="Pax" htmlFor="pax">
               <input id="pax" name="pax" type="number" min={1} value={pax}
-                onChange={(e) => setPax(e.target.value)} className={inputClass} />
+                onChange={(e) => setPax(e.target.value)} className={`${inputClass} tabular-nums`} />
             </Field>
             <Field label="Requested time" htmlFor="scheduledArrival">
               <input id="scheduledArrival" name="scheduledArrival" type="datetime-local"
@@ -102,7 +102,8 @@ export function EnquiryForm({ today }: { today: string }) {
             </Field>
             <Field label="Contact phone" htmlFor="contactPhone">
               <input id="contactPhone" name="contactPhone" value={contactPhone}
-                onChange={(e) => setContactPhone(e.target.value)} className={inputClass} />
+                onChange={(e) => setContactPhone(e.target.value)}
+                className={`${inputClass} font-mono tabular-nums`} />
             </Field>
             <div className="sm:col-span-2">
               <Field label="Menu" htmlFor="menuSpec"
@@ -121,13 +122,12 @@ export function EnquiryForm({ today }: { today: string }) {
           </div>
         </Card>
 
-        <div className="flex items-center gap-3">
-          <button type="submit" disabled={pending}
-            className="rounded-lg bg-slate-900 px-5 py-2.5 font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={pending} size="lg">
             {pending ? 'Saving…' : 'Save enquiry'}
-          </button>
-          {state.error ? <span className="text-sm font-medium text-red-600">{state.error}</span> : null}
-          <span className="text-sm text-slate-500">
+          </Button>
+          <FormNote state={state} />
+          <span className="text-sm text-muted">
             Saved at ENQUIRY. It reaches an outlet only after you quote and confirm.
           </span>
         </div>

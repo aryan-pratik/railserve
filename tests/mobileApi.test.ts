@@ -70,7 +70,7 @@ describe('offline queue replay safety', () => {
     const r = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
     admin = ctxFor(await makeUser('ADMIN', '9000000001'))
     manager = ctxFor(await makeUser('STORE_MANAGER', '9000000002', r._id))
-    const a = await makeUser('DELIVERY_AGENT', '9000000004')
+    const a = await makeUser('DELIVERY_AGENT', '9000000004', r._id)
     agent = ctxFor(a)
 
     const today = todayIST()

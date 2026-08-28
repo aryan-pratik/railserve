@@ -86,7 +86,9 @@ describe('store manager dashboard', () => {
 
     const done = await findById(manager, id)
     expect(done!.status).toBe('PREPARED')
-    expect(done!.events.map((e) => e.toStatus)).toEqual(['ACCEPTED', 'KOT_PRINTED', 'PREPARED'])
+    expect(done!.events.map((e) => e.toStatus)).toEqual([
+      'RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED',
+    ])
   })
 
   it('reports a second Mark Prepared as a conflict, not an illegal transition', async () => {

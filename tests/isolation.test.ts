@@ -30,8 +30,9 @@ describe('cross-tenant store isolation', () => {
     adminCtx = ctxFor(await makeUser('ADMIN', '9000000001'))
     managerA = ctxFor(await makeUser('STORE_MANAGER', '9000000002', ganga._id))
     managerB = ctxFor(await makeUser('STORE_MANAGER', '9000000003', annapurna._id))
-    const a1 = await makeUser('DELIVERY_AGENT', '9000000004')
-    const a2 = await makeUser('DELIVERY_AGENT', '9000000005')
+    // Riders are scoped by outlet, not by assignment — one per station here.
+    const a1 = await makeUser('DELIVERY_AGENT', '9000000004', ganga._id)
+    const a2 = await makeUser('DELIVERY_AGENT', '9000000005', annapurna._id)
     agent1 = ctxFor(a1)
     agent2 = ctxFor(a2)
 
@@ -80,10 +81,19 @@ describe('cross-tenant store isolation', () => {
     expect(await countByStatus(adminCtx)).toEqual({ RECEIVED: 2 })
   })
 
-  it('delivery agent sees only orders assigned to them', async () => {
+  it('a rider sees their own kitchen and no other', async () => {
+    // Nobody assigned these. The rider at Ganga sees Ganga's order because it
+    // is Ganga's, and the rider at Annapurna cannot reach it by id.
     expect((await findMany(agent1)).map((o) => String(o._id))).toEqual([orderA])
-    expect(await findMany(agent2)).toEqual([])
+    expect((await findMany(agent2)).map((o) => String(o._id))).toEqual([orderB])
     expect(await findById(agent2, orderA)).toBeNull()
+    expect(await findById(agent1, orderB)).toBeNull()
+  })
+
+  it('a rider cannot transition another outlet order, even with its ID', async () => {
+    await expect(
+      transitionOrder({ ctx: agent2, orderId: orderA, to: 'DISPATCHED' }),
+    ).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it('a store manager cannot transition another outlet order, even with its ID', async () => {
@@ -92,19 +102,75 @@ describe('cross-tenant store isolation', () => {
     ).rejects.toBeInstanceOf(NotFoundError)
   })
 
-  it('a store manager with no restaurantId sees nothing, rather than everything', async () => {
-    // A misconfigured manager must fail closed. An empty scope filter here
-    // would silently promote them to admin.
-    const orphan: AuthContext = {
-      userId: new mongoose.Types.ObjectId(),
-      role: 'STORE_MANAGER',
-      restaurantId: null,
+  it('a user with no outlets sees nothing, rather than everything', async () => {
+    // A misconfigured manager or rider must fail closed. An empty scope filter
+    // here would silently promote them to admin.
+    for (const role of ['STORE_MANAGER', 'DELIVERY_AGENT'] as const) {
+      const orphan: AuthContext = {
+        userId: new mongoose.Types.ObjectId(),
+        role,
+        restaurantIds: [],
+      }
+      expect(await findMany(orphan)).toEqual([])
+      expect(await findById(orphan, orderA)).toBeNull()
     }
-    expect(await findMany(orphan)).toEqual([])
-    expect(await findById(orphan, orderA)).toBeNull()
   })
 
   it('a malformed order id is a miss, not a crash', async () => {
     expect(await findById(managerA, 'not-an-objectid')).toBeNull()
+  })
+})
+
+/**
+ * A manager may run several outlets. The scope must widen to exactly those and
+ * stop there — the failure worth guarding against is a multi-outlet manager
+ * quietly becoming an admin.
+ */
+describe('multi-outlet store managers', () => {
+  let bothCtx: AuthContext
+  let singleCtx: AuthContext
+  let orderGanga: string
+  let orderAnnapurna: string
+  let orderThird: string
+
+  beforeAll(async () => {
+    await resetDb()
+
+    const ganga = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
+    const annapurna = await makeRestaurant('SHREE ANNAPURNA', 'PRYJ')
+    const third = await makeRestaurant('COSMOZIN LOUNGE', 'LKO')
+
+    bothCtx = ctxFor(await makeUser('STORE_MANAGER', '9000000010', [ganga._id, annapurna._id]))
+    singleCtx = ctxFor(await makeUser('STORE_MANAGER', '9000000011', ganga._id))
+
+    orderGanga = String(await makeOrder({ restaurantId: ganga._id, stationCode: 'CNB' }).then((o) => o._id))
+    orderAnnapurna = String(await makeOrder({ restaurantId: annapurna._id, stationCode: 'PRYJ' }).then((o) => o._id))
+    orderThird = String(await makeOrder({ restaurantId: third._id, stationCode: 'LKO' }).then((o) => o._id))
+  })
+
+  afterAll(async () => {
+    await disconnectDb()
+  })
+
+  it('sees every outlet they hold, on one board', async () => {
+    const ids = (await findMany(bothCtx)).map((o) => String(o._id)).sort()
+    expect(ids).toEqual([orderGanga, orderAnnapurna].sort())
+  })
+
+  it('still cannot reach an outlet they do not hold', async () => {
+    expect(await findById(bothCtx, orderThird)).toBeNull()
+    await expect(
+      transitionOrder({ ctx: bothCtx, orderId: orderThird, to: 'ACCEPTED' }),
+    ).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it('holding two outlets does not widen a single-outlet colleague', async () => {
+    const ids = (await findMany(singleCtx)).map((o) => String(o._id))
+    expect(ids).toEqual([orderGanga])
+  })
+
+  it('counts aggregate across held outlets only', async () => {
+    expect(await countByStatus(bothCtx)).toEqual({ RECEIVED: 2 })
+    expect(await countByStatus(singleCtx)).toEqual({ RECEIVED: 1 })
   })
 })

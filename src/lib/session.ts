@@ -25,9 +25,9 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   return {
     userId: new mongoose.Types.ObjectId(session.user.id),
     role: session.user.role,
-    restaurantId: session.user.restaurantId
-      ? new mongoose.Types.ObjectId(session.user.restaurantId)
-      : null,
+    restaurantIds: (session.user.restaurantIds ?? []).map(
+      (id) => new mongoose.Types.ObjectId(id),
+    ),
   }
 })
 

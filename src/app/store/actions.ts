@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
+import { transitionRun, type RunActionResult } from '@/lib/repo/runRepo'
 import { NotFoundError } from '@/lib/authContext'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { env } from '@/lib/env'
@@ -106,4 +107,60 @@ export async function generateKot(formData: FormData) {
   }
 
   redirect(`/store/orders/${orderId}/kot`)
+}
+
+/* ── whole-train actions ──────────────────────────────────────────────────────
+ * The board groups by train because one rider carries one train's orders in one
+ * trip. These let a manager move that whole group without clicking through it
+ * order by order, which on a five-order train is the difference between one
+ * action and fifteen.
+ */
+
+function summarise(result: RunActionResult, verb: string): StoreActionState {
+  if (result.errors.length > 0) return { error: result.errors[0] }
+  if (result.moved === 0) return { error: `Nothing to ${verb}.` }
+  return { ok: `${result.moved} order${result.moved === 1 ? '' : 's'} ${verb}.` }
+}
+
+export async function acceptRun(
+  _prev: StoreActionState,
+  formData: FormData,
+): Promise<StoreActionState> {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const runKey = String(formData.get('runKey') ?? '')
+
+  const result = await transitionRun(ctx, runKey, 'RECEIVED', 'ACCEPTED', { via: 'store-board' })
+  revalidatePath('/store')
+  return summarise(result, 'accepted')
+}
+
+export async function markRunPrepared(
+  _prev: StoreActionState,
+  formData: FormData,
+): Promise<StoreActionState> {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const runKey = String(formData.get('runKey') ?? '')
+
+  const result = await transitionRun(ctx, runKey, 'KOT_PRINTED', 'PREPARED', { via: 'store-board' })
+  revalidatePath('/store')
+  revalidatePath('/agent')
+  return summarise(result, 'ready')
+}
+
+/**
+ * Prints one ticket per order for the whole train, as a single print job.
+ *
+ * The chef wants a ticket per order — one bag, one docket — but the manager
+ * should not have to open five pages to get five tickets. The print view
+ * renders them stacked with a page break between, so the printer cuts between
+ * dockets on its own.
+ */
+export async function generateRunKot(formData: FormData) {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const runKey = String(formData.get('runKey') ?? '')
+
+  await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' })
+  revalidatePath('/store')
+
+  redirect(`/store/runs/${encodeURIComponent(runKey)}/kot`)
 }

@@ -64,6 +64,13 @@ export type QueuedMutation =
       clientId: string
       orderId: string
       receivedBy: string
+      /**
+       * Object key of an already-uploaded photo. The image is pushed to the
+       * bucket before the mutation is queued, so what waits in the offline
+       * queue is a short string rather than megabytes of JPEG — the queue
+       * survives in AsyncStorage and must stay small.
+       */
+      proofKey?: string | null
       amountCollected?: string | null
       at: string
     }

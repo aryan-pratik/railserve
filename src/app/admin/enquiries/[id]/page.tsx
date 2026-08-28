@@ -5,7 +5,7 @@ import { findById } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { formatIST, formatMoney, formatServiceDate, paiseToRupees, utcToIstLocal } from '@/lib/format'
-import { Card, CardHeader, StatusBadge, TypeBadge } from '@/components/ui'
+import { Button, ButtonLink, Card, CardHeader, StatusBadge, TypeBadge } from '@/components/ui'
 import { EventLog } from '@/components/EventLog'
 import { ConfirmForm, QuoteForm } from './QuoteForms'
 import { markLostAction } from '../actions'
@@ -34,36 +34,42 @@ export default async function EnquiryDetail(props: PageProps<'/admin/enquiries/[
     <div className="mx-auto max-w-3xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">{order.externalOrderId}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-mono text-xl font-semibold tracking-tight text-ink">
+              {order.externalOrderId}
+            </h1>
             <TypeBadge type={order.orderType} />
             <StatusBadge status={order.status} />
           </div>
-          <p className="mt-1 text-sm text-slate-600">
-            {formatServiceDate(order.serviceDate)} · {order.stationCode}
-            {order.pax ? ` · ${order.pax} pax` : ''}
+          <p className="mt-0.5 text-sm text-muted">
+            <span className="tabular-nums">{formatServiceDate(order.serviceDate)}</span> ·{' '}
+            <span className="font-mono">{order.stationCode}</span>
+            {order.pax ? <> · <span className="tabular-nums">{order.pax}</span> pax</> : null}
           </p>
         </div>
-        <Link href="/admin/enquiries" className="text-sm text-slate-600 underline-offset-2 hover:underline">
+        <ButtonLink href="/admin/enquiries" variant="ghost" size="sm">
           ← All enquiries
-        </Link>
+        </ButtonLink>
       </div>
 
       {order.status === 'RECEIVED' ? (
-        <Card className="border-emerald-200 bg-emerald-50 p-4">
-          <p className="text-sm font-medium text-emerald-800">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-900">
             Confirmed and live on the outlet dashboard.
           </p>
-          <Link href={`/admin/orders/${id}`} className="text-sm text-emerald-800 underline">
+          <Link
+            href={`/admin/orders/${id}`}
+            className="text-sm font-medium text-emerald-800 underline underline-offset-2"
+          >
             Open the order →
           </Link>
-        </Card>
+        </div>
       ) : null}
 
       {menu ? (
         <Card>
           <CardHeader title="Menu as requested" />
-          <pre className="whitespace-pre-wrap px-4 py-3 font-sans text-sm text-slate-700">{menu}</pre>
+          <pre className="whitespace-pre-wrap px-4 py-3 font-sans text-sm text-muted">{menu}</pre>
         </Card>
       ) : null}
 
@@ -87,27 +93,31 @@ export default async function EnquiryDetail(props: PageProps<'/admin/enquiries/[
 
           <form action={markLostAction}>
             <input type="hidden" name="orderId" value={id} />
-            <button type="submit"
-              className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
+            <Button type="submit" variant="danger" size="sm">
               Mark lost
-            </button>
+            </Button>
           </form>
         </>
       ) : null}
 
       <Card>
         <CardHeader title="Quote summary" />
-        <div className="divide-y divide-slate-100 text-sm">
+        <div className="flex items-baseline justify-between gap-4 border-b border-line px-4 py-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted">Amount</span>
+          <span className="text-2xl font-semibold tabular-nums text-ink">
+            {formatMoney(order.amountPaise ?? null)}
+          </span>
+        </div>
+        <div className="divide-y divide-line text-sm">
           {[
-            ['Amount', formatMoney(order.amountPaise ?? null)],
             ['Payment', order.paymentMode ?? '—'],
             ['Ready by', formatIST(order.readyBy)],
             ['Handover', order.handoverPoint ?? '—'],
             ['Contact', order.contactPhone ? `${order.contactName ?? ''} ${order.contactPhone}` : '—'],
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
-              <span className="text-slate-500">{k}</span>
-              <span className="text-right font-medium text-slate-900">{v}</span>
+              <span className="text-muted">{k}</span>
+              <span className="text-right font-medium text-ink">{v}</span>
             </div>
           ))}
         </div>
@@ -117,10 +127,10 @@ export default async function EnquiryDetail(props: PageProps<'/admin/enquiries/[
         <Card>
           <CardHeader title="Original message" />
           <details className="px-4 py-3">
-            <summary className="cursor-pointer text-sm text-slate-600">
+            <summary className="cursor-pointer text-sm text-muted hover:text-ink">
               What was actually sent
             </summary>
-            <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3 font-mono text-xs text-slate-700">
+            <pre className="mt-2 whitespace-pre-wrap rounded-lg border border-line bg-sunken/60 p-3 font-mono text-xs text-muted">
               {pasted}
             </pre>
           </details>

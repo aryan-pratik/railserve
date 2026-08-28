@@ -4,24 +4,55 @@
  * Deliberately a single light theme. These screens are read on a kitchen pass
  * and on a station platform in daylight, and the KOT view has to print legibly
  * on white thermal paper — an automatic dark mode would fight all three.
+ *
+ * Chrome colours are tokens; status colours stay in the STATUS_STYLES map in
+ * components/ui.tsx, which is the one place they are decided.
  */
-:root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
-}
+@theme {
+  --color-canvas: #f4f5f8;
+  --color-surface: #ffffff;
+  --color-sunken: #eceef3;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-line: #e3e6ec;
+  --color-line-strong: #c9cfda;
+
+  /*
+   * Three text weights, all of which clear WCAG AA (4.5:1) against every
+   * surface in this file — surface #fff, canvas #f4f5f8 and sunken #eceef3.
+   * Worst-case ratios: ink 16.9, muted 6.31, faint 4.72.
+   *
+   * faint was #8a93a4, which measured 2.66:1 on sunken and failed AA on every
+   * background while carrying real information at 12px — payment mode, "platform
+   * unknown", every input placeholder. A de-emphasised tone still has to be
+   * readable on a kitchen pass in daylight; quiet is not the same as faint.
+   */
+  --color-ink: #0d1424;
+  --color-muted: #4d5765;
+  --color-faint: #5f6a7b;
+
+  /* Indigo, not red or amber — primary actions must not compete with the
+     urgency colours that carry meaning on the board. */
+  --color-accent: #3d3fc4;
+  --color-accent-hover: #32348f;
+  --color-accent-soft: #ededfc;
+
+  --font-sans: var(--font-sans-face), system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* Slashed zero everywhere. Train numbers, PNRs, coach codes and station codes
+     are read aloud and typed back in; an ambiguous 0/O is a wrong delivery. */
+  font-feature-settings: "zero" 1;
 }
+
+/* Headings tighten as they grow, which is what stops large text reading as
+   merely "big" — the optical gap between letters widens with size otherwise. */
+h1 { letter-spacing: -0.02em; }
+h2, h3 { letter-spacing: -0.01em; }
 
 /*
  * The KOT view is the only printable screen, so print rules target it directly.
@@ -45,7 +76,7 @@ body {
   /* Strip the app shell's layout padding so the ticket starts at the top. */
   main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
 
-  #kot {
+  .kot {
     width: 100% !important;
     box-shadow: none !important;
     padding: 0 !important;
@@ -54,4 +85,7 @@ body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
+  /* Each ticket in a batch print starts its own cut. */
+  .kot + .kot { break-before: page; }
 }

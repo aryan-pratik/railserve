@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareCoach, groupIntoRuns, parseRunKey, runKeyFor, NO_TRAIN } from '../src/lib/runs'
+import { compareCoach, groupIntoRuns, parseRunKey, runKeyFor, sortRunsByUrgency, NO_TRAIN } from '../src/lib/runs'
 
 const mk = (over: Record<string, unknown> = {}) => ({
   _id: Math.random().toString(36).slice(2),
@@ -82,5 +82,40 @@ describe('grouping into runs', () => {
       mk({ status: 'DISPATCHED', coach: 'B7' }),
     ])
     expect(runs[0].statusCounts).toEqual({ PREPARED: 2, DISPATCHED: 1 })
+  })
+})
+
+describe('urgency ordering', () => {
+  // 12506 is scheduled first but running late; 12312 is scheduled later and on
+  // time, so it actually arrives first and must be cooked first.
+  const early = mk({ trainNo: '12506', scheduledArrival: new Date('2026-08-27T07:00:00Z') })
+  const late = mk({ trainNo: '12312', scheduledArrival: new Date('2026-08-27T08:00:00Z') })
+
+  const runs = groupIntoRuns([early, late])
+
+  it('groupIntoRuns falls back to the timetable', () => {
+    expect(runs.map((r) => r.trainNo)).toEqual(['12506', '12312'])
+  })
+
+  it('a delayed train sinks below one arriving sooner', () => {
+    const eta: Record<string, Date> = {
+      '12506': new Date('2026-08-27T08:30:00Z'), // 90 min late
+      '12312': new Date('2026-08-27T08:00:00Z'), // on time
+    }
+    const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null)
+    expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
+  })
+
+  it('a run with no live time sinks to the bottom rather than jumping the queue', () => {
+    const sorted = sortRunsByUrgency(runs, (r) =>
+      r.trainNo === '12312' ? new Date('2026-08-27T09:00:00Z') : null,
+    )
+    expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
+  })
+
+  it('does not mutate the array it was given', () => {
+    const before = runs.map((r) => r.trainNo)
+    sortRunsByUrgency(runs, () => null)
+    expect(runs.map((r) => r.trainNo)).toEqual(before)
   })
 })

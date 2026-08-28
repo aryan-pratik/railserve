@@ -69,6 +69,20 @@ export class RapidApiTrainStatusProvider implements TrainStatusProvider {
     }
 
     if (!res.ok) {
+      // These three are configuration or billing problems, not transient
+      // outages, and they will not fix themselves. Saying so precisely is the
+      // difference between a banner someone can act on and a silent fallback
+      // to scheduled times that looks like the train simply has no live data.
+      if (res.status === 429) {
+        throw new TrainStatusUnavailable(
+          'train API quota exhausted — the RapidAPI plan is out of requests for this period',
+        )
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new TrainStatusUnavailable(
+          'train API rejected the key — check TRAIN_API_KEY and that the plan covers this host',
+        )
+      }
       throw new TrainStatusUnavailable(`train API returned ${res.status}`)
     }
 

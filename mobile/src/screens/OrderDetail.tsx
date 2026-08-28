@@ -1,15 +1,18 @@
 import React, { useState } from 'react'
-import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Image, Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import type { RunOrder } from '../types'
 import { Button, C, Card, Pill, Rupees, s } from '../ui'
 
 export function OrderDetailScreen({
-  order, onBack, onDeliver, onFail, busy, offline,
+  order, onBack, onDeliver, onFail, onCapturePhoto, busy, offline,
 }: {
   order: RunOrder
   onBack: () => void
-  onDeliver: (receivedBy: string, amountCollected: string | null) => void
+  onDeliver: (receivedBy: string, amountCollected: string | null, proofKey: string | null) => void
   onFail: (reason: string) => void
+  /** Uploads the photo and resolves to its object key, or null if it failed. */
+  onCapturePhoto: (localUri: string) => Promise<string | null>
   busy: boolean
   offline: boolean
 }) {
@@ -20,6 +23,38 @@ export function OrderDetailScreen({
   )
   const [failOpen, setFailOpen] = useState(false)
   const [reason, setReason] = useState('')
+  const [photoUri, setPhotoUri] = useState<string | null>(null)
+  const [proofKey, setProofKey] = useState<string | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+
+  async function takePhoto() {
+    setPhotoError(null)
+    const perm = await ImagePicker.requestCameraPermissionsAsync()
+    if (!perm.granted) {
+      setPhotoError('Camera permission is needed to attach a photo.')
+      return
+    }
+
+    // Compressed on the device: a full-resolution shot is several megabytes and
+    // this uploads from a platform. 0.5 quality is plainly good enough to show
+    // a handover happened.
+    const shot = await ImagePicker.launchCameraAsync({ quality: 0.5, exif: false })
+    if (shot.canceled || !shot.assets?.[0]) return
+
+    const uri = shot.assets[0].uri
+    setPhotoUri(uri)
+    setPhotoBusy(true)
+    const key = await onCapturePhoto(uri)
+    setPhotoBusy(false)
+
+    if (key) {
+      setProofKey(key)
+    } else {
+      setPhotoError('Could not upload the photo. You can still mark this delivered.')
+      setPhotoUri(null)
+    }
+  }
 
   const kitchen = order.items.filter((i) => !i.isPacking)
   const packing = order.items.filter((i) => i.isPacking)
@@ -114,7 +149,45 @@ export function OrderDetailScreen({
             </Text>
           ) : null}
 
-          <Text style={[s.muted, { marginBottom: 6 }]}>Received by</Text>
+          {/* Photo first — it is the evidence that settles a dispute, and the
+              thing we want a rider to reach for by default. */}
+          {proofKey && photoUri ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <Image
+                source={{ uri: photoUri }}
+                style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: '#e2e8f0' }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: C.green, fontWeight: '700' }}>Photo attached</Text>
+                <Pressable onPress={takePhoto} hitSlop={8}>
+                  <Text style={[s.muted, { textDecorationLine: 'underline' }]}>Retake</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={{ marginBottom: 12 }}>
+              <Button
+                label={photoBusy ? 'Uploading…' : 'Take delivery photo'}
+                tone="ghost"
+                busy={photoBusy}
+                disabled={photoBusy || offline}
+                onPress={takePhoto}
+              />
+              {offline ? (
+                <Text style={[s.muted, { marginTop: 6, fontSize: 12 }]}>
+                  A photo needs a connection. Deliver without one and it still counts.
+                </Text>
+              ) : null}
+            </View>
+          )}
+
+          {photoError ? (
+            <Text style={{ color: C.red, marginBottom: 10, fontSize: 13 }}>{photoError}</Text>
+          ) : null}
+
+          <Text style={[s.muted, { marginBottom: 6 }]}>
+            Received by{proofKey ? ' (optional with a photo)' : ''}
+          </Text>
           <TextInput
             value={receivedBy}
             onChangeText={setReceivedBy}
@@ -139,8 +212,8 @@ export function OrderDetailScreen({
             label="Mark delivered"
             tone="success"
             busy={busy}
-            disabled={!receivedBy.trim()}
-            onPress={() => onDeliver(receivedBy.trim(), cod ? collected : null)}
+            disabled={!receivedBy.trim() && !proofKey}
+            onPress={() => onDeliver(receivedBy.trim(), cod ? collected : null, proofKey)}
           />
 
           <View style={{ height: 10 }} />

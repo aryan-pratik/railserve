@@ -43,16 +43,16 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <Link href="/agent" className="text-sm text-slate-600 underline-offset-2 hover:underline">
+      <Link href="/agent" className="text-sm text-muted underline-offset-2 hover:underline">
         ← All runs
       </Link>
 
       <Card className="p-4">
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-2xl font-bold text-slate-900">{run.trainNo ?? 'No train no.'}</span>
-          <span className="text-slate-600">{run.trainName}</span>
+          <span className="text-2xl font-bold text-ink">{run.trainNo ?? 'No train no.'}</span>
+          <span className="text-muted">{run.trainName}</span>
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm text-slate-600">
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm text-muted">
           <span>{run.stationCode}</span>
           <span>{formatServiceDate(run.serviceDate)}</span>
         </div>
@@ -77,7 +77,7 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
       </Card>
 
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-faint">
           {run.orders.length} order{run.orders.length === 1 ? '' : 's'} · walking order
         </h2>
         <AutoRefresh seconds={20} />
@@ -92,15 +92,15 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
             const deliverable = o.status === 'DISPATCHED'
             return (
               <Link key={String(o._id)} href={`/agent/orders/${String(o._id)}`} className="block">
-                <Card className="p-4 transition hover:border-slate-400">
+                <Card className="p-4 transition hover:border-accent">
                   <div className="flex items-start gap-3">
                     {/* Coach is the thing the agent navigates by, so it leads. */}
                     <div className="w-16 shrink-0 text-center">
-                      <div className="rounded-lg bg-slate-900 px-2 py-1.5 text-lg font-bold leading-none text-white">
+                      <div className="rounded-lg bg-ink px-2 py-1.5 text-lg font-bold leading-none text-white">
                         {o.coach ?? '—'}
                       </div>
                       {o.berth ? (
-                        <div className="mt-1 text-xs font-medium text-slate-600">
+                        <div className="mt-1 text-xs font-medium text-muted">
                           berth {o.berth}
                         </div>
                       ) : null}
@@ -108,11 +108,11 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-semibold text-slate-900">{o.externalOrderId}</span>
+                        <span className="font-semibold text-ink">{o.externalOrderId}</span>
                         <TypeBadge type={o.orderType} />
                         <StatusBadge status={o.status} />
                       </div>
-                      <div className="mt-1 truncate text-sm text-slate-600">
+                      <div className="mt-1 truncate text-sm text-muted">
                         {o.orderType === 'BULK'
                           ? `${o.pax} pax · ${o.handoverPoint ?? 'handover'}`
                           : (o.contactName ?? 'Passenger')}
@@ -120,13 +120,13 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
                       <div className="mt-2">
                         <span
                           className={`rounded px-2 py-1 text-sm font-bold ${
-                            cod ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-600'
+                            cod ? 'bg-amber-100 text-amber-900' : 'bg-sunken text-muted'
                           }`}
                         >
                           {cod ? `COLLECT ${formatMoney(o.amountPaise)}` : 'PREPAID'}
                         </span>
                         {deliverable ? (
-                          <span className="ml-2 text-xs font-medium text-slate-500">
+                          <span className="ml-2 text-xs font-medium text-faint">
                             tap to deliver →
                           </span>
                         ) : null}

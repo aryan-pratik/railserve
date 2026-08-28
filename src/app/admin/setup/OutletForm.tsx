@@ -1,8 +1,8 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Card, CardHeader, Field, inputClass } from '@/components/ui'
-import { saveRestaurant, type RestaurantState } from './actions'
+import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
+import { saveRestaurant, type RestaurantState } from './outletActions'
 
 const initial: RestaurantState = {}
 
@@ -17,7 +17,7 @@ export type OutletValues = {
   walkToPlatformMinutes?: number
 }
 
-export function RestaurantForm({ values = {} }: { values?: OutletValues }) {
+export function OutletForm({ values = {} }: { values?: OutletValues }) {
   const [state, action, pending] = useActionState(saveRestaurant, initial)
 
   return (
@@ -66,12 +66,10 @@ export function RestaurantForm({ values = {} }: { values?: OutletValues }) {
         </div>
 
         <div className="sm:col-span-2 flex items-center gap-3">
-          <button type="submit" disabled={pending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+          <Button type="submit" disabled={pending}>
             {pending ? 'Saving…' : values.id ? 'Save changes' : 'Create outlet'}
-          </button>
-          {state.error ? <span className="text-sm font-medium text-red-600">{state.error}</span> : null}
-          {state.ok ? <span className="text-sm font-medium text-emerald-700">{state.ok}</span> : null}
+          </Button>
+          <FormNote state={state} />
         </div>
       </form>
     </Card>

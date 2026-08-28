@@ -88,7 +88,8 @@ const UNPARSED_INBOX_INDEXES: Spec[] = [
 
 const USER_INDEXES: Spec[] = [
   { name: 'phone_unique', index: { key: { phone: 1 }, unique: true }, why: 'phone is the login identifier' },
-  { name: 'role_restaurant', index: { key: { role: 1, restaurantId: 1 } }, why: 'staff listing per outlet' },
+  // Multikey on restaurantIds — one manager may hold several outlets.
+  { name: 'role_restaurants', index: { key: { role: 1, restaurantIds: 1 } }, why: 'staff listing per outlet' },
 ]
 
 type IndexCreator = {

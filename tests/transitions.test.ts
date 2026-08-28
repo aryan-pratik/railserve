@@ -19,7 +19,7 @@ describe('transitionOrder', () => {
     restaurantId = r._id
     admin = ctxFor(await makeUser('ADMIN', '9000000001'))
     manager = ctxFor(await makeUser('STORE_MANAGER', '9000000002', r._id))
-    const a = await makeUser('DELIVERY_AGENT', '9000000004')
+    const a = await makeUser('DELIVERY_AGENT', '9000000004', r._id)
     agentId = a._id
     agent = ctxFor(a)
   })
@@ -48,9 +48,10 @@ describe('transitionOrder', () => {
 
     expect(final.status).toBe('DELIVERED')
     expect(final.events.map((e) => e.toStatus)).toEqual([
-      'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED',
+      'RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED',
     ])
-    expect(final.events.every((e) => e.userId)).toBe(true)
+    const acted = final.events.filter((e) => e.fromStatus !== null)
+    expect(acted.every((e) => e.userId)).toBe(true)
     expect(final.delivery.dispatchedAt).toBeInstanceOf(Date)
     expect(final.delivery.deliveredAt).toBeInstanceOf(Date)
     expect(final.delivery.proofValue).toBe('Neelesh Soni')

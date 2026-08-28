@@ -23,7 +23,7 @@ const TOKEN_TTL_DAYS = 30
 type TokenPayload = {
   sub: string
   role: Role
-  restaurantId: string | null
+  restaurantIds: string[]
   name: string
   exp: number
 }
@@ -35,14 +35,14 @@ function sign(data: string): string {
 export function issueMobileToken(user: {
   _id: mongoose.Types.ObjectId
   role: Role
-  restaurantId?: mongoose.Types.ObjectId | null
+  restaurantIds?: mongoose.Types.ObjectId[] | null
   name: string
 }): { token: string; expiresAt: Date } {
   const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000)
   const payload: TokenPayload = {
     sub: String(user._id),
     role: user.role,
-    restaurantId: user.restaurantId ? String(user.restaurantId) : null,
+    restaurantIds: (user.restaurantIds ?? []).map(String),
     name: user.name,
     exp: Math.floor(expiresAt.getTime() / 1000),
   }
@@ -86,13 +86,15 @@ export async function contextFromBearer(request: Request): Promise<AuthContext |
 
   await connectDb()
   const user = await User.findOne({ _id: payload.sub, active: true })
-    .select('role restaurantId')
+    .select('role restaurantIds')
     .lean()
   if (!user) return null
 
   return {
     userId: new mongoose.Types.ObjectId(payload.sub),
     role: user.role as Role,
-    restaurantId: user.restaurantId ? new mongoose.Types.ObjectId(String(user.restaurantId)) : null,
+    restaurantIds: (user.restaurantIds ?? []).map(
+      (id) => new mongoose.Types.ObjectId(String(id)),
+    ),
   }
 }

@@ -3,7 +3,7 @@ import type { Role } from '@/lib/roles'
 declare module 'next-auth' {
   interface User {
     role: Role
-    restaurantId: string | null
+    restaurantIds: string[]
   }
 
   interface Session {
@@ -11,7 +11,7 @@ declare module 'next-auth' {
       id: string
       name: string
       role: Role
-      restaurantId: string | null
+      restaurantIds: string[]
     }
   }
 }
@@ -22,7 +22,7 @@ declare module '@auth/core/jwt' {
   interface JWT {
     userId: string
     role: Role
-    restaurantId: string | null
+    restaurantIds: string[]
   }
 }
 

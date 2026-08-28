@@ -22,7 +22,7 @@ export const authConfig = {
       if (user) {
         token.userId = user.id!
         token.role = user.role
-        token.restaurantId = user.restaurantId
+        token.restaurantIds = user.restaurantIds
         token.name = user.name
       }
       return token
@@ -30,7 +30,11 @@ export const authConfig = {
     session({ session, token }) {
       session.user.id = token.userId
       session.user.role = token.role
-      session.user.restaurantId = token.restaurantId
+      // Default to none, not to everything. A token issued before outlets
+      // became a list carries no restaurantIds, and a store manager holding an
+      // old cookie must fail closed and re-authenticate — never fall through
+      // to an unscoped read.
+      session.user.restaurantIds = token.restaurantIds ?? []
       session.user.name = token.name ?? ''
       return session
     },

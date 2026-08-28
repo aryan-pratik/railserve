@@ -10,7 +10,7 @@
  */
 import bcrypt from 'bcryptjs'
 import { connectDb, disconnectDb } from '../src/lib/db'
-import { Order, Restaurant, User } from '../src/lib/models'
+import { Order, Restaurant, User, type RestaurantDoc } from '../src/lib/models'
 import { env } from '../src/lib/env'
 
 const RESTAURANTS = [
@@ -46,7 +46,7 @@ async function main() {
   const passwordHash = await bcrypt.hash(env.SEED_PASSWORD, 10)
 
   console.log('restaurants')
-  const restaurants = []
+  const restaurants: RestaurantDoc[] = []
   for (const r of RESTAURANTS) {
     const doc = await Restaurant.findOneAndUpdate(
       { name: r.name },
@@ -58,34 +58,61 @@ async function main() {
   }
 
   const users = [
-    { name: 'Aryan Sinha', phone: '9000000001', role: 'ADMIN' as const, restaurantId: null },
+    { name: 'Aryan Sinha', phone: '9000000001', role: 'ADMIN' as const, restaurantIds: [] },
     {
       name: 'Manoj Ganga Galaxy',
       phone: '9000000002',
       role: 'STORE_MANAGER' as const,
-      restaurantId: restaurants[0]._id,
+      restaurantIds: [restaurants[0]._id],
     },
     {
       name: 'Kavita Annapurna',
       phone: '9000000003',
       role: 'STORE_MANAGER' as const,
-      restaurantId: restaurants[1]._id,
+      restaurantIds: [restaurants[1]._id],
     },
-    { name: 'Ravi Kumar', phone: '9000000004', role: 'DELIVERY_AGENT' as const, restaurantId: null },
-    { name: 'Suresh Yadav', phone: '9000000005', role: 'DELIVERY_AGENT' as const, restaurantId: null },
+    // Holds both outlets — the multi-outlet board needs someone to exercise it.
+    {
+      name: 'Priya Both Outlets',
+      phone: '9000000006',
+      role: 'STORE_MANAGER' as const,
+      restaurantIds: restaurants.map((r) => r._id),
+    },
+    // Riders are scoped by outlet exactly as managers are — nobody assigns
+    // them work, so their outlets are the only thing that decides what they see.
+    {
+      name: 'Ravi Kumar',
+      phone: '9000000004',
+      role: 'DELIVERY_AGENT' as const,
+      restaurantIds: [restaurants[0]._id],
+    },
+    {
+      name: 'Suresh Yadav',
+      phone: '9000000005',
+      role: 'DELIVERY_AGENT' as const,
+      restaurantIds: [restaurants[1]._id],
+    },
   ]
 
   console.log('\nusers')
   for (const u of users) {
     await User.findOneAndUpdate(
       { phone: u.phone },
-      { $set: { ...u, passwordHash }, $setOnInsert: { active: true } },
-      { upsert: true, returnDocument: 'after' },
+      // $unset the old singular field so re-seeding an existing database does
+      // not leave a stale restaurantId shadowing the array.
+      {
+        $set: { ...u, passwordHash },
+        $setOnInsert: { active: true },
+        $unset: { restaurantId: '' },
+      },
+      { upsert: true, returnDocument: 'after', strict: false },
     )
-    const outlet = u.restaurantId
-      ? restaurants.find((r) => r._id.equals(u.restaurantId!))!.name
-      : '—'
-    console.log(`  ✓ ${u.phone}  ${u.role.padEnd(15)} ${u.name.padEnd(20)} ${outlet}`)
+    const names = u.restaurantIds.map(
+      (id) => restaurants.find((r) => r._id.equals(id))!.name,
+    )
+    console.log(
+      `  ✓ ${u.phone}  ${u.role.padEnd(15)} ${u.name.padEnd(20)} ${names.join(' + ') || '—'}`,
+    )
   }
 
   console.log(`\nAll users share the password: ${env.SEED_PASSWORD}`)

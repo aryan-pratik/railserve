@@ -23,7 +23,7 @@ export default async function AgentRunsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">My runs</h1>
-          <p className="mt-1 text-sm text-slate-600">{formatServiceDate(today)}</p>
+          <p className="mt-1 text-sm text-muted">{formatServiceDate(today)}</p>
         </div>
         <AutoRefresh seconds={20} />
       </div>
@@ -46,19 +46,19 @@ export default async function AgentRunsPage() {
 
             return (
               <Link key={run.key} href={`/agent/runs/${encodeURIComponent(run.key)}`} className="block">
-                <Card className="p-4 transition hover:border-slate-400">
+                <Card className="p-4 transition hover:border-accent">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="text-lg font-bold text-slate-900">
+                    <span className="text-lg font-bold text-ink">
                       {run.trainNo ?? 'No train no.'}
                     </span>
-                    <span className="text-sm text-slate-600">{run.trainName}</span>
+                    <span className="text-sm text-muted">{run.trainName}</span>
                   </div>
 
                   <div className="mt-2">
                     <TrainTiming timing={timing} />
                   </div>
 
-                  <div className="mt-2 text-sm text-slate-500">
+                  <div className="mt-2 text-sm text-faint">
                     {run.stationCode} · {run.orders.length} order
                     {run.orders.length === 1 ? '' : 's'}
                   </div>
@@ -75,7 +75,7 @@ export default async function AgentRunsPage() {
                       </span>
                     ) : null}
                     {cooking > 0 ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                      <span className="rounded-full bg-sunken px-2 py-0.5 text-xs font-medium text-muted ring-1 ring-inset ring-line">
                         {cooking} still in the kitchen
                       </span>
                     ) : null}
