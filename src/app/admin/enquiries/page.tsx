@@ -1,10 +1,14 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { findMany } from '@/lib/repo/orderRepo'
-import { formatMoney, formatServiceDate } from '@/lib/format'
-import { Card, EmptyState, StatusBadge } from '@/components/ui'
+import { formatRupees, formatServiceDate } from '@/lib/format'
+import { ButtonLink, Card, EmptyState, PageHeader, StatusBadge } from '@/components/ui'
 
 export const metadata = { title: 'Enquiries · RailServe' }
+
+const TH_BASE = 'px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted'
+const TH = `${TH_BASE} text-left`
+const TH_NUM = `${TH_BASE} text-right`
 
 export default async function EnquiriesPage() {
   const ctx = await requireRole('ADMIN')
@@ -12,41 +16,87 @@ export default async function EnquiriesPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Bulk enquiries</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Not yet orders. They reach a kitchen only once quoted and confirmed.
-          </p>
-        </div>
-        <Link href="/admin/enquiries/new"
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
-          + New enquiry
-        </Link>
-      </div>
+      <PageHeader
+        title="Bulk enquiries"
+        note="Not yet orders. They reach a kitchen only once quoted and confirmed."
+        action={
+          <ButtonLink href="/admin/enquiries/new" variant="primary">
+            + New enquiry
+          </ButtonLink>
+        }
+      />
 
       {rows.length === 0 ? (
-        <EmptyState title="No open enquiries" note="Paste a WhatsApp message to start one." />
+        <EmptyState
+          title="No open enquiries"
+          note="Paste a WhatsApp message to start one."
+          action={
+            <ButtonLink href="/admin/enquiries/new" variant="primary">
+              + New enquiry
+            </ButtonLink>
+          }
+        />
       ) : (
-        <div className="space-y-3">
-          {rows.map((o) => (
-            <Link key={String(o._id)} href={`/admin/enquiries/${String(o._id)}`} className="block">
-              <Card className="p-4 transition hover:border-slate-400">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-slate-900">{o.externalOrderId}</span>
-                  <StatusBadge status={o.status} />
-                  <span className="ml-auto text-sm text-slate-500">
-                    {formatServiceDate(o.serviceDate)}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-slate-600">
-                  {o.pax ? `${o.pax} pax · ` : ''}{o.stationCode}
-                  {o.amountPaise ? ` · ${formatMoney(o.amountPaise)}` : ' · not quoted'}
-                </p>
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-line bg-sunken/60">
+                <tr>
+                  <th className={TH}>Enquiry</th>
+                  <th className={TH}>Date</th>
+                  <th className={TH}>Station</th>
+                  <th className={TH_NUM}>Pax</th>
+                  <th className={TH_NUM}>Amount</th>
+                  <th className={TH}>Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {rows.map((o) => {
+                  const lost = o.status === 'LOST'
+                  return (
+                    <tr
+                      key={String(o._id)}
+                      className={`transition hover:bg-sunken/60 ${lost ? 'bg-sunken/50 text-faint' : ''}`}
+                    >
+                      <td className="px-3 py-2.5">
+                        <Link
+                          href={`/admin/enquiries/${String(o._id)}`}
+                          className="font-mono font-semibold text-accent underline-offset-2 hover:underline"
+                        >
+                          {o.externalOrderId}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5 tabular-nums text-muted">
+                        {formatServiceDate(o.serviceDate)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="font-mono text-ink">{o.stationCode}</span>
+                        {o.handoverPoint ? (
+                          <span className="ml-1.5 inline-block max-w-[16rem] truncate align-bottom text-xs text-faint">
+                            {o.handoverPoint}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink">
+                        {o.pax ?? <span className="text-faint">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">
+                        {o.amountPaise ? (
+                          <span className="font-medium text-ink">{formatRupees(o.amountPaise)}</span>
+                        ) : (
+                          <span className="text-faint">Not quoted</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <StatusBadge status={o.status} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   )

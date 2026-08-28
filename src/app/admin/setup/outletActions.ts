@@ -48,7 +48,7 @@ export async function saveRestaurant(
     await Restaurant.create({ ...doc, active: true })
   }
 
-  revalidatePath('/admin/restaurants')
+  revalidatePath('/admin/setup')
   return { ok: id ? 'Outlet updated.' : 'Outlet created.' }
 }
 
@@ -63,5 +63,5 @@ export async function toggleRestaurantActive(formData: FormData) {
 
   await connectDb()
   await Restaurant.updateOne({ _id: id }, { $set: { active } })
-  revalidatePath('/admin/restaurants')
+  revalidatePath('/admin/setup')
 }

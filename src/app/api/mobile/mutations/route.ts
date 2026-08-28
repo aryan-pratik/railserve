@@ -33,9 +33,15 @@ const Mutation = z.discriminatedUnion('kind', [
     kind: z.literal('DELIVER_ORDER'),
     clientId: z.string().min(1),
     orderId: z.string().min(1),
-    receivedBy: z.string().trim().min(1),
+    // Either is enough. A photo is stronger, but a rider with a dead camera or
+    // no signal must still be able to close an order at the door.
+    receivedBy: z.string().trim().default(''),
+    proofKey: z.string().trim().optional().nullable(),
     amountCollected: z.string().optional().nullable(),
     at: z.string().optional(),
+  }).refine((v) => Boolean(v.proofKey) || v.receivedBy.length > 0, {
+    message: 'A delivery needs either a photo or the name of who received it',
+    path: ['receivedBy'],
   }),
   z.object({
     kind: z.literal('FAIL_ORDER'),
@@ -111,8 +117,12 @@ export async function POST(request: Request) {
         apply:
           m.kind === 'DELIVER_ORDER'
             ? {
-                proofType: 'SIGNATURE',
-                proofValue: m.receivedBy,
+                // The photo wins when both are present — it is the evidence
+                // that survives a dispute. proofValue holds the object key,
+                // never a presigned URL, which would be dead within the hour.
+                ...(m.proofKey
+                  ? { proofType: 'PHOTO' as const, proofValue: m.proofKey }
+                  : { proofType: 'SIGNATURE' as const, proofValue: m.receivedBy }),
                 ...(m.amountCollected
                   ? { amountCollectedPaise: rupeesToPaise(m.amountCollected) ?? undefined }
                   : {}),

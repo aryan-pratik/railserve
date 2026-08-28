@@ -93,6 +93,33 @@ export type Run<T extends RunOrder> = {
   statusCounts: Record<string, number>
 }
 
+/** Soonest first; an unknown arrival sinks to the bottom rather than to the top. */
+function byArrival(a: Date | null, b: Date | null): number {
+  if (!a && !b) return 0
+  if (!a) return 1
+  if (!b) return -1
+  return a.getTime() - b.getTime()
+}
+
+/**
+ * Re-orders runs by when the train will *actually* arrive.
+ *
+ * groupIntoRuns sorts by the timetable, which is the best available answer
+ * before any live status is known. Once it is, the timetable is the wrong
+ * order: a train running 90 minutes late should fall below one that is on time
+ * and arrives sooner, or the kitchen cooks in timetable order and the food
+ * needed first is the food made last.
+ *
+ * Kept separate from groupIntoRuns so this module stays pure — live timing is a
+ * database read, and the caller already holds it.
+ */
+export function sortRunsByUrgency<T>(
+  runs: T[],
+  effectiveArrivalFor: (run: T) => Date | null,
+): T[] {
+  return [...runs].sort((a, b) => byArrival(effectiveArrivalFor(a), effectiveArrivalFor(b)))
+}
+
 /** Groups orders into runs, each internally sorted by coach. */
 export function groupIntoRuns<T extends RunOrder>(orders: T[]): Run<T>[] {
   const byKey = new Map<string, T[]>()
@@ -129,13 +156,7 @@ export function groupIntoRuns<T extends RunOrder>(orders: T[]): Run<T>[] {
     })
   }
 
-  // Soonest arrival first; runs with no time known sink to the bottom.
-  runs.sort((a, b) => {
-    if (!a.scheduledArrival && !b.scheduledArrival) return 0
-    if (!a.scheduledArrival) return 1
-    if (!b.scheduledArrival) return -1
-    return a.scheduledArrival.getTime() - b.scheduledArrival.getTime()
-  })
+  runs.sort((a, b) => byArrival(a.scheduledArrival, b.scheduledArrival))
 
   return runs
 }

@@ -1,10 +1,12 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import { ProofPhotoField } from '@/components/ProofPhotoField'
 import {
-  deliverOrderAction, dispatchRunAction, failOrderAction, type AgentActionState,
+  deliverOrderAction, dispatchRunAction, failOrderAction, requestProofUpload,
+  type AgentActionState,
 } from './actions'
-import { inputClass } from '@/components/ui'
+import { Button, inputClass } from '@/components/ui'
 
 const initial: AgentActionState = {}
 
@@ -24,25 +26,22 @@ export function DispatchRunButton({ runKey, readyCount }: { runKey: string; read
   return (
     <form action={action}>
       <input type="hidden" name="runKey" value={runKey} />
-      <button
-        type="submit" disabled={pending || readyCount === 0}
-        className="w-full rounded-xl bg-slate-900 px-4 py-4 text-base font-bold text-white transition hover:bg-slate-800 disabled:opacity-40"
-      >
+      <Button type="submit" size="lg" disabled={pending || readyCount === 0} className="w-full font-bold">
         {pending
           ? 'Dispatching…'
           : readyCount === 0
             ? 'Nothing ready yet'
             : `Mark run dispatched (${readyCount})`}
-      </button>
+      </Button>
       <Note state={state} />
     </form>
   )
 }
 
 export function DeliverForm({
-  orderId, isCod, amountRupees,
+  orderId, isCod, amountRupees, photoEnabled,
 }: {
-  orderId: string; isCod: boolean; amountRupees: string
+  orderId: string; isCod: boolean; amountRupees: string; photoEnabled: boolean
 }) {
   const [state, action, pending] = useActionState(deliverOrderAction, initial)
 
@@ -50,12 +49,18 @@ export function DeliverForm({
     <form action={action} className="space-y-3 p-4">
       <input type="hidden" name="orderId" value={orderId} />
 
+      {/* Photo first: it is the stronger evidence and the thing we want the
+          rider to reach for. Only rendered when a bucket is configured. */}
+      {photoEnabled ? (
+        <ProofPhotoField orderId={orderId} requestUpload={requestProofUpload} />
+      ) : null}
+
       <div>
-        <label htmlFor="receivedBy" className="mb-1 block text-sm font-medium text-slate-700">
-          Received by
+        <label htmlFor="receivedBy" className="mb-1 block text-sm font-medium text-muted">
+          Received by {photoEnabled ? <span className="text-faint">(optional with a photo)</span> : null}
         </label>
         <input
-          id="receivedBy" name="receivedBy" required autoComplete="off"
+          id="receivedBy" name="receivedBy" required={!photoEnabled} autoComplete="off"
           placeholder="Name of the person who took it"
           className={`${inputClass} py-3 text-base`}
         />
@@ -63,7 +68,7 @@ export function DeliverForm({
 
       {isCod ? (
         <div>
-          <label htmlFor="amountCollected" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="amountCollected" className="mb-1 block text-sm font-medium text-muted">
             Cash collected (₹)
           </label>
           <input
@@ -103,10 +108,10 @@ export function FailForm({ orderId }: { orderId: string }) {
   }
 
   return (
-    <form action={action} className="space-y-3 border-t border-slate-200 p-4">
+    <form action={action} className="space-y-3 border-t border-line p-4">
       <input type="hidden" name="orderId" value={orderId} />
       <div>
-        <label htmlFor="failureReason" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="failureReason" className="mb-1 block text-sm font-medium text-muted">
           What happened?
         </label>
         <textarea
@@ -124,7 +129,7 @@ export function FailForm({ orderId }: { orderId: string }) {
         </button>
         <button
           type="button" onClick={() => setOpen(false)}
-          className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-xl border border-line-strong px-4 py-3 text-sm font-medium text-muted hover:bg-sunken"
         >
           Cancel
         </button>

@@ -38,7 +38,7 @@ export function StaleFlag({ timing }: { timing: TimingView }) {
   if (!timing.stale || timing.ageMinutes === null) return null
   return (
     <span
-      className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-300"
+      className="rounded-full bg-sunken px-2 py-0.5 text-xs font-medium tabular-nums text-muted ring-1 ring-inset ring-line-strong"
       title="The live feed has not updated recently. This is the last known value."
     >
       as of {timing.ageMinutes}m ago
@@ -49,13 +49,13 @@ export function StaleFlag({ timing }: { timing: TimingView }) {
 export function PlatformBadge({ platform }: { platform: string | null }) {
   if (!platform) {
     return (
-      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+      <span className="rounded bg-sunken px-2 py-0.5 text-xs font-medium text-faint">
         platform unknown
       </span>
     )
   }
   return (
-    <span className="rounded bg-slate-900 px-2 py-0.5 text-xs font-bold text-white">
+    <span className="rounded bg-ink px-2 py-0.5 text-xs font-bold tabular-nums text-white">
       PF {platform}
     </span>
   )
@@ -70,14 +70,14 @@ export function TrainTiming({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-sm font-semibold tabular-nums text-slate-900">
+      <span className="text-sm font-semibold tabular-nums text-ink">
         {formatTimeIST(timing.effectiveArrival)}
       </span>
       <span
         className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${
           timing.source === 'LIVE'
             ? 'bg-emerald-600 text-white'
-            : 'bg-slate-200 text-slate-600'
+            : 'bg-sunken text-muted'
         }`}
       >
         {timing.source}

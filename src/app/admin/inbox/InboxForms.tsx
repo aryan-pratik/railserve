@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Card, CardHeader, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, FormNote, inputClass } from '@/components/ui'
 import { ingestPastedEmail, resolveUnparsed, type InboxState } from './actions'
 
 const initial: InboxState = {}
@@ -13,22 +13,21 @@ export function PasteEmailForm() {
     <Card>
       <CardHeader title="Ingest an email by hand" />
       <form action={action} className="space-y-3 p-4">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted">
           Paste an aggregator order email. It goes through the same parser,
           outlet matching and duplicate handling as live Gmail ingestion.
         </p>
         <textarea
+          aria-label="Paste the raw order email"
           name="body" rows={10} required
           placeholder="*Order From YatriRestro*&#10;*Order Id : #1000584805*&#10;..."
           className={`${inputClass} font-mono text-xs`}
         />
-        <div className="flex items-center gap-3">
-          <button type="submit" disabled={pending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={pending}>
             {pending ? 'Ingesting…' : 'Ingest'}
-          </button>
-          {state.error ? <span className="text-sm font-medium text-red-600">{state.error}</span> : null}
-          {state.ok ? <span className="text-sm font-medium text-emerald-700">{state.ok}</span> : null}
+          </Button>
+          <FormNote state={state} />
         </div>
       </form>
     </Card>
@@ -39,31 +38,30 @@ export function ResolveForm({ id, body }: { id: string; body: string }) {
   const [state, action, pending] = useActionState(resolveUnparsed, initial)
   const [open, setOpen] = useState(false)
 
+  // Closed, this is one of two buttons on the row; open, it takes the full
+  // width so the raw email is editable at the width it was written.
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+      <Button type="button" size="sm" onClick={() => setOpen(true)}>
         Correct and re-ingest
-      </button>
+      </Button>
     )
   }
 
   return (
-    <form action={action} className="mt-3 space-y-2">
+    <form action={action} className="w-full space-y-2">
       <input type="hidden" name="id" value={id} />
       <textarea name="body" rows={12} defaultValue={body}
+        aria-label="Corrected order email, re-ingested on save"
         className={`${inputClass} font-mono text-xs`} />
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={pending}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+        <Button type="submit" size="sm" disabled={pending}>
           {pending ? 'Re-ingesting…' : 'Re-ingest'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)}>
           Cancel
-        </button>
-        {state.error ? <span className="text-sm font-medium text-red-600">{state.error}</span> : null}
-        {state.ok ? <span className="text-sm font-medium text-emerald-700">{state.ok}</span> : null}
+        </Button>
+        <FormNote state={state} />
       </div>
     </form>
   )

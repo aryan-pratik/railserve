@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui'
 
 /**
  * Polling stand-in for the SSE feed. The plan wants a live push with an audible
@@ -19,18 +20,20 @@ export function AutoRefresh({ seconds = 15 }: { seconds?: number }) {
   }, [router, seconds, paused])
 
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       onClick={() => setPaused((p) => !p)}
-      className="no-print flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800"
+      className="no-print"
       title={paused ? 'Resume auto-refresh' : 'Pause auto-refresh'}
     >
       <span
         className={`inline-block h-1.5 w-1.5 rounded-full ${
-          paused ? 'bg-slate-300' : 'animate-pulse bg-emerald-500'
+          paused ? 'bg-line-strong' : 'animate-pulse bg-emerald-500'
         }`}
       />
-      {paused ? 'Paused' : `Live · every ${seconds}s`}
-    </button>
+      <span className="tabular-nums">{paused ? 'Paused' : `Live · every ${seconds}s`}</span>
+    </Button>
   )
 }

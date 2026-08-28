@@ -18,22 +18,28 @@ import { type AuthContext, NotFoundError } from '../authContext'
  * Builds the mandatory filter for a caller.
  *
  * - ADMIN sees everything.
- * - STORE_MANAGER sees only their own outlet.
- * - DELIVERY_AGENT sees only orders they are assigned to.
+ * - STORE_MANAGER sees every outlet they hold, and nothing else.
+ * - DELIVERY_AGENT sees every outlet they are attached to, and nothing else.
  *
- * A STORE_MANAGER with a null restaurantId is a data error, not an admin —
- * returning an impossible filter is the safe reading. Same for an agent.
+ * Riders used to be scoped by assignment — `delivery.agentIds` contained who
+ * was *going* to deliver. Nothing assigns that any more: a rider picks up
+ * whatever is ready at their kitchen, and the system records who actually
+ * delivered afterwards. Scoping by assignment would now match nothing at all,
+ * so riders are scoped by outlet exactly as managers are, and station isolation
+ * is preserved by the same mechanism rather than by a second one.
+ *
+ * Holding no outlets is a data error, not an admin — returning an impossible
+ * filter is the safe reading for both roles.
  */
 function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
   switch (ctx.role) {
     case 'ADMIN':
       return {}
     case 'STORE_MANAGER':
-      return ctx.restaurantId
-        ? { restaurantId: ctx.restaurantId }
-        : { _id: { $exists: false } }
     case 'DELIVERY_AGENT':
-      return { 'delivery.agentIds': ctx.userId }
+      return ctx.restaurantIds.length > 0
+        ? { restaurantId: { $in: ctx.restaurantIds } }
+        : { _id: { $exists: false } }
   }
 }
 
@@ -72,6 +78,11 @@ export async function findByIdOrThrow(ctx: AuthContext, id: string) {
   const order = await findById(ctx, id)
   if (!order) throw new NotFoundError('Order not found')
   return order
+}
+
+/** Scoped count. For a tab badge, where loading the rows themselves is waste. */
+export async function countOrders(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}) {
+  return Order.countDocuments(scoped(ctx, filter))
 }
 
 export async function countByStatus(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}) {

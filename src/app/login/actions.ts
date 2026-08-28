@@ -15,8 +15,11 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 
   try {
     // Land on "/", which redirects by role — the role is not known until the
-    // credentials have actually been checked.
-    await signIn('credentials', { phone, password, redirectTo: '/' })
+    // credentials have actually been checked. Auth.js resolves `redirectTo`
+    // against the bare request origin, not Next's `basePath`, so under a
+    // path-prefixed deployment (see next.config.ts) it must be spelled out
+    // here or the redirect drops the prefix and escapes the app.
+    await signIn('credentials', { phone, password, redirectTo: `${process.env.BASE_PATH ?? ''}/` })
   } catch (err) {
     if (err instanceof AuthError) {
       return { error: 'Incorrect phone number or password.' }

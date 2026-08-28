@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Card, CardHeader, Field, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
 import { PACKING_CHOICES } from '@/lib/validation/order'
 import { confirmEnquiryAction, quoteEnquiryAction, type EnquiryState } from '../actions'
 
@@ -41,7 +41,7 @@ export function QuoteForm({
 
         <Field label="Quoted amount (₹)" htmlFor="amountRupees">
           <input id="amountRupees" name="amountRupees" inputMode="decimal"
-            defaultValue={values.amountRupees} className={inputClass} />
+            defaultValue={values.amountRupees} className={`${inputClass} tabular-nums`} />
         </Field>
 
         <Field label="Payment mode" htmlFor="paymentMode">
@@ -62,7 +62,8 @@ export function QuoteForm({
         </Field>
 
         <Field label="Contact phone" htmlFor="contactPhone">
-          <input id="contactPhone" name="contactPhone" defaultValue={values.contactPhone} className={inputClass} />
+          <input id="contactPhone" name="contactPhone" defaultValue={values.contactPhone}
+            className={`${inputClass} font-mono tabular-nums`} />
         </Field>
 
         <div className="sm:col-span-2">
@@ -72,13 +73,11 @@ export function QuoteForm({
           </Field>
         </div>
 
-        <div className="flex items-center gap-3 sm:col-span-2">
-          <button type="submit" disabled={pending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+        <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+          <Button type="submit" disabled={pending}>
             {pending ? 'Saving…' : 'Save quote'}
-          </button>
-          {state.error ? <span className="text-sm font-medium text-red-600">{state.error}</span> : null}
-          {state.ok ? <span className="text-sm font-medium text-emerald-700">{state.ok}</span> : null}
+          </Button>
+          <FormNote state={state} />
         </div>
       </form>
     </Card>
@@ -100,16 +99,19 @@ export function ConfirmForm({
         <input type="hidden" name="orderId" value={orderId} />
 
         <div>
-          <span className="mb-1 block text-sm font-medium text-slate-700">Packing</span>
-          <p className="mb-2 text-xs text-slate-500">
+          <span className="mb-1 block text-sm font-medium text-ink">Packing</span>
+          <p className="mb-2 text-xs text-muted">
             The part of a large order that gets forgotten. These print in their own KOT section.
           </p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             {PACKING_CHOICES.map((choice) => (
-              <label key={choice} className="flex items-center gap-1.5 text-sm">
+              <label
+                key={choice}
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-sunken/60 px-2.5 py-1.5 text-sm text-ink transition hover:border-line-strong"
+              >
                 <input type="checkbox" name="packingItems" value={choice}
                   defaultChecked={alreadyPacked.includes(choice)}
-                  className="rounded border-slate-300" />
+                  className="rounded border-line-strong accent-accent" />
                 {choice}
               </label>
             ))}
@@ -117,17 +119,15 @@ export function ConfirmForm({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button type="submit" disabled={pending}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+          <Button type="submit" variant="go" disabled={pending}>
             {pending ? 'Confirming…' : 'Confirm order'}
-          </button>
-          <span className="text-xs text-slate-500">
+          </Button>
+          <span className="text-xs text-muted">
             Refused unless outlet, phone, amount, payment mode and ready-by are all set.
           </span>
         </div>
 
-        {state.error ? <p className="text-sm font-medium text-red-600">{state.error}</p> : null}
-        {state.ok ? <p className="text-sm font-medium text-emerald-700">{state.ok}</p> : null}
+        <FormNote state={state} />
       </form>
     </Card>
   )

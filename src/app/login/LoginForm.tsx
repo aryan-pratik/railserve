@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { Button, Field, inputClass } from '@/components/ui'
 import { login, type LoginState } from './actions'
 
 const initial: LoginState = {}
@@ -11,12 +12,10 @@ export function LoginForm() {
   return (
     <form
       action={formAction}
-      className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+      className="space-y-4 rounded-xl border border-line bg-surface p-6 shadow-sm"
     >
-      <div>
-        <label htmlFor="phone" className="mb-1 block text-sm font-medium text-slate-700">
-          Phone number
-        </label>
+      {/* Phone, not email — there is no email field anywhere in the data model. */}
+      <Field label="Phone number" htmlFor="phone">
         <input
           id="phone"
           name="phone"
@@ -25,37 +24,30 @@ export function LoginForm() {
           autoComplete="username"
           required
           placeholder="9000000001"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+          className={`${inputClass} font-mono tabular-nums`}
         />
-      </div>
+      </Field>
 
-      <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
-          Password
-        </label>
+      <Field label="Password" htmlFor="password">
         <input
           id="password"
           name="password"
           type="password"
           autoComplete="current-password"
           required
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+          className={inputClass}
         />
-      </div>
+      </Field>
 
       {state.error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 ring-1 ring-inset ring-red-200">
           {state.error}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-lg bg-slate-900 px-3 py-2 font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
-      >
+      <Button type="submit" size="lg" disabled={pending} className="w-full">
         {pending ? 'Signing in…' : 'Sign in'}
-      </button>
+      </Button>
     </form>
   )
 }

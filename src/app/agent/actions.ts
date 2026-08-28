@@ -2,11 +2,44 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
+import { findById } from '@/lib/repo/orderRepo'
+import { getProofStore, isAllowedContentType, ProofStoreUnavailable } from '@/lib/storage'
 import { dispatchRun } from '@/lib/repo/runRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
 import { rupeesToPaise } from '@/lib/format'
 
 export type AgentActionState = { error?: string; ok?: string }
+
+/**
+ * Hands the browser a short-lived URL to PUT a delivery photo to the bucket.
+ *
+ * The mobile app gets the same thing from /api/mobile/proof-url with a bearer
+ * token; the web console has a session cookie instead, so it comes through a
+ * server action. Both paths share one ProofStore and one scoped lookup — the
+ * order is fetched through the repository first, so a URL is only ever issued
+ * for an order this rider can actually see.
+ */
+export async function requestProofUpload(
+  orderId: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; key: string } | { error: string }> {
+  const ctx = await requireRole('DELIVERY_AGENT')
+
+  if (!isAllowedContentType(contentType)) {
+    return { error: 'Only JPEG, PNG or WebP images.' }
+  }
+  const order = await findById(ctx, orderId)
+  if (!order) return { error: 'Order not found.' }
+
+  try {
+    const { uploadUrl, key } = await getProofStore().presignUpload({ orderId, contentType })
+    return { uploadUrl, key }
+  } catch (err) {
+    if (err instanceof ProofStoreUnavailable) return { error: err.message }
+    console.error('[requestProofUpload]', err)
+    return { error: 'Could not prepare the upload.' }
+  }
+}
 
 export async function dispatchRunAction(
   _prev: AgentActionState,
@@ -42,9 +75,12 @@ export async function deliverOrderAction(
   const orderId = String(formData.get('orderId') ?? '')
   const receivedBy = String(formData.get('receivedBy') ?? '').trim()
   const collected = String(formData.get('amountCollected') ?? '').trim()
+  // Set by the client after it has PUT the image to the bucket. Optional: a
+  // rider with no signal or a dead camera must still be able to close an order.
+  const proofKey = String(formData.get('proofKey') ?? '').trim()
 
-  if (!receivedBy) {
-    return { error: 'Record who received the order.' }
+  if (!receivedBy && !proofKey) {
+    return { error: 'Add a photo, or record who received the order.' }
   }
 
   try {
@@ -54,10 +90,12 @@ export async function deliverOrderAction(
       to: 'DELIVERED',
       meta: { via: 'agent-order' },
       apply: {
-        // MVP proof is a name typed at the door. proofType stays on the
-        // document so OTP and photo slot in later without a schema change.
-        proofType: 'SIGNATURE',
-        proofValue: receivedBy,
+        // A photo is stronger evidence than a name typed at the door, so it
+        // wins when both are present. proofValue holds the object key, never a
+        // URL — presigned URLs expire, and a stored one would rot.
+        ...(proofKey
+          ? { proofType: 'PHOTO' as const, proofValue: proofKey }
+          : { proofType: 'SIGNATURE' as const, proofValue: receivedBy }),
         ...(collected ? { amountCollectedPaise: rupeesToPaise(collected) ?? undefined } : {}),
       },
     })

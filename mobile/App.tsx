@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { AppState, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
-import { flushQueue, fetchRuns, newClientId, queueAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
+import { flushQueue, fetchRuns, newClientId, queueAndFlush, registerPushToken, uploadProofPhoto, ApiError, OfflineError } from './src/api'
 import {
   cacheRuns, clearSession, loadCachedRuns, loadQueue, loadSession, type StoredUser,
 } from './src/storage'
@@ -189,21 +189,42 @@ export default function App() {
     setBusy(false)
   }
 
-  async function deliver(orderId: string, receivedBy: string, amountCollected: string | null) {
+  /**
+   * Uploads a photo and returns its object key.
+   *
+   * Runs before the delivery is queued, so only the key ever enters the offline
+   * queue. Returns null on any failure — proof is optional, and a rider must
+   * never be stuck at a door because a photo would not upload.
+   */
+  async function capturePhoto(orderId: string, localUri: string): Promise<string | null> {
+    if (!token) return null
+    try {
+      return await uploadProofPhoto(token, orderId, localUri)
+    } catch {
+      return null
+    }
+  }
+
+  async function deliver(
+    orderId: string,
+    receivedBy: string,
+    amountCollected: string | null,
+    proofKey: string | null,
+  ) {
     if (!token) return
     setBusy(true)
     applyLocally(orderId, {
       status: 'DELIVERED',
       delivery: {
         deliveredAt: new Date().toISOString(),
-        proofValue: receivedBy,
+        proofValue: proofKey ?? receivedBy,
         amountCollectedPaise: amountCollected ? Math.round(Number(amountCollected) * 100) : null,
         failureReason: null,
       },
     })
     const r = await queueAndFlush(token, {
       kind: 'DELIVER_ORDER', clientId: newClientId(), orderId, receivedBy,
-      amountCollected, at: new Date().toISOString(),
+      proofKey, amountCollected, at: new Date().toISOString(),
     })
     setQueueSize(r.remaining)
     setOffline(r.offline)
@@ -300,7 +321,10 @@ export default function App() {
           busy={busy}
           offline={offline}
           onBack={() => setScreen({ name: 'run', runKey: run.key })}
-          onDeliver={(receivedBy, amount) => deliver(order.id, receivedBy, amount)}
+          onDeliver={(receivedBy, amount, proofKey) =>
+            deliver(order.id, receivedBy, amount, proofKey)
+          }
+          onCapturePhoto={(uri) => capturePhoto(order.id, uri)}
           onFail={(reason) => fail(order.id, reason)}
         />
       ) : (

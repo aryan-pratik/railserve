@@ -102,3 +102,14 @@ export function formatMoney(paise: number | null | undefined): string {
     style: 'currency', currency: 'INR', minimumFractionDigits: 2,
   }).format(paise / 100)
 }
+
+/**
+ * e.g. "₹1,940" — for boards and cards, where a column of ".00" is noise.
+ * formatMoney stays the exact form, for the KOT and anything money-critical.
+ */
+export function formatRupees(paise: number | null | undefined): string {
+  if (paise === null || paise === undefined) return '—'
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+  }).format(paise / 100)
+}

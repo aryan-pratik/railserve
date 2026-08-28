@@ -28,6 +28,19 @@ const TIMESTAMP_ON_ENTER: Partial<Record<OrderStatus, string>> = {
 }
 
 /**
+ * Statuses only a rider can reach, and therefore the ones that record who the
+ * rider was.
+ *
+ * `delivery.agentIds` used to be filled in ahead of time by an admin assigning
+ * a run. Nothing assigns now — a rider takes whatever is ready at their kitchen
+ * — so the array means "who actually handled this" and is written here, as a
+ * consequence of the transition itself. Doing it here rather than at the call
+ * site means it cannot be forgotten by a new caller, and $addToSet keeps it
+ * honest when two riders split a large bulk handover.
+ */
+const RECORDS_THE_RIDER: OrderStatus[] = ['DISPATCHED', 'DELIVERED', 'FAILED']
+
+/**
  * THE ONLY PLACE `status` IS EVER WRITTEN. Plan §4.
  *
  * - Opens a session and transaction
@@ -107,12 +120,20 @@ export async function transitionOrder(params: {
       const stamp = TIMESTAMP_ON_ENTER[to]
       if (stamp) $set[stamp] = new Date()
 
+      // dispatchedAt / deliveredAt above already carry the timing; assignedAt
+      // belongs to the admin override path and is left alone here.
+      const $addToSet =
+        ctx.role === 'DELIVERY_AGENT' && RECORDS_THE_RIDER.includes(to)
+          ? { 'delivery.agentIds': ctx.userId }
+          : undefined
+
       // The status precondition is the concurrency guard. Two managers hitting
       // "Mark Prepared" at once: the second matches zero documents.
       const res = await Order.updateOne(
         scoped(ctx, { _id, status: from }),
         {
           $set,
+          ...($addToSet ? { $addToSet } : {}),
           $push: {
             events: {
               fromStatus: from,

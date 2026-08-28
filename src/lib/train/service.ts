@@ -183,3 +183,44 @@ export function timingFor<
     }
   )
 }
+
+export type TrainFeedHealth = {
+  failing: boolean
+  /** The provider's own message, when it is failing. */
+  message: string | null
+  /** Last time a fetch actually succeeded, if ever. */
+  lastSuccessAt: Date | null
+}
+
+/**
+ * Is the live feed working right now?
+ *
+ * refreshTrainStatus already keeps the last good reading and records why the
+ * newest attempt failed — the degradation contract from plan §8. But the UI
+ * only ever saw the reading, so an expired API key, a spent quota and a train
+ * that genuinely has no live data all rendered identically as a scheduled
+ * time. This is the missing half: the reason, so it can be said out loud.
+ *
+ * Judged on the most recent attempt across all trains rather than per train,
+ * because every failure mode worth a banner is account-wide.
+ */
+export async function trainFeedHealth(withinMinutes = 120): Promise<TrainFeedHealth> {
+  await connectDb()
+
+  const row = await TrainStatus.findOne({
+    fetchedAt: { $gte: new Date(Date.now() - withinMinutes * 60_000) },
+  })
+    .sort({ fetchedAt: -1 })
+    .select('lastError lastSuccessAt')
+    .lean()
+
+  // No attempt in the window is not a failure — it means nothing needed
+  // polling, which is the normal state of a quiet morning.
+  if (!row?.lastError) return { failing: false, message: null, lastSuccessAt: null }
+
+  return {
+    failing: true,
+    message: row.lastError,
+    lastSuccessAt: row.lastSuccessAt ?? null,
+  }
+}

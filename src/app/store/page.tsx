@@ -1,126 +1,144 @@
-import Link from 'next/link'
 import { requireRole } from '@/lib/session'
-import { findMany } from '@/lib/repo/orderRepo'
+import { findRuns, findUpcomingRuns, LIVE_STATUSES } from '@/lib/repo/runRepo'
+import { countOrders } from '@/lib/repo/orderRepo'
+import { connectDb } from '@/lib/db'
+import { Restaurant } from '@/lib/models'
+import { timingForOrders, timingFor, trainFeedHealth } from '@/lib/train/service'
+import { sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate } from '@/lib/format'
-import { toCardData } from '@/lib/orderView'
-import { timingForOrders, timingFor } from '@/lib/train/service'
-import { TrainTiming } from '@/components/TrainTiming'
-import { EmptyState } from '@/components/ui'
-import { OrderCard } from '@/components/OrderCard'
+import { isSimulatedProvider } from '@/lib/train'
+import { TrainFeedNotice } from '@/components/TrainFeedNotice'
+import { TrainRunCard, type RunCardData } from '@/components/TrainRunCard'
 import { OrderFeed } from '@/components/OrderFeed'
-import { AcceptButton, GenerateKotButton, MarkPreparedButton } from './StoreOrderActions'
-import type { OrderStatus } from '@/lib/orderStatus'
+import { AutoRefresh } from '@/components/AutoRefresh'
+import { env } from '@/lib/env'
+import { ButtonLink, EmptyState, PageHeader, Tabs } from '@/components/ui'
+import { StoreRunActions } from './StoreRunActions'
 
-export const metadata = { title: 'Store · RailServe' }
+export const metadata = { title: 'Board · RailServe' }
 
-/** Orders the kitchen is finished with drop off the working view. */
-const OPEN_STATUSES: OrderStatus[] = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']
-
-export default async function StorePage(props: PageProps<'/store'>) {
+/**
+ * The store board.
+ *
+ * One card per train, ordered by when the train actually arrives — not by when
+ * the order came in, and not by the timetable. A train running 90 minutes late
+ * drops below one that is on time, because the food that leaves first is the
+ * food that should be cooked first.
+ */
+export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
-  const sp = await props.searchParams
-  const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab
-  const tab = tabParam === 'upcoming' ? 'upcoming' : 'today'
+  const { upcoming } = await props.searchParams
 
   const today = todayIST()
+  const showUpcoming = upcoming === '1'
 
-  // Plan §10: default view is today; bulk booked ahead must not clutter it.
-  const orders = await findMany(
-    ctx,
-    tab === 'today'
-      ? { serviceDate: today }
-      : { serviceDate: { $gt: today }, status: { $in: OPEN_STATUSES } },
-    { sort: tab === 'today' ? { createdAt: 1 } : { serviceDate: 1 }, limit: 200 },
-  )
+  // The inactive tab needs a number, not its rows — so it gets a count, not a
+  // second full load of up to 500 documents.
+  const otherDay = showUpcoming
+    ? { serviceDate: today }
+    : { serviceDate: { $gt: today } }
 
-  // Plan §9: cooking is fire-and-forget, sorted by arrival time. No priority
-  // queue, no computed cook deadlines.
-  const upcomingCount = (
-    await findMany(ctx, { serviceDate: { $gt: today }, status: { $in: OPEN_STATUSES } }, { limit: 200 })
-  ).length
+  const [runs, otherCount] = await Promise.all([
+    showUpcoming ? findUpcomingRuns(ctx, today) : findRuns(ctx, today),
+    countOrders(ctx, { ...otherDay, status: { $in: LIVE_STATUSES } }),
+  ])
 
-  const timings = await timingForOrders(orders)
+  const allOrders = runs.flatMap((r) => r.orders)
+  const [timings, feedHealth] = await Promise.all([
+    timingForOrders(allOrders),
+    trainFeedHealth(),
+  ])
 
-  const tabs = [
-    { key: 'today', label: 'Today', href: '/store', count: orders.length },
-    { key: 'upcoming', label: 'Upcoming', href: '/store?tab=upcoming', count: upcomingCount },
-  ]
+  // Outlet names only matter to a manager who holds more than one.
+  await connectDb()
+  const multiOutlet = ctx.restaurantIds.length > 1
+  const outletName = new Map<string, string>()
+  if (multiOutlet) {
+    const outlets = await Restaurant.find({ _id: { $in: ctx.restaurantIds } })
+      .select('name')
+      .lean()
+    for (const o of outlets) outletName.set(String(o._id), o.name)
+  }
+
+  const cards: RunCardData[] = runs.map((run) => ({
+    key: run.key,
+    trainNo: run.trainNo,
+    trainName: run.trainName,
+    stationCode: run.stationCode,
+    timing: timingFor(run.orders[0], timings),
+    orders: run.orders.map((o) => ({
+      id: String(o._id),
+      externalOrderId: o.externalOrderId,
+      orderType: o.orderType,
+      status: o.status,
+      coach: o.coach,
+      berth: o.berth,
+      handoverPoint: o.handoverPoint,
+      pax: o.pax,
+      contactName: o.contactName,
+      itemCount: o.items.filter((i) => !i.isPacking).length,
+      amountPaise: o.amountPaise,
+      paymentMode: o.paymentMode,
+      outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,
+    })),
+  }))
+
+  const sorted = sortRunsByUrgency(cards, (c) => c.timing.effectiveArrival)
+  const statusCounts = new Map(runs.map((r) => [r.key, r.statusCounts]))
+  const orderCount = allOrders.length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      <PageHeader
+        title={showUpcoming ? 'Upcoming' : 'Today'}
+        note={showUpcoming ? 'Orders booked for a later date.' : formatServiceDate(today)}
+        action={<ButtonLink href="/store/orders/new" variant="primary">+ New order</ButtonLink>}
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">
-            {tab === 'today' ? 'Today' : 'Upcoming'}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {tab === 'today'
-              ? formatServiceDate(today)
-              : 'Booked ahead — not on today’s pass yet.'}
-          </p>
+        <Tabs
+          tabs={[
+            { href: '/store', label: 'Today', count: showUpcoming ? otherCount : orderCount, active: !showUpcoming },
+            { href: '/store?upcoming=1', label: 'Upcoming', count: showUpcoming ? orderCount : otherCount, active: showUpcoming },
+          ]}
+        />
+        <div className="flex items-center gap-3">
+          <AutoRefresh seconds={30} />
+          <OrderFeed />
         </div>
-        <OrderFeed />
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200">
-        {tabs.map((t) => (
-          <Link
-            key={t.key}
-            href={t.href}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
-              tab === t.key
-                ? 'border-slate-900 text-slate-900'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-            <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-xs tabular-nums text-slate-600">
-              {t.count}
-            </span>
-          </Link>
-        ))}
-      </div>
+      <TrainFeedNotice simulated={isSimulatedProvider()} health={feedHealth} />
 
-      {orders.length === 0 ? (
+      {sorted.length === 0 ? (
         <EmptyState
-          title={tab === 'today' ? 'Nothing on the pass' : 'Nothing booked ahead'}
+          title={showUpcoming ? 'Nothing booked ahead' : 'No orders yet today'}
           note={
-            tab === 'today'
-              ? 'New orders appear here automatically within 15 seconds.'
-              : 'Bulk orders booked for a future date will show up here.'
+            showUpcoming
+              ? 'Bulk orders booked for a later date will appear here.'
+              : 'New orders appear here the moment they arrive, grouped by train.'
           }
+          action={<ButtonLink href="/store/orders/new" variant="primary">Add one by hand</ButtonLink>}
         />
       ) : (
-        <div className="space-y-4">
-          {orders.map((o) => {
-            const id = String(o._id)
-            return (
-              <OrderCard
-                key={id}
-                order={toCardData(o)}
-                href={`/store/orders/${id}`}
-                showServiceDate={tab === 'upcoming'}
-                timing={<TrainTiming timing={timingFor(o, timings)} showPlatform={false} />}
-                actions={
-                  <>
-                    {o.status === 'RECEIVED' ? <AcceptButton orderId={id} /> : null}
-                    {o.status === 'ACCEPTED' ? <GenerateKotButton orderId={id} /> : null}
-                    {o.status === 'KOT_PRINTED' ? (
-                      <>
-                        <GenerateKotButton orderId={id} reprint />
-                        <MarkPreparedButton orderId={id} />
-                      </>
-                    ) : null}
-                    {o.status === 'PREPARED' ? (
-                      <span className="text-sm font-medium text-emerald-700">
-                        On the ready shelf — waiting for dispatch
-                      </span>
-                    ) : null}
-                  </>
-                }
-              />
-            )
-          })}
+        <div className="space-y-3">
+          {sorted.map((card) => (
+            <TrainRunCard
+              key={card.key}
+              run={card}
+              orderHref={(id) => `/store/orders/${id}`}
+              footer={
+                <StoreRunActions
+                  runKey={card.key}
+                  counts={statusCounts.get(card.key) ?? {}}
+                  trainNo={card.trainNo ?? null}
+                  delayMinutes={card.timing.delayMinutes}
+                  expectedArrival={card.timing.effectiveArrival?.toISOString() ?? null}
+                  delayThresholdMinutes={env.KOT_DELAY_THRESHOLD_MINUTES}
+                />
+              }
+            />
+          ))}
         </div>
       )}
     </div>

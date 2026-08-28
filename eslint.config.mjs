@@ -54,6 +54,16 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored agent skills. Third-party scripts we do not maintain, and
+    // linting them buries this project's own findings — the impeccable skill
+    // alone contributes ~290 warnings.
+    ".claude/**",
+    ".agents/**",
+    ".codex/**",
+    // The Expo app is a separate application with its own tsconfig. Linting it
+    // with the Next.js web config applies browser rules to React Native — it
+    // reads `<Image>` as an `<img>` and demands an alt prop that does not exist.
+    "mobile/**",
   ]),
 ]);
 

@@ -24,7 +24,7 @@ cp .env.example .env.local    # then set AUTH_SECRET (see the file for a one-lin
 
 npm install
 npm run indexes               # explicit index creation — autoIndex is off
-npm run seed                  # 2 outlets, 1 admin, 2 store managers, 2 agents
+npm run seed                  # 2 outlets, 1 admin, 3 store managers, 2 riders
 npm run seed:orders           # optional: a few orders so the screens aren't empty
 
 npm run dev
@@ -41,11 +41,30 @@ Login is by **phone number**, not email. All seeded users share the password in
 
 | Phone | Role | Lands on |
 |---|---|---|
-| `9000000001` | Admin | `/admin/orders` |
+| `9000000001` | Admin | `/admin` |
 | `9000000002` | Store manager — Ganga Galaxy (CNB) | `/store` |
 | `9000000003` | Store manager — Annapurna (PRYJ) | `/store` |
+| `9000000006` | Store manager — **both outlets** | `/store` |
 | `9000000004` | Delivery agent — Ravi Kumar | `/agent` |
 | `9000000005` | Delivery agent — Suresh Yadav | `/agent` |
+
+### Upgrading an existing database
+
+A store manager used to hold one outlet (`users.restaurantId`); they now hold a
+list (`users.restaurantIds`), because one manager commonly runs several kitchens
+at the same station. Run once, before `npm run indexes`:
+
+```bash
+npm run migrate:multi-outlet
+```
+
+It is idempotent and goes through the raw driver on purpose — Mongoose's
+`strictQuery` silently drops a filter on a field the schema no longer declares,
+which would match every user instead of the ones needing migration.
+
+Existing login cookies carry the old single-outlet claim. They fail closed (no
+outlets, so nothing is visible) rather than falling through to an unscoped read
+— sign out and back in after migrating.
 
 ## Scripts
 
@@ -58,11 +77,83 @@ Login is by **phone number**, not email. All seeded users share the password in
 | `npm run indexes` | Create every index explicitly (idempotent) |
 | `npm run seed` | Outlets and staff (idempotent) |
 | `npm run seed:orders` | Demo orders (replaces previous demo data) |
+| `npm run migrate:multi-outlet` | One-shot `restaurantId` → `restaurantIds` (idempotent) |
 | `npm run worker` | BullMQ worker: train polling, leave-now, Gmail watch |
 | `cd mobile && npx expo start` | The delivery agent app |
 
 All five plan phases are implemented. See **What is deliberately not built**
 for the integrations that need credentials you supply.
+
+## The screens
+
+Both consoles are built around **the train**, not the order. One rider carries
+one train's orders to the platform in one trip, so that is the unit the kitchen
+should assemble and the unit an admin should staff.
+
+| Route | Who | What |
+|---|---|---|
+| `/store` | Store manager | The board: one card per train, orders nested inside, whole-train Accept / Print KOTs / Mark ready |
+| `/store/history` | Store manager | Lookup once an order has left the board |
+| `/store/orders/new` | Store manager | Paste an aggregator message, or a phone order by hand |
+| `/admin` | Admin | The same board across every outlet, with rider assignment |
+| `/admin/orders` | Admin | Filterable list across all outlets |
+| `/admin/enquiries` | Admin | Bulk pipeline: paste → quote → confirm |
+| `/admin/inbox` | Admin | Emails that would not parse. The nav badge is unresolved count |
+| `/admin/setup` | Admin | Outlets and staff |
+
+### Riders are not assigned work
+
+Nobody dispatches a rider to a run. A rider is attached to one or more outlets
+in Setup, sees every live run at those outlets, takes whatever is ready, and the
+system records who actually handled it — `delivery.agentIds` is written by
+`transitionOrder` on DISPATCHED / DELIVERED / FAILED rather than filled in ahead
+of time. An admin can correct that record on a single order, but there is no
+assignment step anywhere in the workflow.
+
+This makes outlet membership the whole of a rider's data scope, exactly as it is
+for a manager: `orderRepo.scopeFilter` gives both roles
+`{ restaurantId: { $in: ctx.restaurantIds } }`, and a user holding no outlets
+matches nothing rather than everything.
+
+**A rider carried over from the old model holds no outlets and will see an empty
+board** until an admin gives them one — `npm run migrate:multi-outlet` counts and
+warns about exactly that.
+
+### Delivery proof
+
+A rider can attach a photo at the door. It is optional on purpose: a dead camera
+or no signal at a platform must never stop an order being closed.
+
+The image goes straight from the device to Cloudflare R2 via a short-lived
+presigned URL — it never passes through this server. `delivery.proofValue` holds
+the object *key*, never a URL, because presigned URLs expire; viewing one signs
+a fresh URL per render. Photos are downscaled on the device first (1280px, ~200 KB)
+because the upload happens from a station.
+
+Leave the `R2_*` variables blank and photo capture simply does not appear.
+Delivery still works — that is a supported configuration, not a broken one.
+
+**Cards are ordered by when the train actually arrives**, not by the timetable
+and not by when the order came in — `sortRunsByUrgency` in `src/lib/runs.ts`.
+A train running 90 minutes late drops below one that is on time, because the
+food that leaves first is the food that should be cooked first. The coloured
+edge on each card is the same fact at a glance: red under 20 minutes, amber
+under 45.
+
+A store manager holds a **list** of outlets and sees all of them on one board,
+each order tagged with its kitchen. There is no outlet switcher — checking the
+other counter should not cost a click.
+
+### Design system
+
+Tokens live in `src/app/globals.css`; primitives in `src/components/ui.tsx`.
+Type is Inter for the UI and JetBrains Mono for train numbers, seat codes and
+the KOT — set in `src/app/layout.tsx` and nowhere else. Slashed zeros are on
+globally: train numbers and coach codes get read aloud and typed back in, and an
+ambiguous `0`/`O` is a wrong delivery.
+
+Status colour is decided in exactly one place, `STATUS_STYLES`. The KOT view is
+deliberately outside all of this — black on white for an 80mm thermal head.
 
 ## The two things holding this together
 

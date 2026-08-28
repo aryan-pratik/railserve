@@ -1,12 +1,12 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Card, CardHeader, Field, inputClass } from '@/components/ui'
-import { saveUser, type UserState } from './actions'
+import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
+import { saveUser, type UserState } from './staffActions'
 
 const initial: UserState = {}
 
-export function UserForm({ outlets }: { outlets: { id: string; label: string }[] }) {
+export function StaffForm({ outlets }: { outlets: { id: string; label: string }[] }) {
   const [state, action, pending] = useActionState(saveUser, initial)
   const [role, setRole] = useState('STORE_MANAGER')
 
@@ -31,15 +31,24 @@ export function UserForm({ outlets }: { outlets: { id: string; label: string }[]
           </select>
         </Field>
 
-        <Field label="Outlet" htmlFor="restaurantId"
-          hint={role === 'STORE_MANAGER' ? 'Required — this is what scopes their dashboard.' : 'Only store managers belong to an outlet.'}>
-          <select id="restaurantId" name="restaurantId" disabled={role !== 'STORE_MANAGER'}
-            className={inputClass}>
-            <option value="">—</option>
+        <Field label="Outlets"
+          hint={
+            role === 'ADMIN'
+              ? 'Admins see every outlet, so they hold none explicitly.'
+              : role === 'STORE_MANAGER'
+                ? 'Tick every outlet this manager runs — all of them share one board.'
+                : 'Riders see the live runs of the outlets they are attached to. Without one, their app is empty.'
+          }>
+          <div className="space-y-1.5">
             {outlets.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
+              <label key={o.id} className="flex items-center gap-2 text-sm text-muted">
+                <input type="checkbox" name="restaurantIds" value={o.id}
+                  disabled={role === 'ADMIN'}
+                  className="size-4 rounded border-line-strong disabled:opacity-40" />
+                {o.label}
+              </label>
             ))}
-          </select>
+          </div>
         </Field>
 
         <Field label="Initial password" htmlFor="password">
@@ -47,12 +56,10 @@ export function UserForm({ outlets }: { outlets: { id: string; label: string }[]
         </Field>
 
         <div className="sm:col-span-2 flex items-center gap-3">
-          <button type="submit" disabled={pending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+          <Button type="submit" disabled={pending}>
             {pending ? 'Saving…' : 'Create staff member'}
-          </button>
-          {state.error ? <span className="text-sm font-medium text-red-600">{state.error}</span> : null}
-          {state.ok ? <span className="text-sm font-medium text-emerald-700">{state.ok}</span> : null}
+          </Button>
+          <FormNote state={state} />
         </div>
       </form>
     </Card>

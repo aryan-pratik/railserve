@@ -1,6 +1,6 @@
 'use client'
 
-import { useSyncExternalStore } from 'react'
+import { useNowMs } from './useNow'
 
 function describe(msRemaining: number): { text: string; tone: string } {
   const late = msRemaining < 0
@@ -12,42 +12,29 @@ function describe(msRemaining: number): { text: string; tone: string } {
 
   if (late) return { text: `${span} overdue`, tone: 'bg-red-100 text-red-800 ring-red-200' }
   if (mins <= 30) return { text: `in ${span}`, tone: 'bg-amber-100 text-amber-800 ring-amber-200' }
-  return { text: `in ${span}`, tone: 'bg-slate-100 text-slate-700 ring-slate-200' }
+  return { text: `in ${span}`, tone: 'bg-sunken text-muted ring-line' }
 }
-
-const TICK_MS = 30_000
-
-function subscribe(onChange: () => void) {
-  const t = setInterval(onChange, TICK_MS)
-  return () => clearInterval(t)
-}
-
-// Bucketed to the tick so the snapshot is referentially stable between reads —
-// returning a fresh Date.now() every call would spin React forever.
-const getSnapshot = () => Math.floor(Date.now() / TICK_MS)
-
-// null on the server: rendering a countdown during SSR and again on the client
-// guarantees a mismatch, because time moves between the two.
-const getServerSnapshot = () => null
 
 /**
  * Shown only when readyBy is set — which in practice means bulk orders. Retail
  * has no promised kitchen time, and a countdown to nothing is just noise.
  */
 export function ReadyByCountdown({ readyBy }: { readyBy: string }) {
-  const bucket = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+  // null on the server: rendering a countdown during SSR and again on the client
+  // guarantees a mismatch, because time moves between the two.
+  const nowMs = useNowMs(30_000)
 
-  if (bucket === null) {
+  if (nowMs === null) {
     return (
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-400 ring-1 ring-inset ring-slate-200">
+      <span className="rounded-full bg-sunken px-2 py-0.5 text-xs font-medium text-faint ring-1 ring-inset ring-line">
         ready by …
       </span>
     )
   }
 
-  const { text, tone } = describe(new Date(readyBy).getTime() - bucket * TICK_MS)
+  const { text, tone } = describe(new Date(readyBy).getTime() - nowMs)
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${tone}`}>
+    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${tone}`}>
       ready {text}
     </span>
   )

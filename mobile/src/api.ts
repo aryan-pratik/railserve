@@ -51,6 +51,45 @@ export async function fetchRuns(token: string): Promise<RunsResponse> {
   return request<RunsResponse>('/api/mobile/runs', token)
 }
 
+/**
+ * Uploads a delivery photo straight to the object store and returns its key.
+ *
+ * Two steps on purpose: the server signs a short-lived URL, and the phone PUTs
+ * to the bucket itself. Routing a photo through the API would double the bytes
+ * over a station connection and buffer images in the app server for nothing.
+ *
+ * Deliberately NOT queued for offline replay. A queued mutation has to stay
+ * small enough to sit in AsyncStorage; a pending 200 KB image per order does
+ * not. With no signal the rider delivers without a photo, which is why proof
+ * is optional.
+ */
+export async function uploadProofPhoto(
+  token: string,
+  orderId: string,
+  localUri: string,
+): Promise<string> {
+  const { uploadUrl, key } = await request<{ uploadUrl: string; key: string }>(
+    '/api/mobile/proof-url',
+    token,
+    { method: 'POST', body: JSON.stringify({ orderId, contentType: 'image/jpeg' }) },
+  )
+
+  const blob = await (await fetch(localUri)).blob()
+  let res: Response
+  try {
+    res = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: blob,
+      headers: { 'content-type': 'image/jpeg' },
+    })
+  } catch {
+    throw new OfflineError()
+  }
+  if (!res.ok) throw new ApiError(`Photo upload failed (${res.status})`, res.status)
+
+  return key
+}
+
 export async function registerPushToken(token: string, pushToken: string | null) {
   return request<{ ok: boolean }>('/api/mobile/device', token, {
     method: 'POST',

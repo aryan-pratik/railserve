@@ -30,23 +30,25 @@ export async function makeRestaurant(name: string, stationCode: string, aliases:
   })
 }
 
+/** Accepts one outlet or several — a store manager may hold many. */
 export async function makeUser(
   role: AuthContext['role'],
   phone: string,
-  restaurantId: mongoose.Types.ObjectId | null = null,
+  outlets: mongoose.Types.ObjectId | mongoose.Types.ObjectId[] | null = null,
 ) {
-  return User.create({ name: `${role} ${phone}`, phone, passwordHash: 'x', role, restaurantId })
+  const restaurantIds = outlets === null ? [] : Array.isArray(outlets) ? outlets : [outlets]
+  return User.create({ name: `${role} ${phone}`, phone, passwordHash: 'x', role, restaurantIds })
 }
 
 export function ctxFor(user: {
   _id: mongoose.Types.ObjectId
   role: string
-  restaurantId?: mongoose.Types.ObjectId | null
+  restaurantIds?: mongoose.Types.ObjectId[] | null
 }): AuthContext {
   return {
     userId: user._id,
     role: user.role as AuthContext['role'],
-    restaurantId: user.restaurantId ?? null,
+    restaurantIds: user.restaurantIds ?? [],
   }
 }
 
@@ -59,6 +61,19 @@ export async function makeOrder(overrides: Record<string, unknown> = {}) {
     orderType: 'RETAIL',
     externalOrderId: `TEST-${Date.now()}-${seq}`,
     status: 'RECEIVED',
+    // Birth event, exactly as createManualOrder and the ingest pipeline write
+    // one. Without it a fixture order has no RECEIVED timestamp, and anything
+    // measuring from "when did this arrive" — outletAnalytics' received-to-
+    // delivered duration, for one — silently reads null.
+    events: [
+      {
+        fromStatus: null,
+        toStatus: 'RECEIVED',
+        userId: null,
+        meta: { action: 'CREATED', source: 'TEST' },
+        createdAt: new Date(),
+      },
+    ],
     stationCode: 'CNB',
     serviceDate: '2026-08-27',
     timingSource: 'SCHEDULED',

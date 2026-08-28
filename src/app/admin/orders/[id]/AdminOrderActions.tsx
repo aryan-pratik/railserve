@@ -1,10 +1,20 @@
 'use client'
 
 import { useActionState } from 'react'
+import { Button, FormNote } from '@/components/ui'
 import { adminTransitionAction, assignAgentsAction, type ActionState } from './actions'
 
 const initial: ActionState = {}
 
+/**
+ * Corrects who is recorded as having delivered an order.
+ *
+ * Riders are not assigned work any more — the system writes whoever actually
+ * dispatched or delivered. This is the exception path: someone used a
+ * colleague's phone, a record is wrong, a delivery was logged by the wrong
+ * account. It edits history, so it is deliberately an admin-only, per-order
+ * control rather than anything on a board.
+ */
 export function AssignAgents({
   orderId, agents, assigned,
 }: {
@@ -18,7 +28,7 @@ export function AssignAgents({
     <form action={action} className="space-y-3 p-4">
       <input type="hidden" name="orderId" value={orderId} />
       {agents.length === 0 ? (
-        <p className="text-sm text-slate-500">No active delivery agents. Add one under Staff.</p>
+        <p className="text-sm text-muted">No active riders. Add one under Setup → Staff.</p>
       ) : (
         <div className="space-y-2">
           {agents.map((a) => (
@@ -26,26 +36,23 @@ export function AssignAgents({
               <input
                 type="checkbox" name="agentIds" value={a.id}
                 defaultChecked={assigned.includes(a.id)}
-                className="rounded border-slate-300"
+                className="rounded border-line-strong"
               />
-              <span className="font-medium text-slate-900">{a.name}</span>
-              <span className="text-slate-500">{a.phone}</span>
+              <span className="font-medium text-ink">{a.name}</span>
+              <span className="text-faint">{a.phone}</span>
             </label>
           ))}
         </div>
       )}
 
-      {state.error ? <p className="text-xs font-medium text-red-600">{state.error}</p> : null}
-      {state.ok ? <p className="text-xs font-medium text-emerald-700">{state.ok}</p> : null}
+      <FormNote state={state} />
 
-      <button
-        type="submit" disabled={pending || agents.length === 0}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-      >
-        {pending ? 'Saving…' : 'Save assignment'}
-      </button>
-      <p className="text-xs text-slate-500">
-        Multiple agents are allowed — a large bulk handover is not a one-agent job.
+      <Button type="submit" size="sm" variant="secondary" disabled={pending || agents.length === 0}>
+        {pending ? 'Saving…' : 'Correct the record'}
+      </Button>
+      <p className="text-xs text-muted">
+        Normally filled in automatically by whoever delivered. More than one is
+        valid — a large bulk handover is not a one-rider job.
       </p>
     </form>
   )
@@ -60,7 +67,7 @@ export function TransitionButtons({
   const [state, action, pending] = useActionState(adminTransitionAction, initial)
 
   if (options.length === 0) {
-    return <p className="px-4 py-4 text-sm text-slate-500">No further actions available to you.</p>
+    return <p className="px-4 py-4 text-sm text-faint">No further actions available to you.</p>
   }
 
   return (
@@ -70,21 +77,13 @@ export function TransitionButtons({
           <form key={o.to} action={action}>
             <input type="hidden" name="orderId" value={orderId} />
             <input type="hidden" name="to" value={o.to} />
-            <button
-              type="submit" disabled={pending}
-              className={
-                o.tone === 'danger'
-                  ? 'rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50'
-                  : 'rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50'
-              }
-            >
+            <Button type="submit" size="sm" variant={o.tone} disabled={pending}>
               {o.label}
-            </button>
+            </Button>
           </form>
         ))}
       </div>
-      {state.error ? <p className="text-xs font-medium text-red-600">{state.error}</p> : null}
-      {state.ok ? <p className="text-xs font-medium text-emerald-700">{state.ok}</p> : null}
+      <FormNote state={state} />
     </div>
   )
 }

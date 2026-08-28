@@ -100,8 +100,22 @@ describe('createManualOrder', () => {
     expect(o.handoverPoint).toContain('Mr Sharma')
   })
 
-  it('refuses a non-admin', async () => {
-    await expect(createManualOrder(manager, retail())).rejects.toBeInstanceOf(ForbiddenError)
+  it('lets a store manager create into an outlet they hold', async () => {
+    const doc = await createManualOrder(manager, retail())
+    expect(String(doc.restaurantId)).toBe(outletId)
+    expect(String(doc.createdById)).toBe(String(manager.userId))
+  })
+
+  it('refuses a store manager an outlet they do not hold', async () => {
+    const other = await makeRestaurant('SHREE ANNAPURNA', 'PRYJ')
+    await expect(
+      createManualOrder(manager, retail({ restaurantId: String(other._id) })),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+  })
+
+  it('refuses a delivery agent outright', async () => {
+    const agent = ctxFor(await makeUser('DELIVERY_AGENT', '9000000003'))
+    await expect(createManualOrder(agent, retail())).rejects.toBeInstanceOf(ForbiddenError)
   })
 
   it('refuses an outlet that does not exist', async () => {

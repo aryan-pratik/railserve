@@ -10,13 +10,14 @@ import { Card, CardHeader, StatusBadge, TypeBadge } from '@/components/ui'
 import { TrainTiming } from '@/components/TrainTiming'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { EventLog } from '@/components/EventLog'
+import { DeliveryProof } from '@/components/DeliveryProof'
 import { AssignAgents, TransitionButtons } from './AdminOrderActions'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-4 px-4 py-2.5 text-sm">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-right font-medium text-slate-900">{value}</span>
+      <span className="text-faint">{label}</span>
+      <span className="text-right font-medium text-ink">{value}</span>
     </div>
   )
 }
@@ -48,6 +49,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   const timings = await timingForOrders([order])
   const timing = timingFor(order, timings)
   const assigned = order.delivery.agentIds.map(String)
+  const riderName = new Map(agents.map((a) => [String(a._id), a.name]))
 
   const nextStatuses = allowedNextStatuses(order.status as OrderStatus, 'ADMIN')
   const options = nextStatuses.map((to) => ({
@@ -71,12 +73,12 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             <TypeBadge type={order.orderType} />
             <StatusBadge status={order.status} />
           </div>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-muted">
             {outlet ? `${outlet.name} · ${outlet.stationCode}` : 'No outlet'} ·{' '}
             {formatServiceDate(order.serviceDate)}
           </p>
         </div>
-        <Link href="/admin/orders" className="text-sm text-slate-600 underline-offset-2 hover:underline">
+        <Link href="/admin/orders" className="text-sm text-muted underline-offset-2 hover:underline">
           ← All orders
         </Link>
       </div>
@@ -85,7 +87,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
         <div className="space-y-5 lg:col-span-2">
           <Card>
             <CardHeader title="Journey" />
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-line">
               <Row label="Train" value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}` : 'Not specified'} />
               <Row label="Station" value={order.stationCode} />
               <Row label="Scheduled arrival" value={formatIST(order.scheduledArrival)} />
@@ -105,7 +107,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                   order.contactPhone ? (
                     <>
                       {order.contactName ?? '—'}{' '}
-                      <a href={`tel:${order.contactPhone}`} className="text-slate-600 underline">
+                      <a href={`tel:${order.contactPhone}`} className="text-muted underline">
                         {order.contactPhone}
                       </a>
                     </>
@@ -119,18 +121,18 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
 
           <Card>
             <CardHeader title="Items" />
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-line">
               {kitchenItems.map((i) => (
                 <li key={String(i._id)} className="px-4 py-3 text-sm">
                   <div className="flex justify-between gap-4">
-                    <span className="font-medium text-slate-900">{i.name}</span>
-                    <span className="shrink-0 text-slate-600">
+                    <span className="font-medium text-ink">{i.name}</span>
+                    <span className="shrink-0 text-muted">
                       × {i.qty}
                       {i.pricePaise !== null ? ` · ${formatMoney(i.pricePaise)}` : ''}
                     </span>
                   </div>
                   {i.spec ? (
-                    <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3 font-sans text-xs text-slate-700">
+                    <pre className="mt-2 whitespace-pre-wrap rounded bg-sunken p-3 font-sans text-xs text-muted">
                       {i.spec}
                     </pre>
                   ) : null}
@@ -138,13 +140,13 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
               ))}
               {packingItems.length > 0 ? (
                 <li className="px-4 py-3">
-                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-faint">
                     Packing
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {packingItems.map((i) => (
                       <span key={String(i._id)}
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                        className="rounded-full bg-sunken px-2 py-0.5 text-xs text-muted">
                         {i.name} × {i.qty}
                       </span>
                     ))}
@@ -152,8 +154,8 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                 </li>
               ) : null}
             </ul>
-            <div className="flex justify-between border-t border-slate-200 px-4 py-3 text-sm">
-              <span className="text-slate-500">{order.paymentMode ?? 'No payment mode'}</span>
+            <div className="flex justify-between border-t border-line px-4 py-3 text-sm">
+              <span className="text-faint">{order.paymentMode ?? 'No payment mode'}</span>
               <span className="font-semibold">{formatMoney(order.amountPaise)}</span>
             </div>
           </Card>
@@ -161,7 +163,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           {order.notes ? (
             <Card>
               <CardHeader title="Notes" />
-              <p className="whitespace-pre-wrap px-4 py-3 text-sm text-slate-700">{order.notes}</p>
+              <p className="whitespace-pre-wrap px-4 py-3 text-sm text-muted">{order.notes}</p>
             </Card>
           ) : null}
 
@@ -185,8 +187,13 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             <TransitionButtons orderId={String(order._id)} options={options} />
           </Card>
 
+          <DeliveryProof
+            delivery={order.delivery}
+            riders={assigned.map((id) => riderName.get(id) ?? 'Unknown rider')}
+          />
+
           <Card>
-            <CardHeader title="Delivery agents" />
+            <CardHeader title="Correct the rider" />
             <AssignAgents
               orderId={String(order._id)}
               assigned={assigned}
@@ -196,7 +203,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
 
           <Card>
             <CardHeader title="Provenance" />
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-line">
               <Row label="Source" value={order.source} />
               <Row label="Created" value={formatIST(order.createdAt)} />
               <Row label="Updated" value={formatIST(order.updatedAt)} />

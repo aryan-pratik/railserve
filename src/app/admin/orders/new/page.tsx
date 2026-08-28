@@ -2,45 +2,34 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { todayIST } from '@/lib/format'
-import { EmptyState } from '@/components/ui'
-import { OrderForm } from './OrderForm'
+import { OrderComposer } from '@/components/OrderComposer'
+import { PageHeader, ButtonLink } from '@/components/ui'
+import { createOrderAction, pasteOrderAction } from '@/app/actions/orders'
 
 export const metadata = { title: 'New order · RailServe' }
 
-export default async function NewOrderPage() {
+export default async function AdminNewOrderPage() {
   await requireRole('ADMIN')
-  await connectDb()
 
+  await connectDb()
   const outlets = await Restaurant.find({ active: true })
-    .select('name stationCode stationName')
+    .select('name stationCode')
     .sort({ name: 1 })
     .lean()
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">New order</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Manual entry. Gmail and WhatsApp ingestion write this same document later.
-        </p>
-      </div>
-
-      {outlets.length === 0 ? (
-        <EmptyState
-          title="No active outlets"
-          note="Add an outlet before creating orders — an order must belong to a kitchen."
-        />
-      ) : (
-        <OrderForm
-          today={todayIST()}
-          outlets={outlets.map((o) => ({
-            id: String(o._id),
-            name: o.name,
-            stationCode: o.stationCode,
-            stationName: o.stationName ?? null,
-          }))}
-        />
-      )}
+      <PageHeader
+        title="New order"
+        note="Paste an aggregator message, or enter a phone order by hand."
+        action={<ButtonLink href="/admin">Back to board</ButtonLink>}
+      />
+      <OrderComposer
+        outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
+        today={todayIST()}
+        pasteAction={pasteOrderAction}
+        createAction={createOrderAction}
+      />
     </div>
   )
 }

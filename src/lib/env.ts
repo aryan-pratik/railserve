@@ -17,7 +17,11 @@ const EnvSchema = z.object({
   // third-party account; setting a key is the whole switch to real data.
   TRAIN_API_PROVIDER: z.enum(['simulator', 'rapidapi']).default('simulator'),
   TRAIN_API_KEY: z.string().default(''),
-  TRAIN_API_HOST: z.string().default('indianrailapi.p.rapidapi.com'),
+  // Must match the vendor src/lib/train/rapidapi.ts is written against — the
+  // adapter maps that product's exact field names and fails closed on anything
+  // else, so a different RapidAPI host here means every call fails silently
+  // into scheduled times.
+  TRAIN_API_HOST: z.string().default('indian-railway-irctc.p.rapidapi.com'),
 
   // Gmail ingestion. All blank means the transport is off and ingestion is
   // manual; the parsers and the unparsed inbox work either way.
@@ -28,6 +32,14 @@ const EnvSchema = z.object({
   GMAIL_USER_ID: z.string().default('me'),
   GMAIL_WEBHOOK_TOKEN: z.string().default(''),
   INGEST_STALE_ALERT_HOURS: z.coerce.number().int().min(1).default(6),
+
+  // Delivery proof photos (Cloudflare R2, S3 API). All blank means photo
+  // capture is simply unavailable — proof is optional, so this is a supported
+  // configuration rather than a missing one.
+  R2_ACCOUNT_ID: z.string().default(''),
+  R2_BUCKET: z.string().default(''),
+  R2_ACCESS_KEY_ID: z.string().default(''),
+  R2_SECRET_ACCESS_KEY: z.string().default(''),
 
   DISPATCH_BUFFER_MINUTES: z.coerce.number().int().min(0).default(5),
   KOT_DELAY_THRESHOLD_MINUTES: z.coerce.number().int().min(0).default(45),

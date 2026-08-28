@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui'
 
 /**
  * Live order feed for the store dashboard (plan §10: SSE plus an audible alert
@@ -55,22 +56,21 @@ export function OrderFeed() {
 
   return (
     <div className="no-print flex items-center gap-3 text-xs">
-      <span className="flex items-center gap-1.5 text-slate-500">
+      <span className="flex items-center gap-1.5 text-muted">
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${
-            connected ? 'animate-pulse bg-emerald-500' : 'bg-slate-300'
+            connected ? 'animate-pulse bg-emerald-500' : 'bg-line-strong'
           }`}
         />
         {connected ? 'Live' : 'Reconnecting…'}
       </span>
 
       {soundOn ? (
-        <span className="text-slate-400">🔔 alert on</span>
+        <span className="text-faint">🔔 alert on</span>
       ) : (
-        <button type="button" onClick={enableSound}
-          className="rounded border border-slate-300 px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50">
+        <Button type="button" variant="secondary" size="sm" onClick={enableSound}>
           Enable sound
-        </button>
+        </Button>
       )}
 
       {lastEvent ? <span className="font-medium text-emerald-700">{lastEvent}</span> : null}

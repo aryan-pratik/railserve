@@ -14,7 +14,7 @@ async function main() {
 
   const admin = await User.findOne({ role: 'ADMIN' })
   if (!admin) throw new Error('No admin user. Run `npm run seed` first.')
-  const ctx: AuthContext = { userId: admin._id, role: 'ADMIN', restaurantId: null }
+  const ctx: AuthContext = { userId: admin._id, role: 'ADMIN', restaurantIds: [] }
 
   const ganga = await Restaurant.findOne({ name: 'HOTEL GANGA GALAXY' })
   const annapurna = await Restaurant.findOne({ name: 'SHREE ANNAPURNA BHOJNALAYA' })

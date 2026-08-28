@@ -1,38 +1,34 @@
 'use client'
 
 import { useActionState, useState, useTransition } from 'react'
+import { Button, FormNote } from '@/components/ui'
 import {
   acceptOrder, checkKotDelay, generateKot, markPrepared, type StoreActionState,
 } from './actions'
 
 const initial: StoreActionState = {}
 
-function Feedback({ state }: { state: StoreActionState }) {
-  if (state.error) {
-    return (
-      <p role="alert" className="mt-2 text-xs font-medium text-red-600">
-        {state.error}
-      </p>
-    )
-  }
-  return null
-}
-
 export function AcceptButton({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState(acceptOrder, initial)
   return (
     <form action={action}>
       <input type="hidden" name="orderId" value={orderId} />
-      <button type="submit" disabled={pending}
-        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
+      <Button type="submit" disabled={pending}>
         {pending ? 'Accepting…' : 'Accept'}
-      </button>
-      <Feedback state={state} />
+      </Button>
+      <FormNote state={state} />
     </form>
   )
 }
 
 type DelayInfo = Awaited<ReturnType<typeof checkKotDelay>>
+
+function formatDelay(minutes: number | null): string {
+  if (minutes === null) return 'an unknown amount'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
 
 /**
  * Plan §9: the delay guard asks, it does not block. The manager decides whether
@@ -61,32 +57,33 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
     })
   }
 
-  const className = reprint
-    ? 'rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50'
-    : 'rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50'
-
   return (
     <>
-      <button type="button" onClick={onClick} disabled={checking} className={className}>
+      <Button
+        type="button"
+        onClick={onClick}
+        disabled={checking}
+        variant={reprint ? 'secondary' : 'primary'}
+      >
         {checking ? 'Checking train…' : reprint ? 'Reprint KOT' : 'Generate KOT'}
-      </button>
+      </Button>
 
       {delay ? (
         <div
           role="alertdialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
         >
-          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-slate-900">
-              {delay.trainNo} is running late
+          <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-ink">
+              <span className="font-mono">{delay.trainNo}</span> is running late
             </h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Running <strong>{formatDelay(delay.delayMinutes)}</strong> late
+            <p className="mt-2 text-sm text-muted">
+              Running <strong className="text-ink">{formatDelay(delay.delayMinutes)}</strong> late
               {delay.expected ? (
                 <>
                   , expected{' '}
-                  <strong>
+                  <strong className="text-ink tabular-nums">
                     {new Date(delay.expected).toLocaleTimeString('en-IN', {
                       timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true,
                     })}
@@ -96,21 +93,13 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
               . Print the KOT anyway?
             </p>
             <div className="mt-4 flex gap-2">
-              <form
-                action={generateKot}
-                className="flex-1"
-                onSubmit={() => setDelay(null)}
-              >
+              <form action={generateKot} className="flex-1" onSubmit={() => setDelay(null)}>
                 <input type="hidden" name="orderId" value={orderId} />
-                <button type="submit"
-                  className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-                  Print anyway
-                </button>
+                <Button type="submit" className="w-full">Print anyway</Button>
               </form>
-              <button type="button" onClick={() => setDelay(null)}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <Button type="button" variant="secondary" onClick={() => setDelay(null)}>
                 Wait
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -119,23 +108,15 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
   )
 }
 
-function formatDelay(minutes: number | null): string {
-  if (minutes === null) return 'an unknown amount'
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
 export function MarkPreparedButton({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState(markPrepared, initial)
   return (
     <form action={action}>
       <input type="hidden" name="orderId" value={orderId} />
-      <button type="submit" disabled={pending}
-        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-        {pending ? 'Saving…' : 'Mark prepared'}
-      </button>
-      <Feedback state={state} />
+      <Button type="submit" variant="go" disabled={pending}>
+        {pending ? 'Saving…' : 'Mark ready'}
+      </Button>
+      <FormNote state={state} />
     </form>
   )
 }
