@@ -2,7 +2,7 @@ import { requireRole } from '@/lib/session'
 import { findRuns, findUpcomingRuns, LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { countOrders } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
-import { Restaurant } from '@/lib/models'
+import { Restaurant, User } from '@/lib/models'
 import { timingForOrders, timingFor, trainFeedHealth } from '@/lib/train/service'
 import { sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate } from '@/lib/format'
@@ -42,6 +42,16 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     showUpcoming ? findUpcomingRuns(ctx, today) : findRuns(ctx, today),
     countOrders(ctx, { ...otherDay, status: { $in: LIVE_STATUSES } }),
   ])
+
+  const riderDocs = await User.find({
+    role: 'DELIVERY_AGENT',
+    active: true,
+    ...(ctx.role === 'STORE_MANAGER' ? { restaurantIds: { $in: ctx.restaurantIds } } : {}),
+  })
+    .select('name')
+    .sort({ name: 1 })
+    .lean()
+  const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
 
   const allOrders = runs.flatMap((r) => r.orders)
   const [timings, feedHealth] = await Promise.all([
@@ -135,6 +145,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
                   delayMinutes={card.timing.delayMinutes}
                   expectedArrival={card.timing.effectiveArrival?.toISOString() ?? null}
                   delayThresholdMinutes={env.KOT_DELAY_THRESHOLD_MINUTES}
+                  riders={riders}
                 />
               }
             />

@@ -132,3 +132,35 @@ export async function failOrderAction(
   revalidatePath(`/agent/orders/${orderId}`)
   return { ok: 'Marked failed.' }
 }
+
+/**
+ * A rider takes one order off the shelf.
+ *
+ * The run-level button covers the normal case — a whole train in one trip — but
+ * an order can be ready before the rest of its train, and a rider who has it in
+ * hand should be able to say so without waiting for the others to be cooked.
+ * transitionOrder records them as the carrier automatically.
+ */
+export async function takeOrderAction(
+  _prev: AgentActionState,
+  formData: FormData,
+): Promise<AgentActionState> {
+  const ctx = await requireRole('DELIVERY_AGENT')
+  const orderId = String(formData.get('orderId') ?? '')
+
+  try {
+    await transitionOrder({
+      ctx,
+      orderId,
+      to: 'DISPATCHED',
+      meta: { via: 'agent-order' },
+    })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not take this order.' }
+  }
+
+  revalidatePath('/agent')
+  revalidatePath(`/agent/orders/${orderId}`)
+  revalidatePath('/store')
+  return { ok: 'You have it.' }
+}

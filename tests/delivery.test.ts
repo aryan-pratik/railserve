@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { findById, findMany } from '../src/lib/repo/orderRepo'
 import { transitionOrder, assignAgents } from '../src/lib/repo/transitionOrder'
-import { dispatchRun, findRun, findRuns } from '../src/lib/repo/runRepo'
+import { dispatchRun, findRun, findRuns, handRunToRider } from '../src/lib/repo/runRepo'
 import { ForbiddenError, type AuthContext } from '../src/lib/authContext'
 import { runKeyFor } from '../src/lib/runs'
 import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
@@ -221,5 +221,78 @@ describe('delivery: outlet scope, dispatch, proof', () => {
     const humanEvents = delivered.events.filter((e) => e.fromStatus !== null)
     expect(humanEvents.length).toBeGreaterThan(0)
     expect(humanEvents.every((e) => e.userId)).toBe(true)
+  })
+})
+
+/**
+ * A store manager can push food out on a rider's behalf — but the record has
+ * to name the rider, never the manager. "Who has my food" is the only question
+ * delivery.agentIds exists to answer.
+ */
+describe('store manager hands a run to a rider', () => {
+  let manager: AuthContext
+  let rider: AuthContext
+  let riderId: import('mongoose').Types.ObjectId
+  let managerId: import('mongoose').Types.ObjectId
+  let runKey2: string
+  let outlet: import('mongoose').Types.ObjectId
+
+  beforeAll(async () => {
+    await resetDb()
+    const g = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
+    outlet = g._id
+    const m = await makeUser('STORE_MANAGER', '9000000020', g._id)
+    const r = await makeUser('DELIVERY_AGENT', '9000000021', g._id)
+    managerId = m._id
+    riderId = r._id
+    manager = ctxFor(m)
+    rider = ctxFor(r)
+
+    await makeOrder({
+      restaurantId: outlet, serviceDate: DATE, trainNo: '12951', trainName: 'RAJDHANI',
+      stationCode: 'CNB', coach: 'A1', scheduledArrival: new Date('2026-08-27T09:00:00Z'),
+    })
+    runKey2 = runKeyFor({ trainNo: '12951', serviceDate: DATE, stationCode: 'CNB' })
+
+    const run = await findRun(manager, runKey2)
+    for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
+      await transitionOrder({ ctx: manager, orderId: String(run!.orders[0]._id), to })
+    }
+  })
+
+  afterAll(async () => {
+    await disconnectDb()
+  })
+
+  it('records the named rider, not the manager who clicked', async () => {
+    const res = await handRunToRider(manager, runKey2, String(riderId))
+    expect(res.moved).toBe(1)
+    expect(res.errors).toEqual([])
+
+    const run = await findRun(rider, runKey2)
+    const order = run!.orders[0]
+    expect(order.status).toBe('DISPATCHED')
+    expect(order.delivery.agentIds.map(String)).toEqual([String(riderId)])
+    expect(order.delivery.agentIds.map(String)).not.toContain(String(managerId))
+  })
+
+  it('refuses an id that is not an active rider', async () => {
+    const res = await handRunToRider(manager, runKey2, String(managerId))
+    expect(res.moved).toBe(0)
+    expect(res.errors[0]).toContain('not active')
+  })
+
+  it('refuses a malformed rider id without touching anything', async () => {
+    const res = await handRunToRider(manager, runKey2, 'not-an-id')
+    expect(res.moved).toBe(0)
+    expect(res.errors[0]).toContain('Choose which rider')
+  })
+
+  it('a rider still cannot be handed another outlet’s run', async () => {
+    const other = await makeRestaurant('SHREE ANNAPURNA', 'PRYJ')
+    const outsider = ctxFor(await makeUser('STORE_MANAGER', '9000000022', other._id))
+    const res = await handRunToRider(outsider, runKey2, String(riderId))
+    expect(res.moved).toBe(0)
+    expect(res.errors[0]).toContain('Run not found')
   })
 })

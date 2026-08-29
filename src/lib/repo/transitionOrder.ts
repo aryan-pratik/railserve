@@ -57,8 +57,17 @@ export async function transitionOrder(params: {
   to: OrderStatus
   meta?: Record<string, unknown>
   apply?: TransitionApply
+  /**
+   * The rider who physically took the food, when the caller is not that rider.
+   *
+   * A store manager may mark an order on its way on a rider's behalf; without
+   * this the record would name the manager, and "who has my food" is the one
+   * question this array exists to answer. Callers must verify the id belongs to
+   * an active DELIVERY_AGENT before passing it — see markRunOnTheWay.
+   */
+  handedTo?: mongoose.Types.ObjectId
 }): Promise<OrderDoc> {
-  const { ctx, orderId, to, meta = {}, apply = {} } = params
+  const { ctx, orderId, to, meta = {}, apply = {}, handedTo } = params
 
   if (!mongoose.isValidObjectId(orderId)) {
     throw new NotFoundError('Order not found')
@@ -103,6 +112,17 @@ export async function transitionOrder(params: {
         )
       }
 
+      // A status that records a carrier must actually record one. Only a rider
+      // is themselves the carrier; anyone else — today, a store manager handing
+      // food over the counter — has to name who took it. Without this the order
+      // could reach DISPATCHED with delivery.agentIds empty, and "who has my
+      // food" would have no answer at exactly the moment it gets asked.
+      if (RECORDS_THE_RIDER.includes(to) && ctx.role !== 'DELIVERY_AGENT' && !handedTo) {
+        throw new ForbiddenError(
+          `${ctx.role} must name the rider taking this order (${from} -> ${to})`,
+        )
+      }
+
       // Completeness guard — enforced here, never in the UI.
       if (from === 'QUOTED' && to === 'RECEIVED') {
         const missing = missingQuoteFields(current as unknown as Record<string, unknown>)
@@ -122,10 +142,15 @@ export async function transitionOrder(params: {
 
       // dispatchedAt / deliveredAt above already carry the timing; assignedAt
       // belongs to the admin override path and is left alone here.
-      const $addToSet =
-        ctx.role === 'DELIVERY_AGENT' && RECORDS_THE_RIDER.includes(to)
-          ? { 'delivery.agentIds': ctx.userId }
-          : undefined
+      //
+      // A rider acting for themselves is recorded automatically; anyone else
+      // has to say who took it, and is never recorded as the rider themselves.
+      const rider = RECORDS_THE_RIDER.includes(to)
+        ? ctx.role === 'DELIVERY_AGENT'
+          ? ctx.userId
+          : handedTo
+        : undefined
+      const $addToSet = rider ? { 'delivery.agentIds': rider } : undefined
 
       // The status precondition is the concurrency guard. Two managers hitting
       // "Mark Prepared" at once: the second matches zero documents.
