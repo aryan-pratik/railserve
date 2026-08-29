@@ -287,11 +287,11 @@ export default function App() {
       <View
         style={{
           flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-          paddingHorizontal: 16, paddingVertical: 10,
+          paddingHorizontal: 20, paddingVertical: 16,
           borderBottomWidth: 1, borderBottomColor: C.line, backgroundColor: '#fff',
         }}
       >
-        <Text style={{ fontWeight: '700', color: C.ink }}>{user.name}</Text>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: C.ink }}>{user.name}</Text>
         <Pressable
           onPress={async () => {
             await clearSession()
@@ -301,7 +301,7 @@ export default function App() {
           }}
           hitSlop={10}
         >
-          <Text style={s.muted}>Sign out</Text>
+          <Text style={{ fontSize: 14, color: C.faint }}>Sign out</Text>
         </Pressable>
       </View>
 

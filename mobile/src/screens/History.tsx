@@ -1,7 +1,7 @@
 import React from 'react'
 import { RefreshControl, ScrollView, Text, View } from 'react-native'
 import type { HistoryOrder } from '../types'
-import { C, Card, Person, Pill, Seat, dateIST, s, timeIST } from '../ui'
+import { C, Person, Rule, Seat, dateIST, s, timeIST } from '../ui'
 
 /**
  * What this rider has already finished.
@@ -48,84 +48,83 @@ export function HistoryScreen({
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 48 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       {/* Cash first. It is the one number the rider is answerable for. */}
-      <Card style={{ backgroundColor: C.ink }}>
-        <Text style={{ color: '#9aa4b8', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 }}>
-          TODAY
-        </Text>
-        <View style={[s.row, { justifyContent: 'space-between', marginTop: 8 }]}>
-          <View>
-            <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900' }}>{doneToday}</Text>
-            <Text style={{ color: '#9aa4b8', fontSize: 13, fontWeight: '600' }}>delivered</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900' }}>
-              ₹{Math.round(cashToday / 100)}
-            </Text>
-            <Text style={{ color: '#9aa4b8', fontSize: 13, fontWeight: '600' }}>cash collected</Text>
-          </View>
+      <Text style={s.label}>TODAY</Text>
+      <View style={[s.row, { marginTop: 14, gap: 40 }]}>
+        <View>
+          <Text style={{ fontSize: 30, fontWeight: '800', color: C.ink }}>{doneToday}</Text>
+          <Text style={{ fontSize: 13, color: C.muted, marginTop: 3 }}>delivered</Text>
         </View>
-      </Card>
+        <View>
+          <Text style={{ fontSize: 30, fontWeight: '800', color: C.ink }}>
+            ₹{Math.round(cashToday / 100)}
+          </Text>
+          <Text style={{ fontSize: 13, color: C.muted, marginTop: 3 }}>cash collected</Text>
+        </View>
+      </View>
+
+      <View style={{ height: 28 }} />
 
       {orders.length === 0 ? (
-        <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+        <View style={{ alignItems: 'center', paddingVertical: 70 }}>
           <Text style={s.h2}>Nothing delivered yet</Text>
-          <Text style={[s.muted, { marginTop: 6, textAlign: 'center' }]}>
+          <Text style={[s.muted, { marginTop: 8, textAlign: 'center' }]}>
             Orders you finish will show up here.
           </Text>
         </View>
       ) : null}
 
-      {days.map((day) => (
+      {days.map((day, di) => (
         <View key={day.label}>
-          <Text style={[s.sectionLabel, { marginTop: 18 }]}>{day.label.toUpperCase()}</Text>
+          <Text style={[s.sectionLabel, { marginTop: di === 0 ? 0 : 30, marginBottom: 0 }]}>
+            {day.label.toUpperCase()}
+          </Text>
+
           {day.items.map((o) => {
             const failed = o.status === 'FAILED'
             return (
-              <Card key={o.id}>
-                <View style={[s.row, { justifyContent: 'space-between' }]}>
-                  <Seat coach={o.coach} berth={o.berth} />
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Pill
-                      tone={failed ? 'red' : 'green'}
-                      text={failed ? 'Not delivered' : 'Delivered'}
-                    />
-                    <Text style={{ fontSize: 13, color: C.faint, marginTop: 4 }}>
-                      {timeIST(o.deliveredAt)}
+              <View key={o.id}>
+                <Rule style={{ marginTop: 14 }} />
+                <View style={{ paddingVertical: 18 }}>
+                  <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
+                    <Seat coach={o.coach} berth={o.berth} />
+                    <Text style={{
+                      fontSize: 14, fontWeight: '600',
+                      color: failed ? C.red : C.green,
+                    }}>
+                      {failed ? 'Not delivered' : 'Delivered'}
                     </Text>
                   </View>
-                </View>
 
-                <View style={{ height: 1, backgroundColor: C.line, marginVertical: 12 }} />
+                  <View style={{ marginTop: 14 }}>
+                    <Person name={o.contactName} phone={o.contactPhone} compact />
+                  </View>
 
-                <Person name={o.contactName} phone={o.contactPhone} compact />
-
-                <View style={[s.row, { marginTop: 12, flexWrap: 'wrap', gap: 8 }]}>
-                  {o.trainNo ? <Pill text={`${o.trainNo}${o.trainName ? ` · ${o.trainName}` : ''}`} /> : null}
-                  {o.amountCollectedPaise ? (
-                    <Pill tone="amber" text={`₹${Math.round(o.amountCollectedPaise / 100)} collected`} />
-                  ) : o.paymentMode !== 'COD' ? (
-                    <Pill tone="green" text="Prepaid" />
-                  ) : null}
-                </View>
-
-                {o.receivedBy ? (
-                  <Text style={{ fontSize: 14, color: C.muted, marginTop: 10 }}>
-                    Taken by <Text style={{ fontWeight: '700', color: C.ink }}>{o.receivedBy}</Text>
+                  <Text style={{ fontSize: 14, color: C.muted, marginTop: 12 }} numberOfLines={1}>
+                    {o.trainNo ?? '—'}
+                    {o.trainName ? ` · ${o.trainName}` : ''}
+                    {`   ·   ${timeIST(o.deliveredAt)}`}
                   </Text>
-                ) : null}
 
-                {failed && o.failureReason ? (
-                  <View style={{ backgroundColor: C.redSoft, borderRadius: 10, padding: 10, marginTop: 10 }}>
-                    <Text style={{ color: C.red, fontWeight: '600', fontSize: 14 }}>
+                  <Text style={{ fontSize: 14, color: C.muted, marginTop: 5 }}>
+                    {o.amountCollectedPaise
+                      ? `₹${Math.round(o.amountCollectedPaise / 100)} collected`
+                      : o.paymentMode !== 'COD'
+                        ? 'Prepaid'
+                        : 'No cash recorded'}
+                    {o.receivedBy ? `   ·   Taken by ${o.receivedBy}` : ''}
+                  </Text>
+
+                  {failed && o.failureReason ? (
+                    <Text style={{ fontSize: 14, color: C.red, marginTop: 8, lineHeight: 20 }}>
                       {o.failureReason}
                     </Text>
-                  </View>
-                ) : null}
-              </Card>
+                  ) : null}
+                </View>
+              </View>
             )
           })}
         </View>
