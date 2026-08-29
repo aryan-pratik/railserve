@@ -93,6 +93,25 @@ export async function countByStatus(ctx: AuthContext, filter: QueryFilter<OrderD
   return Object.fromEntries(rows.map((r) => [r._id as string, r.count as number]))
 }
 
+/**
+ * Order counts per payment mode, for the filter tabs on /admin/orders.
+ *
+ * Aggregated rather than counted four times so the tab row costs one round
+ * trip, and grouped on the same scoped match as every other read — a count
+ * that leaked across outlets would tell a manager how much business the
+ * kitchen next door is doing.
+ *
+ * Orders with no payment mode land under the `null` key, so the caller can
+ * still reconcile the tabs against the unfiltered total.
+ */
+export async function countByPaymentMode(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}) {
+  const rows = await Order.aggregate([
+    { $match: scoped(ctx, filter) },
+    { $group: { _id: '$paymentMode', count: { $sum: 1 } } },
+  ])
+  return Object.fromEntries(rows.map((r) => [String(r._id), r.count as number]))
+}
+
 /** Distinct restaurant ids present in scope — used to build filter dropdowns. */
 export async function findRestaurantIdsInScope(ctx: AuthContext) {
   return Order.distinct('restaurantId', scoped(ctx))
