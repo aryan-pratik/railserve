@@ -57,8 +57,35 @@ export type RunsResponse = {
   runs: Run[]
 }
 
+/** One finished job, as the rider's own record shows it. */
+export type HistoryOrder = {
+  id: string
+  status: 'DELIVERED' | 'FAILED'
+  trainNo: string | null
+  trainName: string | null
+  coach: string | null
+  berth: string | null
+  handoverPoint: string | null
+  contactName: string | null
+  contactPhone: string | null
+  amountPaise: number | null
+  paymentMode: string | null
+  itemCount: number
+  deliveredAt: string | null
+  receivedBy: string | null
+  amountCollectedPaise: number | null
+  failureReason: string | null
+}
+
+export type HistoryResponse = {
+  fetchedAt: string
+  orders: HistoryOrder[]
+}
+
 export type QueuedMutation =
   | { kind: 'DISPATCH_RUN'; clientId: string; runKey: string; at: string }
+  // One order rather than a whole train: a rider takes what they can carry.
+  | { kind: 'DISPATCH_ORDER'; clientId: string; orderId: string; at: string }
   | {
       kind: 'DELIVER_ORDER'
       clientId: string

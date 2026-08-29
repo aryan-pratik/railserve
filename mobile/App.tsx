@@ -2,15 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { AppState, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
-import { flushQueue, fetchRuns, newClientId, queueAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
+import { flushQueue, fetchHistory, fetchRuns, newClientId, queueAndFlush, queueManyAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
 import {
   cacheRuns, clearSession, loadCachedRuns, loadQueue, loadSession, type StoredUser,
 } from './src/storage'
-import type { Run, RunOrder, RunsResponse } from './src/types'
+import type { HistoryOrder, RunOrder, RunsResponse } from './src/types'
 import { LoginScreen } from './src/screens/Login'
 import { HomeScreen } from './src/screens/Home'
 import { DeliveryScreen } from './src/screens/Delivery'
-import { C, s } from './src/ui'
+import { HistoryScreen } from './src/screens/History'
+import { C, TabBar, s } from './src/ui'
 
 type Screen = { name: 'home' } | { name: 'delivery'; runKey: string; orderId: string }
 
@@ -25,7 +26,9 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [queueSize, setQueueSize] = useState(0)
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
-  const [pickingUp, setPickingUp] = useState<string | null>(null)
+  const [tab, setTab] = useState<'jobs' | 'done'>('jobs')
+  const [history, setHistory] = useState<HistoryOrder[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   // --- boot ---------------------------------------------------------------
   useEffect(() => {
@@ -58,6 +61,18 @@ export default function App() {
       }
     } finally {
       setRefreshing(false)
+    }
+  }, [])
+
+  const loadHistory = useCallback(async (t: string) => {
+    setHistoryLoading(true)
+    try {
+      setHistory((await fetchHistory(t)).orders)
+    } catch {
+      // A record to look back at is never worth an error screen over the work
+      // list; the pull-to-refresh on that tab retries.
+    } finally {
+      setHistoryLoading(false)
     }
   }, [])
 
@@ -152,36 +167,27 @@ export default function App() {
     )
   }
 
-  async function dispatchRun(runKey: string) {
-    if (!token) return
+  /**
+   * Take the orders the rider ticked.
+   *
+   * One batch, because ticking ten boxes was one decision. Applied locally
+   * first so the list reflects the choice even with no signal — the queue
+   * carries it to the server whenever that returns.
+   */
+  async function takeOrders(orderIds: string[]) {
+    if (!token || orderIds.length === 0) return
     setBusy(true)
-    const r = await queueAndFlush(token, {
-      kind: 'DISPATCH_RUN', clientId: newClientId(), runKey, at: new Date().toISOString(),
-    })
+    for (const id of orderIds) applyLocally(id, { status: 'DISPATCHED' })
+
+    const at = new Date().toISOString()
+    const r = await queueManyAndFlush(
+      token,
+      orderIds.map((orderId) => ({
+        kind: 'DISPATCH_ORDER' as const, clientId: newClientId(), orderId, at,
+      })),
+    )
     setQueueSize(r.remaining)
     setOffline(r.offline)
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            runs: prev.runs.map((run) =>
-              run.key === runKey
-                ? {
-                    ...run,
-                    orders: run.orders.map((o) =>
-                      o.status === 'PREPARED' ? { ...o, status: 'DISPATCHED' } : o,
-                    ),
-                    statusCounts: {
-                      ...run.statusCounts,
-                      DISPATCHED: (run.statusCounts.DISPATCHED ?? 0) + (run.statusCounts.PREPARED ?? 0),
-                      PREPARED: 0,
-                    },
-                  }
-                : run,
-            ),
-          }
-        : prev,
-    )
     if (!r.offline) await refresh(token, false)
     setBusy(false)
   }
@@ -206,6 +212,7 @@ export default function App() {
     setOffline(r.offline)
     setBusy(false)
     setScreen({ name: 'home' })
+    if (!r.offline) void loadHistory(token)
   }
 
   async function fail(orderId: string, failureReason: string) {
@@ -225,7 +232,14 @@ export default function App() {
     setOffline(r.offline)
     setBusy(false)
     setScreen({ name: 'home' })
+    if (!r.offline) void loadHistory(token)
   }
+
+  // Work the rider can act on right now — what the tab badge counts.
+  const liveJobs = (data?.runs ?? []).reduce(
+    (n, r) => n + r.orders.filter((o) => o.status === 'DISPATCHED' || o.status === 'PREPARED').length,
+    0,
+  )
 
   // --- render -------------------------------------------------------------
   if (booting) {
@@ -289,22 +303,38 @@ export default function App() {
           }
           onFail={(reason) => fail(order.id, reason)}
         />
+      ) : tab === 'done' ? (
+        <HistoryScreen
+          orders={history}
+          refreshing={historyLoading}
+          onRefresh={() => void loadHistory(token)}
+        />
       ) : (
         <HomeScreen
           runs={data?.runs ?? []}
           refreshing={refreshing}
-          busyRunKey={busy ? pickingUp : null}
+          busy={busy}
           onRefresh={() => {
             void refresh(token, true)
             void sync(token)
           }}
-          onPickUp={(runKey) => {
-            setPickingUp(runKey)
-            void dispatchRun(runKey)
-          }}
+          onTake={(orderIds) => void takeOrders(orderIds)}
           onOpenOrder={(o, r) => setScreen({ name: 'delivery', runKey: r.key, orderId: o.id })}
         />
       )}
+
+      {/* Hidden during a delivery: that screen is one job with one action, and
+          a nav bar there is an invitation to walk away from it half-done. */}
+      {screen.name === 'home' ? (
+        <TabBar
+          tab={tab}
+          badge={liveJobs}
+          onChange={(t) => {
+            setTab(t)
+            if (t === 'done') void loadHistory(token)
+          }}
+        />
+      ) : null}
 
     </SafeAreaView>
   )

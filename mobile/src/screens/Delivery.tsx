@@ -1,17 +1,22 @@
 import React, { useState } from 'react'
-import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import type { Run, RunOrder } from '../types'
-import { Button, C, Card, Money, Seat, s, timeIST, untilLabel } from '../ui'
+import { Button, C, Card, CallButton, Money, Pill, Seat, s, timeIST, untilLabel } from '../ui'
 
 /**
  * One delivery, start to finish.
  *
- * Everything above the button answers "where am I going and what do I collect".
- * Below it is the single action: who took the food, then Delivered.
+ * Everything above the button answers "where am I going, who am I looking for
+ * and what do I collect". Below it is the single action.
+ *
+ * The passenger's name doubles as the proof, so it is offered as a button
+ * rather than something to spell out: the rider confirms the person in front
+ * of them is the person on the order with one tap. Typing is the fallback,
+ * for when somebody else at the berth takes the food.
  *
  * Photo proof exists in the backend and is deliberately not wired in here yet —
- * it needs an object store configured, and until then a capture button that
- * always fails would be worse than no button.
+ * it needs an object store configured, and a capture button that always failed
+ * would be worse than no button.
  */
 export function DeliveryScreen({
   order,
@@ -37,13 +42,14 @@ export function DeliveryScreen({
   const until = untilLabel(run.timing.effectiveArrival)
   const kitchen = order.items.filter((i) => !i.isPacking)
   const packing = order.items.filter((i) => i.isPacking)
+  const passenger = order.contactName?.trim() || ''
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
     >
-      <Pressable onPress={onBack} hitSlop={16} style={{ paddingVertical: 6, marginBottom: 8 }}>
+      <Pressable onPress={onBack} hitSlop={16} style={{ paddingVertical: 6, marginBottom: 6 }}>
         <Text style={{ fontSize: 17, fontWeight: '700', color: C.muted }}>← Back</Text>
       </Pressable>
 
@@ -51,45 +57,53 @@ export function DeliveryScreen({
           thing that matters while walking a platform. */}
       <View style={{ alignItems: 'center', marginBottom: 16 }}>
         {order.handoverPoint ? (
-          <View style={{ alignItems: 'center' }}>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: C.muted, letterSpacing: 1 }}>
-              HAND OVER AT
-            </Text>
-            <Text style={[s.h1, { textAlign: 'center', marginTop: 6 }]}>{order.handoverPoint}</Text>
-          </View>
+          <>
+            <Text style={s.sectionLabel}>HAND OVER AT</Text>
+            <Text style={[s.h1, { textAlign: 'center' }]}>{order.handoverPoint}</Text>
+          </>
         ) : (
           <>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: C.muted, letterSpacing: 1 }}>
-              COACH · SEAT
-            </Text>
-            <View style={{ marginTop: 8 }}>
-              <Seat coach={order.coach} berth={order.berth} size="huge" />
-            </View>
+            <Text style={s.sectionLabel}>COACH · SEAT</Text>
+            <Seat coach={order.coach} berth={order.berth} size="huge" />
           </>
         )}
 
         <Text style={{ marginTop: 14, fontSize: 17, fontWeight: '700', color: C.ink }}>
           {run.trainNo} {run.trainName}
         </Text>
-        <View style={[s.row, { marginTop: 6, gap: 8 }]}>
-          {run.timing.platform ? (
-            <View style={{ backgroundColor: C.ink, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>
-                Platform {run.timing.platform}
-              </Text>
-            </View>
-          ) : null}
-          <Text style={{
-            fontSize: 15, fontWeight: '800',
-            color: until.urgent ? C.red : C.muted,
-          }}>
-            {timeIST(run.timing.effectiveArrival)} · {until.text}
-          </Text>
+        <View style={[s.row, { marginTop: 8, gap: 8, flexWrap: 'wrap', justifyContent: 'center' }]}>
+          {run.timing.platform ? <Pill tone="dark" text={`Platform ${run.timing.platform}`} /> : null}
+          <Pill
+            tone={until.urgent ? 'red' : 'neutral'}
+            text={`${timeIST(run.timing.effectiveArrival)} · ${until.text}`}
+          />
         </View>
       </View>
 
-      {/* What to collect. Second biggest — getting money wrong is the mistake
-          that costs the rider personally. */}
+      {/* Who to look for. On the way to the berth this is what the rider is
+          scanning faces for, so it sits above the money and the food. */}
+      <Card>
+        <Text style={[s.sectionLabel, { marginTop: 0 }]}>GIVE IT TO</Text>
+        <View style={[s.row, { justifyContent: 'space-between' }]}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: C.ink }} numberOfLines={2}>
+              {passenger || 'Name not given'}
+            </Text>
+            {order.contactPhone ? (
+              <Text style={{ fontSize: 16, color: C.muted, marginTop: 2 }}>
+                {order.contactPhone}
+              </Text>
+            ) : null}
+            {order.pax ? (
+              <Text style={{ fontSize: 14, color: C.faint, marginTop: 4 }}>{order.pax} people</Text>
+            ) : null}
+          </View>
+          {order.contactPhone ? <CallButton phone={order.contactPhone} /> : null}
+        </View>
+      </Card>
+
+      {/* What to collect. Getting money wrong is the mistake that costs the
+          rider personally. */}
       <View style={{ marginBottom: 14 }}>
         <Money paise={order.amountPaise} mode={order.paymentMode} />
       </View>
@@ -106,31 +120,7 @@ export function DeliveryScreen({
             + {packing.map((i) => i.name).join(', ')}
           </Text>
         ) : null}
-        {order.pax ? (
-          <Text style={{ fontSize: 17, fontWeight: '700', color: C.ink, marginTop: 6 }}>
-            {order.pax} people
-          </Text>
-        ) : null}
       </Card>
-
-      {/* Calling is the escape hatch when the seat is empty — it is not the
-          normal path, so it sits below the job and above the action. */}
-      {order.contactPhone ? (
-        <Pressable
-          onPress={() => Linking.openURL(`tel:${order.contactPhone}`)}
-          accessibilityRole="button"
-          accessibilityLabel="Call the passenger"
-          style={({ pressed }) => [
-            s.card,
-            s.row,
-            { justifyContent: 'center', opacity: pressed ? 0.9 : 1, marginBottom: 16 },
-          ]}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '800', color: C.accent }}>
-            📞  Call passenger
-          </Text>
-        </Pressable>
-      ) : null}
 
       {offline ? (
         <View style={{ backgroundColor: C.amberSoft, borderRadius: 12, padding: 14, marginBottom: 14 }}>
@@ -140,17 +130,43 @@ export function DeliveryScreen({
         </View>
       ) : null}
 
-      {/* Who took it. One field, big, with the keyboard set to a name. */}
-      <Text style={[s.sectionLabel, { marginTop: 0 }]}>WHO TOOK THE FOOD?</Text>
+      {/* Who took it. One tap in the normal case; typing only when it was
+          somebody other than the passenger on the order. */}
+      <Text style={s.sectionLabel}>WHO TOOK THE FOOD?</Text>
+
+      {passenger ? (
+        <Pressable
+          onPress={() => setReceivedBy(receivedBy === passenger ? '' : passenger)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: receivedBy === passenger }}
+          accessibilityLabel={`The passenger, ${passenger}, took it`}
+          style={({ pressed }) => [
+            s.row,
+            {
+              padding: 14, borderRadius: 14, marginBottom: 10,
+              backgroundColor: receivedBy === passenger ? C.accentSoft : '#fff',
+              borderWidth: 2,
+              borderColor: receivedBy === passenger ? C.accent : C.line,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <Text style={{ fontSize: 20 }}>{receivedBy === passenger ? '✅' : '👤'}</Text>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: C.ink, flex: 1 }} numberOfLines={1}>
+            {passenger}
+          </Text>
+        </Pressable>
+      ) : null}
+
       <TextInput
-        value={receivedBy}
+        value={receivedBy === passenger ? '' : receivedBy}
         onChangeText={setReceivedBy}
-        placeholder="Passenger name"
+        placeholder={passenger ? 'Or type another name' : 'Name of the person'}
         placeholderTextColor={C.faint}
         autoCapitalize="words"
         autoCorrect={false}
         returnKeyType="done"
-        style={[s.input, { marginBottom: 14, fontSize: 19 }]}
+        style={[s.input, { marginBottom: 14, fontSize: 18 }]}
       />
 
       <Button
