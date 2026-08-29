@@ -1,5 +1,6 @@
 import React from 'react'
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Store, Send, CheckCircle2 } from 'lucide-react-native'
 
 /**
  * Primitives for the rider app.
@@ -235,19 +236,27 @@ export function Money({ paise, mode }: { paise: number | null; mode: string | nu
  * read as decoration at this size, and the words are shorter than the time
  * spent decoding them.
  */
-export function TabBar({ tab, onChange, badge }: {
-  tab: 'jobs' | 'done'
-  onChange: (t: 'jobs' | 'done') => void
+export type TabKey = 'orders' | 'delivery' | 'done'
+
+export function TabBar({ tab, onChange }: {
+  tab: TabKey
+  onChange: (t: TabKey) => void
   badge?: number
 }) {
   const items = [
-    { key: 'jobs' as const, label: 'My work' },
-    { key: 'done' as const, label: 'Delivered' },
+    { key: 'orders' as const, label: 'Orders', icon: Store },
+    { key: 'delivery' as const, label: 'Delivery', icon: Send },
+    { key: 'done' as const, label: 'Delivered', icon: CheckCircle2 },
   ]
   return (
-    <View style={s.tabBar}>
+    <View style={{
+      flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#E5E7EB',
+      backgroundColor: '#FFFFFF', paddingBottom: 24, paddingTop: 10, paddingHorizontal: 12,
+      gap: 6
+    }}>
       {items.map((it) => {
         const on = tab === it.key
+        const Icon = it.icon
         return (
           <Pressable
             key={it.key}
@@ -255,15 +264,20 @@ export function TabBar({ tab, onChange, badge }: {
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
             accessibilityLabel={it.label}
-            style={({ pressed }) => [s.tab, { opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [{
+              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              paddingVertical: 10, borderRadius: 12,
+              backgroundColor: on ? '#EEF3FF' : 'transparent',
+              gap: 6,
+              opacity: pressed ? 0.6 : 1
+            }]}
           >
-            <View style={[s.tabMark, on && { backgroundColor: C.ink }]} />
+            <Icon size={18} color={on ? '#2457D6' : '#686B76'} />
             <Text style={{
-              fontSize: 14, fontWeight: on ? '700' : '500', marginTop: 12,
-              color: on ? C.ink : C.faint,
+              fontSize: 14, fontWeight: on ? '700' : '600',
+              color: on ? '#2457D6' : '#686B76'
             }}>
               {it.label}
-              {it.key === 'jobs' && badge ? `  ${badge}` : ''}
             </Text>
           </Pressable>
         )

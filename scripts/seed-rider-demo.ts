@@ -11,8 +11,10 @@
  * orders for the demo outlet are replaced rather than added to, so re-running
  * gives the same board instead of piling up test data.
  *
- * One train is deliberately large. A rider picks the orders they can carry,
- * and that behaviour is untestable on a train with three.
+ * Several trains, deliberately uneven. One is large — a rider picks the orders
+ * they can carry, and that behaviour is untestable on a train with three — and
+ * the arrival times are spread from minutes away to over an hour, because the
+ * urgency colours and the leave-now maths only differ across that range.
  *
  *   npm run seed:rider
  */
@@ -78,8 +80,18 @@ async function main() {
     userId: rider._id, role: 'DELIVERY_AGENT', restaurantIds: [outlet._id],
   }
 
-  // Two trains so grouping is visible, one of them big enough that a rider
-  // has to choose. Arrivals near enough that the urgency colours fire.
+  // Several trains so grouping is visible and the board is worth scrolling.
+  // `arriveIn` is minutes from now: 6 puts a train in the red before the rider
+  // has finished reading the screen, 95 puts one far enough out that it should
+  // not be competing for attention at all.
+  const TRAINS = [
+    { no: '12506', name: 'NORTH EAST EXP', arriveIn: 18, count: 10 },
+    { no: '12310', name: 'RJPB TEJAS RAJ', arriveIn: 6, count: 3 },
+    { no: '22406', name: 'BGP GARIB RATH', arriveIn: 34, count: 5 },
+    { no: '12312', name: 'KALKA MAIL', arriveIn: 55, count: 4 },
+    { no: '15631', name: 'BME GHY EXPRESS', arriveIn: 95, count: 4 },
+  ]
+
   const NAMES = [
     ['Neelesh Soni', '9752446747'], ['Anita Verma', '9839044444'],
     ['Rakesh Tiwari', '9901213344'], ['Sneha Patel', '9555533221'],
@@ -88,6 +100,12 @@ async function main() {
     ['Deepak Yadav', '9911122233'], ['Meera Joshi', '9765432109'],
     ['Arjun Reddy', '9988776655'], ['Kavita Rao', '9871122334'],
     ['Sanjay Gupta', '9099887766'], ['Rhea D Souza', '9822119900'],
+    ['Imran Qureshi', '9733445566'], ['Lakshmi Iyer', '9844556677'],
+    ['Harpreet Kaur', '9955667788'], ['Tarun Bose', '9066778899'],
+    ['Nisha Agarwal', '9177889900'], ['Vivek Menon', '9288990011'],
+    ['Sunita Devi', '9399001122'], ['Rohit Chauhan', '9400112233'],
+    ['Ayesha Khan', '9511223344'], ['Gopal Mishra', '9622334455'],
+    ['Pooja Bhatt', '9733445577'], ['Zubair Ahmed', '9844556688'],
   ]
   const COACHES = ['B1', 'B2', 'B3', 'A1', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'B4', 'B5', 'A2', 'S7']
   const DISHES = [
@@ -96,27 +114,36 @@ async function main() {
     ['Rajma Chawal', '420'], ['Chole Bhature', '260'],
   ]
 
-  const orders = NAMES.map(([who, phone], i) => {
-    const big = i < 10
-    const [item, amount] = DISHES[i % DISHES.length]
-    return {
-      train: big ? '12506' : '12312',
-      name: big ? 'NORTH EAST EXP' : 'KALKA MAIL',
-      arriveIn: big ? 18 : 55,
-      coach: COACHES[i],
-      berth: String(12 + i * 3),
-      who, phone,
-      cod: i % 3 !== 0,
-      amount, item,
-    }
-  })
+  // Flattened train-by-train, so a passenger list reads down one train before
+  // starting the next — the same order the rider meets them on the platform.
+  const orders = TRAINS.flatMap((t, ti) =>
+    Array.from({ length: t.count }, (_, n) => {
+      const i = TRAINS.slice(0, ti).reduce((sum, p) => sum + p.count, 0) + n
+      const [who, phone] = NAMES[i % NAMES.length]
+      const [item, amount] = DISHES[i % DISHES.length]
+      return {
+        train: t.no,
+        name: t.name,
+        arriveIn: t.arriveIn,
+        coach: COACHES[i % COACHES.length],
+        berth: String(12 + ((i * 7) % 60)),
+        who, phone,
+        cod: i % 3 !== 0,
+        amount, item,
+      }
+    }),
+  )
+
+  if (orders.length > NAMES.length) {
+    throw new Error(`${orders.length} orders but only ${NAMES.length} passengers — add more names.`)
+  }
 
   // Clear this outlet's board for today so the seed is repeatable. Scoped to
   // the demo outlet and the current service date — it cannot touch real data.
   const removed = await Order.deleteMany({ restaurantId: outlet._id, serviceDate: today })
   if (removed.deletedCount) console.log(`cleared: ${removed.deletedCount} previous demo order(s)`)
 
-  const created: string[] = []
+  const created: { id: string; order: (typeof orders)[number] }[] = []
   for (const o of orders) {
     const doc = await createManualOrder(
       adminCtx,
@@ -136,26 +163,34 @@ async function main() {
         items: [{ name: o.item, qty: 1, priceRupees: o.amount, isPacking: false }],
       }),
     )
-    created.push(String(doc._id))
+    created.push({ id: String(doc._id), order: o })
   }
 
   // Everything through the kitchen, so it is all sitting ready to collect.
-  for (const id of created) {
+  for (const { id } of created) {
     for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
       await transitionOrder({ ctx: managerCtx, orderId: id, to })
     }
   }
 
-  // Two already in the rider's hands, so "Deliver now" has something in it the
+  // Drawn from different trains on purpose. Taking the first few in sequence
+  // would put every in-hand order on one train, and a rider carrying two
+  // trains at once is the case worth looking at.
+  const take = (trainNo: string, n: number) =>
+    created.filter((c) => c.order.train === trainNo).slice(0, n)
+
+  // Already in the rider's hands, so "Deliver now" has something in it the
   // moment they open the app. The rest stay at the counter to be picked from.
-  for (const id of created.slice(0, 2)) {
+  const dispatched = [...take('12310', 2), ...take('12312', 1)]
+  for (const { id } of dispatched) {
     await transitionOrder({ ctx: riderCtx, orderId: id, to: 'DISPATCHED' })
   }
 
-  // Two carried all the way through, so the Delivered tab has a record and a
-  // cash total to show rather than an empty state.
-  for (const [i, id] of created.slice(2, 4).entries()) {
-    const o = orders[i + 2]
+  // Carried all the way through, so the Delivered tab has a record and a cash
+  // total to show rather than an empty state. A different train again, so no
+  // order is picked twice.
+  const delivered = take('22406', 2)
+  for (const { id, order: o } of delivered) {
     await transitionOrder({ ctx: riderCtx, orderId: id, to: 'DISPATCHED' })
     await transitionOrder({
       ctx: riderCtx,
@@ -169,10 +204,14 @@ async function main() {
     })
   }
 
-  console.log(`\norders : ${created.length} created`)
-  console.log(`         2 DISPATCHED  -> rider sees "Deliver now"`)
-  console.log(`         2 DELIVERED   -> rider sees them under "Delivered"`)
-  console.log(`         ${created.length - 4} PREPARED    -> rider picks which ones to take`)
+  const prepared = created.length - dispatched.length - delivered.length
+  console.log(`\norders : ${created.length} created across ${TRAINS.length} trains`)
+  for (const t of TRAINS) {
+    console.log(`         ${t.no} ${t.name.padEnd(16)} ${String(t.count).padStart(2)} · arrives in ${t.arriveIn}m`)
+  }
+  console.log(`\n         ${dispatched.length} DISPATCHED  -> rider sees "Deliver now"`)
+  console.log(`         ${delivered.length} DELIVERED   -> rider sees them under "Delivered"`)
+  console.log(`         ${prepared} PREPARED    -> rider picks which ones to take`)
   console.log(`\nrider login: 9000000004 / ${PASSWORD}`)
   console.log(`store login: 9000000002 / ${PASSWORD}`)
 

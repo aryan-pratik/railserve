@@ -1,23 +1,23 @@
 import React, { useState } from 'react'
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
-import type { Run, RunOrder } from '../types'
-import { Button, C, Card, Check, Person, Rule, Seat, s, timeIST, untilLabel, delayLabel } from '../ui'
+import { Pressable, RefreshControl, ScrollView, Text, View, Linking } from 'react-native'
+import { Store, Train, Phone, Check, ChevronRight, ChevronDown, Clock, Users } from 'lucide-react-native'
+import type { Run } from '../types'
+import { timeIST, untilLabel, delayLabel } from '../ui'
 
-/**
- * The rider's work.
- *
- * Two questions, in the order they are actually asked: what do I deliver right
- * now, and what do I pick up next. That is the rider's own mental model — the
- * run/order hierarchy the API returns is a warehouse concept, and making
- * someone navigate it to find their next job is work the screen should do.
- *
- * Pickup is grouped by train because a rider collects a whole train's food in
- * one trip, and sending two riders to one train is wasted effort. But a train
- * can have forty orders and a rider can carry ten, so the group is a set of
- * tick boxes, not a single button: they take what fits and leave the rest for
- * the next person. Delivery is flat, because at the platform each seat is its
- * own job at its own door.
- */
+const colors = {
+  primary: '#2457D6',
+  softBlue: '#EEF3FF',
+  success: '#16803C',
+  successBg: '#EAF7EE',
+  bg: '#F8F9FB',
+  card: '#FFFFFF',
+  text: '#17181C',
+  secondaryText: '#686B76',
+  border: '#E5E7EB',
+  borderLight: '#F0F2F5',
+  price: '#D9480F',
+}
+
 export function HomeScreen({
   runs,
   onTake,
@@ -29,34 +29,57 @@ export function HomeScreen({
 }: {
   runs: Run[]
   onTake: (orderIds: string[]) => void
-  onReturn: (orderId: string) => void
-  onOpenOrder: (order: RunOrder, run: Run) => void
+  onReturn?: (orderId: string) => void
+  onOpenOrder?: (order: any, run: Run) => void
   refreshing: boolean
   onRefresh: () => void
   busy: boolean
 }) {
   const [picked, setPicked] = useState<Set<string>>(new Set())
 
-  // Ready at the counter, nobody has taken it yet.
+  // Ready at the shop counter, sorted by earliest arrival time first
   const toPickUp = runs
-    .map((r) => ({ run: r, orders: r.orders.filter((o) => o.status === 'PREPARED') }))
+    .map((r) => ({
+      run: r,
+      orders: r.orders
+        .filter((o) => o.status === 'PREPARED')
+        .sort((a, b) => {
+          const coachA = a.coach || ''
+          const coachB = b.coach || ''
+          if (coachA !== coachB) return coachA.localeCompare(coachB, undefined, { numeric: true })
+          const berthA = Number(a.berth) || 0
+          const berthB = Number(b.berth) || 0
+          return berthA - berthB
+        }),
+    }))
     .filter((g) => g.orders.length > 0)
+    .sort((a, b) => {
+      const timeA = a.run.timing?.effectiveArrival ? new Date(a.run.timing.effectiveArrival).getTime() : Infinity
+      const timeB = b.run.timing?.effectiveArrival ? new Date(b.run.timing.effectiveArrival).getTime() : Infinity
+      return timeA - timeB
+    })
 
-  // In this rider's hands right now.
-  const toDeliver = runs.flatMap((r) =>
-    r.orders.filter((o) => o.status === 'DISPATCHED').map((o) => ({ order: o, run: r })),
-  )
+  // By default, expand the first (most urgent) train
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const initial = new Set<string>()
+    if (toPickUp.length > 0) initial.add(toPickUp[0].run.key)
+    return initial
+  })
 
-  // Still cooking — shown small, so the rider knows more is coming and does not
-  // walk away, but it is not work they can act on.
+  function toggleExpand(runKey: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(runKey)) next.delete(runKey)
+      else next.add(runKey)
+      return next
+    })
+  }
+
   const cooking = runs.reduce(
     (n, r) => n + r.orders.filter((o) => ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED'].includes(o.status)).length,
     0,
   )
 
-  // Selection is reconciled against what is actually on screen rather than
-  // trimmed in an effect: another rider may have taken an order since it was
-  // ticked, and submitting a stale id would fail the whole batch.
   const available = new Set(toPickUp.flatMap((g) => g.orders.map((o) => o.id)))
   const selected = [...picked].filter((id) => available.has(id))
 
@@ -80,252 +103,271 @@ export function HomeScreen({
     })
   }
 
-  const nothing = toPickUp.length === 0 && toDeliver.length === 0
-
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingTop: 24,
+          paddingHorizontal: 16,
+          paddingTop: 20,
           paddingBottom: selected.length > 0 ? 120 : 48,
         }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {nothing ? (
-          <View style={{ alignItems: 'center', paddingVertical: 80 }}>
-            <Text style={s.h2}>Nothing to do yet</Text>
-            <Text style={[s.muted, { marginTop: 8, textAlign: 'center' }]}>
-              {cooking > 0
-                ? `${cooking} order${cooking === 1 ? '' : 's'} still being cooked.\nPull down to check again.`
-                : 'Pull down to check again.'}
-            </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+          <View style={{
+            width: 44, height: 44, borderRadius: 12, backgroundColor: colors.softBlue,
+            justifyContent: 'center', alignItems: 'center',
+          }}>
+            <Store size={22} color={colors.primary} />
           </View>
-        ) : null}
-
-        {toDeliver.length > 0 ? (
-          <>
-            <Text style={s.sectionLabel}>DELIVER NOW · {toDeliver.length}</Text>
-            {toDeliver.map(({ order, run }) => {
-              const until = untilLabel(run.timing.effectiveArrival)
-              const delay = delayLabel(run.timing.delayMinutes)
-              return (
-                <Card key={order.id}>
-                  <Pressable
-                    onPress={() => onOpenOrder(order, run)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Deliver to coach ${order.coach ?? 'unknown'} berth ${order.berth ?? ''}, ${order.contactName ?? 'no name'}`}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-                  >
-                    <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
-                      <Seat coach={order.coach} berth={order.berth} />
-                      <Text style={{
-                        fontSize: 15,
-                        fontWeight: until.urgent ? '700' : '500',
-                        color: until.urgent ? C.red : C.muted,
-                      }}>
-                        {until.text}
-                      </Text>
-                    </View>
-
-                    {/* Which train, by name. A rider works several at once and
-                        a number alone is not what is called on a platform. */}
-                    <Text style={{ fontSize: 15, color: C.ink, marginTop: 14 }} numberOfLines={1}>
-                      {run.trainNo} · {run.trainName ?? 'Train name not known'}
-                    </Text>
-                    <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>
-                      {timeIST(run.timing.effectiveArrival)}
-                      {run.timing.platform ? `   ·   Platform ${run.timing.platform}` : ''}
-                      {delay && delay !== 'On time' ? `   ·   ${delay}` : ''}
-                    </Text>
-
-                    <Rule style={{ marginVertical: 16 }} />
-
-                    <Person name={order.contactName} phone={order.contactPhone} />
-
-                    <Rule style={{ marginVertical: 16 }} />
-
-                    <View style={[s.row, { justifyContent: 'space-between' }]}>
-                      <Text style={{ fontSize: 14, color: C.muted }}>
-                        {order.handoverPoint
-                          ? `Hand over at ${order.handoverPoint}`
-                          : `${order.items.filter((i) => !i.isPacking).length} item${order.items.filter((i) => !i.isPacking).length === 1 ? '' : 's'}`}
-                      </Text>
-                      <Text style={{
-                        fontSize: 15, fontWeight: '700',
-                        color: order.paymentMode === 'COD' ? C.amber : C.green,
-                      }}>
-                        {order.paymentMode === 'COD'
-                          ? `₹${order.amountPaise === null ? '?' : Math.round(order.amountPaise / 100)} cash`
-                          : 'Paid'}
-                      </Text>
-                    </View>
-                  </Pressable>
-
-                  {/* Taking an order is one tap and gets mistapped. This is the
-                      way back, kept quiet so it is not the thing hit next. */}
-                  <Pressable
-                    onPress={() => onReturn(order.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Put this order back at the shop"
-                    hitSlop={10}
-                    style={({ pressed }) => [{
-                      alignSelf: 'flex-start', marginTop: 16, opacity: pressed ? 0.5 : 1,
-                    }]}
-                  >
-                    <Text style={{ fontSize: 13, color: C.faint }}>
-                      Took by mistake? Put back
-                    </Text>
-                  </Pressable>
-                </Card>
-              )
-            })}
-          </>
-        ) : null}
-
-        {toPickUp.length > 0 ? (
-          <>
-            <Text style={[s.sectionLabel, { marginTop: toDeliver.length > 0 ? 30 : 0, marginBottom: 6 }]}>
-              PICK UP FROM SHOP
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary, letterSpacing: 0.8, marginBottom: 3 }}>
+              PICK UP YOUR ORDER
             </Text>
-            <Text style={[s.muted, { marginBottom: 18 }]}>
+            <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText, lineHeight: 18 }}>
               Tick the ones you are taking. Leave the rest for another rider.
             </Text>
+          </View>
+        </View>
 
-            {toPickUp.map(({ run, orders }) => {
-              const until = untilLabel(run.timing.effectiveArrival)
-              const delay = delayLabel(run.timing.delayMinutes)
-              const ids = orders.map((o) => o.id)
-              const allOn = ids.every((id) => picked.has(id))
-              const someOn = ids.filter((id) => picked.has(id)).length
+        {toPickUp.length === 0 ? (
+          <View style={{ alignItems: 'center', paddingVertical: 80 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>No orders to pick up</Text>
+            <Text style={{ fontSize: 14, fontWeight: '400', color: colors.secondaryText, marginTop: 8, textAlign: 'center', lineHeight: 20 }}>
+              {cooking > 0
+                ? `${cooking} order${cooking === 1 ? '' : 's'} still being cooked.\nPull down to check again.`
+                : 'All caught up! Pull down to refresh.'}
+            </Text>
+          </View>
+        ) : (
+          toPickUp.map(({ run, orders }) => {
+            const until = untilLabel(run.timing.effectiveArrival)
+            const delay = delayLabel(run.timing.delayMinutes)
+            const ids = orders.map((o) => o.id)
+            const allOn = ids.every((id) => picked.has(id))
+            const someOn = ids.filter((id) => picked.has(id)).length
+            const isHere = until.text.toLowerCase() === 'train is here'
+            const isExpanded = expanded.has(run.key)
 
-              return (
-                <Card key={run.key} style={{ padding: 0 }}>
-                  <View style={{ padding: 18 }}>
-                    <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
-                      <Text style={s.train} numberOfLines={1}>
-                        {run.trainNo ?? '—'}
-                      </Text>
-                      <Text style={{
-                        fontSize: 15,
-                        fontWeight: until.urgent ? '700' : '500',
-                        color: until.urgent ? C.red : C.muted,
+            return (
+              <View key={run.key} style={{ marginBottom: 18 }}>
+                <View style={{
+                  backgroundColor: colors.softBlue,
+                  borderRadius: 16,
+                  borderWidth: 1, borderColor: '#D8E2F8',
+                  padding: 16, marginBottom: isExpanded ? 12 : 0,
+                }}>
+                  <Pressable
+                    onPress={() => toggleExpand(run.key)}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={{ fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>
+                          {run.trainNo ?? '—'}
+                        </Text>
+                        <Text style={{ fontSize: 14, color: colors.text, marginTop: 3, textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.2 }}>
+                          {run.trainName}
+                        </Text>
+                      </View>
+                      <View style={{
+                        backgroundColor: isHere ? colors.successBg : '#FFFFFF',
+                        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
                       }}>
-                        {until.text}
-                      </Text>
+                        <Text style={{
+                          fontSize: 12, fontWeight: '600',
+                          color: isHere ? colors.success : colors.primary,
+                        }}>{until.text}</Text>
+                      </View>
                     </View>
-                    <Text style={{ fontSize: 15, color: C.ink, marginTop: 4 }} numberOfLines={1}>
-                      {run.trainName}
-                    </Text>
-                    <Text style={{ fontSize: 14, color: C.muted, marginTop: 6 }}>
-                      {timeIST(run.timing.effectiveArrival)}
-                      {run.timing.platform ? `   ·   Platform ${run.timing.platform}` : ''}
-                      {delay && delay !== 'On time' ? `   ·   ${delay}` : ''}
-                      {`   ·   ${orders.length} waiting`}
-                    </Text>
 
-                    {/* Take-all sits with the train, because taking the whole
-                        train is the common case on a small order count. */}
-                    <Pressable
-                      onPress={() => toggleAll(ids, allOn)}
-                      accessibilityRole="button"
-                      accessibilityLabel={allOn ? 'Clear this train' : 'Select every order on this train'}
-                      hitSlop={10}
-                      style={({ pressed }) => [{ marginTop: 14, opacity: pressed ? 0.5 : 1 }]}
-                    >
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent }}>
-                        {allOn ? 'Clear all' : `Select all ${orders.length}`}
-                        {!allOn && someOn > 0 ? `   ·   ${someOn} ticked` : ''}
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  {orders.map((o) => {
-                    const on = picked.has(o.id)
-                    return (
-                      <View key={o.id}>
-                        <Rule />
-                        <Pressable
-                          onPress={() => toggle(o.id)}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: on }}
-                          accessibilityLabel={`Coach ${o.coach ?? 'unknown'} berth ${o.berth ?? ''}, ${o.contactName ?? 'no name'}`}
-                          style={({ pressed }) => [
-                            s.row,
-                            {
-                              alignItems: 'flex-start',
-                              gap: 14,
-                              paddingVertical: 16,
-                              paddingHorizontal: 18,
-                              backgroundColor: on ? C.subtle : 'transparent',
-                              opacity: pressed ? 0.6 : 1,
-                            },
-                          ]}
-                        >
-                          <View style={{ paddingTop: 3 }}>
-                            <Check on={on} />
-                          </View>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
-                              <Seat coach={o.coach} berth={o.berth} />
-                              <Text style={{
-                                fontSize: 14, fontWeight: '700',
-                                color: o.paymentMode === 'COD' ? C.amber : C.green,
-                              }}>
-                                {o.paymentMode === 'COD'
-                                  ? `₹${o.amountPaise === null ? '?' : Math.round(o.amountPaise / 100)}`
-                                  : 'Paid'}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 14 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', rowGap: 4, flex: 1, paddingRight: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Clock size={14} color={colors.secondaryText} />
+                          <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText }}>
+                            {timeIST(run.timing.effectiveArrival)}
+                          </Text>
+                        </View>
+                        {run.timing.platform ? (
+                          <>
+                            <Text style={{ fontSize: 13, color: '#9CA3AF', marginHorizontal: 6 }}>·</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Train size={14} color={colors.secondaryText} />
+                              <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText }}>
+                                Platform {run.timing.platform}
                               </Text>
                             </View>
-                            <View style={{ marginTop: 12 }}>
-                              <Person name={o.contactName} phone={o.contactPhone} compact />
-                            </View>
-                          </View>
-                        </Pressable>
+                          </>
+                        ) : null}
+                        <Text style={{ fontSize: 13, color: '#9CA3AF', marginHorizontal: 6 }}>·</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Users size={14} color={colors.secondaryText} />
+                          <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText }}>
+                            {orders.length} waiting
+                          </Text>
+                        </View>
+                        {delay && delay !== 'On time' ? (
+                          <>
+                            <Text style={{ fontSize: 13, color: '#9CA3AF', marginHorizontal: 6 }}>·</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText }}>
+                              {delay}
+                            </Text>
+                          </>
+                        ) : null}
                       </View>
-                    )
-                  })}
-                </Card>
-              )
-            })}
-          </>
-        ) : null}
 
-        {cooking > 0 && !nothing ? (
-          <Text style={[s.muted, { textAlign: 'center', marginTop: 24 }]}>
+                      <View style={{ paddingBottom: 2, paddingLeft: 4 }}>
+                        <Train size={36} color={colors.primary} />
+                      </View>
+                    </View>
+                  </Pressable>
+
+                  <View style={{ height: 1, backgroundColor: '#D8E2F8', marginVertical: 12 }} />
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Pressable
+                      onPress={() => toggleAll(ids, allOn)}
+                      hitSlop={8}
+                      style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.primary }}>
+                        {allOn ? 'Clear all' : `Select all ${orders.length}`}
+                        {!allOn && someOn > 0 ? `  ·  ${someOn} ticked` : ''}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => toggleExpand(run.key)}
+                      hitSlop={8}
+                      style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>
+                        {isExpanded ? 'Hide' : 'View orders'}
+                      </Text>
+                      {isExpanded ? (
+                        <ChevronDown size={18} color={colors.primary} />
+                      ) : (
+                        <ChevronRight size={18} color={colors.primary} />
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+
+                {isExpanded && orders.map((o) => {
+                  const on = picked.has(o.id)
+                  return (
+                    <Pressable
+                      key={o.id}
+                      onPress={() => toggle(o.id)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      style={({ pressed }) => [{
+                        flexDirection: 'row', alignItems: 'center',
+                        backgroundColor: on ? colors.softBlue : colors.card,
+                        borderRadius: 16, borderWidth: 1,
+                        borderColor: on ? colors.primary : colors.border,
+                        padding: 16, marginBottom: 10,
+                        opacity: pressed ? 0.7 : 1,
+                      }]}
+                    >
+                      <View style={{
+                        width: 24, height: 24, borderRadius: 6,
+                        borderWidth: 1.5, borderColor: on ? colors.primary : '#D1D5DB',
+                        backgroundColor: on ? colors.primary : 'transparent',
+                        justifyContent: 'center', alignItems: 'center',
+                        marginRight: 14,
+                      }}>
+                        {on && <Check size={16} color="#FFFFFF" strokeWidth={3} />}
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: -0.3 }}>
+                            {o.coach ? `${o.coach} ${o.berth ?? ''}` : '—'}
+                          </Text>
+                          <Text style={{
+                            fontSize: 17, fontWeight: '700',
+                            color: o.paymentMode === 'COD' ? colors.price : colors.success,
+                          }}>
+                            {o.paymentMode === 'COD'
+                              ? `₹${o.amountPaise === null ? '?' : Math.round(o.amountPaise / 100)}`
+                              : 'Paid'}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 6 }}>
+                          <View style={{ flex: 1, marginRight: 10 }}>
+                            <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }} numberOfLines={1}>
+                              {o.contactName || 'No name'}
+                            </Text>
+                            <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText, marginTop: 2 }}>
+                              {o.contactPhone || 'No phone'}
+                            </Text>
+                          </View>
+                          {o.contactPhone && (
+                            <Pressable
+                              onPress={() => Linking.openURL(`tel:${o.contactPhone}`)}
+                              style={({ pressed }) => [{
+                                flexDirection: 'row', alignItems: 'center', gap: 5,
+                                paddingHorizontal: 14, paddingVertical: 6,
+                                borderRadius: 8, borderWidth: 1, borderColor: colors.primary,
+                                backgroundColor: 'transparent',
+                                opacity: pressed ? 0.6 : 1,
+                              }]}
+                            >
+                              <Phone size={13} color={colors.primary} />
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary, letterSpacing: 0.5 }}>CALL</Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      </View>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            )
+          })
+        )}
+
+        {cooking > 0 && toPickUp.length > 0 ? (
+          <Text style={{ color: colors.secondaryText, fontSize: 13, fontWeight: '400', textAlign: 'center', marginTop: 24 }}>
             {cooking} more still being cooked
           </Text>
         ) : null}
       </ScrollView>
 
-      {/* The action follows the selection, pinned so it is reachable however
-          far down the list the rider has scrolled. */}
       {selected.length > 0 ? (
-        <View style={s2.bar}>
-          <Button
-            label={`Picked up ${selected.length} order${selected.length === 1 ? '' : 's'}`}
-            tone="success"
-            size="hero"
-            busy={busy}
+        <View style={{
+          position: 'absolute',
+          left: 0, right: 0, bottom: 0,
+          paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20,
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+        }}>
+          <Pressable
+            disabled={busy}
             onPress={() => {
               onTake(selected)
               setPicked(new Set())
             }}
-          />
+            style={({ pressed }) => [{
+              backgroundColor: colors.primary,
+              borderRadius: 12,
+              minHeight: 50,
+              paddingHorizontal: 18,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: busy ? 0.4 : (pressed ? 0.85 : 1),
+            }]}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '700', letterSpacing: 0.2, color: '#fff' }}>
+              {busy ? 'Processing...' : `Picked up ${selected.length} order${selected.length === 1 ? '' : 's'}`}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
     </View>
   )
-}
-
-const s2 = {
-  bar: {
-    position: 'absolute' as const,
-    left: 0, right: 0, bottom: 0,
-    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 18,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: C.line,
-  },
 }

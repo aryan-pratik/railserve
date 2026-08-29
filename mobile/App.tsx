@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { AppState, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native'
+import { LogOut } from 'lucide-react-native'
 import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
 import { flushQueue, fetchHistory, fetchRuns, newClientId, queueAndFlush, queueManyAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
@@ -10,8 +11,10 @@ import type { HistoryOrder, RunOrder, RunsResponse } from './src/types'
 import { LoginScreen } from './src/screens/Login'
 import { HomeScreen } from './src/screens/Home'
 import { DeliveryScreen } from './src/screens/Delivery'
+import { DeliveryTabScreen } from './src/screens/DeliveryTab'
 import { HistoryScreen } from './src/screens/History'
-import { C, TabBar, s } from './src/ui'
+import { ProfileModal } from './src/screens/ProfileModal'
+import { C, TabBar } from './src/ui'
 
 type Screen = { name: 'home' } | { name: 'delivery'; runKey: string; orderId: string }
 
@@ -26,13 +29,14 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [queueSize, setQueueSize] = useState(0)
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
-  const [tab, setTab] = useState<'jobs' | 'done'>('jobs')
+  const [tab, setTab] = useState<'orders' | 'delivery' | 'done'>('orders')
   const [history, setHistory] = useState<HistoryOrder[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [profileVisible, setProfileVisible] = useState(false)
 
   // --- boot ---------------------------------------------------------------
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       const session = await loadSession()
       if (session) {
         setToken(session.token)
@@ -124,23 +128,23 @@ export default function App() {
   // --- push registration --------------------------------------------------
   useEffect(() => {
     if (!token) return
-    ;(async () => {
-      try {
-        if (!Device.isDevice) return
-        const existing = await Notifications.getPermissionsAsync()
-        const status =
-          existing.status === 'granted'
-            ? existing.status
-            : (await Notifications.requestPermissionsAsync()).status
-        if (status !== 'granted') return
+      ; (async () => {
+        try {
+          if (!Device.isDevice) return
+          const existing = await Notifications.getPermissionsAsync()
+          const status =
+            existing.status === 'granted'
+              ? existing.status
+              : (await Notifications.requestPermissionsAsync()).status
+          if (status !== 'granted') return
 
-        const pushToken = (await Notifications.getExpoPushTokenAsync()).data
-        await registerPushToken(token, pushToken)
-      } catch {
-        // Push is a convenience: the leave-now countdown is on screen anyway,
-        // and a dev build without FCM credentials will fail here routinely.
-      }
-    })()
+          const pushToken = (await Notifications.getExpoPushTokenAsync()).data
+          await registerPushToken(token, pushToken)
+        } catch {
+          // Push is a convenience: the leave-now countdown is on screen anyway,
+          // and a dev build without FCM credentials will fail here routinely.
+        }
+      })()
   }, [token])
 
   // --- actions ------------------------------------------------------------
@@ -157,12 +161,12 @@ export default function App() {
     setData((prev) =>
       prev
         ? {
-            ...prev,
-            runs: prev.runs.map((r) => ({
-              ...r,
-              orders: r.orders.map((o) => (o.id === orderId ? { ...o, ...patch } : o)),
-            })),
-          }
+          ...prev,
+          runs: prev.runs.map((r) => ({
+            ...r,
+            orders: r.orders.map((o) => (o.id === orderId ? { ...o, ...patch } : o)),
+          })),
+        }
         : prev,
     )
   }
@@ -190,6 +194,7 @@ export default function App() {
     setOffline(r.offline)
     if (!r.offline) await refresh(token, false)
     setBusy(false)
+    setTab('delivery')
   }
 
   /**
@@ -255,12 +260,6 @@ export default function App() {
     if (!r.offline) void loadHistory(token)
   }
 
-  // Work the rider can act on right now — what the tab badge counts.
-  const liveJobs = (data?.runs ?? []).reduce(
-    (n, r) => n + r.orders.filter((o) => o.status === 'DISPATCHED' || o.status === 'PREPARED').length,
-    0,
-  )
-
   // --- render -------------------------------------------------------------
   if (booting) {
     return <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} />
@@ -287,11 +286,35 @@ export default function App() {
       <View
         style={{
           flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-          paddingHorizontal: 20, paddingVertical: 16,
-          borderBottomWidth: 1, borderBottomColor: C.line, backgroundColor: '#fff',
+          paddingHorizontal: 16, paddingVertical: 12,
+          borderBottomWidth: 1, borderBottomColor: '#E5E7EB', backgroundColor: '#FFFFFF',
         }}
       >
-        <Text style={{ fontSize: 16, fontWeight: '600', color: C.ink }}>{user.name}</Text>
+        <Pressable
+          onPress={() => setProfileVisible(true)}
+          style={({ pressed }) => [{
+            flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 10,
+            opacity: pressed ? 0.7 : 1,
+          }]}
+        >
+          <View style={{
+            width: 40, height: 40, borderRadius: 20, backgroundColor: '#EEF3FF',
+            justifyContent: 'center', alignItems: 'center',
+          }}>
+            <Text style={{ color: '#2457D6', fontSize: 15, fontWeight: '700' }}>
+              {user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#17181C' }} numberOfLines={1}>
+              {user.name}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '400', color: '#686B76', marginTop: 1 }} numberOfLines={1}>
+              {user.phone || 'Platform Rider'}
+            </Text>
+          </View>
+        </Pressable>
+
         <Pressable
           onPress={async () => {
             await clearSession()
@@ -300,8 +323,16 @@ export default function App() {
             setScreen({ name: 'home' })
           }}
           hitSlop={10}
+          accessibilityLabel="Sign out"
+          style={({ pressed }) => [{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            paddingHorizontal: 12, paddingVertical: 7,
+            borderRadius: 8, borderWidth: 1, borderColor: '#FEE2E2',
+            backgroundColor: '#FEF2F2',
+            opacity: pressed ? 0.6 : 1,
+          }]}
         >
-          <Text style={{ fontSize: 14, color: C.faint }}>Sign out</Text>
+          <LogOut size={15} color="#DC2626" />
         </Pressable>
       </View>
 
@@ -327,7 +358,21 @@ export default function App() {
         <HistoryScreen
           orders={history}
           refreshing={historyLoading}
-          onRefresh={() => void loadHistory(token)}
+          onRefresh={() => {
+            if (token) void loadHistory(token)
+          }}
+        />
+      ) : tab === 'delivery' ? (
+        <DeliveryTabScreen
+          runs={data?.runs ?? []}
+          refreshing={refreshing}
+          onRefresh={() => {
+            if (token) {
+              void refresh(token, true)
+              void sync(token)
+            }
+          }}
+          onOpenOrder={(o, r) => setScreen({ name: 'delivery', runKey: r.key, orderId: o.id })}
         />
       ) : (
         <HomeScreen
@@ -335,8 +380,10 @@ export default function App() {
           refreshing={refreshing}
           busy={busy}
           onRefresh={() => {
-            void refresh(token, true)
-            void sync(token)
+            if (token) {
+              void refresh(token, true)
+              void sync(token)
+            }
           }}
           onTake={(orderIds) => void takeOrders(orderIds)}
           onReturn={(orderId) => void returnOrder(orderId)}
@@ -349,13 +396,29 @@ export default function App() {
       {screen.name === 'home' ? (
         <TabBar
           tab={tab}
-          badge={liveJobs}
           onChange={(t) => {
             setTab(t)
-            if (t === 'done') void loadHistory(token)
+            if (t === 'done' && token) void loadHistory(token)
           }}
         />
       ) : null}
+
+      <ProfileModal
+        visible={profileVisible}
+        onClose={() => setProfileVisible(false)}
+        user={user}
+        stationCode={data?.runs[0]?.stationCode}
+        serviceDate={data?.serviceDate}
+        history={history}
+        offline={offline}
+        queueSize={queueSize}
+        onSignOut={async () => {
+          await clearSession()
+          setToken(null)
+          setUser(null)
+          setScreen({ name: 'home' })
+        }}
+      />
 
     </SafeAreaView>
   )
