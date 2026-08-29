@@ -4,6 +4,8 @@ import { contextFromBearer } from '@/lib/mobile/token'
 import { findById } from '@/lib/repo/orderRepo'
 import { getProofStore, isAllowedContentType, ProofStoreUnavailable } from '@/lib/storage'
 
+import { preflight, withCors } from '@/lib/mobile/cors'
+
 export const dynamic = 'force-dynamic'
 
 const Body = z.object({
@@ -21,38 +23,40 @@ const Body = z.object({
  */
 export async function POST(request: Request) {
   const ctx = await contextFromBearer(request)
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!ctx) return withCors(request, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
   if (ctx.role !== 'DELIVERY_AGENT') {
-    return NextResponse.json({ error: 'Only a rider may attach delivery proof' }, { status: 403 })
+    return withCors(request, NextResponse.json({ error: 'Only a rider may attach delivery proof' }, { status: 403 }))
   }
 
   const parsed = Body.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json({ error: 'orderId and contentType are required' }, { status: 400 })
+    return withCors(request, NextResponse.json({ error: 'orderId and contentType are required' }, { status: 400 }))
   }
   const { orderId, contentType } = parsed.data
 
   if (!isAllowedContentType(contentType)) {
-    return NextResponse.json({ error: 'Only JPEG, PNG or WebP images' }, { status: 400 })
+    return withCors(request, NextResponse.json({ error: 'Only JPEG, PNG or WebP images' }, { status: 400 }))
   }
 
   // Out of scope reads as not-found, never as forbidden — a 403 would confirm
   // the order exists to someone who should not know that.
   const order = await findById(ctx, orderId)
-  if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+  if (!order) return withCors(request, NextResponse.json({ error: 'Order not found' }, { status: 404 }))
 
   try {
     const { uploadUrl, key, expiresAt } = await getProofStore().presignUpload({
       orderId,
       contentType,
     })
-    return NextResponse.json({ uploadUrl, key, expiresAt: expiresAt.toISOString() })
+    return withCors(request, NextResponse.json({ uploadUrl, key, expiresAt: expiresAt.toISOString() }))
   } catch (err) {
     if (err instanceof ProofStoreUnavailable) {
       // Not an error the rider can act on, and not a reason to block delivery.
-      return NextResponse.json({ error: err.message }, { status: 503 })
+      return withCors(request, NextResponse.json({ error: err.message }, { status: 503 }))
     }
     console.error('[proof-url] presign failed', err)
-    return NextResponse.json({ error: 'Could not prepare the upload' }, { status: 500 })
+    return withCors(request, NextResponse.json({ error: 'Could not prepare the upload' }, { status: 500 }))
   }
 }
+
+export const OPTIONS = preflight

@@ -44,6 +44,11 @@ const EnvSchema = z.object({
   // which is fine locally and is not fine on a public host.
   CRON_TOKEN: z.string().default(''),
 
+  // Comma-separated origins allowed to call /api/mobile/* from a browser.
+  // Empty in production means the browser path is closed; local dev always
+  // permits the Expo web dev server.
+  MOBILE_CORS_ORIGINS: z.string().default(''),
+
   DISPATCH_BUFFER_MINUTES: z.coerce.number().int().min(0).default(5),
   KOT_DELAY_THRESHOLD_MINUTES: z.coerce.number().int().min(0).default(45),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

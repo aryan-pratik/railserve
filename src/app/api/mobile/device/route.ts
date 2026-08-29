@@ -4,6 +4,8 @@ import { contextFromBearer } from '@/lib/mobile/token'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 
+import { preflight, withCors } from '@/lib/mobile/cors'
+
 export const dynamic = 'force-dynamic'
 
 const Body = z.object({ pushToken: z.string().trim().min(1).nullable() })
@@ -16,13 +18,15 @@ const Body = z.object({ pushToken: z.string().trim().min(1).nullable() })
  */
 export async function POST(request: Request) {
   const ctx = await contextFromBearer(request)
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!ctx) return withCors(request, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
 
   const parsed = Body.safeParse(await request.json().catch(() => null))
-  if (!parsed.success) return NextResponse.json({ error: 'pushToken required' }, { status: 400 })
+  if (!parsed.success) return withCors(request, NextResponse.json({ error: 'pushToken required' }, { status: 400 }))
 
   await connectDb()
   await User.updateOne({ _id: ctx.userId }, { $set: { fcmToken: parsed.data.pushToken } })
 
-  return NextResponse.json({ ok: true })
+  return withCors(request, NextResponse.json({ ok: true }))
 }
+
+export const OPTIONS = preflight

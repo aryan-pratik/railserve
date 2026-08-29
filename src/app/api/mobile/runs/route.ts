@@ -8,6 +8,8 @@ import { Restaurant } from '@/lib/models'
 import { env } from '@/lib/env'
 import { todayIST } from '@/lib/format'
 
+import { preflight, withCors } from '@/lib/mobile/cors'
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -17,7 +19,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: Request) {
   const ctx = await contextFromBearer(request)
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!ctx) return withCors(request, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
 
   const serviceDate =
     new URL(request.url).searchParams.get('serviceDate') || todayIST()
@@ -30,7 +32,7 @@ export async function GET(request: Request) {
   const walkFor = new Map(outlets.map((o) => [String(o._id), o.walkToPlatformMinutes ?? 10]))
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
-  return NextResponse.json({
+  return withCors(request, NextResponse.json({
     serviceDate,
     fetchedAt: new Date().toISOString(),
     runs: runs.map((run) => {
@@ -85,5 +87,7 @@ export async function GET(request: Request) {
         })),
       }
     }),
-  })
+  }))
 }
+
+export const OPTIONS = preflight
