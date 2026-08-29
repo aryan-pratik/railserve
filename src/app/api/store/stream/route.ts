@@ -5,6 +5,16 @@ import { todayIST } from '@/lib/format'
 export const dynamic = 'force-dynamic'
 
 /**
+ * Serverless kills a function at its duration cap, so an SSE stream cannot run
+ * forever. Rather than be cut off mid-message, the stream closes itself just
+ * inside the window and lets EventSource reconnect — that is exactly the
+ * behaviour SSE was chosen for. Raise this if the deployment allows longer.
+ */
+export const maxDuration = 60
+const STREAM_LIFETIME_MS = 50_000
+const TICK_MS = 5_000
+
+/**
  * Server-Sent Events feed for the store dashboard. Plan §2 picks SSE over
  * WebSockets because it reconnects on its own and needs no extra protocol.
  *
@@ -18,6 +28,7 @@ export async function GET() {
 
   const encoder = new TextEncoder()
   let closed = false
+  let cleanup: (() => void) | undefined
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -54,21 +65,31 @@ export async function GET() {
         } catch {
           // A transient DB hiccup must not kill the stream; the next tick retries.
         }
-      }, 5000)
+      }, TICK_MS)
 
       const close = () => {
+        if (closed) return
         closed = true
         clearInterval(timer)
+        clearTimeout(lifetime)
         try {
           controller.close()
         } catch {
           // Already closed by the client.
         }
       }
-      ;(controller as unknown as { _close?: () => void })._close = close
+
+      // Retire the connection before the platform does. The client reconnects
+      // on its own, so a clean close is invisible; being killed mid-write is
+      // not — it surfaces as an error event and a gap in the feed.
+      const lifetime = setTimeout(close, STREAM_LIFETIME_MS)
+
+      cleanup = close
     },
     cancel() {
-      closed = true
+      // The client went away — stop the timers, or the interval keeps polling
+      // Mongo for a reader that no longer exists.
+      cleanup?.()
     },
   })
 

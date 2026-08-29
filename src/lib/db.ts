@@ -53,6 +53,16 @@ export async function connectDb(): Promise<typeof mongoose> {
         autoIndex: false,
         bufferCommands: false,
         serverSelectionTimeoutMS: 5000,
+        // Serverless multiplies this. Every warm Vercel lambda holds its own
+        // pool, so the driver default of 100 means a few dozen concurrent
+        // instances can exhaust an Atlas cluster's connection limit (500 on
+        // the shared tiers) and start refusing the app's own queries. Ten is
+        // ample for a request that makes a handful of reads.
+        maxPoolSize: 10,
+        // Hand idle sockets back rather than holding them for a lambda that
+        // may never be invoked again.
+        minPoolSize: 0,
+        maxIdleTimeMS: 30_000,
       })
       .then(async (m) => {
         await assertReplicaSet(m)

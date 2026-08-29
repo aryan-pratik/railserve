@@ -45,3 +45,10 @@ next-env.d.ts
 # local scratch
 /tmp/
 *.log
+
+# Vendored agent skills. Installed per-machine via `npx skills add` / the
+# impeccable CLI; ~300 files we do not maintain and that carry no project code.
+/.claude/
+/.agents/
+/.codex/
+/.impeccable/
