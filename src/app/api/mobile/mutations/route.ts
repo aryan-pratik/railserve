@@ -32,16 +32,22 @@ const Mutation = z.discriminatedUnion('kind', [
     at: z.string().optional(),
   }),
   z.object({
+    // One order, not a whole train. A rider picks which of a train's orders
+    // they can physically carry — see the DISPATCH_RUN note below.
+    kind: z.literal('DISPATCH_ORDER'),
+    clientId: z.string().min(1),
+    orderId: z.string().min(1),
+    at: z.string().optional(),
+  }),
+  z.object({
     kind: z.literal('DELIVER_ORDER'),
     clientId: z.string().min(1),
     orderId: z.string().min(1),
-    // A photo is the proof the rider app collects — it never asks for a name,
-    // because asking a passenger to spell one while a train is about to leave
-    // is the slowest way to close an order, and a picture is better evidence.
-    //
-    // Neither is permitted, and deliberately so: a rider with no signal at the
-    // platform cannot upload a photo, and refusing the delivery would strand a
-    // completed job in the offline queue forever. proofType simply stays null.
+    // The passenger's name is the proof the app collects today; proofKey is
+    // kept for the photo path, which the server supports and the app does not
+    // yet use. Neither is required, and deliberately so: a rider with no
+    // signal on the platform still has to be able to close the job, so
+    // refusing would strand a completed delivery in the queue forever.
     receivedBy: z.string().trim().default(''),
     proofKey: z.string().trim().optional().nullable(),
     amountCollected: z.string().optional().nullable(),
@@ -97,7 +103,12 @@ export async function POST(request: Request) {
         continue
       }
 
-      const target = m.kind === 'DELIVER_ORDER' ? 'DELIVERED' : 'FAILED'
+      const target =
+        m.kind === 'DELIVER_ORDER'
+          ? 'DELIVERED'
+          : m.kind === 'DISPATCH_ORDER'
+            ? 'DISPATCHED'
+            : 'FAILED'
       const current = await findById(ctx, m.orderId)
 
       if (!current) {
@@ -119,7 +130,10 @@ export async function POST(request: Request) {
         to: target,
         meta: { via: 'expo-app', clientId: m.clientId, queuedAt: m.at ?? null },
         apply:
-          m.kind === 'DELIVER_ORDER'
+          m.kind === 'DISPATCH_ORDER'
+            ? // transitionOrder records the rider from ctx; nothing to apply.
+              {}
+            : m.kind === 'DELIVER_ORDER'
             ? {
                 // The photo wins when both are present — it is the evidence
                 // that survives a dispute. proofValue holds the object key,
