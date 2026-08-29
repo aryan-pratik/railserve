@@ -6,14 +6,20 @@
  * "pick up") and DISPATCHED (in the rider's hands, "deliver now"). Without
  * both, half the screen is untestable.
  *
- * Additive on purpose — it leaves any existing admin alone, so it can be run
- * against a database that has already been reset to a single account.
+ * Additive for staff — it leaves any existing admin alone, so it can be run
+ * against a database that has already been reset to a single account. Today's
+ * orders for the demo outlet are replaced rather than added to, so re-running
+ * gives the same board instead of piling up test data.
+ *
+ * One train is deliberately large. A rider picks the orders they can carry,
+ * and that behaviour is untestable on a train with three.
  *
  *   npm run seed:rider
  */
 import bcrypt from 'bcryptjs'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Restaurant, User } from '../src/lib/models'
+import { __unsafeOrderModel as Order } from '../src/lib/repo/orderRepo'
 import { createManualOrder } from '../src/lib/repo/createOrder'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
 import { ManualOrderInput } from '../src/lib/validation/order'
@@ -72,15 +78,43 @@ async function main() {
     userId: rider._id, role: 'DELIVERY_AGENT', restaurantIds: [outlet._id],
   }
 
-  // Two trains so grouping is visible, and arrivals near enough that the
-  // urgency colours actually fire.
-  const orders = [
-    { train: '12506', name: 'NORTH EAST EXP', arriveIn: 18, coach: 'B5', berth: '37', who: 'Neelesh Soni', phone: '9752446747', cod: true,  amount: '236', item: 'Paneer Paratha With Curd Combo' },
-    { train: '12506', name: 'NORTH EAST EXP', arriveIn: 18, coach: 'S3', berth: '45', who: 'Anita Verma',  phone: '9839044444', cod: false, amount: '480', item: 'Veg Thali' },
-    { train: '12506', name: 'NORTH EAST EXP', arriveIn: 18, coach: 'A1', berth: '12', who: 'Rakesh Tiwari', phone: '9901213344', cod: true,  amount: '310', item: 'Chicken Biryani' },
-    { train: '12312', name: 'KALKA MAIL',     arriveIn: 55, coach: 'B2', berth: '28', who: 'Sneha Patel',  phone: '9555533221', cod: true,  amount: '198', item: 'Masala Dosa' },
-    { train: '12312', name: 'KALKA MAIL',     arriveIn: 55, coach: 'S6', berth: '04', who: 'Amit Kumar',   phone: '9876543210', cod: false, amount: '420', item: 'Rajma Chawal' },
+  // Two trains so grouping is visible, one of them big enough that a rider
+  // has to choose. Arrivals near enough that the urgency colours fire.
+  const NAMES = [
+    ['Neelesh Soni', '9752446747'], ['Anita Verma', '9839044444'],
+    ['Rakesh Tiwari', '9901213344'], ['Sneha Patel', '9555533221'],
+    ['Amit Kumar', '9876543210'], ['Priya Nair', '9812345678'],
+    ['Vikram Singh', '9700011122'], ['Fatima Sheikh', '9822233344'],
+    ['Deepak Yadav', '9911122233'], ['Meera Joshi', '9765432109'],
+    ['Arjun Reddy', '9988776655'], ['Kavita Rao', '9871122334'],
+    ['Sanjay Gupta', '9099887766'], ['Rhea D Souza', '9822119900'],
   ]
+  const COACHES = ['B1', 'B2', 'B3', 'A1', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'B4', 'B5', 'A2', 'S7']
+  const DISHES = [
+    ['Paneer Paratha With Curd Combo', '236'], ['Veg Thali', '480'],
+    ['Chicken Biryani', '310'], ['Masala Dosa', '198'],
+    ['Rajma Chawal', '420'], ['Chole Bhature', '260'],
+  ]
+
+  const orders = NAMES.map(([who, phone], i) => {
+    const big = i < 10
+    const [item, amount] = DISHES[i % DISHES.length]
+    return {
+      train: big ? '12506' : '12312',
+      name: big ? 'NORTH EAST EXP' : 'KALKA MAIL',
+      arriveIn: big ? 18 : 55,
+      coach: COACHES[i],
+      berth: String(12 + i * 3),
+      who, phone,
+      cod: i % 3 !== 0,
+      amount, item,
+    }
+  })
+
+  // Clear this outlet's board for today so the seed is repeatable. Scoped to
+  // the demo outlet and the current service date — it cannot touch real data.
+  const removed = await Order.deleteMany({ restaurantId: outlet._id, serviceDate: today })
+  if (removed.deletedCount) console.log(`cleared: ${removed.deletedCount} previous demo order(s)`)
 
   const created: string[] = []
   for (const o of orders) {
@@ -112,15 +146,33 @@ async function main() {
     }
   }
 
-  // The first two are already in the rider's hands, so "Deliver now" has
-  // something in it the moment they open the app.
+  // Two already in the rider's hands, so "Deliver now" has something in it the
+  // moment they open the app. The rest stay at the counter to be picked from.
   for (const id of created.slice(0, 2)) {
     await transitionOrder({ ctx: riderCtx, orderId: id, to: 'DISPATCHED' })
   }
 
+  // Two carried all the way through, so the Delivered tab has a record and a
+  // cash total to show rather than an empty state.
+  for (const [i, id] of created.slice(2, 4).entries()) {
+    const o = orders[i + 2]
+    await transitionOrder({ ctx: riderCtx, orderId: id, to: 'DISPATCHED' })
+    await transitionOrder({
+      ctx: riderCtx,
+      orderId: id,
+      to: 'DELIVERED',
+      apply: {
+        proofType: 'SIGNATURE',
+        proofValue: o.who,
+        ...(o.cod ? { amountCollectedPaise: Number(o.amount) * 100 } : {}),
+      },
+    })
+  }
+
   console.log(`\norders : ${created.length} created`)
-  console.log('         2 DISPATCHED  -> rider sees "Deliver now"')
-  console.log('         3 PREPARED    -> rider sees "Pick up from shop"')
+  console.log(`         2 DISPATCHED  -> rider sees "Deliver now"`)
+  console.log(`         2 DELIVERED   -> rider sees them under "Delivered"`)
+  console.log(`         ${created.length - 4} PREPARED    -> rider picks which ones to take`)
   console.log(`\nrider login: 9000000004 / ${PASSWORD}`)
   console.log(`store login: 9000000002 / ${PASSWORD}`)
 
