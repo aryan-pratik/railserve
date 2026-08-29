@@ -4,7 +4,6 @@
  *   npm run doctor
  */
 import mongoose from 'mongoose'
-import IORedis from 'ioredis'
 import { env } from '../src/lib/env'
 
 type Status = 'ok' | 'off' | 'broken'
@@ -48,28 +47,6 @@ async function checkMongo(): Promise<Check> {
   } catch (err) {
     return {
       name: 'MongoDB',
-      status: 'broken',
-      detail: err instanceof Error ? err.message : 'could not connect',
-      next: ['docker compose up -d'],
-    }
-  }
-}
-
-async function checkRedis(): Promise<Check> {
-  const redis = new IORedis(env.REDIS_URL, {
-    maxRetriesPerRequest: 1,
-    retryStrategy: () => null,
-    lazyConnect: true,
-  })
-  try {
-    await redis.connect()
-    await redis.ping()
-    await redis.quit()
-    return { name: 'Redis (background jobs)', status: 'ok', detail: env.REDIS_URL }
-  } catch (err) {
-    redis.disconnect()
-    return {
-      name: 'Redis (background jobs)',
       status: 'broken',
       detail: err instanceof Error ? err.message : 'could not connect',
       next: ['docker compose up -d'],
@@ -153,8 +130,7 @@ async function main() {
 
   const checks: Check[] = [
     await checkMongo(),
-    await checkRedis(),
-    checkTrain(),
+    await    checkTrain(),
     checkGmail(),
     checkPush(),
   ]

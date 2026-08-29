@@ -11,8 +11,12 @@ export default defineConfig({
     // transactions, so an in-memory standalone would not exercise the code
     // path that matters). Serial execution keeps them from colliding.
     fileParallelism: false,
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // Generous because the suite now talks to Atlas over the internet rather
+    // than a container on loopback. resetDb() truncates five collections and
+    // rebuilds two indexes; that is a few hundred milliseconds locally and
+    // tens of seconds across a network on a bad connection.
+    testTimeout: 60_000,
+    hookTimeout: 90_000,
     env: {
       MONGODB_URI:
         process.env.MONGODB_URI_TEST ??
