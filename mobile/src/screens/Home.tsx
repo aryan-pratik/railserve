@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
 import type { Run, RunOrder } from '../types'
-import { Button, C, Card, Check, Money, Person, Pill, Seat, s, timeIST, untilLabel, delayLabel } from '../ui'
+import { Button, C, Card, Check, Person, Rule, Seat, s, timeIST, untilLabel, delayLabel } from '../ui'
 
 /**
  * The rider's work.
@@ -86,13 +86,17 @@ export function HomeScreen({
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: selected.length > 0 ? 110 : 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 24,
+          paddingBottom: selected.length > 0 ? 120 : 48,
+        }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {nothing ? (
-          <View style={{ alignItems: 'center', paddingVertical: 70 }}>
-            <Text style={[s.h2, { textAlign: 'center' }]}>Nothing to do yet</Text>
-            <Text style={[s.muted, { marginTop: 6, textAlign: 'center' }]}>
+          <View style={{ alignItems: 'center', paddingVertical: 80 }}>
+            <Text style={s.h2}>Nothing to do yet</Text>
+            <Text style={[s.muted, { marginTop: 8, textAlign: 'center' }]}>
               {cooking > 0
                 ? `${cooking} order${cooking === 1 ? '' : 's'} still being cooked.\nPull down to check again.`
                 : 'Pull down to check again.'}
@@ -112,12 +116,13 @@ export function HomeScreen({
                     onPress={() => onOpenOrder(order, run)}
                     accessibilityRole="button"
                     accessibilityLabel={`Deliver to coach ${order.coach ?? 'unknown'} berth ${order.berth ?? ''}, ${order.contactName ?? 'no name'}`}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
                   >
-                    <View style={[s.row, { justifyContent: 'space-between' }]}>
+                    <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
                       <Seat coach={order.coach} berth={order.berth} />
                       <Text style={{
-                        fontSize: 15, fontWeight: '800',
+                        fontSize: 15,
+                        fontWeight: until.urgent ? '700' : '500',
                         color: until.urgent ? C.red : C.muted,
                       }}>
                         {until.text}
@@ -125,53 +130,52 @@ export function HomeScreen({
                     </View>
 
                     {/* Which train, by name. A rider works several at once and
-                        a number alone is not what they are shouted at the
-                        platform. */}
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: C.ink, marginTop: 10 }}
-                      numberOfLines={1}>
+                        a number alone is not what is called on a platform. */}
+                    <Text style={{ fontSize: 15, color: C.ink, marginTop: 14 }} numberOfLines={1}>
                       {run.trainNo} · {run.trainName ?? 'Train name not known'}
                     </Text>
-                    <View style={[s.row, { marginTop: 6, flexWrap: 'wrap', gap: 6 }]}>
-                      <Pill text={timeIST(run.timing.effectiveArrival)} />
-                      {run.timing.platform ? <Pill tone="dark" text={`PF ${run.timing.platform}`} /> : null}
-                      {delay && delay !== 'On time' ? <Pill tone="red" text={delay} /> : null}
-                    </View>
+                    <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>
+                      {timeIST(run.timing.effectiveArrival)}
+                      {run.timing.platform ? `   ·   Platform ${run.timing.platform}` : ''}
+                      {delay && delay !== 'On time' ? `   ·   ${delay}` : ''}
+                    </Text>
 
-                    <View style={{ height: 1, backgroundColor: C.line, marginVertical: 11 }} />
+                    <Rule style={{ marginVertical: 16 }} />
 
                     <Person name={order.contactName} phone={order.contactPhone} />
 
-                    <View style={[s.row, { marginTop: 11, justifyContent: 'space-between' }]}>
-                      <Text style={{ fontSize: 13, color: C.muted }}>
+                    <Rule style={{ marginVertical: 16 }} />
+
+                    <View style={[s.row, { justifyContent: 'space-between' }]}>
+                      <Text style={{ fontSize: 14, color: C.muted }}>
                         {order.handoverPoint
                           ? `Hand over at ${order.handoverPoint}`
-                          : `${order.items.filter((i) => !i.isPacking).length} item(s)`}
+                          : `${order.items.filter((i) => !i.isPacking).length} item${order.items.filter((i) => !i.isPacking).length === 1 ? '' : 's'}`}
                       </Text>
-                      {order.paymentMode === 'COD' ? (
-                        <Pill
-                          tone="amber"
-                          text={`Collect ₹${order.amountPaise === null ? '?' : Math.round(order.amountPaise / 100)}`}
-                        />
-                      ) : (
-                        <Pill tone="green" text="Paid" />
-                      )}
+                      <Text style={{
+                        fontSize: 15, fontWeight: '700',
+                        color: order.paymentMode === 'COD' ? C.amber : C.green,
+                      }}>
+                        {order.paymentMode === 'COD'
+                          ? `₹${order.amountPaise === null ? '?' : Math.round(order.amountPaise / 100)} cash`
+                          : 'Paid'}
+                      </Text>
                     </View>
                   </Pressable>
 
                   {/* Taking an order is one tap and gets mistapped. This is the
-                      way back, kept small so it is not the thing hit next. */}
+                      way back, kept quiet so it is not the thing hit next. */}
                   <Pressable
                     onPress={() => onReturn(order.id)}
                     accessibilityRole="button"
                     accessibilityLabel="Put this order back at the shop"
-                    hitSlop={8}
+                    hitSlop={10}
                     style={({ pressed }) => [{
-                      alignSelf: 'flex-start', marginTop: 10, paddingVertical: 4,
-                      opacity: pressed ? 0.6 : 1,
+                      alignSelf: 'flex-start', marginTop: 16, opacity: pressed ? 0.5 : 1,
                     }]}
                   >
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: C.faint }}>
-                      Took it by mistake? Put back
+                    <Text style={{ fontSize: 13, color: C.faint }}>
+                      Took by mistake? Put back
                     </Text>
                   </Pressable>
                 </Card>
@@ -182,10 +186,10 @@ export function HomeScreen({
 
         {toPickUp.length > 0 ? (
           <>
-            <Text style={[s.sectionLabel, { marginTop: toDeliver.length > 0 ? 20 : 4 }]}>
+            <Text style={[s.sectionLabel, { marginTop: toDeliver.length > 0 ? 30 : 0, marginBottom: 6 }]}>
               PICK UP FROM SHOP
             </Text>
-            <Text style={[s.muted, { marginTop: -4, marginBottom: 12 }]}>
+            <Text style={[s.muted, { marginBottom: 18 }]}>
               Tick the ones you are taking. Leave the rest for another rider.
             </Text>
 
@@ -197,100 +201,89 @@ export function HomeScreen({
               const someOn = ids.filter((id) => picked.has(id)).length
 
               return (
-                <Card key={run.key}>
-                  <View style={[s.row, { justifyContent: 'space-between' }]}>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={s.train}>{run.trainNo ?? '—'}</Text>
-                      <Text style={{ fontSize: 14, color: C.muted, marginTop: 2 }} numberOfLines={1}>
-                        {run.trainName}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 20, fontWeight: '800', color: C.ink }}>
-                        {timeIST(run.timing.effectiveArrival)}
+                <Card key={run.key} style={{ padding: 0 }}>
+                  <View style={{ padding: 18 }}>
+                    <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
+                      <Text style={s.train} numberOfLines={1}>
+                        {run.trainNo ?? '—'}
                       </Text>
                       <Text style={{
-                        fontSize: 13, fontWeight: '700', marginTop: 1,
-                        color: until.urgent ? C.red : C.faint,
+                        fontSize: 15,
+                        fontWeight: until.urgent ? '700' : '500',
+                        color: until.urgent ? C.red : C.muted,
                       }}>
                         {until.text}
                       </Text>
                     </View>
-                  </View>
-
-                  <View style={[s.row, { marginTop: 10, flexWrap: 'wrap', gap: 8 }]}>
-                    {run.timing.platform ? <Pill tone="dark" text={`Platform ${run.timing.platform}`} /> : null}
-                    {delay && delay !== 'On time' ? <Pill tone="red" text={delay} /> : null}
-                    <Pill text={`${orders.length} waiting`} />
-                  </View>
-
-                  {/* Take-all sits with the train, because taking the whole
-                      train is the common case on a small order count. */}
-                  <Pressable
-                    onPress={() => toggleAll(ids, allOn)}
-                    accessibilityRole="button"
-                    accessibilityLabel={allOn ? 'Clear this train' : 'Select every order on this train'}
-                    hitSlop={8}
-                    style={({ pressed }) => [
-                      s.row,
-                      {
-                        marginTop: 14, marginBottom: 4, paddingVertical: 6,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <Check on={allOn} />
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: allOn ? C.accent : C.muted }}>
-                      {allOn ? 'Clear all' : `Take all ${orders.length}`}
-                      {!allOn && someOn > 0 ? `  ·  ${someOn} ticked` : ''}
+                    <Text style={{ fontSize: 15, color: C.ink, marginTop: 4 }} numberOfLines={1}>
+                      {run.trainName}
                     </Text>
-                  </Pressable>
+                    <Text style={{ fontSize: 14, color: C.muted, marginTop: 6 }}>
+                      {timeIST(run.timing.effectiveArrival)}
+                      {run.timing.platform ? `   ·   Platform ${run.timing.platform}` : ''}
+                      {delay && delay !== 'On time' ? `   ·   ${delay}` : ''}
+                      {`   ·   ${orders.length} waiting`}
+                    </Text>
+
+                    {/* Take-all sits with the train, because taking the whole
+                        train is the common case on a small order count. */}
+                    <Pressable
+                      onPress={() => toggleAll(ids, allOn)}
+                      accessibilityRole="button"
+                      accessibilityLabel={allOn ? 'Clear this train' : 'Select every order on this train'}
+                      hitSlop={10}
+                      style={({ pressed }) => [{ marginTop: 14, opacity: pressed ? 0.5 : 1 }]}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent }}>
+                        {allOn ? 'Clear all' : `Select all ${orders.length}`}
+                        {!allOn && someOn > 0 ? `   ·   ${someOn} ticked` : ''}
+                      </Text>
+                    </Pressable>
+                  </View>
 
                   {orders.map((o) => {
                     const on = picked.has(o.id)
                     return (
-                      <Pressable
-                        key={o.id}
-                        onPress={() => toggle(o.id)}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: on }}
-                        accessibilityLabel={`Coach ${o.coach ?? 'unknown'} berth ${o.berth ?? ''}, ${o.contactName ?? 'no name'}`}
-                        style={({ pressed }) => [
-                          s.row,
-                          {
-                            alignItems: 'flex-start',
-                            gap: 12,
-                            paddingVertical: 12,
-                            paddingHorizontal: 10,
-                            marginTop: 8,
-                            borderRadius: 14,
-                            backgroundColor: on ? C.accentSoft : C.bg,
-                            borderWidth: 2,
-                            borderColor: on ? C.accent : 'transparent',
-                            opacity: pressed ? 0.85 : 1,
-                          },
-                        ]}
-                      >
-                        <View style={{ paddingTop: 2 }}>
-                          <Check on={on} />
-                        </View>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <View style={[s.row, { justifyContent: 'space-between' }]}>
-                            <Seat coach={o.coach} berth={o.berth} />
-                            {o.paymentMode === 'COD' ? (
-                              <Pill
-                                tone="amber"
-                                text={`₹${o.amountPaise === null ? '?' : Math.round(o.amountPaise / 100)}`}
-                              />
-                            ) : (
-                              <Pill tone="green" text="Paid" />
-                            )}
+                      <View key={o.id}>
+                        <Rule />
+                        <Pressable
+                          onPress={() => toggle(o.id)}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: on }}
+                          accessibilityLabel={`Coach ${o.coach ?? 'unknown'} berth ${o.berth ?? ''}, ${o.contactName ?? 'no name'}`}
+                          style={({ pressed }) => [
+                            s.row,
+                            {
+                              alignItems: 'flex-start',
+                              gap: 14,
+                              paddingVertical: 16,
+                              paddingHorizontal: 18,
+                              backgroundColor: on ? C.subtle : 'transparent',
+                              opacity: pressed ? 0.6 : 1,
+                            },
+                          ]}
+                        >
+                          <View style={{ paddingTop: 3 }}>
+                            <Check on={on} />
                           </View>
-                          <View style={{ marginTop: 10 }}>
-                            <Person name={o.contactName} phone={o.contactPhone} compact />
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
+                              <Seat coach={o.coach} berth={o.berth} />
+                              <Text style={{
+                                fontSize: 14, fontWeight: '700',
+                                color: o.paymentMode === 'COD' ? C.amber : C.green,
+                              }}>
+                                {o.paymentMode === 'COD'
+                                  ? `₹${o.amountPaise === null ? '?' : Math.round(o.amountPaise / 100)}`
+                                  : 'Paid'}
+                              </Text>
+                            </View>
+                            <View style={{ marginTop: 12 }}>
+                              <Person name={o.contactName} phone={o.contactPhone} compact />
+                            </View>
                           </View>
-                        </View>
-                      </Pressable>
+                        </Pressable>
+                      </View>
                     )
                   })}
                 </Card>
@@ -300,7 +293,7 @@ export function HomeScreen({
         ) : null}
 
         {cooking > 0 && !nothing ? (
-          <Text style={[s.muted, { textAlign: 'center', marginTop: 18 }]}>
+          <Text style={[s.muted, { textAlign: 'center', marginTop: 24 }]}>
             {cooking} more still being cooked
           </Text>
         ) : null}
@@ -330,8 +323,8 @@ const s2 = {
   bar: {
     position: 'absolute' as const,
     left: 0, right: 0, bottom: 0,
-    padding: 14,
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 18,
+    backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: C.line,
   },

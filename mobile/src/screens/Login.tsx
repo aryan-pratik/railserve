@@ -29,34 +29,40 @@ export function LoginScreen({ onDone }: { onDone: (token: string, user: StoredUs
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={{ flex: 1, backgroundColor: C.bg }}
     >
-      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 80 }}>
-        <Text style={[s.h1, { textAlign: 'center' }]}>RailServe</Text>
-        <Text style={[s.muted, { textAlign: 'center', marginTop: 4, marginBottom: 28 }]}>
-          Delivery agent
-        </Text>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 96, paddingBottom: 40 }}>
+        <Text style={s.h1}>RailServe</Text>
+        <Text style={[s.muted, { marginTop: 6, marginBottom: 44 }]}>Delivery partner</Text>
 
-        <View style={{ gap: 12 }}>
+        <View style={{ gap: 20 }}>
           <View>
-            <Text style={[s.muted, { marginBottom: 6 }]}>Phone number</Text>
+            <Text style={[s.label, { marginBottom: 8 }]}>PHONE NUMBER</Text>
             <TextInput
               value={phone}
               onChangeText={setPhone}
               keyboardType="number-pad"
               autoComplete="tel"
               placeholder="9000000004"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={C.faint}
               style={s.input}
             />
           </View>
 
           <View>
-            <Text style={[s.muted, { marginBottom: 6 }]}>Password</Text>
+            <Text style={[s.label, { marginBottom: 8 }]}>PASSWORD</Text>
             <TextInput value={password} onChangeText={setPassword} secureTextEntry style={s.input} />
           </View>
 
-          {error ? <Text style={{ color: C.red, fontWeight: '600' }}>{error}</Text> : null}
+          {error ? <Text style={{ color: C.red, fontSize: 14 }}>{error}</Text> : null}
 
-          <Button label="Sign in" onPress={submit} busy={busy} disabled={!phone || !password} />
+          <View style={{ marginTop: 8 }}>
+            <Button
+              label="Sign in"
+              size="hero"
+              onPress={submit}
+              busy={busy}
+              disabled={!phone || !password}
+            />
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

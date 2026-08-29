@@ -1,18 +1,18 @@
 import React, { useState } from 'react'
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import type { Run, RunOrder } from '../types'
-import { Button, C, Card, CallButton, Check, Money, Pill, Seat, s, timeIST, untilLabel } from '../ui'
+import { Button, C, CallButton, Check, Money, Rule, Seat, s, timeIST, untilLabel, delayLabel } from '../ui'
 
 /**
  * One delivery, start to finish.
  *
- * Everything above the button answers "where am I going, who am I looking for
- * and what do I collect". Below it is the single action.
+ * Read top to bottom it answers, in order: where am I going, who am I looking
+ * for, what do I collect, what is in the bag. Then the single action.
  *
- * The passenger's name doubles as the proof, so it is offered as a button
- * rather than something to spell out: the rider confirms the person in front
- * of them is the person on the order with one tap. Typing is the fallback,
- * for when somebody else at the berth takes the food.
+ * The passenger's name doubles as the proof, so it is offered as a tick rather
+ * than something to spell out: the rider confirms the person in front of them
+ * is the person on the order with one tap. Typing is the fallback, for when
+ * somebody else at the berth takes the food.
  *
  * Photo proof exists in the backend and is deliberately not wired in here yet —
  * it needs an object store configured, and a capture button that always failed
@@ -40,6 +40,7 @@ export function DeliveryScreen({
   const [reason, setReason] = useState('')
 
   const until = untilLabel(run.timing.effectiveArrival)
+  const delay = delayLabel(run.timing.delayMinutes)
   const kitchen = order.items.filter((i) => !i.isPacking)
   const packing = order.items.filter((i) => i.isPacking)
   const passenger = order.contactName?.trim() || ''
@@ -47,168 +48,183 @@ export function DeliveryScreen({
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 56 }}
     >
-      <Pressable onPress={onBack} hitSlop={16} style={{ paddingVertical: 6, marginBottom: 6 }}>
-        <Text style={{ fontSize: 17, fontWeight: '700', color: C.muted }}>← Back</Text>
+      <Pressable onPress={onBack} hitSlop={16} style={{ paddingVertical: 12 }}>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: C.muted }}>← Back</Text>
       </Pressable>
 
       {/* Where to go. The biggest thing on the screen, because it is the only
           thing that matters while walking a platform. */}
-      <View style={{ alignItems: 'center', marginBottom: 16 }}>
-        {order.handoverPoint ? (
-          <>
-            <Text style={s.sectionLabel}>HAND OVER AT</Text>
-            <Text style={[s.h1, { textAlign: 'center' }]}>{order.handoverPoint}</Text>
-          </>
-        ) : (
-          <>
-            <Text style={s.sectionLabel}>COACH · SEAT</Text>
+      <View style={{ paddingTop: 12, paddingBottom: 24 }}>
+        <Text style={s.label}>{order.handoverPoint ? 'HAND OVER AT' : 'COACH · SEAT'}</Text>
+        <View style={{ marginTop: 10 }}>
+          {order.handoverPoint ? (
+            <Text style={s.h1}>{order.handoverPoint}</Text>
+          ) : (
             <Seat coach={order.coach} berth={order.berth} size="huge" />
-          </>
-        )}
-
-        <Text style={{ marginTop: 14, fontSize: 17, fontWeight: '700', color: C.ink }}>
-          {run.trainNo} {run.trainName}
-        </Text>
-        <View style={[s.row, { marginTop: 8, gap: 8, flexWrap: 'wrap', justifyContent: 'center' }]}>
-          {run.timing.platform ? <Pill tone="dark" text={`Platform ${run.timing.platform}`} /> : null}
-          <Pill
-            tone={until.urgent ? 'red' : 'neutral'}
-            text={`${timeIST(run.timing.effectiveArrival)} · ${until.text}`}
-          />
+          )}
         </View>
+
+        <Text style={{ fontSize: 16, color: C.ink, marginTop: 18 }} numberOfLines={1}>
+          {run.trainNo} · {run.trainName ?? 'Train name not known'}
+        </Text>
+        <Text style={{
+          fontSize: 15, marginTop: 6,
+          color: until.urgent ? C.red : C.muted,
+          fontWeight: until.urgent ? '700' : '400',
+        }}>
+          {timeIST(run.timing.effectiveArrival)}   ·   {until.text}
+          {run.timing.platform ? `   ·   Platform ${run.timing.platform}` : ''}
+        </Text>
+        {delay && delay !== 'On time' ? (
+          <Text style={{ fontSize: 14, color: C.red, marginTop: 4 }}>{delay}</Text>
+        ) : null}
       </View>
+
+      <Rule />
 
       {/* Who to look for. On the way to the berth this is what the rider is
           scanning faces for, so it sits above the money and the food. */}
-      <Card>
-        <Text style={[s.sectionLabel, { marginTop: 0 }]}>GIVE IT TO</Text>
-        <View style={[s.row, { justifyContent: 'space-between' }]}>
+      <View style={{ paddingVertical: 22 }}>
+        <Text style={s.label}>GIVE IT TO</Text>
+        <View style={[s.row, { justifyContent: 'space-between', marginTop: 12 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: C.ink }} numberOfLines={2}>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: C.ink }} numberOfLines={2}>
               {passenger || 'Name not given'}
             </Text>
             {order.contactPhone ? (
-              <Text style={{ fontSize: 16, color: C.muted, marginTop: 2 }}>
+              <Text style={{ fontSize: 15, color: C.muted, marginTop: 5 }}>
                 {order.contactPhone}
               </Text>
             ) : null}
             {order.pax ? (
-              <Text style={{ fontSize: 14, color: C.faint, marginTop: 4 }}>{order.pax} people</Text>
+              <Text style={{ fontSize: 14, color: C.faint, marginTop: 5 }}>{order.pax} people</Text>
             ) : null}
           </View>
           {order.contactPhone ? <CallButton phone={order.contactPhone} /> : null}
         </View>
-      </Card>
+      </View>
 
-      {/* What to collect. Getting money wrong is the mistake that costs the
-          rider personally. */}
-      <View style={{ marginBottom: 14 }}>
+      <Rule />
+
+      {/* Getting the money wrong is the mistake that costs the rider. */}
+      <View style={{ paddingVertical: 22 }}>
         <Money paise={order.amountPaise} mode={order.paymentMode} />
       </View>
 
-      <Card>
-        <Text style={[s.sectionLabel, { marginTop: 0 }]}>IN THE BAG</Text>
-        {kitchen.map((i) => (
-          <Text key={i.id} style={{ fontSize: 17, color: C.ink, marginBottom: 4 }}>
-            {i.qty} × {i.name}
-          </Text>
-        ))}
-        {packing.length > 0 ? (
-          <Text style={[s.muted, { marginTop: 6 }]}>
-            + {packing.map((i) => i.name).join(', ')}
-          </Text>
-        ) : null}
-      </Card>
+      <Rule />
+
+      <View style={{ paddingVertical: 22 }}>
+        <Text style={s.label}>IN THE BAG</Text>
+        <View style={{ marginTop: 12 }}>
+          {kitchen.map((i) => (
+            <Text key={i.id} style={{ fontSize: 16, color: C.ink, marginBottom: 6 }}>
+              {i.qty} × {i.name}
+            </Text>
+          ))}
+          {packing.length > 0 ? (
+            <Text style={[s.muted, { marginTop: 6 }]}>
+              + {packing.map((i) => i.name).join(', ')}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      <Rule />
 
       {offline ? (
-        <View style={{ backgroundColor: C.amberSoft, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-          <Text style={{ color: C.amber, fontWeight: '700', fontSize: 15 }}>
-            No internet. You can still mark it delivered — it will be sent when you are back online.
+        <View style={{ paddingVertical: 18 }}>
+          <Text style={{ color: C.amber, fontWeight: '600', fontSize: 14, lineHeight: 20 }}>
+            No internet. You can still mark it delivered — it will be sent when you are
+            back online.
           </Text>
         </View>
       ) : null}
 
       {/* Who took it. One tap in the normal case; typing only when it was
           somebody other than the passenger on the order. */}
-      <Text style={s.sectionLabel}>WHO TOOK THE FOOD?</Text>
+      <View style={{ paddingTop: 22 }}>
+        <Text style={s.label}>WHO TOOK THE FOOD?</Text>
 
-      {passenger ? (
-        <Pressable
-          onPress={() => setReceivedBy(receivedBy === passenger ? '' : passenger)}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: receivedBy === passenger }}
-          accessibilityLabel={`The passenger, ${passenger}, took it`}
-          style={({ pressed }) => [
-            s.row,
-            {
-              padding: 12, borderRadius: 12, marginBottom: 10,
-              backgroundColor: receivedBy === passenger ? C.accentSoft : '#fff',
-              borderWidth: 1.5,
-              borderColor: receivedBy === passenger ? C.accent : C.line,
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <Check on={receivedBy === passenger} />
-          <Text style={{ fontSize: 16, fontWeight: '700', color: C.ink, flex: 1 }} numberOfLines={1}>
-            {passenger}
-          </Text>
-        </Pressable>
-      ) : null}
+        {passenger ? (
+          <Pressable
+            onPress={() => setReceivedBy(receivedBy === passenger ? '' : passenger)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: receivedBy === passenger }}
+            accessibilityLabel={`The passenger, ${passenger}, took it`}
+            style={({ pressed }) => [
+              s.row,
+              {
+                gap: 14, paddingVertical: 16, paddingHorizontal: 16,
+                marginTop: 14, borderRadius: 10, borderWidth: 1,
+                backgroundColor: receivedBy === passenger ? C.subtle : '#fff',
+                borderColor: receivedBy === passenger ? C.ink : C.line,
+                opacity: pressed ? 0.6 : 1,
+              },
+            ]}
+          >
+            <Check on={receivedBy === passenger} />
+            <Text style={{ fontSize: 16, fontWeight: '600', color: C.ink, flex: 1 }} numberOfLines={1}>
+              {passenger}
+            </Text>
+          </Pressable>
+        ) : null}
 
-      <TextInput
-        value={receivedBy === passenger ? '' : receivedBy}
-        onChangeText={setReceivedBy}
-        placeholder={passenger ? 'Or type another name' : 'Name of the person'}
-        placeholderTextColor={C.faint}
-        autoCapitalize="words"
-        autoCorrect={false}
-        returnKeyType="done"
-        style={[s.input, { marginBottom: 14, fontSize: 18 }]}
-      />
+        <TextInput
+          value={receivedBy === passenger ? '' : receivedBy}
+          onChangeText={setReceivedBy}
+          placeholder={passenger ? 'Or type another name' : 'Name of the person'}
+          placeholderTextColor={C.faint}
+          autoCapitalize="words"
+          autoCorrect={false}
+          returnKeyType="done"
+          style={[s.input, { marginTop: 12 }]}
+        />
 
-      <Button
-        label="Delivered"
-        tone="success"
-        size="hero"
-        busy={busy}
-        disabled={!receivedBy.trim()}
-        onPress={() => onDeliver(receivedBy.trim())}
-      />
-
-      <View style={{ height: 18 }} />
-
-      {failOpen ? (
-        <Card>
-          <Text style={[s.sectionLabel, { marginTop: 0 }]}>WHAT HAPPENED?</Text>
-          <TextInput
-            value={reason}
-            onChangeText={setReason}
-            placeholder="Passenger not at seat"
-            placeholderTextColor={C.faint}
-            multiline
-            style={[s.input, { minHeight: 90, textAlignVertical: 'top' }]}
-          />
-          <View style={{ height: 12 }} />
+        <View style={{ marginTop: 24 }}>
           <Button
-            label="Could not deliver"
-            tone="danger"
+            label="Delivered"
+            tone="success"
+            size="hero"
             busy={busy}
-            disabled={!reason.trim()}
-            onPress={() => onFail(reason.trim())}
+            disabled={!receivedBy.trim()}
+            onPress={() => onDeliver(receivedBy.trim())}
           />
-          <View style={{ height: 8 }} />
-          <Button label="Cancel" tone="ghost" onPress={() => setFailOpen(false)} />
-        </Card>
-      ) : (
-        <Pressable onPress={() => setFailOpen(true)} hitSlop={12} style={{ paddingVertical: 12 }}>
-          <Text style={{ textAlign: 'center', color: C.muted, fontSize: 16, fontWeight: '700' }}>
-            Could not deliver?
-          </Text>
-        </Pressable>
-      )}
+        </View>
+      </View>
+
+      <View style={{ marginTop: 28 }}>
+        {failOpen ? (
+          <>
+            <Text style={s.label}>WHAT HAPPENED?</Text>
+            <TextInput
+              value={reason}
+              onChangeText={setReason}
+              placeholder="Passenger not at seat"
+              placeholderTextColor={C.faint}
+              multiline
+              style={[s.input, { minHeight: 90, textAlignVertical: 'top', marginTop: 12 }]}
+            />
+            <View style={{ height: 14 }} />
+            <Button
+              label="Could not deliver"
+              tone="danger"
+              busy={busy}
+              disabled={!reason.trim()}
+              onPress={() => onFail(reason.trim())}
+            />
+            <View style={{ height: 10 }} />
+            <Button label="Cancel" tone="ghost" onPress={() => setFailOpen(false)} />
+          </>
+        ) : (
+          <Pressable onPress={() => setFailOpen(true)} hitSlop={12} style={{ paddingVertical: 12 }}>
+            <Text style={{ textAlign: 'center', color: C.muted, fontSize: 15 }}>
+              Could not deliver?
+            </Text>
+          </Pressable>
+        )}
+      </View>
     </ScrollView>
   )
 }

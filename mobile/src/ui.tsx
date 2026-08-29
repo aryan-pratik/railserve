@@ -5,40 +5,29 @@ import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'r
  * Primitives for the rider app.
  *
  * Built for someone standing on a platform with one hand free, in daylight,
- * under time pressure, who may not read English comfortably. That drives every
- * choice here: touch targets never below 56px, numbers far larger than the
- * words around them, and colour used to mean one thing consistently — indigo
- * is a choice, green is go, amber is money, red is a problem.
+ * under time pressure, who may not read English comfortably.
  *
- * Depth comes from a single soft shadow rather than borders. Borders are kept
- * for one job only: marking a card the rider has selected.
+ * The visual language is deliberately plain: white ground, hairline rules,
+ * and hierarchy carried by type size and space rather than by boxes, colour
+ * fills or shadows. A rider glances at this for two seconds at a time, so the
+ * screen should read like a printed docket — the thing that matters is simply
+ * the biggest thing there. Colour is reserved for the two facts that cost
+ * money when missed: how long until the train, and how much cash to collect.
  */
 export const C = {
-  bg: '#f4f5f7',
-  card: '#ffffff',
-  line: '#e4e7ec',
-  ink: '#101828',
-  muted: '#475467',
-  faint: '#98a2b3',
-  accent: '#4f46e5',
-  accentSoft: '#eef2ff',
-  green: '#039855',
-  greenSoft: '#ecfdf3',
+  bg: '#ffffff',
+  subtle: '#f7f7f8',
+  line: '#ececf0',
+  ink: '#18181b',
+  muted: '#6b6b76',
+  faint: '#9a9aa5',
+  accent: '#3538cd',
+  green: '#027a48',
   amber: '#b54708',
-  amberSoft: '#fffaeb',
   red: '#d92d20',
-  redSoft: '#fef3f2',
 }
 
-/** One soft shadow, used everywhere, so nothing looks arbitrarily different. */
-const SHADOW = {
-  shadowColor: '#101828',
-  shadowOpacity: 0.06,
-  shadowRadius: 12,
-  shadowOffset: { width: 0, height: 2 },
-  elevation: 2,
-}
-
+/** A plain panel. Hairline, never a shadow. */
 export function Card({
   children,
   style,
@@ -48,16 +37,19 @@ export function Card({
   style?: object
   selected?: boolean
 }) {
-  return (
-    <View style={[s.card, selected && s.cardSelected, style]}>{children}</View>
-  )
+  return <View style={[s.card, selected && s.cardSelected, style]}>{children}</View>
+}
+
+/** A hairline rule, used to separate facts inside a panel. */
+export function Rule({ style }: { style?: object }) {
+  return <View style={[{ height: 1, backgroundColor: C.line }, style]} />
 }
 
 /**
  * The one control this app is really made of.
  *
- * `size="hero"` is the primary action on a screen — deliberately large enough
- * to hit without looking, because the rider is usually looking at the train.
+ * `size="hero"` is the primary action on a screen — full width and large
+ * enough to hit without looking, because the rider is watching the train.
  */
 export function Button({
   label,
@@ -80,7 +72,7 @@ export function Button({
     tone === 'success' ? C.green
     : tone === 'danger' ? C.red
     : tone === 'ghost' ? '#fff'
-    : C.accent
+    : C.ink
   const fg = tone === 'ghost' ? C.muted : '#fff'
   const hero = size === 'hero'
 
@@ -94,8 +86,8 @@ export function Button({
       style={({ pressed }) => [
         s.button,
         hero && s.buttonHero,
-        { backgroundColor: bg, opacity: disabled || busy ? 0.45 : pressed ? 0.88 : 1 },
-        tone === 'ghost' && { borderWidth: 1.5, borderColor: C.line },
+        { backgroundColor: bg, opacity: disabled || busy ? 0.4 : pressed ? 0.85 : 1 },
+        tone === 'ghost' && { borderWidth: 1, borderColor: C.line },
       ]}
     >
       {busy ? (
@@ -110,10 +102,11 @@ export function Button({
 }
 
 /**
- * Coach and berth, as big as the screen allows.
+ * Coach and berth.
  *
- * This is the only thing a rider needs while walking the platform — everything
- * else on the card is context.
+ * This is the address, so it is set as text rather than dressed in a chip —
+ * the size alone makes it the first thing read, and a filled box around it
+ * only adds ink.
  */
 export function Seat({ coach, berth, size = 'normal' }: {
   coach: string | null
@@ -125,20 +118,18 @@ export function Seat({ coach, berth, size = 'normal' }: {
     return <Text style={[s.seatText, huge && s.seatTextHuge, { color: C.faint }]}>—</Text>
   }
   return (
-    <View style={[s.seat, huge && s.seatHuge]}>
-      <Text style={[s.seatText, huge && s.seatTextHuge]}>
-        {coach}{berth ? ` ${berth}` : ''}
-      </Text>
-    </View>
+    <Text style={[s.seatText, huge && s.seatTextHuge]}>
+      {coach}{berth ? ` ${berth}` : ''}
+    </Text>
   )
 }
 
 /**
  * Who to hand the food to, and how to reach them.
  *
- * On the card rather than one tap further in, because a rider who arrives at
- * an empty berth needs the phone number right then — going back into a detail
- * screen to find it is the moment the train leaves.
+ * On the card rather than one tap further in: a rider who arrives at an empty
+ * berth needs the number right then, and going back into a detail screen to
+ * find it is the moment the train leaves.
  */
 export function Person({ name, phone, compact }: {
   name: string | null
@@ -147,16 +138,16 @@ export function Person({ name, phone, compact }: {
 }) {
   if (!name && !phone) return null
   return (
-    <View style={[s.row, { justifyContent: 'space-between', gap: 10 }]}>
+    <View style={[s.row, { justifyContent: 'space-between', gap: 12 }]}>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
-          style={{ fontSize: compact ? 16 : 17, fontWeight: '700', color: C.ink }}
+          style={{ fontSize: compact ? 15 : 16, fontWeight: '600', color: C.ink }}
           numberOfLines={1}
         >
           {name ?? 'Name not given'}
         </Text>
         {phone ? (
-          <Text style={{ fontSize: 14, color: C.muted, marginTop: 1 }}>{phone}</Text>
+          <Text style={{ fontSize: 14, color: C.muted, marginTop: 3 }}>{phone}</Text>
         ) : null}
       </View>
       {phone ? <CallButton phone={phone} /> : null}
@@ -171,15 +162,15 @@ export function CallButton({ phone, wide }: { phone: string; wide?: boolean }) {
       onPress={() => Linking.openURL(`tel:${phone}`)}
       accessibilityRole="button"
       accessibilityLabel={`Call ${phone}`}
-      hitSlop={8}
+      hitSlop={10}
       style={({ pressed }) => [
         s.callBtn,
-        wide && { alignSelf: 'stretch', justifyContent: 'center' },
-        { opacity: pressed ? 0.75 : 1 },
+        wide && { alignSelf: 'stretch' },
+        { opacity: pressed ? 0.6 : 1 },
       ]}
     >
-      <Text style={{ fontSize: 15, fontWeight: '800', color: C.accent }}>
-        {wide ? 'Call passenger' : 'Call'}
+      <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent, letterSpacing: 0.3 }}>
+        {wide ? 'CALL PASSENGER' : 'CALL'}
       </Text>
     </Pressable>
   )
@@ -188,48 +179,50 @@ export function CallButton({ phone, wide }: { phone: string; wide?: boolean }) {
 /**
  * A tick box big enough to hit while walking.
  *
- * Selection is the whole point of the pickup list — a rider takes the five
- * orders they can carry, not all forty — so this is a 32px target inside a
- * row that is itself pressable.
+ * Selection is the point of the pickup list — a rider takes the five orders
+ * they can carry, not all forty.
  */
 export function Check({ on }: { on: boolean }) {
   return (
-    <View style={[s.check, on && { backgroundColor: C.accent, borderColor: C.accent }]}>
-      {on ? <Text style={{ color: '#fff', fontSize: 17, fontWeight: '900' }}>✓</Text> : null}
+    <View style={[s.check, on && { backgroundColor: C.ink, borderColor: C.ink }]}>
+      {on ? <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✓</Text> : null}
     </View>
   )
 }
 
-/** Small labelled chip: platform, delay, status. */
+/**
+ * A small fact. Rendered as plain text by default — a row of coloured capsules
+ * turns a docket into a dashboard, and the rider is not reading a dashboard.
+ */
 export function Pill({ text, tone = 'neutral' }: {
   text: string
   tone?: 'neutral' | 'dark' | 'green' | 'amber' | 'red'
 }) {
-  const map = {
-    neutral: { bg: C.bg, fg: C.muted },
-    dark: { bg: C.ink, fg: '#ffffff' },
-    green: { bg: C.greenSoft, fg: C.green },
-    amber: { bg: C.amberSoft, fg: C.amber },
-    red: { bg: C.redSoft, fg: C.red },
-  }[tone]
+  const fg =
+    tone === 'red' ? C.red
+    : tone === 'amber' ? C.amber
+    : tone === 'green' ? C.green
+    : tone === 'dark' ? C.ink
+    : C.muted
   return (
-    <View style={[s.pill, { backgroundColor: map.bg }]}>
-      <Text style={{ color: map.fg, fontWeight: '800', fontSize: 13 }}>{text}</Text>
-    </View>
+    <Text style={{ fontSize: 14, fontWeight: tone === 'neutral' ? '500' : '700', color: fg }}>
+      {text}
+    </Text>
   )
 }
 
-/** Cash to collect. Loud when there is money, quiet when there is not. */
+/** Cash to collect. The one number a rider is personally answerable for. */
 export function Money({ paise, mode }: { paise: number | null; mode: string | null }) {
   const cod = mode === 'COD'
-  const fg = cod ? C.amber : C.green
   return (
-    <View style={[s.moneyBox, { backgroundColor: cod ? C.amberSoft : C.greenSoft }]}>
-      <Text style={[s.moneyLabel, { color: fg }]}>
-        {cod ? 'COLLECT CASH' : 'ALREADY PAID'}
-      </Text>
-      <Text style={[s.moneyValue, { color: fg }]}>
-        {cod ? (paise === null ? 'Ask the shop' : `₹${Math.round(paise / 100)}`) : 'Take nothing'}
+    <View style={[s.row, { justifyContent: 'space-between' }]}>
+      <Text style={s.label}>{cod ? 'COLLECT CASH' : 'PAYMENT'}</Text>
+      <Text style={{
+        fontSize: cod ? 24 : 16,
+        fontWeight: cod ? '800' : '600',
+        color: cod ? C.amber : C.green,
+      }}>
+        {cod ? (paise === null ? 'Ask the shop' : `₹${Math.round(paise / 100)}`) : 'Already paid'}
       </Text>
     </View>
   )
@@ -238,9 +231,9 @@ export function Money({ paise, mode }: { paise: number | null; mode: string | nu
 /**
  * Two tabs: work to do, and work done. Two is the most this app should have.
  *
- * Labelled in words with a bar over the active one. No pictograms — a parcel
- * and a tick read as decoration at this size, and the words are shorter than
- * the time spent decoding them.
+ * Words and a rule under the active one. No pictograms — a parcel and a tick
+ * read as decoration at this size, and the words are shorter than the time
+ * spent decoding them.
  */
 export function TabBar({ tab, onChange, badge }: {
   tab: 'jobs' | 'done'
@@ -262,12 +255,12 @@ export function TabBar({ tab, onChange, badge }: {
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
             accessibilityLabel={it.label}
-            style={({ pressed }) => [s.tab, { opacity: pressed ? 0.7 : 1 }]}
+            style={({ pressed }) => [s.tab, { opacity: pressed ? 0.6 : 1 }]}
           >
-            <View style={[s.tabMark, on && { backgroundColor: C.accent }]} />
+            <View style={[s.tabMark, on && { backgroundColor: C.ink }]} />
             <Text style={{
-              fontSize: 15, fontWeight: '800', marginTop: 10,
-              color: on ? C.accent : C.faint,
+              fontSize: 14, fontWeight: on ? '700' : '500', marginTop: 12,
+              color: on ? C.ink : C.faint,
             }}>
               {it.label}
               {it.key === 'jobs' && badge ? `  ${badge}` : ''}
@@ -301,7 +294,7 @@ export function dateIST(iso: string | null): string {
 export function untilLabel(iso: string | null): { text: string; urgent: boolean } {
   if (!iso) return { text: 'Time not known', urgent: false }
   const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000)
-  if (mins <= 0) return { text: 'TRAIN IS HERE', urgent: true }
+  if (mins <= 0) return { text: 'Train is here', urgent: true }
   if (mins < 60) return { text: `in ${mins} min`, urgent: mins <= 20 }
   return { text: `in ${Math.floor(mins / 60)}h ${mins % 60}m`, urgent: false }
 }
@@ -316,74 +309,63 @@ export function delayLabel(minutes: number | null): string | null {
 
 export const s = StyleSheet.create({
   card: {
-    backgroundColor: C.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    ...SHADOW,
-  },
-  // A border means one thing only: the rider picked this one.
-  cardSelected: { borderWidth: 1.5, borderColor: C.accent, backgroundColor: C.accentSoft },
-
-  // 56px minimum, 64 for the hero — a platform is not a place for small targets.
-  button: {
+    backgroundColor: C.bg,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.line,
+    padding: 18,
+    marginBottom: 14,
+  },
+  // A filled ground means one thing only: the rider picked this one.
+  cardSelected: { borderColor: C.ink, backgroundColor: C.subtle },
+
+  button: {
+    borderRadius: 10,
     minHeight: 50,
     paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonHero: { minHeight: 56, borderRadius: 14 },
-  buttonText: { fontSize: 15, fontWeight: '700' },
-  buttonTextHero: { fontSize: 17, fontWeight: '800' },
+  buttonHero: { minHeight: 54 },
+  buttonText: { fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
+  buttonTextHero: { fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
 
-  seat: {
-    backgroundColor: C.ink,
-    borderRadius: 9,
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    alignSelf: 'flex-start',
-  },
-  seatHuge: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 16 },
-  seatText: { color: '#fff', fontSize: 19, fontWeight: '800', letterSpacing: 0.8 },
-  seatTextHuge: { fontSize: 40, letterSpacing: 2 },
+  seatText: { color: C.ink, fontSize: 22, fontWeight: '700', letterSpacing: 0.5 },
+  seatTextHuge: { fontSize: 44, fontWeight: '800', letterSpacing: 1 },
 
   check: {
-    width: 28, height: 28, borderRadius: 8,
-    borderWidth: 2, borderColor: C.line, backgroundColor: '#fff',
+    width: 24, height: 24, borderRadius: 6,
+    borderWidth: 1.5, borderColor: C.faint, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
   },
 
   callBtn: {
-    minWidth: 44, minHeight: 40, paddingHorizontal: 14,
-    borderRadius: 10, backgroundColor: C.accentSoft,
-    alignItems: 'center', justifyContent: 'center', flexDirection: 'row',
+    minHeight: 40, paddingHorizontal: 14, borderRadius: 8,
+    borderWidth: 1, borderColor: C.line,
+    alignItems: 'center', justifyContent: 'center',
   },
 
-  pill: { borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8 },
+  h1: { fontSize: 22, fontWeight: '700', color: C.ink },
+  h2: { fontSize: 17, fontWeight: '600', color: C.ink },
 
-  moneyBox: {
-    borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  /** Small caps over a fact. The workhorse of the whole layout. */
+  label: {
+    fontSize: 11, fontWeight: '700', color: C.faint,
+    letterSpacing: 1.2,
   },
-  moneyLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1 },
-  moneyValue: { fontSize: 22, fontWeight: '900' },
-
-  h1: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
-  h2: { fontSize: 18, fontWeight: '700', color: C.ink },
   sectionLabel: {
-    fontSize: 12, fontWeight: '800', color: C.faint,
-    letterSpacing: 1.2, marginBottom: 10, marginTop: 4,
+    fontSize: 11, fontWeight: '700', color: C.faint,
+    letterSpacing: 1.2, marginBottom: 14,
   },
-  muted: { color: C.muted, fontSize: 14 },
-  train: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: 0.3 },
+  muted: { color: C.muted, fontSize: 14, lineHeight: 20 },
+  train: { fontSize: 16, fontWeight: '700', color: C.ink },
 
   input: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.line,
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 13,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     fontSize: 16,
     backgroundColor: '#fff',
     color: C.ink,
@@ -394,8 +376,8 @@ export const s = StyleSheet.create({
     flexDirection: 'row',
     borderTopWidth: 1, borderTopColor: C.line,
     backgroundColor: '#fff',
-    paddingBottom: 10,
+    paddingBottom: 12,
   },
   tab: { flex: 1, alignItems: 'center', minHeight: 48 },
-  tabMark: { height: 3, width: 34, borderRadius: 2, backgroundColor: 'transparent' },
+  tabMark: { height: 2, width: 40, backgroundColor: 'transparent' },
 })
