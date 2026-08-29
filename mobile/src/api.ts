@@ -1,6 +1,6 @@
 import { API_URL } from './config'
 import { enqueue, loadQueue, removeFromQueue } from './storage'
-import type { QueuedMutation, RunsResponse } from './types'
+import type { HistoryResponse, QueuedMutation, RunsResponse } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -51,6 +51,15 @@ export async function fetchRuns(token: string): Promise<RunsResponse> {
   return request<RunsResponse>('/api/mobile/runs', token)
 }
 
+/**
+ * What this rider has already finished. Deliberately not cached offline: it is
+ * a record to look back at, not something needed on a platform with no signal,
+ * and caching it would compete for the storage the write queue depends on.
+ */
+export async function fetchHistory(token: string): Promise<HistoryResponse> {
+  return request<HistoryResponse>('/api/mobile/history', token)
+}
+
 
 export async function registerPushToken(token: string, pushToken: string | null) {
   return request<{ ok: boolean }>('/api/mobile/device', token, {
@@ -66,36 +75,48 @@ export type FlushResult = { synced: number; failed: number; remaining: number; o
  * settled — applied, already-done, or permanently rejected. Only retryable
  * failures stay, so a poison mutation cannot wedge the queue forever.
  */
+/**
+ * Must match the server's cap on a mutation batch. Sending more than this
+ * fails the whole request as malformed, which would strand a queue that grew
+ * past it — a rider taking a large train, or one that was offline for a while.
+ */
+const MAX_BATCH = 100
+
 export async function flushQueue(token: string): Promise<FlushResult> {
   const queue = await loadQueue()
   if (queue.length === 0) return { synced: 0, failed: 0, remaining: 0, offline: false }
 
+  let synced = 0
+  let failed = 0
+
   try {
-    const res = await request<{
-      results: {
-        clientId: string
-        applied: boolean
-        alreadyDone?: boolean
-        retryable?: boolean
-        error?: string
-      }[]
-    }>('/api/mobile/mutations', token, {
-      method: 'POST',
-      body: JSON.stringify({ mutations: queue }),
-    })
+    for (let i = 0; i < queue.length; i += MAX_BATCH) {
+      const res = await request<{
+        results: {
+          clientId: string
+          applied: boolean
+          alreadyDone?: boolean
+          retryable?: boolean
+          error?: string
+        }[]
+      }>('/api/mobile/mutations', token, {
+        method: 'POST',
+        body: JSON.stringify({ mutations: queue.slice(i, i + MAX_BATCH) }),
+      })
 
-    const settled = res.results.filter((r) => r.applied || r.retryable === false)
-    await removeFromQueue(settled.map((r) => r.clientId))
+      // Drop per batch rather than at the end, so losing signal halfway
+      // through keeps the progress already made.
+      const settled = res.results.filter((r) => r.applied || r.retryable === false)
+      await removeFromQueue(settled.map((r) => r.clientId))
 
-    return {
-      synced: res.results.filter((r) => r.applied).length,
-      failed: res.results.filter((r) => !r.applied).length,
-      remaining: (await loadQueue()).length,
-      offline: false,
+      synced += res.results.filter((r) => r.applied).length
+      failed += res.results.filter((r) => !r.applied).length
     }
+
+    return { synced, failed, remaining: (await loadQueue()).length, offline: false }
   } catch (err) {
     if (err instanceof OfflineError) {
-      return { synced: 0, failed: 0, remaining: queue.length, offline: true }
+      return { synced, failed, remaining: (await loadQueue()).length, offline: true }
     }
     throw err
   }
@@ -107,6 +128,20 @@ export async function queueAndFlush(
   mutation: QueuedMutation,
 ): Promise<FlushResult> {
   await enqueue(mutation)
+  return flushQueue(token)
+}
+
+/**
+ * Queue several mutations and send them as one batch.
+ *
+ * A rider ticking ten orders is one decision, so it should be one request and
+ * one failure to reason about — not ten.
+ */
+export async function queueManyAndFlush(
+  token: string,
+  mutations: QueuedMutation[],
+): Promise<FlushResult> {
+  for (const m of mutations) await enqueue(m)
   return flushQueue(token)
 }
 
