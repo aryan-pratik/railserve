@@ -192,6 +192,26 @@ export default function App() {
     setBusy(false)
   }
 
+  /**
+   * Put an order back on the counter.
+   *
+   * The rider tapped "picked up" on something they are not carrying. The food
+   * has not moved, so the record should not say it has — and the server logs
+   * both the take and the return, so this is a correction, not an erasure.
+   */
+  async function returnOrder(orderId: string) {
+    if (!token) return
+    setBusy(true)
+    applyLocally(orderId, { status: 'PREPARED' })
+    const r = await queueAndFlush(token, {
+      kind: 'RETURN_ORDER', clientId: newClientId(), orderId, at: new Date().toISOString(),
+    })
+    setQueueSize(r.remaining)
+    setOffline(r.offline)
+    if (!r.offline) await refresh(token, false)
+    setBusy(false)
+  }
+
   async function deliver(orderId: string, receivedBy: string, amountCollected: string | null) {
     if (!token) return
     setBusy(true)
@@ -319,6 +339,7 @@ export default function App() {
             void sync(token)
           }}
           onTake={(orderIds) => void takeOrders(orderIds)}
+          onReturn={(orderId) => void returnOrder(orderId)}
           onOpenOrder={(o, r) => setScreen({ name: 'delivery', runKey: r.key, orderId: o.id })}
         />
       )}

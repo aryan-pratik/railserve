@@ -40,6 +40,14 @@ const Mutation = z.discriminatedUnion('kind', [
     at: z.string().optional(),
   }),
   z.object({
+    // Undo a mistapped pickup: the food goes back to the counter for someone
+    // else. Audited like any other status change.
+    kind: z.literal('RETURN_ORDER'),
+    clientId: z.string().min(1),
+    orderId: z.string().min(1),
+    at: z.string().optional(),
+  }),
+  z.object({
     kind: z.literal('DELIVER_ORDER'),
     clientId: z.string().min(1),
     orderId: z.string().min(1),
@@ -108,7 +116,9 @@ export async function POST(request: Request) {
           ? 'DELIVERED'
           : m.kind === 'DISPATCH_ORDER'
             ? 'DISPATCHED'
-            : 'FAILED'
+            : m.kind === 'RETURN_ORDER'
+              ? 'PREPARED'
+              : 'FAILED'
       const current = await findById(ctx, m.orderId)
 
       if (!current) {
@@ -130,8 +140,8 @@ export async function POST(request: Request) {
         to: target,
         meta: { via: 'expo-app', clientId: m.clientId, queuedAt: m.at ?? null },
         apply:
-          m.kind === 'DISPATCH_ORDER'
-            ? // transitionOrder records the rider from ctx; nothing to apply.
+          m.kind === 'DISPATCH_ORDER' || m.kind === 'RETURN_ORDER'
+            ? // transitionOrder records or releases the rider from ctx.
               {}
             : m.kind === 'DELIVER_ORDER'
             ? {

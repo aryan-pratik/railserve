@@ -21,6 +21,7 @@ import { Button, C, Card, Check, Money, Person, Pill, Seat, s, timeIST, untilLab
 export function HomeScreen({
   runs,
   onTake,
+  onReturn,
   onOpenOrder,
   refreshing,
   onRefresh,
@@ -28,6 +29,7 @@ export function HomeScreen({
 }: {
   runs: Run[]
   onTake: (orderIds: string[]) => void
+  onReturn: (orderId: string) => void
   onOpenOrder: (order: RunOrder, run: Run) => void
   refreshing: boolean
   onRefresh: () => void
@@ -89,8 +91,7 @@ export function HomeScreen({
       >
         {nothing ? (
           <View style={{ alignItems: 'center', paddingVertical: 70 }}>
-            <Text style={{ fontSize: 52 }}>☕</Text>
-            <Text style={[s.h2, { marginTop: 14, textAlign: 'center' }]}>Nothing to do yet</Text>
+            <Text style={[s.h2, { textAlign: 'center' }]}>Nothing to do yet</Text>
             <Text style={[s.muted, { marginTop: 6, textAlign: 'center' }]}>
               {cooking > 0
                 ? `${cooking} order${cooking === 1 ? '' : 's'} still being cooked.\nPull down to check again.`
@@ -104,36 +105,44 @@ export function HomeScreen({
             <Text style={s.sectionLabel}>DELIVER NOW · {toDeliver.length}</Text>
             {toDeliver.map(({ order, run }) => {
               const until = untilLabel(run.timing.effectiveArrival)
+              const delay = delayLabel(run.timing.delayMinutes)
               return (
-                <Pressable
-                  key={order.id}
-                  onPress={() => onOpenOrder(order, run)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Deliver to coach ${order.coach ?? 'unknown'} berth ${order.berth ?? ''}, ${order.contactName ?? 'no name'}`}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.92 : 1 }]}
-                >
-                  <Card style={until.urgent ? { borderWidth: 2, borderColor: C.red } : undefined}>
+                <Card key={order.id}>
+                  <Pressable
+                    onPress={() => onOpenOrder(order, run)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Deliver to coach ${order.coach ?? 'unknown'} berth ${order.berth ?? ''}, ${order.contactName ?? 'no name'}`}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
+                  >
                     <View style={[s.row, { justifyContent: 'space-between' }]}>
                       <Seat coach={order.coach} berth={order.berth} />
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{
-                          fontSize: 16, fontWeight: '800',
-                          color: until.urgent ? C.red : C.muted,
-                        }}>
-                          {until.text}
-                        </Text>
-                        <Text style={{ fontSize: 13, color: C.faint, marginTop: 1 }}>
-                          {run.trainNo} · {timeIST(run.timing.effectiveArrival)}
-                        </Text>
-                      </View>
+                      <Text style={{
+                        fontSize: 15, fontWeight: '800',
+                        color: until.urgent ? C.red : C.muted,
+                      }}>
+                        {until.text}
+                      </Text>
                     </View>
 
-                    <View style={{ height: 1, backgroundColor: C.line, marginVertical: 12 }} />
+                    {/* Which train, by name. A rider works several at once and
+                        a number alone is not what they are shouted at the
+                        platform. */}
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: C.ink, marginTop: 10 }}
+                      numberOfLines={1}>
+                      {run.trainNo} · {run.trainName ?? 'Train name not known'}
+                    </Text>
+                    <View style={[s.row, { marginTop: 6, flexWrap: 'wrap', gap: 6 }]}>
+                      <Pill text={timeIST(run.timing.effectiveArrival)} />
+                      {run.timing.platform ? <Pill tone="dark" text={`PF ${run.timing.platform}`} /> : null}
+                      {delay && delay !== 'On time' ? <Pill tone="red" text={delay} /> : null}
+                    </View>
+
+                    <View style={{ height: 1, backgroundColor: C.line, marginVertical: 11 }} />
 
                     <Person name={order.contactName} phone={order.contactPhone} />
 
-                    <View style={[s.row, { marginTop: 12, justifyContent: 'space-between' }]}>
-                      <Text style={{ fontSize: 14, color: C.muted }}>
+                    <View style={[s.row, { marginTop: 11, justifyContent: 'space-between' }]}>
+                      <Text style={{ fontSize: 13, color: C.muted }}>
                         {order.handoverPoint
                           ? `Hand over at ${order.handoverPoint}`
                           : `${order.items.filter((i) => !i.isPacking).length} item(s)`}
@@ -147,8 +156,25 @@ export function HomeScreen({
                         <Pill tone="green" text="Paid" />
                       )}
                     </View>
-                  </Card>
-                </Pressable>
+                  </Pressable>
+
+                  {/* Taking an order is one tap and gets mistapped. This is the
+                      way back, kept small so it is not the thing hit next. */}
+                  <Pressable
+                    onPress={() => onReturn(order.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Put this order back at the shop"
+                    hitSlop={8}
+                    style={({ pressed }) => [{
+                      alignSelf: 'flex-start', marginTop: 10, paddingVertical: 4,
+                      opacity: pressed ? 0.6 : 1,
+                    }]}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: C.faint }}>
+                      Took it by mistake? Put back
+                    </Text>
+                  </Pressable>
+                </Card>
               )
             })}
           </>
@@ -286,7 +312,6 @@ export function HomeScreen({
         <View style={s2.bar}>
           <Button
             label={`Picked up ${selected.length} order${selected.length === 1 ? '' : 's'}`}
-            icon="✓"
             tone="success"
             size="hero"
             busy={busy}
