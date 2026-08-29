@@ -2,21 +2,17 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { AppState, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
-import { flushQueue, fetchRuns, newClientId, queueAndFlush, registerPushToken, uploadProofPhoto, ApiError, OfflineError } from './src/api'
+import { flushQueue, fetchRuns, newClientId, queueAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
 import {
   cacheRuns, clearSession, loadCachedRuns, loadQueue, loadSession, type StoredUser,
 } from './src/storage'
 import type { Run, RunOrder, RunsResponse } from './src/types'
 import { LoginScreen } from './src/screens/Login'
-import { RunsScreen } from './src/screens/Runs'
-import { RunDetailScreen } from './src/screens/RunDetail'
-import { OrderDetailScreen } from './src/screens/OrderDetail'
+import { HomeScreen } from './src/screens/Home'
+import { DeliveryScreen } from './src/screens/Delivery'
 import { C, s } from './src/ui'
 
-type Screen =
-  | { name: 'runs' }
-  | { name: 'run'; runKey: string }
-  | { name: 'order'; runKey: string; orderId: string }
+type Screen = { name: 'home' } | { name: 'delivery'; runKey: string; orderId: string }
 
 export default function App() {
   const [booting, setBooting] = useState(true)
@@ -28,7 +24,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [queueSize, setQueueSize] = useState(0)
-  const [screen, setScreen] = useState<Screen>({ name: 'runs' })
+  const [screen, setScreen] = useState<Screen>({ name: 'home' })
+  const [pickingUp, setPickingUp] = useState<string | null>(null)
 
   // --- boot ---------------------------------------------------------------
   useEffect(() => {
@@ -134,7 +131,7 @@ export default function App() {
   // --- actions ------------------------------------------------------------
   const run = data?.runs.find((r) => 'runKey' in screen && r.key === screen.runKey) ?? null
   const order =
-    screen.name === 'order' ? (run?.orders.find((o) => o.id === screen.orderId) ?? null) : null
+    screen.name === 'delivery' ? (run?.orders.find((o) => o.id === screen.orderId) ?? null) : null
 
   /**
    * Applies a mutation locally before it reaches the server. Without this a
@@ -189,47 +186,26 @@ export default function App() {
     setBusy(false)
   }
 
-  /**
-   * Uploads a photo and returns its object key.
-   *
-   * Runs before the delivery is queued, so only the key ever enters the offline
-   * queue. Returns null on any failure — proof is optional, and a rider must
-   * never be stuck at a door because a photo would not upload.
-   */
-  async function capturePhoto(orderId: string, localUri: string): Promise<string | null> {
-    if (!token) return null
-    try {
-      return await uploadProofPhoto(token, orderId, localUri)
-    } catch {
-      return null
-    }
-  }
-
-  async function deliver(
-    orderId: string,
-    receivedBy: string,
-    amountCollected: string | null,
-    proofKey: string | null,
-  ) {
+  async function deliver(orderId: string, receivedBy: string, amountCollected: string | null) {
     if (!token) return
     setBusy(true)
     applyLocally(orderId, {
       status: 'DELIVERED',
       delivery: {
         deliveredAt: new Date().toISOString(),
-        proofValue: proofKey ?? receivedBy,
+        proofValue: receivedBy,
         amountCollectedPaise: amountCollected ? Math.round(Number(amountCollected) * 100) : null,
         failureReason: null,
       },
     })
     const r = await queueAndFlush(token, {
       kind: 'DELIVER_ORDER', clientId: newClientId(), orderId, receivedBy,
-      proofKey, amountCollected, at: new Date().toISOString(),
+      amountCollected, at: new Date().toISOString(),
     })
     setQueueSize(r.remaining)
     setOffline(r.offline)
     setBusy(false)
-    setScreen({ name: 'run', runKey: (screen as { runKey: string }).runKey })
+    setScreen({ name: 'home' })
   }
 
   async function fail(orderId: string, failureReason: string) {
@@ -248,7 +224,7 @@ export default function App() {
     setQueueSize(r.remaining)
     setOffline(r.offline)
     setBusy(false)
-    setScreen({ name: 'run', runKey: (screen as { runKey: string }).runKey })
+    setScreen({ name: 'home' })
   }
 
   // --- render -------------------------------------------------------------
@@ -287,7 +263,7 @@ export default function App() {
             await clearSession()
             setToken(null)
             setUser(null)
-            setScreen({ name: 'runs' })
+            setScreen({ name: 'home' })
           }}
           hitSlop={10}
         >
@@ -295,47 +271,41 @@ export default function App() {
         </Pressable>
       </View>
 
-      {screen.name === 'runs' || !run ? (
-        <RunsScreen
-          data={data}
+      {screen.name === 'delivery' && run && order ? (
+        <DeliveryScreen
+          order={order}
+          run={run}
+          busy={busy}
           offline={offline}
+          onBack={() => setScreen({ name: 'home' })}
+          onDeliver={(receivedBy) =>
+            deliver(
+              order.id,
+              receivedBy,
+              order.paymentMode === 'COD' && order.amountPaise !== null
+                ? (order.amountPaise / 100).toFixed(2)
+                : null,
+            )
+          }
+          onFail={(reason) => fail(order.id, reason)}
+        />
+      ) : (
+        <HomeScreen
+          runs={data?.runs ?? []}
           refreshing={refreshing}
-          queueSize={queueSize}
+          busyRunKey={busy ? pickingUp : null}
           onRefresh={() => {
             void refresh(token, true)
             void sync(token)
           }}
-          onOpen={(r: Run) => setScreen({ name: 'run', runKey: r.key })}
-        />
-      ) : screen.name === 'run' ? (
-        <RunDetailScreen
-          run={run}
-          dispatching={busy}
-          onBack={() => setScreen({ name: 'runs' })}
-          onOpenOrder={(o) => setScreen({ name: 'order', runKey: run.key, orderId: o.id })}
-          onDispatch={() => dispatchRun(run.key)}
-        />
-      ) : order ? (
-        <OrderDetailScreen
-          order={order}
-          busy={busy}
-          offline={offline}
-          onBack={() => setScreen({ name: 'run', runKey: run.key })}
-          onDeliver={(receivedBy, amount, proofKey) =>
-            deliver(order.id, receivedBy, amount, proofKey)
-          }
-          onCapturePhoto={(uri) => capturePhoto(order.id, uri)}
-          onFail={(reason) => fail(order.id, reason)}
-        />
-      ) : (
-        <RunDetailScreen
-          run={run}
-          dispatching={busy}
-          onBack={() => setScreen({ name: 'runs' })}
-          onOpenOrder={(o) => setScreen({ name: 'order', runKey: run.key, orderId: o.id })}
-          onDispatch={() => dispatchRun(run.key)}
+          onPickUp={(runKey) => {
+            setPickingUp(runKey)
+            void dispatchRun(runKey)
+          }}
+          onOpenOrder={(o, r) => setScreen({ name: 'delivery', runKey: r.key, orderId: o.id })}
         />
       )}
+
     </SafeAreaView>
   )
 }

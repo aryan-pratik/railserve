@@ -70,7 +70,6 @@ export type QueuedMutation =
        * queue is a short string rather than megabytes of JPEG — the queue
        * survives in AsyncStorage and must stay small.
        */
-      proofKey?: string | null
       amountCollected?: string | null
       at: string
     }
