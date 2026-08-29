@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import type { Run, RunOrder } from '../types'
-import { Button, C, Card, CallButton, Money, Pill, Seat, s, timeIST, untilLabel } from '../ui'
+import { Button, C, Card, CallButton, Check, Money, Pill, Seat, s, timeIST, untilLabel } from '../ui'
 
 /**
  * One delivery, start to finish.
@@ -143,16 +143,16 @@ export function DeliveryScreen({
           style={({ pressed }) => [
             s.row,
             {
-              padding: 14, borderRadius: 14, marginBottom: 10,
+              padding: 12, borderRadius: 12, marginBottom: 10,
               backgroundColor: receivedBy === passenger ? C.accentSoft : '#fff',
-              borderWidth: 2,
+              borderWidth: 1.5,
               borderColor: receivedBy === passenger ? C.accent : C.line,
               opacity: pressed ? 0.85 : 1,
             },
           ]}
         >
-          <Text style={{ fontSize: 20 }}>{receivedBy === passenger ? '✅' : '👤'}</Text>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: C.ink, flex: 1 }} numberOfLines={1}>
+          <Check on={receivedBy === passenger} />
+          <Text style={{ fontSize: 16, fontWeight: '700', color: C.ink, flex: 1 }} numberOfLines={1}>
             {passenger}
           </Text>
         </Pressable>
@@ -171,7 +171,6 @@ export function DeliveryScreen({
 
       <Button
         label="Delivered"
-        icon="✓"
         tone="success"
         size="hero"
         busy={busy}

@@ -178,8 +178,8 @@ export function CallButton({ phone, wide }: { phone: string; wide?: boolean }) {
         { opacity: pressed ? 0.75 : 1 },
       ]}
     >
-      <Text style={{ fontSize: 16, fontWeight: '800', color: C.accent }}>
-        📞{wide ? '  Call passenger' : ''}
+      <Text style={{ fontSize: 15, fontWeight: '800', color: C.accent }}>
+        {wide ? 'Call passenger' : 'Call'}
       </Text>
     </Pressable>
   )
@@ -221,30 +221,26 @@ export function Pill({ text, tone = 'neutral' }: {
 
 /** Cash to collect. Loud when there is money, quiet when there is not. */
 export function Money({ paise, mode }: { paise: number | null; mode: string | null }) {
-  if (mode !== 'COD') {
-    return (
-      <View style={[s.moneyBox, { backgroundColor: C.greenSoft }]}>
-        <Text style={[s.moneyLabel, { color: C.green }]}>PAID ALREADY</Text>
-        <Text style={[s.moneySub, { color: C.green }]}>Collect nothing</Text>
-      </View>
-    )
-  }
+  const cod = mode === 'COD'
+  const fg = cod ? C.amber : C.green
   return (
-    <View style={[s.moneyBox, { backgroundColor: C.amberSoft }]}>
-      <Text style={[s.moneyLabel, { color: C.amber }]}>
-        {paise === null ? 'ASK THE SHOP' : `COLLECT ₹${Math.round(paise / 100)}`}
+    <View style={[s.moneyBox, { backgroundColor: cod ? C.amberSoft : C.greenSoft }]}>
+      <Text style={[s.moneyLabel, { color: fg }]}>
+        {cod ? 'COLLECT CASH' : 'ALREADY PAID'}
       </Text>
-      <Text style={[s.moneySub, { color: C.amber }]}>
-        {paise === null ? 'Amount is missing' : 'Cash from passenger'}
+      <Text style={[s.moneyValue, { color: fg }]}>
+        {cod ? (paise === null ? 'Ask the shop' : `₹${Math.round(paise / 100)}`) : 'Take nothing'}
       </Text>
     </View>
   )
 }
 
 /**
- * Two tabs, labelled in words as well as icons.
+ * Two tabs: work to do, and work done. Two is the most this app should have.
  *
- * Two is the most this app should ever have: work to do, and work done.
+ * Labelled in words with a bar over the active one. No pictograms — a parcel
+ * and a tick read as decoration at this size, and the words are shorter than
+ * the time spent decoding them.
  */
 export function TabBar({ tab, onChange, badge }: {
   tab: 'jobs' | 'done'
@@ -252,8 +248,8 @@ export function TabBar({ tab, onChange, badge }: {
   badge?: number
 }) {
   const items = [
-    { key: 'jobs' as const, icon: '📦', label: 'My work' },
-    { key: 'done' as const, icon: '✅', label: 'Delivered' },
+    { key: 'jobs' as const, label: 'My work' },
+    { key: 'done' as const, label: 'Delivered' },
   ]
   return (
     <View style={s.tabBar}>
@@ -268,13 +264,13 @@ export function TabBar({ tab, onChange, badge }: {
             accessibilityLabel={it.label}
             style={({ pressed }) => [s.tab, { opacity: pressed ? 0.7 : 1 }]}
           >
-            <Text style={{ fontSize: 22 }}>{it.icon}</Text>
+            <View style={[s.tabMark, on && { backgroundColor: C.accent }]} />
             <Text style={{
-              fontSize: 12, fontWeight: '800', marginTop: 2,
+              fontSize: 15, fontWeight: '800', marginTop: 10,
               color: on ? C.accent : C.faint,
             }}>
               {it.label}
-              {it.key === 'jobs' && badge ? ` (${badge})` : ''}
+              {it.key === 'jobs' && badge ? `  ${badge}` : ''}
             </Text>
           </Pressable>
         )
@@ -321,71 +317,74 @@ export function delayLabel(minutes: number | null): string | null {
 export const s = StyleSheet.create({
   card: {
     backgroundColor: C.card,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
     ...SHADOW,
   },
   // A border means one thing only: the rider picked this one.
-  cardSelected: { borderWidth: 2, borderColor: C.accent, backgroundColor: C.accentSoft },
+  cardSelected: { borderWidth: 1.5, borderColor: C.accent, backgroundColor: C.accentSoft },
 
   // 56px minimum, 64 for the hero — a platform is not a place for small targets.
   button: {
-    borderRadius: 14,
-    minHeight: 56,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    minHeight: 50,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonHero: { minHeight: 64, borderRadius: 16 },
-  buttonText: { fontSize: 16, fontWeight: '700' },
-  buttonTextHero: { fontSize: 19, fontWeight: '800' },
+  buttonHero: { minHeight: 56, borderRadius: 14 },
+  buttonText: { fontSize: 15, fontWeight: '700' },
+  buttonTextHero: { fontSize: 17, fontWeight: '800' },
 
   seat: {
     backgroundColor: C.ink,
-    borderRadius: 12,
-    paddingVertical: 9,
-    paddingHorizontal: 13,
+    borderRadius: 9,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
     alignSelf: 'flex-start',
   },
-  seatHuge: { paddingVertical: 18, paddingHorizontal: 28, borderRadius: 20 },
-  seatText: { color: '#fff', fontSize: 21, fontWeight: '800', letterSpacing: 1 },
-  seatTextHuge: { fontSize: 46, letterSpacing: 2 },
+  seatHuge: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 16 },
+  seatText: { color: '#fff', fontSize: 19, fontWeight: '800', letterSpacing: 0.8 },
+  seatTextHuge: { fontSize: 40, letterSpacing: 2 },
 
   check: {
-    width: 32, height: 32, borderRadius: 10,
+    width: 28, height: 28, borderRadius: 8,
     borderWidth: 2, borderColor: C.line, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
   },
 
   callBtn: {
-    minWidth: 48, minHeight: 44, paddingHorizontal: 12,
-    borderRadius: 12, backgroundColor: C.accentSoft,
+    minWidth: 44, minHeight: 40, paddingHorizontal: 14,
+    borderRadius: 10, backgroundColor: C.accentSoft,
     alignItems: 'center', justifyContent: 'center', flexDirection: 'row',
   },
 
-  pill: { borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10 },
+  pill: { borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8 },
 
-  moneyBox: { borderRadius: 14, paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center' },
-  moneyLabel: { fontSize: 26, fontWeight: '900', letterSpacing: 0.5 },
-  moneySub: { fontSize: 13, fontWeight: '600', marginTop: 2 },
+  moneyBox: {
+    borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  moneyLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  moneyValue: { fontSize: 22, fontWeight: '900' },
 
-  h1: { fontSize: 26, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
+  h1: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
   h2: { fontSize: 18, fontWeight: '700', color: C.ink },
   sectionLabel: {
     fontSize: 12, fontWeight: '800', color: C.faint,
     letterSpacing: 1.2, marginBottom: 10, marginTop: 4,
   },
   muted: { color: C.muted, fontSize: 14 },
-  train: { fontSize: 20, fontWeight: '800', color: C.ink, letterSpacing: 0.3 },
+  train: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: 0.3 },
 
   input: {
     borderWidth: 1.5,
     borderColor: C.line,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    fontSize: 17,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
+    fontSize: 16,
     backgroundColor: '#fff',
     color: C.ink,
   },
@@ -395,7 +394,8 @@ export const s = StyleSheet.create({
     flexDirection: 'row',
     borderTopWidth: 1, borderTopColor: C.line,
     backgroundColor: '#fff',
-    paddingTop: 8, paddingBottom: 10,
+    paddingBottom: 10,
   },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
+  tab: { flex: 1, alignItems: 'center', minHeight: 48 },
+  tabMark: { height: 3, width: 34, borderRadius: 2, backgroundColor: 'transparent' },
 })

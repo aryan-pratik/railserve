@@ -296,3 +296,77 @@ describe('store manager hands a run to a rider', () => {
     expect(res.errors[0]).toContain('Run not found')
   })
 })
+
+/**
+ * Taking an order is one tap on a phone held in a busy hand, so it gets
+ * mistapped. Putting it back has to be a correction rather than an erasure:
+ * the food returns to the counter, the claim is released so the board stops
+ * showing it as out, and both halves stay on the event log.
+ */
+describe('a rider puts back an order they took by mistake', () => {
+  let manager: AuthContext
+  let rider: AuthContext
+  let riderId: import('mongoose').Types.ObjectId
+  let orderId: string
+
+  beforeAll(async () => {
+    await resetDb()
+    const g = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
+    manager = ctxFor(await makeUser('STORE_MANAGER', '9000000002', g._id))
+    const r = await makeUser('DELIVERY_AGENT', '9000000004', g._id)
+    riderId = r._id
+    rider = ctxFor(r)
+
+    const order = await makeOrder({
+      restaurantId: g._id, serviceDate: DATE, trainNo: '12506', trainName: 'NORTH EAST EXP',
+      stationCode: 'CNB', coach: 'B5', berth: '37',
+      scheduledArrival: new Date('2026-08-27T07:55:00Z'),
+    })
+    orderId = String(order._id)
+
+    for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
+      await transitionOrder({ ctx: manager, orderId, to })
+    }
+    await transitionOrder({ ctx: rider, orderId, to: 'DISPATCHED' })
+  })
+
+  afterAll(async () => {
+    await disconnectDb()
+  })
+
+  it('goes back to the counter and releases the rider’s claim', async () => {
+    const before = await findById(rider, orderId)
+    expect(before!.status).toBe('DISPATCHED')
+    expect(before!.delivery.agentIds.map(String)).toContain(String(riderId))
+
+    const back = await transitionOrder({ ctx: rider, orderId, to: 'PREPARED' })
+
+    expect(back.status).toBe('PREPARED')
+    // The board must stop claiming this rider has the food — that is the one
+    // question delivery.agentIds exists to answer.
+    expect(back.delivery.agentIds.map(String)).not.toContain(String(riderId))
+  })
+
+  it('keeps both the take and the return on the event log', async () => {
+    const order = await findById(rider, orderId)
+    const edges = (order!.events ?? []).map((e) => `${e.fromStatus}->${e.toStatus}`)
+
+    expect(edges).toContain('PREPARED->DISPATCHED')
+    expect(edges).toContain('DISPATCHED->PREPARED')
+
+    const undo = order!.events.find((e) => e.toStatus === 'PREPARED' && e.fromStatus === 'DISPATCHED')
+    expect(String(undo!.userId)).toBe(String(riderId))
+  })
+
+  it('is available to take again afterwards', async () => {
+    const again = await transitionOrder({ ctx: rider, orderId, to: 'DISPATCHED' })
+    expect(again.status).toBe('DISPATCHED')
+    expect(again.delivery.agentIds.map(String)).toContain(String(riderId))
+  })
+
+  it('is not something a store manager may do', async () => {
+    await expect(
+      transitionOrder({ ctx: manager, orderId, to: 'PREPARED' }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+  })
+})

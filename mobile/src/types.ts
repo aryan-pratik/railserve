@@ -86,6 +86,8 @@ export type QueuedMutation =
   | { kind: 'DISPATCH_RUN'; clientId: string; runKey: string; at: string }
   // One order rather than a whole train: a rider takes what they can carry.
   | { kind: 'DISPATCH_ORDER'; clientId: string; orderId: string; at: string }
+  // Undo a mistapped pickup. Audited server-side like any status change.
+  | { kind: 'RETURN_ORDER'; clientId: string; orderId: string; at: string }
   | {
       kind: 'DELIVER_ORDER'
       clientId: string

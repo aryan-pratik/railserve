@@ -63,6 +63,12 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
   DISPATCHED: {
     DELIVERED: ['DELIVERY_AGENT'],
     FAILED: ['DELIVERY_AGENT'],
+    // Taking an order is one tap on a phone held in a busy hand, so it gets
+    // mistapped. Putting it back is the correction: the food returns to the
+    // counter for someone else to take. Only the rider holding it may do this
+    // — releasing a claim is theirs to make — and the event log records both
+    // the take and the return, so a returned order is never silently un-taken.
+    PREPARED: ['DELIVERY_AGENT'],
   },
 
   // --- terminal ---

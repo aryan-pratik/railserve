@@ -56,13 +56,13 @@ export function HistoryScreen({
         <Text style={{ color: '#9aa4b8', fontSize: 12, fontWeight: '800', letterSpacing: 1.2 }}>
           TODAY
         </Text>
-        <View style={[s.row, { justifyContent: 'space-between', marginTop: 10 }]}>
+        <View style={[s.row, { justifyContent: 'space-between', marginTop: 8 }]}>
           <View>
-            <Text style={{ color: '#fff', fontSize: 34, fontWeight: '900' }}>{doneToday}</Text>
+            <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900' }}>{doneToday}</Text>
             <Text style={{ color: '#9aa4b8', fontSize: 13, fontWeight: '600' }}>delivered</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ color: '#fff', fontSize: 34, fontWeight: '900' }}>
+            <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900' }}>
               ₹{Math.round(cashToday / 100)}
             </Text>
             <Text style={{ color: '#9aa4b8', fontSize: 13, fontWeight: '600' }}>cash collected</Text>
@@ -72,8 +72,7 @@ export function HistoryScreen({
 
       {orders.length === 0 ? (
         <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-          <Text style={{ fontSize: 52 }}>📋</Text>
-          <Text style={[s.h2, { marginTop: 14 }]}>Nothing delivered yet</Text>
+          <Text style={s.h2}>Nothing delivered yet</Text>
           <Text style={[s.muted, { marginTop: 6, textAlign: 'center' }]}>
             Orders you finish will show up here.
           </Text>

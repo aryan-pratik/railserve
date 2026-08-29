@@ -41,6 +41,16 @@ const TIMESTAMP_ON_ENTER: Partial<Record<OrderStatus, string>> = {
 const RECORDS_THE_RIDER: OrderStatus[] = ['DISPATCHED', 'DELIVERED', 'FAILED']
 
 /**
+ * Going back to the counter releases the actor's claim on the food.
+ *
+ * delivery.agentIds answers "who has this right now". Leaving a rider on an
+ * order they handed back would make the board show it as out with them while
+ * it sits on the counter — the one question the field exists to answer,
+ * answered wrongly. The event log still holds the take and the return.
+ */
+const RELEASES_THE_RIDER: OrderStatus[] = ['PREPARED']
+
+/**
  * THE ONLY PLACE `status` IS EVER WRITTEN. Plan §4.
  *
  * - Opens a session and transaction
@@ -151,6 +161,10 @@ export async function transitionOrder(params: {
           : handedTo
         : undefined
       const $addToSet = rider ? { 'delivery.agentIds': rider } : undefined
+      const $pull =
+        RELEASES_THE_RIDER.includes(to) && from === 'DISPATCHED'
+          ? { 'delivery.agentIds': ctx.userId }
+          : undefined
 
       // The status precondition is the concurrency guard. Two managers hitting
       // "Mark Prepared" at once: the second matches zero documents.
@@ -159,6 +173,7 @@ export async function transitionOrder(params: {
         {
           $set,
           ...($addToSet ? { $addToSet } : {}),
+          ...($pull ? { $pull } : {}),
           $push: {
             events: {
               fromStatus: from,
