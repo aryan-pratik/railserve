@@ -1,0 +1,29 @@
+{
+  "cli": {
+    "version": ">= 23.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://railserve.vercel.app"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://railserve.vercel.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
