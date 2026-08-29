@@ -99,6 +99,23 @@ export function ButtonLink({
   return <Link {...props} className={buttonClass(variant, size, className)} />
 }
 
+/**
+ * A button that is a plain anchor rather than a Link.
+ *
+ * For hrefs the router must not intercept — a file download, or anything
+ * leaving the app. Routing a CSV route handler client-side navigates the page
+ * to it instead of saving a file, so the distinction is load-bearing, not
+ * stylistic.
+ */
+export function ButtonAnchor({
+  variant = 'secondary',
+  size = 'md',
+  className = '',
+  ...props
+}: ComponentProps<'a'> & { variant?: Variant; size?: Size }) {
+  return <a {...props} className={buttonClass(variant, size, className)} />
+}
+
 /* ── forms ────────────────────────────────────────────────────────────────── */
 
 export const inputClass =

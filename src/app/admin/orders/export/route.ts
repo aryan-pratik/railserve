@@ -36,18 +36,36 @@ export async function GET(request: Request) {
   const ctx = await requireRole('ADMIN')
   const url = new URL(request.url)
 
-  const date = url.searchParams.get('date') || todayIST()
-  const outlet = url.searchParams.get('outlet') ?? ''
-  const statuses = TABS[url.searchParams.get('tab') ?? ''] ?? (LIVE_STATUSES as string[])
+  // The board exports one service day of live work; /admin/orders is a lookup
+  // across all of history, so it asks for `range=all` and supplies its own
+  // filters. Both defaults — today, and the live statuses — exist to keep the
+  // board's export small, and applying them to a history export would quietly
+  // return the wrong rows rather than fail.
+  const isFullRange = url.searchParams.get('range') === 'all'
 
-  const filter: QueryFilter<Record<string, unknown>> = {
-    serviceDate: date,
-    status: { $in: statuses },
-  }
+  const date = url.searchParams.get('date') || (isFullRange ? '' : todayIST())
+  const outlet = url.searchParams.get('outlet') ?? ''
+  const status = url.searchParams.get('status') ?? ''
+  const train = url.searchParams.get('train') ?? ''
+  const payment = url.searchParams.get('payment') ?? ''
+
+  const tab = url.searchParams.get('tab') ?? ''
+  const statuses = status
+    ? [status]
+    : (TABS[tab] ?? (isFullRange ? null : (LIVE_STATUSES as string[])))
+
+  const filter: QueryFilter<Record<string, unknown>> = {}
+  if (date) filter.serviceDate = date
+  if (statuses) filter.status = { $in: statuses }
   if (outlet) filter.restaurantId = outlet
+  if (train) filter.trainNo = train.toUpperCase()
+  if (payment) filter.paymentMode = payment
 
   const [orders, outlets] = await Promise.all([
-    findMany(ctx, filter, { sort: { createdAt: 1 }, limit: 500 }),
+    // A history export spanning every service date needs far more headroom
+    // than one day of the board, and a silently truncated CSV is worse than a
+    // slow one — this is the file someone reconciles the month against.
+    findMany(ctx, filter, { sort: { createdAt: 1 }, limit: isFullRange ? 5000 : 500 }),
     connectDb().then(() => Restaurant.find({}).select('name stationCode').lean()),
   ])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
@@ -88,7 +106,7 @@ export async function GET(request: Request) {
     {
       headers: {
         'content-type': 'text/csv; charset=utf-8',
-        'content-disposition': `attachment; filename="railserve-orders-${date}.csv"`,
+        'content-disposition': `attachment; filename="railserve-orders-${date || 'all'}.csv"`,
         'cache-control': 'no-store',
       },
     },
