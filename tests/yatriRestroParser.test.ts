@@ -54,6 +54,17 @@ describe('YatriRestro parser', () => {
     ])
   })
 
+  it('splits several items sharing one line', () => {
+    const r = parser.parse(fx.MULTI_ITEM_SINGLE_LINE, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order.items).toEqual([
+      { name: 'Aalu Paratha With Chole Combo', qty: 1, notes: null },
+      { name: 'Paneer Paratha with Chhole Combo', qty: 2, notes: null },
+    ])
+  })
+
   it('keeps whatever follows the trailing pipe as an item note', () => {
     const r = parser.parse(fx.MULTI_ITEM, RECEIVED)
     if (!r.ok) throw new Error('expected parse to succeed')
