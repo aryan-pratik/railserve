@@ -4,7 +4,7 @@ import { useActionState, useState } from 'react'
 import { ProofPhotoField } from '@/components/ProofPhotoField'
 import {
   deliverOrderAction, dispatchRunAction, failOrderAction, requestProofUpload,
-  type AgentActionState,
+  takeOrderAction, type AgentActionState,
 } from './actions'
 import { Button, inputClass } from '@/components/ui'
 
@@ -134,6 +134,25 @@ export function FailForm({ orderId }: { orderId: string }) {
           Cancel
         </button>
       </div>
+      <Note state={state} />
+    </form>
+  )
+}
+
+/**
+ * "I'm taking this" — one order, straight off the shelf.
+ *
+ * Full width and thumb-sized because it is pressed on a platform, one-handed,
+ * usually while holding a bag.
+ */
+export function TakeOrderButton({ orderId }: { orderId: string }) {
+  const [state, action, pending] = useActionState(takeOrderAction, initial)
+  return (
+    <form action={action} className="p-4">
+      <input type="hidden" name="orderId" value={orderId} />
+      <Button type="submit" size="lg" disabled={pending} className="w-full font-bold">
+        {pending ? 'Saving…' : "I'm taking this"}
+      </Button>
       <Note state={state} />
     </form>
   )

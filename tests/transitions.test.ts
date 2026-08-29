@@ -70,10 +70,14 @@ describe('transitionOrder', () => {
     await transitionOrder({ ctx: manager, orderId: id, to: 'ACCEPTED' })
     await transitionOrder({ ctx: manager, orderId: id, to: 'KOT_PRINTED' })
     await transitionOrder({ ctx: manager, orderId: id, to: 'PREPARED' })
-    // PREPARED -> DISPATCHED is legal, but belongs to the delivery agent.
+    // PREPARED -> DISPATCHED is legal for a manager only when they name the
+    // rider who took it; bare, it is refused.
     await expect(
       transitionOrder({ ctx: manager, orderId: id, to: 'DISPATCHED' }),
     ).rejects.toBeInstanceOf(ForbiddenError)
+    // An agent needs no such argument — they are the carrier.
+    const done = await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+    expect(done.delivery.agentIds.map(String)).toEqual([String(agentId)])
   })
 
   it('refuses to leave a terminal status', async () => {

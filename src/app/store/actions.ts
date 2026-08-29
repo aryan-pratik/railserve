@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
-import { transitionRun, type RunActionResult } from '@/lib/repo/runRepo'
+import { transitionRun, handRunToRider, type RunActionResult } from '@/lib/repo/runRepo'
 import { NotFoundError } from '@/lib/authContext'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { env } from '@/lib/env'
@@ -163,4 +163,25 @@ export async function generateRunKot(formData: FormData) {
   revalidatePath('/store')
 
   redirect(`/store/runs/${encodeURIComponent(runKey)}/kot`)
+}
+
+/**
+ * Hands a whole train's ready food to a named rider and marks it on the way.
+ *
+ * The rider is recorded as the one carrying it, not the manager who clicked —
+ * `handRunToRider` verifies the id belongs to an active rider before the
+ * transition writes it.
+ */
+export async function handRunToRiderAction(
+  _prev: StoreActionState,
+  formData: FormData,
+): Promise<StoreActionState> {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const runKey = String(formData.get('runKey') ?? '')
+  const riderId = String(formData.get('riderId') ?? '')
+
+  const result = await handRunToRider(ctx, runKey, riderId)
+  revalidatePath('/store')
+  revalidatePath('/agent')
+  return summarise(result, 'on the way')
 }

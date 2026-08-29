@@ -105,7 +105,9 @@ describe('store manager dashboard', () => {
     ).rejects.toBeInstanceOf(ConflictError)
   })
 
-  it('a store manager cannot dispatch — that belongs to the delivery agent', async () => {
+  it('a store manager cannot dispatch without naming who took it', async () => {
+    // A manager may hand food over, but the record has to say which rider has
+    // it — an anonymous DISPATCHED is worse than none.
     const prepared = (await today()).find((o) => o.status === 'PREPARED')!
     await expect(
       transitionOrder({ ctx: manager, orderId: String(prepared._id), to: 'DISPATCHED' }),

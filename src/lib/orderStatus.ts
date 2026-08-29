@@ -52,7 +52,12 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     CANCELLED: ['ADMIN'],
   },
   PREPARED: {
-    DISPATCHED: ['DELIVERY_AGENT'],
+    // A store manager can hand food over on the rider's behalf: the rider is
+    // often at the counter with their hands full, and making them stop to
+    // unlock a phone at the one moment the clock matters is how orders miss a
+    // halt. The manager must name who took it — see `handedTo` in
+    // transitionOrder — so the record still says which rider has the food.
+    DISPATCHED: ['DELIVERY_AGENT', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN'],
   },
   DISPATCHED: {

@@ -3,7 +3,10 @@
 import { useActionState, useState } from 'react'
 import { Button, FormNote } from '@/components/ui'
 import { shouldWarnAboutDelay } from '@/lib/train/policy'
-import { acceptRun, generateRunKot, markRunPrepared, type StoreActionState } from './actions'
+import {
+  acceptRun, generateRunKot, handRunToRiderAction, markRunPrepared,
+  type StoreActionState,
+} from './actions'
 
 const initial: StoreActionState = {}
 
@@ -27,6 +30,7 @@ export function StoreRunActions({
   delayMinutes,
   expectedArrival,
   delayThresholdMinutes,
+  riders,
 }: {
   runKey: string
   counts: Record<string, number>
@@ -34,9 +38,11 @@ export function StoreRunActions({
   delayMinutes: number | null
   expectedArrival: string | null
   delayThresholdMinutes: number
+  riders: { id: string; name: string }[]
 }) {
   const [acceptState, accept, accepting] = useActionState(acceptRun, initial)
   const [readyState, ready, readying] = useActionState(markRunPrepared, initial)
+  const [handState, hand, handing] = useActionState(handRunToRiderAction, initial)
   const [confirmingPrint, setConfirmingPrint] = useState(false)
 
   const toAccept = counts.RECEIVED ?? 0
@@ -87,10 +93,38 @@ export function StoreRunActions({
         </form>
       ) : null}
 
-      {toAccept + toPrint + toReady === 0 && waiting > 0 ? (
-        <span className="text-xs font-medium text-emerald-700">
-          {waiting} on the ready shelf — waiting for the rider
-        </span>
+      {/* Food is on the shelf. Either the rider marks it themselves in the app,
+          or the manager hands it over here and names who took it — whoever gets
+          to it first, without either waiting on the other. */}
+      {waiting > 0 ? (
+        riders.length > 0 ? (
+          <form action={hand} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="runKey" value={runKey} />
+            <span className="text-xs font-medium text-emerald-700">
+              {waiting} on the shelf →
+            </span>
+            <select
+              name="riderId"
+              required
+              defaultValue=""
+              aria-label="Which rider is taking this train"
+              className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent"
+            >
+              <option value="" disabled>Handed to…</option>
+              {riders.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+            <Button type="submit" size="sm" variant="go" disabled={handing}>
+              {handing ? 'Saving…' : 'On the way'}
+            </Button>
+            <FormNote state={handState} />
+          </form>
+        ) : (
+          <span className="text-xs font-medium text-amber-700">
+            {waiting} on the shelf — no active rider at this outlet
+          </span>
+        )
       ) : null}
 
       {confirmingPrint ? (

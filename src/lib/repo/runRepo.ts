@@ -1,4 +1,7 @@
+import mongoose from 'mongoose'
 import { findMany } from './orderRepo'
+import { connectDb } from '../db'
+import { User } from '../models'
 import { transitionOrder } from './transitionOrder'
 import { ForbiddenError, type AuthContext } from '../authContext'
 import { groupIntoRuns, parseRunKey, type Run } from '../runs'
@@ -101,6 +104,70 @@ export async function transitionRun(
     }
   }
 
+  return result
+}
+
+/**
+ * A store manager hands a whole run to a named rider.
+ *
+ * The rider is usually standing at the counter with both hands full; asking
+ * them to unlock a phone at the exact minute the clock matters is how orders
+ * miss a halt. So the manager can mark it, but only by naming who took it —
+ * the record has to answer "who has my food", and a manager's own id is not an
+ * answer to that.
+ *
+ * The rider id is verified here rather than inside transitionOrder: this is the
+ * only caller that supplies one, and the check needs a User read that has no
+ * business inside the status transaction.
+ */
+export async function handRunToRider(
+  ctx: AuthContext,
+  runKey: string,
+  riderId: string,
+): Promise<RunActionResult> {
+  if (ctx.role !== 'STORE_MANAGER' && ctx.role !== 'ADMIN') {
+    throw new ForbiddenError('Only a store manager may hand a run over')
+  }
+  if (!mongoose.isValidObjectId(riderId)) {
+    return { moved: 0, skipped: 0, errors: ['Choose which rider is taking it'] }
+  }
+
+  await connectDb()
+  const rider = await User.findOne({
+    _id: riderId,
+    role: 'DELIVERY_AGENT',
+    active: true,
+  })
+    .select('_id')
+    .lean()
+  if (!rider) {
+    return { moved: 0, skipped: 0, errors: ['That rider is not active'] }
+  }
+
+  const run = await findRun(ctx, runKey)
+  if (!run) return { moved: 0, skipped: 0, errors: ['Run not found'] }
+
+  const result: RunActionResult = { moved: 0, skipped: 0, errors: [] }
+  for (const order of run.orders) {
+    if (order.status !== 'PREPARED') {
+      result.skipped += 1
+      continue
+    }
+    try {
+      await transitionOrder({
+        ctx,
+        orderId: String(order._id),
+        to: 'DISPATCHED',
+        meta: { via: 'store-handover', runKey },
+        handedTo: rider._id,
+      })
+      result.moved += 1
+    } catch (err) {
+      result.errors.push(
+        `${order.externalOrderId}: ${err instanceof Error ? err.message : 'failed'}`,
+      )
+    }
+  }
   return result
 }
 

@@ -6,7 +6,7 @@ import { findById } from '@/lib/repo/orderRepo'
 import { formatIST, formatMoney, paiseToRupees } from '@/lib/format'
 import { runKeyFor } from '@/lib/runs'
 import { Card, CardHeader, StatusBadge, TypeBadge } from '@/components/ui'
-import { DeliverForm, FailForm } from '../../AgentActions'
+import { DeliverForm, FailForm, TakeOrderButton } from '../../AgentActions'
 
 export const metadata = { title: 'Deliver · RailServe' }
 
@@ -143,9 +143,14 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
           <div className="text-sm font-semibold text-red-700">Not delivered</div>
           <div className="mt-1 text-sm text-muted">{order.delivery.failureReason ?? '—'}</div>
         </Card>
+      ) : order.status === 'PREPARED' ? (
+        <Card>
+          <CardHeader title="Ready on the shelf" />
+          <TakeOrderButton orderId={id} />
+        </Card>
       ) : (
         <Card className="p-4 text-sm text-muted">
-          Waiting on the kitchen and dispatch. Delivery opens once the run is dispatched.
+          Still in the kitchen. This opens as soon as the food is ready.
         </Card>
       )}
     </div>
