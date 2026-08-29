@@ -11,7 +11,6 @@ const EnvSchema = z.object({
   AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 characters'),
   SEED_PASSWORD: z.string().min(1).default('password'),
 
-  REDIS_URL: z.string().min(1).default('redis://localhost:6380'),
 
   // Live train status. Defaults to the simulator so the app runs with no
   // third-party account; setting a key is the whole switch to real data.
@@ -40,6 +39,10 @@ const EnvSchema = z.object({
   R2_BUCKET: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),
   R2_SECRET_ACCESS_KEY: z.string().default(''),
+
+  // Shared secret for /api/cron/train-poll. Blank leaves the endpoint open,
+  // which is fine locally and is not fine on a public host.
+  CRON_TOKEN: z.string().default(''),
 
   DISPATCH_BUFFER_MINUTES: z.coerce.number().int().min(0).default(5),
   KOT_DELAY_THRESHOLD_MINUTES: z.coerce.number().int().min(0).default(45),
