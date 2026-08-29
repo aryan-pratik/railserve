@@ -52,3 +52,6 @@ next-env.d.ts
 /.agents/
 /.codex/
 /.impeccable/
+
+# Local DB snapshots taken by reset:admin — never commit real order data.
+/.backups/
