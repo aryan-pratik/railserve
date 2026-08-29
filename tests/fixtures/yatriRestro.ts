@@ -114,3 +114,24 @@ Station Code/Name - KANPUR CENTRAL-CNB
 Poha - 2 |
 -----------------------------
 *Amount-120 - CASH_ON_DELIVERY*`
+
+/**
+ * Two dishes on ONE items line, as the aggregator actually sent order
+ * 1000584365. Matching the line once folds the second dish into the first
+ * one's notes and under-counts the order — ₹675 of food recorded as one item.
+ */
+export const MULTI_ITEM_SINGLE_LINE = `*Order From YatriRestro*
+*Order Id : #1000584365*
+-----------------------------
+Outlet Name- THE COSMOZIN LOUNGE
+Station Code/Name - KANPUR CENTRAL-CNB
+-----------------------------
+*Delivery Details*
+👤 Raja Kumar  |  📞 6200747372 |  🚆 12561-SWATANTRA S EXP |  💺 S6-29 | 🕐 27-Aug 09:35
+-----------------------------
+*Order Items*
+Aalu Paratha With Chole Combo - 1 | Paneer Paratha with Chhole Combo - 2 |
+-----------------------------
+*Amount-675 - ONLINE*
+-----------------------------
+Thank You.`

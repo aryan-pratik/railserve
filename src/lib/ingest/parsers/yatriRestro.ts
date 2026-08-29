@@ -199,17 +199,24 @@ export class YatriRestroParser implements OrderParser {
       if (/^-{3,}$/.test(line)) break
       if (!line) continue
 
-      // "Paneer Paratha With Curd Combo - 1 |" and anything after the pipe is
-      // an item note, not noise to discard (§6 edge cases).
-      const m = /^(.+?)\s*-\s*(\d+)\s*(?:\|(.*))?$/.exec(line)
-      if (!m) continue
+      // One line can carry several items — "Aalu Paratha - 1 | Paneer Paratha
+      // - 2 |" is a single order of three dishes. Split on the pipe and judge
+      // each segment by shape: "name - qty" opens a new item, anything else is
+      // a note on the item before it ("Masala Chai - 3 | extra sugar").
+      // Matching the line once instead would silently fold the second dish
+      // into the first one's notes and under-count the order.
+      for (const segment of line.split('|')) {
+        const part = segment.trim()
+        if (!part) continue
 
-      const notes = m[3]?.trim()
-      items.push({
-        name: m[1].trim(),
-        qty: Number(m[2]),
-        notes: notes ? notes : null,
-      })
+        const m = /^(.+?)\s*-\s*(\d+)$/.exec(part)
+        if (m) {
+          items.push({ name: m[1].trim(), qty: Number(m[2]), notes: null })
+        } else if (items.length > 0) {
+          const prev = items[items.length - 1]
+          prev.notes = prev.notes ? `${prev.notes} ${part}` : part
+        }
+      }
     }
 
     return items
