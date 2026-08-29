@@ -5,6 +5,8 @@ import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { issueMobileToken } from '@/lib/mobile/token'
 
+import { preflight, withCors } from '@/lib/mobile/cors'
+
 export const dynamic = 'force-dynamic'
 
 const Body = z.object({ phone: z.string().trim().min(1), password: z.string().min(1) })
@@ -12,7 +14,7 @@ const Body = z.object({ phone: z.string().trim().min(1), password: z.string().mi
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Phone and password are required.' }, { status: 400 })
+    return withCors(request, NextResponse.json({ error: 'Phone and password are required.' }, { status: 400 }))
   }
 
   await connectDb()
@@ -24,22 +26,26 @@ export async function POST(request: Request) {
     { error: 'Incorrect phone number or password.' },
     { status: 401 },
   )
-  if (!user) return invalid
-  if (!(await bcrypt.compare(parsed.data.password, user.passwordHash))) return invalid
+  if (!user) return withCors(request, invalid)
+  if (!(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
+    return withCors(request, invalid)
+  }
 
   // The app is for delivery agents. Letting other roles in would mean shipping
   // screens that do not exist.
   if (user.role !== 'DELIVERY_AGENT') {
-    return NextResponse.json(
+    return withCors(request, NextResponse.json(
       { error: 'This app is for delivery agents. Use the web console for other roles.' },
       { status: 403 },
-    )
+    ))
   }
 
   const { token, expiresAt } = issueMobileToken(user)
-  return NextResponse.json({
+  return withCors(request, NextResponse.json({
     token,
     expiresAt: expiresAt.toISOString(),
     user: { id: String(user._id), name: user.name, phone: user.phone },
-  })
+  }))
 }
+
+export const OPTIONS = preflight

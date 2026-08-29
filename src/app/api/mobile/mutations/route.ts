@@ -7,6 +7,8 @@ import { dispatchRun } from '@/lib/repo/runRepo'
 import { ConflictError, ForbiddenError, NotFoundError } from '@/lib/authContext'
 import { rupeesToPaise } from '@/lib/format'
 
+import { preflight, withCors } from '@/lib/mobile/cors'
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -33,15 +35,17 @@ const Mutation = z.discriminatedUnion('kind', [
     kind: z.literal('DELIVER_ORDER'),
     clientId: z.string().min(1),
     orderId: z.string().min(1),
-    // Either is enough. A photo is stronger, but a rider with a dead camera or
-    // no signal must still be able to close an order at the door.
+    // A photo is the proof the rider app collects — it never asks for a name,
+    // because asking a passenger to spell one while a train is about to leave
+    // is the slowest way to close an order, and a picture is better evidence.
+    //
+    // Neither is permitted, and deliberately so: a rider with no signal at the
+    // platform cannot upload a photo, and refusing the delivery would strand a
+    // completed job in the offline queue forever. proofType simply stays null.
     receivedBy: z.string().trim().default(''),
     proofKey: z.string().trim().optional().nullable(),
     amountCollected: z.string().optional().nullable(),
     at: z.string().optional(),
-  }).refine((v) => Boolean(v.proofKey) || v.receivedBy.length > 0, {
-    message: 'A delivery needs either a photo or the name of who received it',
-    path: ['receivedBy'],
   }),
   z.object({
     kind: z.literal('FAIL_ORDER'),
@@ -65,11 +69,11 @@ type ItemResult = {
 
 export async function POST(request: Request) {
   const ctx = await contextFromBearer(request)
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!ctx) return withCors(request, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
 
   const parsed = Body.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Malformed mutation batch.' }, { status: 400 })
+    return withCors(request, NextResponse.json({ error: 'Malformed mutation batch.' }, { status: 400 }))
   }
 
   const results: ItemResult[] = []
@@ -122,7 +126,9 @@ export async function POST(request: Request) {
                 // never a presigned URL, which would be dead within the hour.
                 ...(m.proofKey
                   ? { proofType: 'PHOTO' as const, proofValue: m.proofKey }
-                  : { proofType: 'SIGNATURE' as const, proofValue: m.receivedBy }),
+                  : m.receivedBy
+                    ? { proofType: 'SIGNATURE' as const, proofValue: m.receivedBy }
+                    : {}),
                 ...(m.amountCollected
                   ? { amountCollectedPaise: rupeesToPaise(m.amountCollected) ?? undefined }
                   : {}),
@@ -147,5 +153,7 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ results, at: new Date().toISOString() })
+  return withCors(request, NextResponse.json({ results, at: new Date().toISOString() }))
 }
+
+export const OPTIONS = preflight
