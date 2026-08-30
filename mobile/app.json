@@ -26,6 +26,11 @@
     "scheme": "railserve",
     "plugins": [
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bedfb0d5-7b69-48e8-b304-f0dd2100a23f"
+      }
+    }
   }
 }

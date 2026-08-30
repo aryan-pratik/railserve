@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AppState, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native'
+import { AppState, BackHandler, Pressable, StatusBar, Text, View } from 'react-native'
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { LogOut } from 'lucide-react-native'
 import * as Notifications from 'expo-notifications'
 import * as Device from 'expo-device'
@@ -19,6 +20,14 @@ import { C, TabBar } from './src/ui'
 type Screen = { name: 'home' } | { name: 'delivery'; runKey: string; orderId: string }
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppShell />
+    </SafeAreaProvider>
+  )
+}
+
+function AppShell() {
   const [booting, setBooting] = useState(true)
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<StoredUser | null>(null)
@@ -146,6 +155,21 @@ export default function App() {
         }
       })()
   }, [token])
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (profileVisible) {
+        setProfileVisible(false)
+        return true
+      }
+      if (screen.name === 'delivery') {
+        setScreen({ name: 'home' })
+        return true
+      }
+      return false
+    })
+    return () => sub.remove()
+  }, [profileVisible, screen])
 
   // --- actions ------------------------------------------------------------
   const run = data?.runs.find((r) => 'runKey' in screen && r.key === screen.runKey) ?? null
