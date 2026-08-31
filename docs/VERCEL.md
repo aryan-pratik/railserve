@@ -78,13 +78,14 @@ testing (including mobile builds) without touching production data.
 live train status and fires the leave-now alert.
 
 `/api/cron/gmail-sync` polls Gmail for new order emails and ingests them —
-same shape, same auth, same no-worker approach. It replaces Gmail's
-push/Pub-Sub path entirely: it seeds its own resume point on first run and is
-idempotent, so a missed or doubled-up tick is harmless. Point the same
-external scheduler at it, on whatever interval you want order latency to be
-(every 2–5 minutes is reasonable). A no-op with `{"ok":true,"processed":0,...}`
-until `GMAIL_*` env vars are set, so it's safe to wire up before credentials
-exist.
+same shape, same auth, same no-worker approach. No Pub/Sub topic and no
+Google Cloud billing account: it seeds its own resume point from the latest
+message on first run and is idempotent, so a missed or doubled-up tick is
+harmless. Point the same external scheduler at it, on whatever interval you
+want order latency to be (every 2–5 minutes is reasonable). A no-op with
+`{"ok":true,"processed":0,...}` until `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`/
+`GMAIL_REFRESH_TOKEN` are set (`npm run gmail:setup`), so it's safe to wire up
+before credentials exist.
 
 - **Hobby allows one cron invocation per day.** On Hobby, either accept that or
   drive the endpoint from an external scheduler — it accepts `GET` and `POST`,
