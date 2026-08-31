@@ -28,6 +28,17 @@ export const C = {
   red: '#d92d20',
 }
 
+/** Shown whenever the app is not talking to the real production backend. */
+export function EnvBanner() {
+  return (
+    <View style={{ backgroundColor: C.amber, paddingVertical: 4, alignItems: 'center' }}>
+      <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>
+        TEST BUILD — NOT LIVE DATA
+      </Text>
+    </View>
+  )
+}
+
 /** A plain panel. Hairline, never a shadow. */
 export function Card({
   children,

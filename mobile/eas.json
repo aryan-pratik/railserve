@@ -4,6 +4,15 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "staging": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://railserve-staging.vercel.app"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "android": {
