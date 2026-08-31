@@ -39,8 +39,9 @@ export class YatribhojanParser implements OrderParser {
     partial.externalOrderId = orderId
 
     // No outlet field in this format — vendor sends from a single kitchen,
-    // signed "TEAM YATRIBHOJAN". Same fixed name every time.
-    const outletName = 'Yatribhojan'
+    // signed "TEAM YATRIBHOJAN". Same fixed name every time. Matches the
+    // outlet as registered in Setup: "Yatri Bhojan" (with a space).
+    const outletName = 'Yatri Bhojan'
     partial.outletName = outletName
 
     const stationRaw = field('STATION')
