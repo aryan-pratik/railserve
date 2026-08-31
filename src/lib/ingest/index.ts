@@ -5,10 +5,16 @@ import { serviceDateFor } from './parsers/shared'
 import { YatriRestroParser } from './parsers/yatriRestro'
 import { DailyYatriParser } from './parsers/dailyYatri'
 import { OlfParser } from './parsers/olf'
+import { YatribhojanParser } from './parsers/yatribhojan'
 import { matchOutlet } from './outletMatch'
 import type { OrderParser, ParsedOrder } from './types'
 
-export const PARSERS: OrderParser[] = [new YatriRestroParser(), new DailyYatriParser(), new OlfParser()]
+export const PARSERS: OrderParser[] = [
+  new YatriRestroParser(),
+  new DailyYatriParser(),
+  new OlfParser(),
+  new YatribhojanParser(),
+]
 
 export type IngestSource = {
   body: string
