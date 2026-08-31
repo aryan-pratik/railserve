@@ -45,6 +45,33 @@ npm run seed       # outlets + staff. Change the passwords immediately after.
 `npm run build` runs `verify` (lint + typecheck) before `next build`, so a type
 error fails the deployment rather than shipping.
 
+## Staging
+
+A persistent `staging` git branch gives a stable, isolated environment for
+testing (including mobile builds) without touching production data.
+
+- **Database**: same Atlas cluster, different database name —
+  `.../railserve_dev` instead of `.../railserve`. `MONGODB_URI_TEST` stays a
+  third, separate database (vitest-only, auto-truncated every run — never
+  reuse it here or `npm run test` will wipe your staging/dev data).
+- **Env vars**: `MONGODB_URI`, `AUTH_SECRET` (a distinct value, never reused
+  from production), and `AUTH_TRUST_HOST=true` are set scoped to **Preview +
+  git branch `staging`** only (`vercel env add <NAME> preview --git-branch=staging`).
+  Everything else falls back to the general Preview scope or its default.
+- **URL**: `https://railserve-staging.vercel.app` — a stable alias pointed at
+  the latest staging deployment (`vercel alias set <deployment-url> railserve-staging`
+  after each new staging deploy; the alias survives across redeploys so
+  nothing downstream — like an EAS build's baked-in API URL — needs updating).
+- **Deployment protection**: Vercel's "Vercel Authentication" (the SSO wall
+  on Preview deployments) must be set to **Only Production Deployments** (or
+  disabled) in Settings → Deployment Protection, or the mobile app's plain
+  `fetch` calls get a 401 "Protected deployment" instead of reaching the app.
+- **Mobile**: `mobile/eas.json`'s `staging` build profile points at this URL.
+  Build with `eas build --profile staging --platform android`.
+- Local dev also points at `railserve_dev` (`.env.local`'s `MONGODB_URI`), so
+  `npm run dev` and every seed/reset script share the same data as the
+  staging deployment — seed locally, see it on staging immediately.
+
 ## Cron
 
 `vercel.json` schedules `/api/cron/train-poll` every 10 minutes. It refreshes

@@ -15,7 +15,8 @@ import { DeliveryScreen } from './src/screens/Delivery'
 import { DeliveryTabScreen } from './src/screens/DeliveryTab'
 import { HistoryScreen } from './src/screens/History'
 import { ProfileModal } from './src/screens/ProfileModal'
-import { C, TabBar } from './src/ui'
+import { C, EnvBanner, TabBar } from './src/ui'
+import { IS_NOT_PRODUCTION } from './src/config'
 
 type Screen = { name: 'home' } | { name: 'delivery'; runKey: string; orderId: string }
 
@@ -293,6 +294,7 @@ function AppShell() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
         <StatusBar barStyle="dark-content" />
+        {IS_NOT_PRODUCTION && <EnvBanner />}
         <LoginScreen
           onDone={(t, u) => {
             setToken(t)
@@ -306,6 +308,7 @@ function AppShell() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <StatusBar barStyle="dark-content" />
+      {IS_NOT_PRODUCTION && <EnvBanner />}
 
       <View
         style={{

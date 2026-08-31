@@ -30,3 +30,9 @@ function inferDevHost(): string | null {
 
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL ?? inferDevHost() ?? 'http://localhost:3000'
+
+/** The one URL a rider should never see a warning banner over. */
+const PRODUCTION_API_URL = 'https://railserve.vercel.app'
+
+/** True for any build/dev session not talking to the real production backend. */
+export const IS_NOT_PRODUCTION = API_URL !== PRODUCTION_API_URL
