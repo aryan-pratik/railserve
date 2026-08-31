@@ -40,6 +40,36 @@ export async function renewGmailWatch(): Promise<{ expiresAt: Date | null; histo
   return { expiresAt, historyId }
 }
 
+/**
+ * Seeds a resume point for polling without registering a Pub/Sub watch.
+ *
+ * `users.watch()` (renewGmailWatch above) is the push-notification mechanism
+ * and needs a Cloud Pub/Sub topic, which needs a Google Cloud billing account
+ * linked — a real onboarding cost for what is otherwise a $0 integration. A
+ * poller doesn't need push at all: `history.list` only needs *some* valid
+ * historyId to start from, and the most recent message already carries one.
+ */
+async function seedHistoryIdFromLatestMessage(gmail: ReturnType<typeof gmailClient>): Promise<string | null> {
+  const list = await gmail.users.messages.list({ userId: env.GMAIL_USER_ID, maxResults: 1 })
+  const latestId = list.data.messages?.[0]?.id
+  if (!latestId) return null
+
+  const msg = await gmail.users.messages.get({
+    userId: env.GMAIL_USER_ID,
+    id: latestId,
+    format: 'minimal',
+  })
+  const historyId = msg.data.historyId ?? null
+  if (historyId) {
+    await IngestState.findOneAndUpdate(
+      { _id: GMAIL_STATE_ID },
+      { $set: { historyId, lastError: null } },
+      { upsert: true },
+    )
+  }
+  return historyId
+}
+
 export type SyncSummary = {
   processed: number
   created: number
@@ -64,9 +94,9 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
   const state = await IngestState.findOne({ _id: GMAIL_STATE_ID })
 
   if (!state?.historyId) {
-    // No resume point: register the watch, which gives us one, and wait for the
-    // next notification rather than importing the entire mailbox.
-    await renewGmailWatch()
+    // No resume point yet — seed one from the latest message and catch up
+    // starting next tick, rather than importing the entire mailbox now.
+    await seedHistoryIdFromLatestMessage(gmail)
     return summary
   }
 
@@ -91,13 +121,14 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
       pageToken = res.data.nextPageToken ?? undefined
     } while (pageToken)
   } catch (err) {
-    // A 404 means the historyId is too old to resume from. Re-registering the
-    // watch resets it; messages in the gap are lost to history sync, which is
-    // exactly what the no-orders-in-N-hours alert is there to surface.
+    // A 404 means the historyId is too old to resume from. Re-seeding it from
+    // the latest message resets the cursor; messages in the gap are lost to
+    // history sync, which is exactly what the no-orders-in-N-hours alert is
+    // there to surface.
     const message = err instanceof Error ? err.message : 'history.list failed'
     summary.errors.push(message)
     await IngestState.updateOne({ _id: GMAIL_STATE_ID }, { $set: { lastError: message } })
-    if (/404|startHistoryId/i.test(message)) await renewGmailWatch()
+    if (/404|startHistoryId/i.test(message)) await seedHistoryIdFromLatestMessage(gmail)
     return summary
   }
 

@@ -104,9 +104,9 @@ ${authUrl}
 
 GMAIL_REFRESH_TOKEN=${tokens.refresh_token}
 
-GMAIL_TOPIC_NAME and GMAIL_USER_ID still need to be set separately if you
-haven't already (see .env.example). Once all of GMAIL_CLIENT_ID/SECRET/
-REFRESH_TOKEN/TOPIC_NAME are set, run "npm run doctor" to confirm.
+That's the only value left. Ingestion polls via /api/cron/gmail-sync — no
+Pub/Sub topic, no Google Cloud billing account needed. Once GMAIL_CLIENT_ID/
+SECRET/REFRESH_TOKEN are all set, run "npm run doctor" to confirm.
 `)
 }
 

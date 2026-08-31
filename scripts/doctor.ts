@@ -80,11 +80,10 @@ function checkGmail(): Check {
     id: Boolean(env.GMAIL_CLIENT_ID),
     secret: Boolean(env.GMAIL_CLIENT_SECRET),
     refresh: Boolean(env.GMAIL_REFRESH_TOKEN),
-    topic: Boolean(env.GMAIL_TOPIC_NAME),
   }
   const missing = Object.entries(has).filter(([, v]) => !v).map(([k]) => k)
 
-  if (missing.length === 4) {
+  if (missing.length === 3) {
     return {
       name: 'Gmail ingestion',
       status: 'off',
@@ -92,6 +91,7 @@ function checkGmail(): Check {
       next: [
         'Optional. To ingest from a real inbox:',
         '  1. npm run gmail:setup    (walks you through it)',
+        '  2. Point a scheduler at POST /api/cron/gmail-sync every few minutes',
       ],
     }
   }
@@ -106,10 +106,10 @@ function checkGmail(): Check {
   return {
     name: 'Gmail ingestion',
     status: 'ok',
-    detail: `watching ${env.GMAIL_USER_ID} → ${env.GMAIL_TOPIC_NAME}`,
-    next: env.GMAIL_WEBHOOK_TOKEN
+    detail: `credentials set for ${env.GMAIL_USER_ID} — polled via /api/cron/gmail-sync`,
+    next: env.CRON_TOKEN
       ? undefined
-      : ['GMAIL_WEBHOOK_TOKEN is unset — your webhook accepts unauthenticated calls'],
+      : ['CRON_TOKEN is unset — /api/cron/gmail-sync accepts unauthenticated calls'],
   }
 }
 
