@@ -77,11 +77,22 @@ testing (including mobile builds) without touching production data.
 `vercel.json` schedules `/api/cron/train-poll` every 10 minutes. It refreshes
 live train status and fires the leave-now alert.
 
+`/api/cron/gmail-sync` polls Gmail for new order emails and ingests them —
+same shape, same auth, same no-worker approach. It replaces Gmail's
+push/Pub-Sub path entirely: it seeds its own resume point on first run and is
+idempotent, so a missed or doubled-up tick is harmless. Point the same
+external scheduler at it, on whatever interval you want order latency to be
+(every 2–5 minutes is reasonable). A no-op with `{"ok":true,"processed":0,...}`
+until `GMAIL_*` env vars are set, so it's safe to wire up before credentials
+exist.
+
 - **Hobby allows one cron invocation per day.** On Hobby, either accept that or
   drive the endpoint from an external scheduler — it accepts `GET` and `POST`,
   and takes `x-cron-token`, `Authorization: Bearer`, or `?token=`.
 - Nothing breaks without it: train times still refresh whenever a page renders.
   Only the leave-now alert, which must fire with no browser open, is lost.
+- Without `gmail-sync` running, order intake stays fully manual (paste at
+  `/admin/inbox`) — nothing else depends on it.
 
 ## Things that behave differently on serverless
 
