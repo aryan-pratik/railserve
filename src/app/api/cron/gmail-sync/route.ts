@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { syncGmailHistory } from '@/lib/ingest/gmail/sync'
 import { env } from '@/lib/env'
+import { connectDb } from '@/lib/db'
+import { GMAIL_STATE_ID, IngestState } from '@/lib/models'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +34,16 @@ async function handle(request: Request) {
 
   try {
     const summary = await syncGmailHistory()
-    return NextResponse.json({ ok: true, ...summary, at: new Date().toISOString() })
+    // TEMP debug: surfacing IngestState so this can be diagnosed without DB
+    // access. Remove once Gmail sync is confirmed working end-to-end.
+    await connectDb()
+    const state = await IngestState.findOne({ _id: GMAIL_STATE_ID }).lean()
+    return NextResponse.json({
+      ok: true,
+      ...summary,
+      at: new Date().toISOString(),
+      _debugState: state,
+    })
   } catch (err) {
     // A Gmail outage must never look like a broken endpoint to the scheduler,
     // or it will retry a failure it cannot fix.
