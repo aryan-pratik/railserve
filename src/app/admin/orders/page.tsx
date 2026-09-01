@@ -1,9 +1,9 @@
 import { requireRole } from '@/lib/session'
-import { countByPaymentMode, findMany } from '@/lib/repo/orderRepo'
+import { countByPaymentMode, distinctStatuses, findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
-import { OrdersTable } from '@/components/OrdersTable'
+import { AdminOrdersTable } from './AdminOrdersTable'
 import { IconDownload } from '@/components/Icons'
 import {
   Button, ButtonAnchor, ButtonLink, Card, PageHeader, Tabs, inputClass, statusLabel,
@@ -61,10 +61,18 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   // Counted on `base`, so each tab shows what it would return rather than what
   // is on screen — tabs that all read 0 except the one you are standing on are
   // a dead end.
-  const [orders, paymentCounts] = await Promise.all([
+  const [orders, paymentCounts, statusesInUse] = await Promise.all([
     findMany(ctx, filter, { sort: { createdAt: -1 }, limit: 200 }),
     countByPaymentMode(ctx, base),
+    distinctStatuses(ctx),
   ])
+
+  // Custom statuses an admin has typed in via adminOverrideStatus, so they
+  // stay selectable (for filtering and re-use) once they exist.
+  const customStatuses = statusesInUse
+    .filter((s) => !(ORDER_STATUSES as readonly string[]).includes(s))
+    .sort()
+  const statusOptions = [...ORDER_STATUSES, ...customStatuses]
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
   const hasFilters = Boolean(outlet || status || date || train || payment)
@@ -124,7 +132,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           </select>
           <select name="status" defaultValue={status} className={inputClass} aria-label="Status">
             <option value="">Any status</option>
-            {ORDER_STATUSES.map((s) => (
+            {statusOptions.map((s) => (
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
@@ -139,7 +147,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
         </form>
       </Card>
 
-      <OrdersTable
+      <AdminOrdersTable
         orders={orders.map((o) => ({
           id: String(o._id),
           externalOrderId: o.externalOrderId,
@@ -156,6 +164,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
         }))}
         hrefFor={(id) => `/admin/orders/${id}`}
         showOutlet
+        statusOptions={statusOptions}
         emptyNote={
           hasFilters
             ? 'Nothing matches these filters. Try clearing them.'

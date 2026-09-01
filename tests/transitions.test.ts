@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, beforeAll } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
-import { transitionOrder, assignAgents } from '../src/lib/repo/transitionOrder'
+import { transitionOrder, assignAgents, adminOverrideStatus } from '../src/lib/repo/transitionOrder'
 import { findById } from '../src/lib/repo/orderRepo'
 import { ConflictError, ForbiddenError, type AuthContext } from '../src/lib/authContext'
 import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
@@ -163,5 +163,52 @@ describe('transitionOrder', () => {
     expect(allowedNextStatuses('RECEIVED', 'ADMIN')).toEqual(['ACCEPTED', 'CANCELLED'])
     expect(allowedNextStatuses('PREPARED', 'DELIVERY_AGENT')).toEqual(['DISPATCHED'])
     expect(allowedNextStatuses('DELIVERED', 'ADMIN')).toEqual([])
+  })
+
+  describe('adminOverrideStatus', () => {
+    it('allows a jump the TRANSITIONS allow-list would reject', async () => {
+      const id = await newOrder()
+      const updated = await adminOverrideStatus({ ctx: admin, orderId: id, to: 'REFUND_PENDING' })
+      expect(updated.status).toBe('REFUND_PENDING')
+    })
+
+    it('records an audit event tagged as an admin override', async () => {
+      const id = await newOrder()
+      const updated = await adminOverrideStatus({
+        ctx: admin,
+        orderId: id,
+        to: 'VIP',
+        meta: { via: 'admin-orders-list' },
+      })
+      const evt = updated.events.at(-1)!
+      expect(evt.fromStatus).toBe('RECEIVED')
+      expect(evt.toStatus).toBe('VIP')
+      expect(evt.meta).toMatchObject({ via: 'admin-override' })
+    })
+
+    it('rejects a non-admin caller', async () => {
+      const id = await newOrder()
+      await expect(
+        adminOverrideStatus({ ctx: manager, orderId: id, to: 'VIP' }),
+      ).rejects.toBeInstanceOf(ForbiddenError)
+    })
+
+    it('refuses a no-op set to the same status', async () => {
+      const id = await newOrder()
+      await expect(
+        adminOverrideStatus({ ctx: admin, orderId: id, to: 'RECEIVED' }),
+      ).rejects.toBeInstanceOf(ConflictError)
+    })
+
+    it('does not disturb the guided pipeline — a later normal transition still works', async () => {
+      const id = await newOrder()
+      await adminOverrideStatus({ ctx: admin, orderId: id, to: 'RECEIVED_BUT_FLAGGED' })
+      // Nothing stops an admin from setting it straight back to a real status.
+      const back = await adminOverrideStatus({ ctx: admin, orderId: id, to: 'RECEIVED' })
+      expect(back.status).toBe('RECEIVED')
+      await transitionOrder({ ctx: manager, orderId: id, to: 'ACCEPTED' })
+      const after = await findById(admin, id)
+      expect(after!.status).toBe('ACCEPTED')
+    })
   })
 })

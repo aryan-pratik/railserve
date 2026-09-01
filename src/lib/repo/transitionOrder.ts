@@ -203,6 +203,87 @@ export async function transitionOrder(params: {
 }
 
 /**
+ * Admin-only escape hatch: sets status to any value, including one that has
+ * never existed before, bypassing every guard in transitionOrder above — the
+ * TRANSITIONS allow-list, the rider-naming check, the quote completeness
+ * guard, and delivery-timestamp stamping. Those all exist to keep the guided
+ * pipeline honest; they do not apply to an admin correction or a custom label
+ * that was never meant to enter that pipeline.
+ *
+ * Still transactional, still re-reads under the caller's scope, and still
+ * uses the freshly-read status as the optimistic-concurrency precondition —
+ * only the validation in between is smaller. The audit event is tagged
+ * `via: 'admin-override'` so it stays conspicuous in the event log.
+ *
+ * A custom status takes an order off every fixed-list check elsewhere in the
+ * app (LIVE_STATUSES, the status tabs, TRANSITIONS) — by design: it is now
+ * off the recognized pipeline, not a bug.
+ */
+export async function adminOverrideStatus(params: {
+  ctx: AuthContext
+  orderId: string
+  to: string
+  meta?: Record<string, unknown>
+}): Promise<OrderDoc> {
+  const { ctx, orderId, to, meta = {} } = params
+
+  if (ctx.role !== 'ADMIN') {
+    throw new ForbiddenError('Only an admin may set a custom order status')
+  }
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new NotFoundError('Order not found')
+  }
+  const _id = new mongoose.Types.ObjectId(orderId)
+
+  const session = await mongoose.startSession()
+  try {
+    let updated: OrderDoc | null = null
+
+    await session.withTransaction(async () => {
+      const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
+      if (!current) throw new NotFoundError('Order not found')
+
+      const from = current.status
+
+      if (from === to) {
+        throw new ConflictError(
+          `Order is already ${to}. Someone else may have just done this — reload.`,
+        )
+      }
+
+      const res = await Order.updateOne(
+        scoped(ctx, { _id, status: from }),
+        {
+          $set: { status: to },
+          $push: {
+            events: {
+              fromStatus: from,
+              toStatus: to,
+              userId: ctx.userId,
+              meta: { ...meta, via: 'admin-override' },
+              createdAt: new Date(),
+            },
+          },
+        },
+        { session },
+      )
+
+      if (res.matchedCount === 0) {
+        throw new ConflictError(
+          `Order changed underneath you — it is no longer ${from}. Reload and retry.`,
+        )
+      }
+
+      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+    })
+
+    return updated!
+  } finally {
+    await session.endSession()
+  }
+}
+
+/**
  * Assigns delivery agents. Not a status change, so it does not belong in the
  * transition allow-list — but it is still audited onto the event log because
  * "who was this handed to, and when" is a question that gets asked after a
