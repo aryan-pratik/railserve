@@ -81,6 +81,123 @@ export const GARBAGE = `Hello, this is a newsletter about trains.
 Nothing structured here at all.`
 
 /**
+ * The vendor's real HTML, verbatim from /admin/inbox's raw-email view. Not a
+ * real <table> at all — one <div> per label/value with no delimiter between
+ * them, so each ends up alone on its own line rather than sharing a
+ * tab/space-delimited row. Also spreads a single item's five columns (and the
+ * item-table header itself) one per line, and puts the Grand Total amount on
+ * the line AFTER its label rather than beside it.
+ */
+export const SAMPLE_ONE_TOKEN_PER_LINE = `My Web Page
+
+
+
+
+        Order Confirmation
+
+        Dear Partner,
+
+        Please prepare order and deliver order on time.
+
+
+        Order details:
+
+
+
+
+        ORDER No
+        1000591416
+        MOBILE NO
+        9939978198
+
+
+
+        CUSTOMER NAME
+        Akash
+        TRAIN No /NAME
+        12488 / SEEMANCHAL EXP
+
+
+
+        DELIVERY DATE
+        01-09-2026, 14:10
+        COACH/BERTH
+        A2 / 19
+
+
+
+        PAYMENT STATUS
+        CASH_ON_DELIVERY
+        Station Code/Name
+        CNB / KANPUR CENTRAL
+
+
+
+
+        Order Item Details:
+
+
+
+
+        Item
+        Description
+        Price
+        Quantity
+        Amount
+
+
+
+
+                Veg Maharaja Thali
+                Paneer veg dish Seasonal veg dal tadka Jeera rice Butter tava roti 3pcs Salad Pickle Gulab jamun Spoon Paper napkin
+
+                ₹ 225
+                 3
+                ₹ 675
+
+
+
+
+
+
+        Sub Total
+        ₹ 675
+
+
+
+        GST
+        ₹ 33.75
+
+
+
+        DISCOUNT
+        ₹ 0
+
+
+
+        Grand Total (Inclusive of all taxes)
+        ₹ 709
+
+
+
+
+
+
+        Warm Regards,
+
+YATRI RESTRO
+
+
+        This is a system generated email. Please do not reply to this email ID. If you have a query or need any clarification you
+        may contact us using any of the communication medium described below:
+
+        Please confirm train time. Delivery Time may be vary.
+
+        Call our 24-hour Customer Care at 9264296066
+
+        Email Us support@yatrirestrocom`
+
+/**
  * Real "Dear Partner" order pulled from /admin/inbox — same missing-outlet-name
  * gap as SAMPLE_PARTNER_NO_OUTLET, plus a coach/berth shape not seen before:
  * "RAC/A2 / 17", a waitlist-status prefix ahead of the usual coach/berth pair.
