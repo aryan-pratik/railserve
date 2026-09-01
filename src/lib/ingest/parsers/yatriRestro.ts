@@ -15,7 +15,19 @@ export class YatriRestroParser implements OrderParser {
   readonly source = 'YATRIRESTRO' as const
 
   matches(body: string): boolean {
-    return /Order\s*From\s*YatriRestro/i.test(body) || /YatriRestro/i.test(body)
+    // A bare substring check for "YatriRestro" also fires on the vendor's own
+    // email domain — "support@yatrirestro.com" — which shows up in the OTHER
+    // YatriRestro template (the "Order Booking Confirmation" table format,
+    // see YatriRestroBookingParser) whenever that email gets Gmail-forwarded.
+    // Since parsers are tried in order and both share source YATRIRESTRO, that
+    // false match would swallow the booking-confirmation email here, fail to
+    // parse it (no "Order Id" line), and never let the other parser see it.
+    // Excluding an immediately-preceding "@" or trailing "." keeps the loose
+    // fallback for genuine mentions without matching the domain.
+    return (
+      /Order\s*From\s*YatriRestro/i.test(body) ||
+      /(?<![\w@.])YatriRestro(?![\w.])/i.test(body)
+    )
   }
 
   parse(body: string, receivedAt: Date): ParseResult {

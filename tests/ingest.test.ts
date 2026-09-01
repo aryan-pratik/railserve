@@ -5,6 +5,7 @@ import { ingestEmail } from '../src/lib/ingest'
 import { matchOutlet } from '../src/lib/ingest/outletMatch'
 import { makeRestaurant, resetDb } from './fixtures'
 import * as fx from './fixtures/yatriRestro'
+import * as bookingFx from './fixtures/yatriRestroBooking'
 
 const RECEIVED = new Date('2026-08-27T08:00:00Z')
 
@@ -106,6 +107,27 @@ describe('retail ingestion', () => {
     expect(order!.items.map((i) => i.qty)).toEqual([2, 3, 1])
     expect(order!.items[1].notes).toBe('extra sugar')
     expect(order!.paymentMode).toBe('PREPAID')
+  })
+
+  it('routes a "Dear Partner" order (no outlet name in the body) to the YATRI RESTRO outlet', async () => {
+    await makeRestaurant('YATRI RESTRO', 'CNB')
+    const r = await ingestEmail(email(bookingFx.SAMPLE_PARTNER_NO_OUTLET, 'gmail-6'))
+    expect(r.status).toBe('CREATED')
+
+    const order = await Order.findOne({ externalOrderId: '1000591444' }).lean()
+    expect(order).not.toBeNull()
+    expect(order!.stationCode).toBe('CNB')
+  })
+
+  it('still fails closed when the default outlet is not registered at the order\'s station', async () => {
+    // Guards against the default silently mis-routing across stations: the
+    // fixture's station is CNB, so registering "YATRI RESTRO" elsewhere must
+    // still refuse rather than attach the order to the wrong city's kitchen.
+    await makeRestaurant('YATRI RESTRO', 'PRYJ')
+    const r = await ingestEmail(email(bookingFx.SAMPLE_PARTNER_NO_OUTLET, 'gmail-7'))
+    expect(r.status).toBe('UNPARSED')
+    if (r.status !== 'UNPARSED') return
+    expect(r.reason).toBe('UNKNOWN_OUTLET')
   })
 })
 

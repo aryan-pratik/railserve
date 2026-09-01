@@ -50,12 +50,17 @@ export function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): s
   if (html) {
     return html
       .replace(/<br\s*\/?>/gi, '\n')
+      // Table cells carry no whitespace of their own — "<td>Foo</td><td>Bar</td>"
+      // would otherwise collapse to "FooBar" once tags are stripped below, with
+      // no delimiter a field parser could split on.
+      .replace(/<\/(td|th)>/gi, '\t')
       .replace(/<\/(p|div|tr|li)>/gi, '\n')
       .replace(/<[^>]+>/g, '')
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
+      .replace(/[ \t]+\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim()
   }
