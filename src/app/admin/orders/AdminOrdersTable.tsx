@@ -18,7 +18,7 @@ export type AdminOrderRow = {
   coach?: Maybe<string>
   berth?: Maybe<string>
   contactName?: Maybe<string>
-  scheduledArrival?: Maybe<Date>
+  scheduledArrival?: Maybe<string>
   amountPaise?: Maybe<number>
   outletName?: Maybe<string>
 }
@@ -38,13 +38,11 @@ const INITIAL_STATE: ActionState = {}
  */
 export function AdminOrdersTable({
   orders,
-  hrefFor,
   showOutlet = false,
   statusOptions,
   emptyNote = 'Nothing matches these filters.',
 }: {
   orders: AdminOrderRow[]
-  hrefFor: (id: string) => string
   showOutlet?: boolean
   statusOptions: string[]
   emptyNote?: string
@@ -73,7 +71,6 @@ export function AdminOrdersTable({
             <AdminOrderRow
               key={o.id}
               order={o}
-              hrefFor={hrefFor}
               showOutlet={showOutlet}
               statusOptions={statusOptions}
             />
@@ -86,12 +83,10 @@ export function AdminOrdersTable({
 
 function AdminOrderRow({
   order,
-  hrefFor,
   showOutlet,
   statusOptions,
 }: {
   order: AdminOrderRow
-  hrefFor: (id: string) => string
   showOutlet: boolean
   statusOptions: string[]
 }) {
@@ -101,7 +96,7 @@ function AdminOrderRow({
     <tr className="transition hover:bg-sunken/60">
       <td className="px-3 py-2.5">
         <Link
-          href={hrefFor(order.id)}
+          href={`/admin/orders/${order.id}`}
           className="flex items-center gap-1.5 font-medium text-accent hover:underline"
         >
           <span className="font-mono text-xs">{order.externalOrderId}</span>
