@@ -156,6 +156,35 @@ describe('YatriRestro booking-confirmation parser', () => {
     }])
   })
 
+  it('parses the vendor\'s real one-cell-per-line HTML (no delimiter between cells at all)', () => {
+    expect(parser.matches(fx.SAMPLE_ONE_TOKEN_PER_LINE)).toBe(true)
+    const r = parser.parse(fx.SAMPLE_ONE_TOKEN_PER_LINE, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order).toMatchObject({
+      externalOrderId: '1000591416',
+      outletName: 'YATRI RESTRO',
+      stationCode: 'CNB',
+      stationName: 'KANPUR CENTRAL',
+      contactName: 'Akash',
+      contactPhone: '9939978198',
+      trainNo: '12488',
+      trainName: 'SEEMANCHAL EXP',
+      coach: 'A2',
+      berth: '19',
+      amountPaise: 70900,
+      paymentMode: 'COD',
+    })
+    expect(r.order.items).toEqual([{
+      name: 'Veg Maharaja Thali',
+      qty: 3,
+      notes: 'Paneer veg dish Seasonal veg dal tadka Jeera rice Butter tava roti 3pcs Salad Pickle Gulab jamun Spoon Paper napkin',
+    }])
+    // 01-09-2026 14:10 IST = 08:40 UTC.
+    expect(r.order.scheduledArrival?.toISOString()).toBe('2026-09-01T08:40:00.000Z')
+  })
+
   it('is deterministic', () => {
     const a = parser.parse(fx.SAMPLE, RECEIVED)
     const b = parser.parse(fx.SAMPLE, RECEIVED)

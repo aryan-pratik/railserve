@@ -109,8 +109,15 @@ export class YatriRestroBookingParser implements OrderParser {
     }
     partial.items = items
 
-    const grandTotalLine = text.split('\n').find((l) => /Grand\s*Total/i.test(l)) ?? null
-    const amountMatch = grandTotalLine ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(grandTotalLine) : null
+    // The vendor sometimes puts the label and its ₹ amount on the same line
+    // ("Grand Total (Inclusive of all taxes)    ₹ 709"), and sometimes on two
+    // consecutive lines with nothing else between them (one cell per line, no
+    // delimiter at all — see the flattening comment on parseItems). Reading
+    // "whatever token comes right after the Grand Total label" survives both.
+    const allTokens = YatriRestroBookingParser.flattenTokens(text.split('\n'))
+    const gtIdx = allTokens.findIndex((t) => /^Grand\s*Total/i.test(t))
+    const amountToken = gtIdx >= 0 ? allTokens[gtIdx + 1] ?? null : null
+    const amountMatch = amountToken ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(amountToken) : null
     const amountPaise = amountMatch ? rupeeStringToPaise(amountMatch[1]) : null
     if (amountPaise === null) {
       return { ok: false, reason: 'MISSING_FIELD', detail: 'grand total missing or unparseable', partial }
@@ -189,6 +196,21 @@ export class YatriRestroBookingParser implements OrderParser {
   }
 
   /**
+   * Concatenates every line's cells into one token stream. The vendor's HTML
+   * isn't always a real <table> — as observed straight from /admin/inbox, it
+   * is sometimes one <div> per cell with no delimiter between them at all, so
+   * a label and its value can each end up alone on their own line rather than
+   * sharing one tab/space-delimited row. Flattening first means later code
+   * can work purely in terms of "the next token", whichever line it actually
+   * came from.
+   */
+  private static flattenTokens(lines: string[]): string[] {
+    const tokens: string[] = []
+    for (const line of lines) tokens.push(...YatriRestroBookingParser.splitRow(line))
+    return tokens
+  }
+
+  /**
    * Each row is a 4-column table: one or two label/value pairs. A label with
    * an empty value — "DELIVERY DATE" next to a blank cell — leaves no token
    * behind once split, so pairing cells by position misfires (the next row's
@@ -217,25 +239,39 @@ export class YatriRestroBookingParser implements OrderParser {
     return map
   }
 
-  /** Rows between the item-table header and the Sub Total/GST/Discount/Grand Total summary. */
+  /**
+   * Rows between the "Item/Description/Price/Quantity/Amount" header and the
+   * Sub Total/GST/Discount/Grand Total summary — a fixed 5-column schema.
+   * Flattening the whole section into one token stream first (see
+   * flattenTokens) and chunking it in fives handles a row packed onto one
+   * tab/space-delimited line and a row spread one value per line identically,
+   * since chunking only cares about token position, not which line it came
+   * from.
+   */
   private parseItems(text: string): { name: string; qty: number; notes: string | null }[] {
     const lines = text.split('\n')
-    const start = lines.findIndex(
-      (l) => /^Item\s+Description\s+Price\s+Quantity\s+Amount$/i.test(
-        l.trim().replace(/\t+|[ ]{2,}/g, ' '),
-      ),
+    const detailsIdx = lines.findIndex((l) => /Order\s*Item\s*Details\s*:/i.test(l))
+    if (detailsIdx < 0) return []
+
+    const tokens = YatriRestroBookingParser.flattenTokens(lines.slice(detailsIdx + 1))
+
+    const norm = YatriRestroBookingParser.norm
+    const headerIdx = tokens.findIndex((_, i) =>
+      norm(tokens[i]) === 'ITEM' &&
+      norm(tokens[i + 1] ?? '') === 'DESCRIPTION' &&
+      norm(tokens[i + 2] ?? '') === 'PRICE' &&
+      norm(tokens[i + 3] ?? '') === 'QUANTITY' &&
+      norm(tokens[i + 4] ?? '') === 'AMOUNT',
     )
-    if (start < 0) return []
+    if (headerIdx < 0) return []
+
+    const bodyTokens = tokens.slice(headerIdx + 5)
+    const summaryIdx = bodyTokens.findIndex((t) => /^(Sub\s*Total|GST|Discount|Grand\s*Total)/i.test(t))
+    const itemTokens = summaryIdx >= 0 ? bodyTokens.slice(0, summaryIdx) : bodyTokens
 
     const items: { name: string; qty: number; notes: string | null }[] = []
-    for (let i = start + 1; i < lines.length; i++) {
-      const line = lines[i]
-      if (/^\s*(Sub\s*Total|GST|Discount|Grand\s*Total)/i.test(line)) break
-
-      const cells = YatriRestroBookingParser.splitRow(line)
-      if (cells.length < 4 || cells.every((c) => c.length === 0)) continue
-
-      const [name, description, , quantity] = cells
+    for (let i = 0; i + 4 < itemTokens.length; i += 5) {
+      const [name, description, , quantity] = itemTokens.slice(i, i + 5)
       const qty = Number(quantity)
       if (!Number.isFinite(qty)) continue
       items.push({ name: name.trim(), qty, notes: description?.trim() || null })
