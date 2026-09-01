@@ -98,11 +98,14 @@ describe('urgency ordering', () => {
   })
 
   it('a delayed train sinks below one arriving sooner', () => {
+    // Fixed before both etas, so this exercises the still-arriving tier
+    // regardless of what today's real date happens to be.
+    const now = new Date('2026-08-27T06:00:00Z').getTime()
     const eta: Record<string, Date> = {
       '12506': new Date('2026-08-27T08:30:00Z'), // 90 min late
       '12312': new Date('2026-08-27T08:00:00Z'), // on time
     }
-    const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null)
+    const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null, now)
     expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
   })
 
@@ -139,13 +142,13 @@ describe('urgency ordering', () => {
     expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
   })
 
-  it('orders multiple already-passed trains most-overdue-first', () => {
+  it('orders multiple already-passed trains most-recently-passed-first', () => {
     const now = new Date('2026-08-27T09:00:00Z').getTime()
     const eta: Record<string, Date> = {
-      '12506': new Date('2026-08-27T08:30:00Z'), // 30 min overdue
-      '12312': new Date('2026-08-27T07:00:00Z'), // 2h overdue
+      '12506': new Date('2026-08-27T08:30:00Z'), // 30 min overdue — most recent
+      '12312': new Date('2026-08-27T07:00:00Z'), // 2h overdue — stalest
     }
     const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null, now)
-    expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
+    expect(sorted.map((r) => r.trainNo)).toEqual(['12506', '12312'])
   })
 })

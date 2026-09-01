@@ -115,17 +115,18 @@ function urgencyRank(a: Date | null, now: number): 0 | 1 | 2 {
  * Soonest-first, but a train that has already reached its stop sinks below
  * every train still to come — a raw time compare would otherwise keep it
  * pinned near the top all afternoon just because its arrival hour is
- * numerically small. Within the "still arriving" tier this is soonest-first;
- * within "already arrived" it is oldest-first (most overdue first), since a
- * run that has been sitting for two hours needs attention before one that
- * finished five minutes ago.
+ * numerically small. Within the "still arriving" tier this is soonest-first.
+ * Within "already arrived" it is most-recently-arrived first, so the list
+ * reads outward from "now" in both directions: whatever is either about to
+ * arrive or just missed sits near the middle, and only genuinely stale runs
+ * from hours ago sink to the very bottom.
  */
 function compareUrgency(a: Date | null, b: Date | null, now: number): number {
   const ra = urgencyRank(a, now)
   const rb = urgencyRank(b, now)
   if (ra !== rb) return ra - rb
   if (ra === 2) return 0
-  return byArrival(a, b)
+  return ra === 0 ? byArrival(a, b) : byArrival(b, a)
 }
 
 /**
