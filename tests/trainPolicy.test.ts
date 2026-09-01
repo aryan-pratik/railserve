@@ -9,22 +9,25 @@ const at = (iso: string) => new Date(iso)
 
 describe('polling cadence (plan §8)', () => {
   it('tightens as the train approaches', () => {
-    expect(pollIntervalMinutes(120)).toBe(10)
-    expect(pollIntervalMinutes(61)).toBe(10)
-    expect(pollIntervalMinutes(60)).toBe(5)
-    expect(pollIntervalMinutes(45)).toBe(5)
-    expect(pollIntervalMinutes(30)).toBe(5)
-    expect(pollIntervalMinutes(29)).toBe(2)
-    expect(pollIntervalMinutes(0)).toBe(2)
+    // Over two hours out: nothing is being decided, so ask rarely.
+    expect(pollIntervalMinutes(180)).toBe(40)
+    expect(pollIntervalMinutes(121)).toBe(40)
+    // One to two hours: the kitchen decision is coming into view.
+    expect(pollIntervalMinutes(120)).toBe(30)
+    expect(pollIntervalMinutes(61)).toBe(30)
+    // Inside the hour: cooking and dispatch both happen in here.
+    expect(pollIntervalMinutes(60)).toBe(15)
+    expect(pollIntervalMinutes(30)).toBe(15)
+    expect(pollIntervalMinutes(0)).toBe(15)
   })
 
   it('keeps polling a train that has already arrived, at the tightest tier', () => {
     // Negative means the ETA has passed; the agent still needs platform updates.
-    expect(pollIntervalMinutes(-10)).toBe(2)
+    expect(pollIntervalMinutes(-10)).toBe(15)
   })
 
   it('falls back to the slowest tier when there is no time to reason about', () => {
-    expect(pollIntervalMinutes(null)).toBe(10)
+    expect(pollIntervalMinutes(null)).toBe(40)
   })
 })
 
@@ -32,14 +35,17 @@ describe('staleness', () => {
   const now = at('2026-08-27T10:00:00Z')
 
   it('treats a never-fetched row as stale', () => {
+    // This is what makes a new order fetch on the very next tick: no row yet,
+    // so the train is due immediately whatever tier it would sit on.
     expect(isStale(null, 20, now)).toBe(true)
+    expect(isStale(null, 500, now)).toBe(true)
   })
 
   it('uses the tier that matches proximity', () => {
-    // 3 minutes old. Fresh at the 10-min tier, stale at the 2-min tier.
-    const fetchedAt = at('2026-08-27T09:57:00Z')
-    expect(isStale(fetchedAt, 120, now)).toBe(false)
-    expect(isStale(fetchedAt, 10, now)).toBe(true)
+    // 20 minutes old: still fresh two hours out, stale inside the hour.
+    const fetchedAt = at('2026-08-27T09:40:00Z')
+    expect(isStale(fetchedAt, 180, now)).toBe(false)
+    expect(isStale(fetchedAt, 30, now)).toBe(true)
   })
 })
 
@@ -108,18 +114,22 @@ describe('timing view', () => {
   it('keeps a stale reading but flags it and reports its age', () => {
     // Plan §8: keep the last known value, mark it stale, show the age.
     // Never present a stale ETA as live.
+    //
+    // 22 minutes old, against a train already at the tightest 15-minute tier —
+    // comfortably past due rather than a minute over, so the assertion is
+    // about the flagging behaviour and not about where a tier boundary sits.
     const v = buildTimingView({
       scheduledArrival: scheduled,
       reading: {
         etaAt: at('2026-08-27T14:45:00+05:30'),
         delayMinutes: 80,
         platform: '3',
-        fetchedAt: at('2026-08-27T09:48:00Z'),
+        fetchedAt: at('2026-08-27T09:38:00Z'),
       },
       now,
     })
     expect(v.delayMinutes).toBe(80)
-    expect(v.ageMinutes).toBe(12)
+    expect(v.ageMinutes).toBe(22)
     expect(v.stale).toBe(true)
   })
 

@@ -8,6 +8,7 @@ import { DailyYatriParser } from './parsers/dailyYatri'
 import { OlfParser } from './parsers/olf'
 import { YatribhojanParser } from './parsers/yatribhojan'
 import { matchOutlet } from './outletMatch'
+import { warmTrainStatus } from '../train/service'
 import type { OrderParser, ParsedOrder } from './types'
 
 export const PARSERS: OrderParser[] = [
@@ -157,6 +158,15 @@ export async function createOrderFromParsed(
       // Omitted entirely when absent — the unique index is partial on strings.
       ...(gmailMessageId ? { gmailMessageId } : {}),
       createdById: null,
+    })
+
+    // Find out where the train actually is now, rather than showing a
+    // timetable time until the next polling tick comes round. Never throws.
+    await warmTrainStatus({
+      trainNo: parsed.trainNo,
+      serviceDate,
+      stationCode: parsed.stationCode,
+      scheduledArrival: parsed.scheduledArrival,
     })
 
     return {

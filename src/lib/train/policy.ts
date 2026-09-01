@@ -3,14 +3,25 @@
  * no database — so both the worker and the tests drive them the same way.
  */
 
-/** Plan §8 polling policy, expressed as minutes between refreshes. */
+/**
+ * Minutes between refreshes for one train, by how far off its arrival is.
+ *
+ * The cadence widens the further away the train is, because a delay two hours
+ * out is not yet a decision — nobody is cooking or walking to a platform on
+ * it, and the vendor's own projection that far ahead assumes the train
+ * recovers anyway. What matters is being current when someone acts.
+ *
+ * These intervals are read against a fixed tick (the cron runs every two
+ * minutes); the tick makes no upstream call unless one of these has elapsed,
+ * so a train sitting on the 40-minute tier is skipped 19 ticks out of 20.
+ */
 export function pollIntervalMinutes(minutesToArrival: number | null): number {
   // No scheduled time to reason about: poll at the slowest cadence rather than
   // hammering a paid API for a train we cannot place.
-  if (minutesToArrival === null) return 10
-  if (minutesToArrival > 60) return 10
-  if (minutesToArrival >= 30) return 5
-  return 2
+  if (minutesToArrival === null) return 40
+  if (minutesToArrival > 120) return 40
+  if (minutesToArrival > 60) return 30
+  return 15
 }
 
 /** True when a cached reading has aged past its tier. */
