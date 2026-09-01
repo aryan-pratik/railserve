@@ -1,7 +1,7 @@
 import { connectDb } from '../db'
 import { TrainStatus, type TrainStatusDoc } from '../models'
 import { getTrainStatusProvider } from './index'
-import { TrainStatusUnavailable } from './provider'
+import { TrainStatusUnavailable, type TrainDetail } from './provider'
 import { buildTimingView, isStale, minutesBetween, type TimingView } from './policy'
 
 export type TrainKey = { trainNo: string; serviceDate: string; stationCode: string }
@@ -59,6 +59,94 @@ export async function refreshTrainStatus(
       { upsert: true, returnDocument: 'after' },
     )
     return doc!
+  }
+}
+
+/**
+ * A full picture of one train at one station, for a person rather than for the
+ * dispatch maths — see TrainDetail.
+ *
+ * Costs the same single upstream call as a refresh and writes the same cache
+ * row, so an admin looking a train up also warms it for every order riding it.
+ * Providers that cannot describe themselves fall back to the plain reading,
+ * with the descriptive fields left null rather than invented.
+ */
+export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
+  await connectDb()
+
+  const provider = getTrainStatusProvider(() => null)
+  const stationCode = key.stationCode.toUpperCase()
+  const filter = { trainNo: key.trainNo, serviceDate: key.serviceDate, stationCode }
+  const now = new Date()
+
+  const detail: TrainDetail = provider.getDetail
+    ? await provider.getDetail(key.trainNo, key.serviceDate, stationCode)
+    : {
+        ...(await provider.getStatus(key.trainNo, key.serviceDate, stationCode)),
+        trainNo: key.trainNo,
+        trainName: null,
+        stationCode,
+        stationName: null,
+        scheduledArrival: null,
+        currentStationCode: null,
+        currentStationName: null,
+        statusNote: null,
+        providerUpdatedAt: null,
+        stopsAway: null,
+        distanceKm: null,
+      }
+
+  await TrainStatus.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        etaAt: detail.etaAt,
+        delayMinutes: detail.delayMinutes,
+        platform: detail.platform,
+        fetchedAt: now,
+        lastSuccessAt: now,
+        lastError: null,
+        provider: provider.name,
+      },
+    },
+    { upsert: true },
+  )
+
+  return detail
+}
+
+/**
+ * Warms the cache for a train the moment an order for it appears.
+ *
+ * Without this, a new order waits for the next tick before anyone knows where
+ * its train is — up to a couple of minutes of showing a scheduled time for a
+ * train that may already be an hour down. The order screen is looked at
+ * straight away, so the first look should be the true one.
+ *
+ * Cache-first on purpose: four orders arriving on the same train cost one
+ * call, not four. And it never throws — a train feed being down is not a
+ * reason to fail an order that is otherwise perfectly good (plan §13.6), and
+ * the polling tick will pick the train up regardless.
+ */
+export async function warmTrainStatus(order: {
+  trainNo?: string | null
+  serviceDate: string
+  stationCode: string
+  scheduledArrival?: Date | null
+}): Promise<void> {
+  if (!order.trainNo) return
+  try {
+    await getTrainStatus(
+      {
+        trainNo: order.trainNo,
+        serviceDate: order.serviceDate,
+        stationCode: order.stationCode,
+      },
+      { scheduledArrival: order.scheduledArrival ?? null },
+    )
+  } catch {
+    // Deliberately silent: refreshTrainStatus already records the failure on
+    // the cache row, and the caller is in the middle of accepting an order.
   }
 }
 

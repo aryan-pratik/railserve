@@ -2,6 +2,7 @@ import { env } from '../env'
 import type { TrainStatusProvider } from './provider'
 import { SimulatedTrainStatusProvider } from './simulator'
 import { RapidApiTrainStatusProvider } from './rapidapi'
+import { RailKitTrainStatusProvider } from './railkit'
 
 /**
  * THE one-file provider swap (plan §8).
@@ -18,6 +19,10 @@ export function getTrainStatusProvider(
   // site rather than memoised.
   if (env.TRAIN_API_PROVIDER === 'simulator' || !env.TRAIN_API_KEY) {
     return new SimulatedTrainStatusProvider(scheduledArrivalFor)
+  }
+  if (env.TRAIN_API_PROVIDER === 'railkit') {
+    cached ??= new RailKitTrainStatusProvider(env.TRAIN_API_KEY)
+    return cached
   }
   cached ??= new RapidApiTrainStatusProvider(env.TRAIN_API_KEY, env.TRAIN_API_HOST)
   return cached
