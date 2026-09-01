@@ -3,6 +3,7 @@ import { UnparsedInbox } from '../models'
 import { insertOrder } from '../repo/orderRepo'
 import { serviceDateFor } from './parsers/shared'
 import { YatriRestroParser } from './parsers/yatriRestro'
+import { YatriRestroBookingParser } from './parsers/yatriRestroBooking'
 import { DailyYatriParser } from './parsers/dailyYatri'
 import { OlfParser } from './parsers/olf'
 import { YatribhojanParser } from './parsers/yatribhojan'
@@ -11,6 +12,7 @@ import type { OrderParser, ParsedOrder } from './types'
 
 export const PARSERS: OrderParser[] = [
   new YatriRestroParser(),
+  new YatriRestroBookingParser(),
   new DailyYatriParser(),
   new OlfParser(),
   new YatribhojanParser(),
