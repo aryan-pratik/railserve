@@ -3,6 +3,7 @@ import { ForbiddenError, ownsOutlet, type AuthContext } from '../authContext'
 import { istLocalToUtc, rupeesToPaise } from '../format'
 import type { ManualOrderInput } from '../validation/order'
 import { insertOrder, nextManualOrderId } from './orderRepo'
+import { warmTrainStatus } from '../train/service'
 
 /**
  * Creates a manual order. The MVP's only inlet.
@@ -115,6 +116,15 @@ export async function createManualOrder(ctx: AuthContext, input: ManualOrderInpu
     delivery: { agentIds: [] },
     rawPayload: null,
     createdById: ctx.userId,
+  })
+
+  // Same as the ingest path: know where the train is before anyone looks at
+  // the order, instead of showing the timetable until the next tick.
+  await warmTrainStatus({
+    trainNo: doc.trainNo,
+    serviceDate: doc.serviceDate,
+    stationCode: doc.stationCode,
+    scheduledArrival: doc.scheduledArrival,
   })
 
   return doc
