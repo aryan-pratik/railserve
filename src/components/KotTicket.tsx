@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { formatIST, formatMoney, formatServiceDate, formatTimeIST } from '@/lib/format'
 
 /**
@@ -159,6 +160,16 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
         <span>{order.paymentMode ?? '—'}</span>
         <span>{formatMoney(order.amountPaise)}</span>
       </div>
+
+      {order.paymentMode === 'COD' ? (
+        <>
+          <Rule />
+          <div className="flex flex-col items-center gap-1 text-center">
+            <Image src="/kot-cod-qr.png" alt="UPI QR code" width={112} height={112} priority className="h-28 w-28" />
+            <div className="text-[11px] font-bold">Support: 9288091593</div>
+          </div>
+        </>
+      ) : null}
 
       <Rule />
 
