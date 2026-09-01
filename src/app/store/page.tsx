@@ -9,6 +9,8 @@ import { todayIST, formatServiceDate } from '@/lib/format'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
 import { TrainRunCard, type RunCardData } from '@/components/TrainRunCard'
+import { OrdersTable } from '@/components/OrdersTable'
+import { GroupByTrainToggle } from '@/components/GroupByTrainToggle'
 import { OrderFeed } from '@/components/OrderFeed'
 import { AutoRefresh } from '@/components/AutoRefresh'
 import { env } from '@/lib/env'
@@ -27,10 +29,12 @@ export const metadata = { title: 'Board · RailServe' }
  */
 export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
-  const { upcoming } = await props.searchParams
+  const { upcoming, group } = await props.searchParams
 
   const today = todayIST()
   const showUpcoming = upcoming === '1'
+  const groupParam = typeof group === 'string' ? group : ''
+  const isGrouped = groupParam !== '0'
 
   // The inactive tab needs a number, not its rows — so it gets a count, not a
   // second full load of up to 500 documents.
@@ -97,6 +101,19 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const statusCounts = new Map(runs.map((r) => [r.key, r.statusCounts]))
   const orderCount = allOrders.length
 
+  // Same underlying orders as the grouped cards, just one row per order
+  // instead of one card per train — sorted the same way, soonest-arriving
+  // (and not-yet-arrived) first.
+  const flatOrders = sortRunsByUrgency(allOrders, (o) => timingFor(o, timings).effectiveArrival)
+
+  const groupHref = (g: string) => {
+    const u = new URLSearchParams()
+    if (showUpcoming) u.set('upcoming', '1')
+    if (g) u.set('group', g)
+    const s = u.toString()
+    return s ? `/store?${s}` : '/store'
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -113,6 +130,8 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
           ]}
         />
         <div className="flex items-center gap-3">
+          <GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />
+          <span className="h-4 w-px bg-line" aria-hidden="true" />
           <AutoRefresh seconds={30} />
           <OrderFeed />
         </div>
@@ -130,7 +149,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
           }
           action={<ButtonLink href="/store/orders/new" variant="primary">Add one by hand</ButtonLink>}
         />
-      ) : (
+      ) : isGrouped ? (
         <div className="space-y-3">
           {sorted.map((card) => (
             <TrainRunCard
@@ -151,6 +170,25 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
             />
           ))}
         </div>
+      ) : (
+        <OrdersTable
+          orders={flatOrders.map((o) => ({
+            id: String(o._id),
+            externalOrderId: o.externalOrderId,
+            orderType: o.orderType,
+            status: o.status,
+            serviceDate: o.serviceDate,
+            trainNo: o.trainNo,
+            coach: o.coach,
+            berth: o.berth,
+            contactName: o.contactName,
+            scheduledArrival: o.scheduledArrival,
+            amountPaise: o.amountPaise,
+            outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,
+          }))}
+          hrefFor={(id) => `/store/orders/${id}`}
+          showOutlet={multiOutlet}
+        />
       )}
     </div>
   )
