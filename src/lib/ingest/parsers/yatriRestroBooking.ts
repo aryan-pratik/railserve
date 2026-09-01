@@ -124,16 +124,19 @@ export class YatriRestroBookingParser implements OrderParser {
     // (word-wrapped single-space text has no delimiter to split them apart
     // at all: "Grand Total (Inclusive of all taxes) ₹ 339" stays one token),
     // on the very next token (a tab/space-delimited row, or one cell per
-    // line — see flattenTokens), or nowhere if the summary is missing
-    // entirely. Checking the label's own token before the next one survives
-    // every shape actually observed.
+    // line — see flattenTokens), or a few tokens further along if the HTML
+    // has extra spacer rows in between. Scanning forward from the label's own
+    // token, rather than checking only it and the one right after, survives
+    // any number of such gaps instead of just zero or one.
     const allTokens = YatriRestroBookingParser.flattenTokens(text.split('\n'))
     const gtIdx = allTokens.findIndex((t) => /^Grand\s*Total/i.test(t))
-    const amountMatch =
-      gtIdx >= 0
-        ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(allTokens[gtIdx]) ??
-          (allTokens[gtIdx + 1] ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(allTokens[gtIdx + 1]) : null)
-        : null
+    let amountMatch: RegExpExecArray | null = null
+    if (gtIdx >= 0) {
+      for (let i = gtIdx; i < Math.min(gtIdx + 5, allTokens.length); i++) {
+        amountMatch = /₹\s*([\d,]+(?:\.\d+)?)/.exec(allTokens[i])
+        if (amountMatch) break
+      }
+    }
     const amountPaise = amountMatch ? rupeeStringToPaise(amountMatch[1]) : null
     if (amountPaise === null) {
       return { ok: false, reason: 'MISSING_FIELD', detail: 'grand total missing or unparseable', partial }
@@ -222,7 +225,19 @@ export class YatriRestroBookingParser implements OrderParser {
    */
   private static flattenTokens(lines: string[]): string[] {
     const tokens: string[] = []
-    for (const line of lines) tokens.push(...YatriRestroBookingParser.splitRow(line))
+    for (const line of lines) {
+      const cells = YatriRestroBookingParser.splitRow(line)
+      // A line that is blank but happens to contain a stray tab (common
+      // indentation noise between HTML rows) still takes the tab-preserving
+      // branch of splitRow, which — correctly, for a real row with a
+      // genuinely empty cell — does not filter empty strings. Across
+      // multiple lines that same non-filtering would leave phantom empty
+      // tokens between two real values, shifting every position after them.
+      // A line with nothing but empty cells carries no real data, so drop it
+      // outright rather than contributing empty tokens to the stream.
+      if (cells.every((c) => c.length === 0)) continue
+      tokens.push(...cells)
+    }
     return tokens
   }
 

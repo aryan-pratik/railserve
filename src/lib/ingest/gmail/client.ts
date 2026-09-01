@@ -49,6 +49,16 @@ export function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): s
   const html = walk(payload, 'text/html')
   if (html) {
     return html
+      // A browser collapses any run of whitespace between tags to one space —
+      // hand-formatted HTML routinely puts each <td> on its own source line
+      // purely for readability, invisible once rendered. Without collapsing
+      // that first, the source's own line break survives as a real newline
+      // sitting right next to the tab this function inserts for </td> below,
+      // and the trailing-whitespace cleanup near the end of this chain (meant
+      // to drop a meaningless tab right before a genuine row-ending newline)
+      // deletes that tab too — silently splitting one cell's value onto its
+      // own disconnected line with no delimiter connecting it to the next.
+      .replace(/[ \t\r\n]+/g, ' ')
       .replace(/<br\s*\/?>/gi, '\n')
       // Table cells carry no whitespace of their own — "<td>Foo</td><td>Bar</td>"
       // would otherwise collapse to "FooBar" once tags are stripped below, with

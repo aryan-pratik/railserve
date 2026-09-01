@@ -214,6 +214,35 @@ describe('YatriRestro booking-confirmation parser', () => {
     }])
   })
 
+  it('finds the Grand Total amount past a stray blank line with a tab in it', () => {
+    const r = parser.parse(fx.SAMPLE_STRAY_TAB_BEFORE_GRAND_TOTAL, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.order.amountPaise).toBe(22700)
+  })
+
+  it('parses the real RAC/B1 order pulled from /admin/inbox', () => {
+    const r = parser.parse(fx.SAMPLE_REAL_1000591854, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.order).toMatchObject({
+      externalOrderId: '1000591854',
+      outletName: 'YATRI RESTRO',
+      stationCode: 'CNB',
+      contactName: 'Navya Kumari',
+      contactPhone: '7632867886',
+      coach: 'RAC/B1',
+      berth: '63',
+      amountPaise: 44100,
+      paymentMode: 'COD',
+    })
+    expect(r.order.items).toEqual([{
+      name: 'Amritsari Thali',
+      qty: 2,
+      notes: 'Matar paneer Chola dal tadka Jeera rice Butter tawa roti 3pcs Salad Pickle Gulab jamun Spoon Tissue paper',
+    }])
+  })
+
   it('is deterministic', () => {
     const a = parser.parse(fx.SAMPLE, RECEIVED)
     const b = parser.parse(fx.SAMPLE, RECEIVED)

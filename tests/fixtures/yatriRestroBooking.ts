@@ -81,6 +81,144 @@ export const GARBAGE = `Hello, this is a newsletter about trains.
 Nothing structured here at all.`
 
 /**
+ * A blank line that happens to contain a stray tab (indentation noise
+ * between HTML rows, harmless on its own) sitting between the Grand Total
+ * label and its ₹ amount. flattenTokens must drop that line's phantom empty
+ * tokens rather than let them shift "the next real token" out of reach.
+ */
+export const SAMPLE_STRAY_TAB_BEFORE_GRAND_TOTAL = `Order Booking Confirmation
+Dear aman,
+
+Order details:
+ORDER No\t1000085034\tMOBILE NO\t8789151114
+CUSTOMER NAME\taman\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
+DELIVERY DATE\t\tCOACH/BERTH\tA1 / 21
+PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tDDU / PT.DEEN DAYAL UPADHYAYA JN.
+Outlet Name\tTHE CHINESE HUB\tOutlet Contact\t9264296066
+Order Item Details:
+Item\tDescription\tPrice\tQuantity\tAmount
+Chicken lollipop Fry 4pc\t4pc\t₹ 216\t1\t₹ 216
+Sub Total\t₹ 216
+GST\t₹ 10.8
+Discount\t₹ 0
+Grand Total (Inclusive of all taxes)
+\t
+₹ 227
+Warm Regards,
+YATRI RESTRO`
+
+/** Real order pulled from /admin/inbox — RAC/B1 seat, two-line item description. */
+export const SAMPLE_REAL_1000591854 = `My Web Page
+
+
+
+
+        Order Confirmation
+
+        Dear Partner,
+
+        Please prepare order and deliver order on time.
+
+
+        Order details:
+
+
+
+
+        ORDER No
+        1000591854
+        MOBILE NO
+        7632867886
+
+
+
+        CUSTOMER NAME
+        Navya Kumari
+        TRAIN No /NAME
+        12487 / SEEMANCHAL EXP
+
+
+
+        DELIVERY DATE
+        01-09-2026, 14:15
+        COACH/BERTH
+        RAC/B1 / 63
+
+
+
+        PAYMENT STATUS
+        CASH_ON_DELIVERY
+        Station Code/Name
+        CNB / KANPUR CENTRAL
+
+
+
+
+        Order Item Details:
+
+
+
+
+        Item
+        Description
+        Price
+        Quantity
+        Amount
+
+
+
+
+                Amritsari Thali
+                Matar paneer Chola dal tadka Jeera rice Butter tawa roti 3pcs Salad Pickle Gulab jamun Spoon Tissue paper
+
+                ₹ 210
+                 2
+                ₹ 420
+
+
+
+
+
+
+        Sub Total
+        ₹ 420
+
+
+
+        GST
+        ₹ 21.00
+
+
+
+        DISCOUNT
+        ₹ 0
+
+
+
+        Grand Total (Inclusive of all taxes)
+        ₹ 441
+
+
+
+
+
+
+
+        Warm Regards,
+
+YATRI RESTRO
+
+
+        This is a system generated email. Please do not reply to this email ID. If you have a query or need any clarification you
+        may contact us using any of the communication medium described below:
+
+        Please confirm train time. Delivery Time may be vary.
+
+        Call our 24-hour Customer Care at 9264296066
+
+        Email Us support@yatrirestrocom `
+
+/**
  * The real forwarded email, verbatim from /admin/inbox's raw-email view.
  * Gmail's own "Fwd:" reflowed the vendor's HTML into word-wrapped plain text
  * with single spaces throughout — "ORDER No 1000373994 MOBILE NO 6205228491"
