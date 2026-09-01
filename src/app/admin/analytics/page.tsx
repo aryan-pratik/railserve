@@ -162,9 +162,11 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
       orders: a.orders + s.orders,
       delivered: a.delivered + s.delivered,
       failed: a.failed + s.failed,
+      missed: a.missed + s.missed,
+      missedRevenuePaise: a.missedRevenuePaise + s.missedRevenuePaise,
       revenuePaise: a.revenuePaise + s.revenuePaise,
     }),
-    { orders: 0, delivered: 0, failed: 0, revenuePaise: 0 },
+    { orders: 0, delivered: 0, failed: 0, missed: 0, missedRevenuePaise: 0, revenuePaise: 0 },
   )
 
   const kpis = [
@@ -176,10 +178,16 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
       tone: 'text-ink',
     },
     {
-      label: 'Failed',
-      value: String(totals.failed),
-      sub: `${pct(totals.failed, totals.orders)} of orders`,
-      tone: totals.failed > 0 ? 'text-red-600' : 'text-ink',
+      label: 'Missed',
+      value: String(totals.missed),
+      sub: `${pct(totals.missed, totals.orders)} of orders`,
+      tone: totals.missed > 0 ? 'text-red-600' : 'text-ink',
+    },
+    {
+      label: 'Missed value',
+      value: formatRupees(totals.missedRevenuePaise),
+      sub: null,
+      tone: totals.missedRevenuePaise > 0 ? 'text-red-600' : 'text-ink',
     },
     { label: 'Delivered value', value: formatRupees(totals.revenuePaise), sub: null, tone: 'text-ink' },
   ]
@@ -206,7 +214,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {kpis.map((k) => (
           <Card key={k.label} className="px-4 py-3.5">
             <div className="text-xs font-semibold uppercase tracking-wider text-muted">{k.label}</div>
@@ -232,6 +240,8 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
                     <th className={TH}>Orders</th>
                     <th className={TH}>Delivered</th>
                     <th className={TH}>Success</th>
+                    <th className={TH}>Missed</th>
+                    <th className={TH}>Missed value</th>
                     <th className={TH}>Avg received → delivered</th>
                     <th className={TH}>Value</th>
                   </tr>
@@ -246,6 +256,16 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
                       <td className="px-4 py-2.5 tabular-nums text-muted">{s.delivered}</td>
                       <td className="px-4 py-2.5 font-medium tabular-nums text-ink">
                         {pct(s.delivered, s.orders)}
+                      </td>
+                      <td
+                        className={`px-4 py-2.5 tabular-nums ${s.missed > 0 ? 'font-medium text-red-600' : 'text-muted'}`}
+                      >
+                        {s.missed}
+                      </td>
+                      <td
+                        className={`px-4 py-2.5 tabular-nums ${s.missedRevenuePaise > 0 ? 'font-medium text-red-600' : 'text-muted'}`}
+                      >
+                        {formatRupees(s.missedRevenuePaise)}
                       </td>
                       <td className="px-4 py-2.5 tabular-nums text-muted">
                         {s.avgReceivedToDeliveredMinutes !== null

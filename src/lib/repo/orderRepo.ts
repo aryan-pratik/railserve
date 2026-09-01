@@ -191,6 +191,13 @@ export type OutletStats = {
   delivered: number
   failed: number
   cancelled: number
+  /**
+   * FAILED/CANCELLED/LOST, plus orders still in a non-terminal status whose
+   * train arrived over an hour ago — stuck orders nobody closed out are a
+   * miss too, not a status a dashboard should have to know to go looking for.
+   */
+  missed: number
+  missedRevenuePaise: number
   revenuePaise: number
   avgReceivedToDeliveredMinutes: number | null
 }
@@ -220,6 +227,22 @@ export async function outletAnalytics(
           },
         },
         deliveredAt: '$delivery.deliveredAt',
+        // Explicitly failed/cancelled/lost, OR still open an hour after the
+        // train it rode in on — stuck in RECEIVED/ACCEPTED/.../DISPATCHED
+        // because someone forgot to close it out is a miss too, just one
+        // nobody marked.
+        isMissed: {
+          $or: [
+            { $in: ['$status', ['FAILED', 'CANCELLED', 'LOST']] },
+            {
+              $and: [
+                { $not: { $in: ['$status', ['DELIVERED', 'FAILED', 'CANCELLED', 'LOST']] } },
+                { $ne: ['$scheduledArrival', null] },
+                { $lt: ['$scheduledArrival', { $subtract: ['$$NOW', 60 * 60 * 1000] }] },
+              ],
+            },
+          ],
+        },
       },
     },
     {
@@ -230,6 +253,10 @@ export async function outletAnalytics(
         failed: { $sum: { $cond: [{ $eq: ['$status', 'FAILED'] }, 1, 0] } },
         cancelled: {
           $sum: { $cond: [{ $in: ['$status', ['CANCELLED', 'LOST']] }, 1, 0] },
+        },
+        missed: { $sum: { $cond: ['$isMissed', 1, 0] } },
+        missedRevenuePaise: {
+          $sum: { $cond: ['$isMissed', { $ifNull: ['$amountPaise', 0] }, 0] },
         },
         revenuePaise: {
           $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, { $ifNull: ['$amountPaise', 0] }, 0] },
@@ -249,7 +276,8 @@ export async function outletAnalytics(
       $project: {
         _id: 0,
         restaurantId: { $toString: '$_id' },
-        orders: 1, delivered: 1, failed: 1, cancelled: 1, revenuePaise: 1,
+        orders: 1, delivered: 1, failed: 1, cancelled: 1,
+        missed: 1, missedRevenuePaise: 1, revenuePaise: 1,
         avgReceivedToDeliveredMinutes: {
           $cond: [
             { $gt: [{ $size: '$durations' }, 0] },
