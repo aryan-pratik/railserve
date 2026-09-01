@@ -43,10 +43,20 @@ import { normalisePaymentMode, rupeeStringToPaise } from './shared'
 export class YatriRestroBookingParser implements OrderParser {
   readonly source = 'YATRIRESTRO' as const
 
-  private static readonly LABELS = new Set([
-    'ORDERNO', 'MOBILENO', 'CUSTOMERNAME', 'TRAINNO/NAME', 'DELIVERYDATE',
-    'COACH/BERTH', 'PAYMENTSTATUS', 'STATIONCODE/NAME', 'OUTLETNAME', 'OUTLETCONTACT',
-  ])
+  // Literal label text as it appears in the template, used to find each
+  // field by anchor rather than by column position — see readFields().
+  private static readonly LABEL_SPECS: { key: string; re: RegExp }[] = [
+    { key: 'ORDERNO', re: /ORDER\s*No\.?/i },
+    { key: 'MOBILENO', re: /MOBILE\s*No\.?/i },
+    { key: 'CUSTOMERNAME', re: /CUSTOMER\s*NAME/i },
+    { key: 'TRAINNO/NAME', re: /TRAIN\s*No\s*\/?\s*NAME/i },
+    { key: 'DELIVERYDATE', re: /DELIVERY\s*DATE/i },
+    { key: 'COACH/BERTH', re: /COACH\s*\/\s*BERTH/i },
+    { key: 'PAYMENTSTATUS', re: /PAYMENT\s*STATUS/i },
+    { key: 'STATIONCODE/NAME', re: /Station\s*Code\s*\/\s*Name/i },
+    { key: 'OUTLETNAME', re: /Outlet\s*Name/i },
+    { key: 'OUTLETCONTACT', re: /Outlet\s*Contact/i },
+  ]
 
   /** See the outlet-resolution comment in parse() below. */
   private static readonly DEFAULT_OUTLET_NAME = 'YATRI RESTRO'
@@ -103,21 +113,27 @@ export class YatriRestroBookingParser implements OrderParser {
     const deliveryRaw = fields.get('DELIVERYDATE') ?? null
     partial.scheduledArrival = deliveryRaw ? YatriRestroBookingParser.parseDeliveryDate(deliveryRaw) : null
 
-    const items = this.parseItems(text)
+    const tokenizedItems = this.parseItemsTokenized(text)
+    const items = tokenizedItems.length > 0 ? tokenizedItems : this.parseItemsCollapsedWhitespace(text)
     if (items.length === 0) {
       return { ok: false, reason: 'MISSING_FIELD', detail: 'no order items found', partial }
     }
     partial.items = items
 
-    // The vendor sometimes puts the label and its ₹ amount on the same line
-    // ("Grand Total (Inclusive of all taxes)    ₹ 709"), and sometimes on two
-    // consecutive lines with nothing else between them (one cell per line, no
-    // delimiter at all — see the flattening comment on parseItems). Reading
-    // "whatever token comes right after the Grand Total label" survives both.
+    // The ₹ amount can end up sharing the Grand Total label's own token
+    // (word-wrapped single-space text has no delimiter to split them apart
+    // at all: "Grand Total (Inclusive of all taxes) ₹ 339" stays one token),
+    // on the very next token (a tab/space-delimited row, or one cell per
+    // line — see flattenTokens), or nowhere if the summary is missing
+    // entirely. Checking the label's own token before the next one survives
+    // every shape actually observed.
     const allTokens = YatriRestroBookingParser.flattenTokens(text.split('\n'))
     const gtIdx = allTokens.findIndex((t) => /^Grand\s*Total/i.test(t))
-    const amountToken = gtIdx >= 0 ? allTokens[gtIdx + 1] ?? null : null
-    const amountMatch = amountToken ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(amountToken) : null
+    const amountMatch =
+      gtIdx >= 0
+        ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(allTokens[gtIdx]) ??
+          (allTokens[gtIdx + 1] ? /₹\s*([\d,]+(?:\.\d+)?)/.exec(allTokens[gtIdx + 1]) : null)
+        : null
     const amountPaise = amountMatch ? rupeeStringToPaise(amountMatch[1]) : null
     if (amountPaise === null) {
       return { ok: false, reason: 'MISSING_FIELD', detail: 'grand total missing or unparseable', partial }
@@ -211,31 +227,45 @@ export class YatriRestroBookingParser implements OrderParser {
   }
 
   /**
-   * Each row is a 4-column table: one or two label/value pairs. A label with
-   * an empty value — "DELIVERY DATE" next to a blank cell — leaves no token
-   * behind once split, so pairing cells by position misfires (the next row's
-   * label would be read as this row's value). Matching every cell against the
-   * known label set and treating whatever follows as its value survives that.
+   * Finds every known label by its literal text and takes whatever sits
+   * between one label and the next as its value.
+   *
+   * This vendor renders the same "Order details" table at least three
+   * different ways depending on the path an email takes: a whole row as one
+   * tab- or multi-space-delimited line, one label or value alone per line (a
+   * real HTML div-per-cell layout with no delimiter at all), and — after
+   * Gmail's own "Fwd:" reflows the plain text — everything word-wrapped with
+   * single spaces, so a label sits right next to its value with no delimiter
+   * distinguishable from the label's own internal spacing at all ("ORDER No
+   * 1000373994 MOBILE NO 6205228491"). No column-splitting scheme survives
+   * all three. Searching for each label's own literal text and reading
+   * whatever text falls between it and the next label does, because it never
+   * depends on a delimiter existing in the first place.
    */
   private readFields(text: string): Map<string, string> {
-    const map = new Map<string, string>()
     const lines = text.split('\n')
     const start = lines.findIndex((l) => /Order\s*details\s*:/i.test(l))
     const end = lines.findIndex((l) => /Order\s*Item\s*Details\s*:/i.test(l))
-    const section = lines.slice(start >= 0 ? start + 1 : 0, end >= 0 ? end : lines.length)
+    const section = lines
+      .slice(start >= 0 ? start + 1 : 0, end >= 0 ? end : lines.length)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .join(' ')
 
-    let currentLabel: string | null = null
-    for (const line of section) {
-      for (const cell of YatriRestroBookingParser.splitCells(line)) {
-        const key = YatriRestroBookingParser.norm(cell)
-        if (YatriRestroBookingParser.LABELS.has(key)) {
-          currentLabel = key
-        } else if (currentLabel) {
-          map.set(currentLabel, cell)
-          currentLabel = null
-        }
-      }
-    }
+    const found = YatriRestroBookingParser.LABEL_SPECS
+      .map(({ key, re }) => {
+        const m = re.exec(section)
+        return m ? { key, start: m.index, end: m.index + m[0].length } : null
+      })
+      .filter((m): m is { key: string; start: number; end: number } => m !== null)
+      .sort((a, b) => a.start - b.start)
+
+    const map = new Map<string, string>()
+    found.forEach((label, i) => {
+      const valueEnd = i + 1 < found.length ? found[i + 1].start : section.length
+      const value = section.slice(label.end, valueEnd).trim()
+      if (value) map.set(label.key, value)
+    })
     return map
   }
 
@@ -248,7 +278,7 @@ export class YatriRestroBookingParser implements OrderParser {
    * since chunking only cares about token position, not which line it came
    * from.
    */
-  private parseItems(text: string): { name: string; qty: number; notes: string | null }[] {
+  private parseItemsTokenized(text: string): { name: string; qty: number; notes: string | null }[] {
     const lines = text.split('\n')
     const detailsIdx = lines.findIndex((l) => /Order\s*Item\s*Details\s*:/i.test(l))
     if (detailsIdx < 0) return []
@@ -275,6 +305,46 @@ export class YatriRestroBookingParser implements OrderParser {
       const qty = Number(quantity)
       if (!Number.isFinite(qty)) continue
       items.push({ name: name.trim(), qty, notes: description?.trim() || null })
+    }
+    return items
+  }
+
+  /**
+   * Fallback for when Gmail's own "Fwd:" has word-wrapped everything into
+   * single-space-separated text with no delimiter left at all — not even the
+   * item-table header splits into separate cells then, so the tokenized
+   * chunking above finds nothing.
+   *
+   * There's no way to recover the exact name/description column boundary
+   * without a delimiter (an item name and the ingredient list that follows it
+   * are both just capitalized words separated by single spaces), so this
+   * keeps the combined text as `name` rather than guessing where to cut it —
+   * a longer name is honest; a wrong split silently mislabels the dish.
+   * Locating each item by its trailing "₹price qty ₹amount" instead of by a
+   * leading delimiter is what makes this work with no column separator: that
+   * numeric shape is unambiguous even in fully run-on text.
+   */
+  private parseItemsCollapsedWhitespace(text: string): { name: string; qty: number; notes: string | null }[] {
+    const detailsMatch = /Order\s*Item\s*Details\s*:/i.exec(text)
+    if (!detailsMatch) return []
+    const afterDetails = text.slice(detailsMatch.index + detailsMatch[0].length)
+
+    const headerMatch = /Item\s+Description\s+Price\s+Quantity\s+Amount/i.exec(afterDetails)
+    if (!headerMatch) return []
+    let block = afterDetails.slice(headerMatch.index + headerMatch[0].length)
+
+    const summaryMatch = /Sub\s*Total/i.exec(block)
+    if (summaryMatch) block = block.slice(0, summaryMatch.index)
+
+    const items: { name: string; qty: number; notes: string | null }[] = []
+    const NUMERIC_TAIL = /₹\s*[\d,.]+\s+(\d+)\s+₹\s*[\d,.]+/g
+    let lastEnd = 0
+    let m: RegExpExecArray | null
+    while ((m = NUMERIC_TAIL.exec(block))) {
+      const name = block.slice(lastEnd, m.index).replace(/\s+/g, ' ').trim()
+      const qty = Number(m[1])
+      if (name && Number.isFinite(qty)) items.push({ name, qty, notes: null })
+      lastEnd = NUMERIC_TAIL.lastIndex
     }
     return items
   }

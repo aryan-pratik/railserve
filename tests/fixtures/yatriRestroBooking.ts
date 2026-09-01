@@ -81,6 +81,52 @@ export const GARBAGE = `Hello, this is a newsletter about trains.
 Nothing structured here at all.`
 
 /**
+ * The real forwarded email, verbatim from /admin/inbox's raw-email view.
+ * Gmail's own "Fwd:" reflowed the vendor's HTML into word-wrapped plain text
+ * with single spaces throughout — "ORDER No 1000373994 MOBILE NO 6205228491"
+ * has no delimiter between label and value at all, distinguishable from a
+ * label's own internal spacing only by matching the label's literal text.
+ * Also exercises the collapsed-whitespace item fallback: the header and the
+ * one item row are single-space run-on text too, word-wrapped mid-item.
+ */
+export const SAMPLE_GMAIL_FWD_COLLAPSED = `---------- Forwarded message ---------
+From: <support@yatrirestro.com>
+Date: Sun, 1 Mar, 2026, 6:43 pm
+Subject: Yatri Restro - Order Booked Successfully
+To: <ak4837707@gmail.com>
+
+
+Order Booking Confirmation
+Dear ayush kumar,
+
+Your order has been booked now. Be relaxed and enjoy your journey. We will
+deliver your order at your seat. Please find the order details below:
+Order details:
+ORDER No 1000373994 MOBILE NO 6205228491
+CUSTOMER NAME ayush kumar TRAIN No /NAME 13350 / PNBE SGRL EXP
+DELIVERY DATE COACH/BERTH B1 / 19
+PAYMENT STATUS CASH_ON_DELIVERY Station Code/Name GAYA / GAYA JN
+Outlet Name The fast food king Outlet Contact 9264296066
+Order Item Details:
+Item Description Price Quantity Amount
+Veg deluxe Thali Paneer butter masala,Mix veg,Dal fry/Dal tadka,Jeera
+Rice,Butter Roti(3pcs),Salad,Pickle,Sweet,Cutlery ₹ 323 1 ₹ 323
+Sub Total ₹ 323
+GST ₹ 16.15
+Discount ₹ 0
+Grand Total (Inclusive of all taxes) ₹ 339
+
+Warm Regards,
+YATRI RESTRO
+This is a system generated email. Please do not reply to this email ID. If
+you have a query or need any clarification you may contact us using any of
+the communication medium described below:
+
+   1. *Please confirm train time. Delivery Time may be vary.*
+   2. Call our 24-hour Customer Care at 9264296066
+   3. Email Us support@yatrirestrocom <support@yatrirestro.com>`
+
+/**
  * The vendor's real HTML, verbatim from /admin/inbox's raw-email view. Not a
  * real <table> at all — one <div> per label/value with no delimiter between
  * them, so each ends up alone on its own line rather than sharing a
