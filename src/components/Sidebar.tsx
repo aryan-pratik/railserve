@@ -52,7 +52,7 @@ export function Sidebar({
 
   const sidebarContent = (
     <div className="flex h-full flex-col justify-between p-4">
-      <div className="space-y-6">
+      <div className="min-h-0 space-y-6 overflow-y-auto">
         {/* Brand Header */}
         <div className="flex items-center justify-between px-2">
           <Link
@@ -180,7 +180,7 @@ export function Sidebar({
       </div>
 
       {/* Desktop Persistent Sidebar */}
-      <aside className="no-print hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface lg:min-h-dvh lg:sticky lg:top-0">
+      <aside className="no-print hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface lg:h-dvh lg:sticky lg:top-0 lg:self-start">
         {sidebarContent}
       </aside>
     </>
