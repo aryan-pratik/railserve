@@ -185,6 +185,35 @@ describe('YatriRestro booking-confirmation parser', () => {
     expect(r.order.scheduledArrival?.toISOString()).toBe('2026-09-01T08:40:00.000Z')
   })
 
+  it('parses a Gmail "Fwd:" that reflowed everything into single-space run-on text', () => {
+    expect(parser.matches(fx.SAMPLE_GMAIL_FWD_COLLAPSED)).toBe(true)
+    const r = parser.parse(fx.SAMPLE_GMAIL_FWD_COLLAPSED, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order).toMatchObject({
+      externalOrderId: '1000373994',
+      outletName: 'The fast food king',
+      stationCode: 'GAYA',
+      stationName: 'GAYA JN',
+      contactName: 'ayush kumar',
+      contactPhone: '6205228491',
+      trainNo: '13350',
+      trainName: 'PNBE SGRL EXP',
+      coach: 'B1',
+      berth: '19',
+      amountPaise: 33900,
+      paymentMode: 'COD',
+    })
+    // No delimiter survives the reflow, so the combined name+description text
+    // is kept as name rather than guessing where to cut it.
+    expect(r.order.items).toEqual([{
+      name: 'Veg deluxe Thali Paneer butter masala,Mix veg,Dal fry/Dal tadka,Jeera Rice,Butter Roti(3pcs),Salad,Pickle,Sweet,Cutlery',
+      qty: 1,
+      notes: null,
+    }])
+  })
+
   it('is deterministic', () => {
     const a = parser.parse(fx.SAMPLE, RECEIVED)
     const b = parser.parse(fx.SAMPLE, RECEIVED)
