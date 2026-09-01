@@ -14,7 +14,7 @@ const EnvSchema = z.object({
 
   // Live train status. Defaults to the simulator so the app runs with no
   // third-party account; setting a key is the whole switch to real data.
-  TRAIN_API_PROVIDER: z.enum(['simulator', 'rapidapi']).default('simulator'),
+  TRAIN_API_PROVIDER: z.enum(['simulator', 'rapidapi', 'railkit']).default('simulator'),
   TRAIN_API_KEY: z.string().default(''),
   // Must match the vendor src/lib/train/rapidapi.ts is written against — the
   // adapter maps that product's exact field names and fails closed on anything
