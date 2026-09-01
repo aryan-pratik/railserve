@@ -15,11 +15,11 @@ import { normalisePaymentMode, rupeeStringToPaise } from './shared'
  *
  *   Order Booking Confirmation
  *   ...
- *   ORDER No    1000085034    MOBILE NO    8789151114
- *   CUSTOMER NAME    aman    TRAIN No /NAME    22465 / BABA B DHAM EXP
+ *   ORDER No    1000085034    MOBILE NO    9000000001
+ *   CUSTOMER NAME    test customer    TRAIN No /NAME    22465 / BABA B DHAM EXP
  *   DELIVERY DATE        COACH/BERTH    A1 / 21
  *   PAYMENT STATUS    CASH_ON_DELIVERY    Station Code/Name    DDU / PT.DEEN DAYAL UPADHYAYA JN.
- *   Outlet Name    THE CHINESE HUB    Outlet Contact    9264296066
+ *   Outlet Name    SAMPLE OUTLET ONE    Outlet Contact    9264296066
  *   Order Item Details:
  *   Item    Description    Price    Quantity    Amount
  *   Chicken lollipop Fry 4pc    4pc    ₹ 216    1    ₹ 216

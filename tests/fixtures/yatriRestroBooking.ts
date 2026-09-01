@@ -1,14 +1,14 @@
 /** The exact sample forwarded from the vendor's "Order Booking Confirmation" template. */
 export const SAMPLE = `Order Booking Confirmation
-Dear aman,
+Dear test customer,
 Your order has been booked now. Be relaxed and enjoy your journey. We will deliver your order at your seat. Please find the order details below:
 
 Order details:
-ORDER No\t1000085034\tMOBILE NO\t8789151114
-CUSTOMER NAME\taman\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
+ORDER No\t1000085034\tMOBILE NO\t9000000001
+CUSTOMER NAME\ttest customer\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
 DELIVERY DATE\t\tCOACH/BERTH\tA1 / 21
 PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tDDU / PT.DEEN DAYAL UPADHYAYA JN.
-Outlet Name\tTHE CHINESE HUB\tOutlet Contact\t9264296066
+Outlet Name\tSAMPLE OUTLET ONE\tOutlet Contact\t9264296066
 Order Item Details:
 Item\tDescription\tPrice\tQuantity\tAmount
 Chicken lollipop Fry 4pc\t4pc\t₹ 216\t1\t₹ 216
@@ -21,15 +21,15 @@ YATRI RESTRO`
 
 /** Same content as copy-pasted from a rendered table — multiple spaces instead of tabs. */
 export const SAMPLE_SPACE_DELIMITED = `Order Booking Confirmation
-Dear aman,
+Dear test customer,
 Your order has been booked now. Be relaxed and enjoy your journey. We will deliver your order at your seat. Please find the order details below:
 
 Order details:
-ORDER No    1000085034    MOBILE NO    8789151114
-CUSTOMER NAME    aman    TRAIN No /NAME    22465 / BABA B DHAM EXP
+ORDER No    1000085034    MOBILE NO    9000000001
+CUSTOMER NAME    test customer    TRAIN No /NAME    22465 / BABA B DHAM EXP
 DELIVERY DATE        COACH/BERTH    A1 / 21
 PAYMENT STATUS    CASH_ON_DELIVERY    Station Code/Name    DDU / PT.DEEN DAYAL UPADHYAYA JN.
-Outlet Name    THE CHINESE HUB    Outlet Contact    9264296066
+Outlet Name    SAMPLE OUTLET ONE    Outlet Contact    9264296066
 Order Item Details:
 Item    Description    Price    Quantity    Amount
 Chicken lollipop Fry 4pc    4pc    ₹ 216    1    ₹ 216
@@ -42,12 +42,12 @@ YATRI RESTRO`
 
 /** Two dishes — the loop-over-items path must not stop at the first row. */
 export const MULTI_ITEM = `Order Booking Confirmation
-Dear Priya,
+Dear Test Customer Two,
 Your order has been booked now.
 
 Order details:
-ORDER No\t1000085111\tMOBILE NO\t9839044444
-CUSTOMER NAME\tPriya\tTRAIN No /NAME\t12312 / KALKA MAIL
+ORDER No\t1000085111\tMOBILE NO\t9000000002
+CUSTOMER NAME\tTest Customer Two\tTRAIN No /NAME\t12312 / KALKA MAIL
 DELIVERY DATE\t\tCOACH/BERTH\tS3 / 45
 PAYMENT STATUS\tPREPAID\tStation Code/Name\tCNB / KANPUR CENTRAL
 Outlet Name\tHOTEL GANGA GALAXY\tOutlet Contact\t9264296066
@@ -64,14 +64,14 @@ YATRI RESTRO`
 
 /** No item rows at all — must land in the unparsed inbox, not be inserted. */
 export const MALFORMED_NO_ITEMS = `Order Booking Confirmation
-Dear aman,
+Dear test customer,
 
 Order details:
-ORDER No\t1000085222\tMOBILE NO\t8789151114
-CUSTOMER NAME\taman\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
+ORDER No\t1000085222\tMOBILE NO\t9000000001
+CUSTOMER NAME\ttest customer\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
 DELIVERY DATE\t\tCOACH/BERTH\tA1 / 21
 PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tDDU / PT.DEEN DAYAL UPADHYAYA JN.
-Outlet Name\tTHE CHINESE HUB\tOutlet Contact\t9264296066
+Outlet Name\tSAMPLE OUTLET ONE\tOutlet Contact\t9264296066
 Order Item Details:
 Grand Total (Inclusive of all taxes)\t₹ 227
 Warm Regards,
@@ -87,14 +87,14 @@ Nothing structured here at all.`
  * tokens rather than let them shift "the next real token" out of reach.
  */
 export const SAMPLE_STRAY_TAB_BEFORE_GRAND_TOTAL = `Order Booking Confirmation
-Dear aman,
+Dear test customer,
 
 Order details:
-ORDER No\t1000085034\tMOBILE NO\t8789151114
-CUSTOMER NAME\taman\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
+ORDER No\t1000085034\tMOBILE NO\t9000000001
+CUSTOMER NAME\ttest customer\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
 DELIVERY DATE\t\tCOACH/BERTH\tA1 / 21
 PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tDDU / PT.DEEN DAYAL UPADHYAYA JN.
-Outlet Name\tTHE CHINESE HUB\tOutlet Contact\t9264296066
+Outlet Name\tSAMPLE OUTLET ONE\tOutlet Contact\t9264296066
 Order Item Details:
 Item\tDescription\tPrice\tQuantity\tAmount
 Chicken lollipop Fry 4pc\t4pc\t₹ 216\t1\t₹ 216
@@ -128,12 +128,12 @@ export const SAMPLE_REAL_1000591854 = `My Web Page
         ORDER No
         1000591854
         MOBILE NO
-        7632867886
+        9000000003
 
 
 
         CUSTOMER NAME
-        Navya Kumari
+        Test Customer Three
         TRAIN No /NAME
         12487 / SEEMANCHAL EXP
 
@@ -221,7 +221,7 @@ YATRI RESTRO
 /**
  * The real forwarded email, verbatim from /admin/inbox's raw-email view.
  * Gmail's own "Fwd:" reflowed the vendor's HTML into word-wrapped plain text
- * with single spaces throughout — "ORDER No 1000373994 MOBILE NO 6205228491"
+ * with single spaces throughout — "ORDER No 1000373994 MOBILE NO 9000000004"
  * has no delimiter between label and value at all, distinguishable from a
  * label's own internal spacing only by matching the label's literal text.
  * Also exercises the collapsed-whitespace item fallback: the header and the
@@ -231,20 +231,20 @@ export const SAMPLE_GMAIL_FWD_COLLAPSED = `---------- Forwarded message --------
 From: <support@yatrirestro.com>
 Date: Sun, 1 Mar, 2026, 6:43 pm
 Subject: Yatri Restro - Order Booked Successfully
-To: <ak4837707@gmail.com>
+To: <outlet-inbox@example.com>
 
 
 Order Booking Confirmation
-Dear ayush kumar,
+Dear test customer four,
 
 Your order has been booked now. Be relaxed and enjoy your journey. We will
 deliver your order at your seat. Please find the order details below:
 Order details:
-ORDER No 1000373994 MOBILE NO 6205228491
-CUSTOMER NAME ayush kumar TRAIN No /NAME 13350 / PNBE SGRL EXP
+ORDER No 1000373994 MOBILE NO 9000000004
+CUSTOMER NAME test customer four TRAIN No /NAME 13350 / PNBE SGRL EXP
 DELIVERY DATE COACH/BERTH B1 / 19
 PAYMENT STATUS CASH_ON_DELIVERY Station Code/Name GAYA / GAYA JN
-Outlet Name The fast food king Outlet Contact 9264296066
+Outlet Name SAMPLE OUTLET TWO Outlet Contact 9264296066
 Order Item Details:
 Item Description Price Quantity Amount
 Veg deluxe Thali Paneer butter masala,Mix veg,Dal fry/Dal tadka,Jeera
@@ -292,12 +292,12 @@ export const SAMPLE_ONE_TOKEN_PER_LINE = `My Web Page
         ORDER No
         1000591416
         MOBILE NO
-        9939978198
+        9000000005
 
 
 
         CUSTOMER NAME
-        Akash
+        Test Customer Five
         TRAIN No /NAME
         12488 / SEEMANCHAL EXP
 
@@ -393,8 +393,8 @@ Dear Partner,
 Please prepare order and deliver order on time.
 
 Order details:
-ORDER No\t1000591314\tMOBILE NO\t9818071386
-CUSTOMER NAME\tNilamber paswan\tTRAIN No /NAME\t12561 / SWATANTRA S EXP
+ORDER No\t1000591314\tMOBILE NO\t9000000006
+CUSTOMER NAME\tTest Customer Six\tTRAIN No /NAME\t12561 / SWATANTRA S EXP
 DELIVERY DATE\t01-09-2026, 09:35\tCOACH/BERTH\tRAC/A2 / 17
 PAYMENT STATUS\tONLINE\tStation Code/Name\tCNB / KANPUR CENTRAL
 Order Item Details:
@@ -410,14 +410,14 @@ YATRI RESTRO`
 
 /** Same as SAMPLE, but with a real populated DELIVERY DATE value. */
 export const SAMPLE_WITH_DELIVERY_DATE = `Order Booking Confirmation
-Dear aman,
+Dear test customer,
 
 Order details:
-ORDER No\t1000085034\tMOBILE NO\t8789151114
-CUSTOMER NAME\taman\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
+ORDER No\t1000085034\tMOBILE NO\t9000000001
+CUSTOMER NAME\ttest customer\tTRAIN No /NAME\t22465 / BABA B DHAM EXP
 DELIVERY DATE\t01-09-2026, 11:19\tCOACH/BERTH\tA1 / 21
 PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tDDU / PT.DEEN DAYAL UPADHYAYA JN.
-Outlet Name\tTHE CHINESE HUB\tOutlet Contact\t9264296066
+Outlet Name\tSAMPLE OUTLET ONE\tOutlet Contact\t9264296066
 Order Item Details:
 Item\tDescription\tPrice\tQuantity\tAmount
 Chicken lollipop Fry 4pc\t4pc\t₹ 216\t1\t₹ 216
@@ -443,8 +443,8 @@ Dear Partner,
 Please prepare order and deliver order on time.
 
 Order details:
-ORDER No\t1000591444\tMOBILE NO\t7001349341
-CUSTOMER NAME\tANIKET PATRA\tTRAIN No /NAME\t12815 / NANDANKANAN SF
+ORDER No\t1000591444\tMOBILE NO\t9000000007
+CUSTOMER NAME\tTEST CUSTOMER SEVEN\tTRAIN No /NAME\t12815 / NANDANKANAN SF
 DELIVERY DATE\t01-09-2026, 11:19\tCOACH/BERTH\tB2 / 21
 PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tCNB / KANPUR CENTRAL
 Order Item Details:
@@ -476,19 +476,19 @@ export const SAMPLE_FORWARDED = `---------- Forwarded message ---------
 From: <support@yatrirestro.com>
 Date: Sun, 1 Mar, 2026, 6:43 pm
 Subject: Yatri Restro - Order Booked Successfully
-To: <ak4837707@gmail.com>
+To: <outlet-inbox@example.com>
 
 
 Order Booking Confirmation
-Dear ayush kumar,
+Dear test customer four,
 Your order has been booked now. Be relaxed and enjoy your journey. We will deliver your order at your seat. Please find the order details below:
 
 Order details:
-ORDER No\t1000373994\tMOBILE NO\t6205228491
-CUSTOMER NAME\tayush kumar\tTRAIN No /NAME\t13350 / PNBE SGRL EXP
+ORDER No\t1000373994\tMOBILE NO\t9000000004
+CUSTOMER NAME\ttest customer four\tTRAIN No /NAME\t13350 / PNBE SGRL EXP
 DELIVERY DATE\t\tCOACH/BERTH\tB1 / 19
 PAYMENT STATUS\tCASH_ON_DELIVERY\tStation Code/Name\tGAYA / GAYA JN
-Outlet Name\tThe fast food king\tOutlet Contact\t9264296066
+Outlet Name\tSAMPLE OUTLET TWO\tOutlet Contact\t9264296066
 Order Item Details:
 Item\tDescription\tPrice\tQuantity\tAmount
 Veg deluxe Thali\tPaneer butter masala,Mix veg,Dal fry/Dal tadka,Jeera Rice,Butter Roti(3pcs),Salad,Pickle,Sweet,Cutlery\t₹ 323\t1\t₹ 323
