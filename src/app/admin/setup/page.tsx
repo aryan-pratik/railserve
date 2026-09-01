@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
@@ -40,8 +41,9 @@ function ActiveToggle({
 
 export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   await requireRole('ADMIN')
-  const { tab } = await props.searchParams
+  const { tab, edit } = await props.searchParams
   const staff = tab === 'staff'
+  const editId = typeof edit === 'string' ? edit : undefined
 
   await connectDb()
   const [outlets, users] = await Promise.all([
@@ -50,6 +52,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   ])
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
+  const editingUser = editId ? users.find((u) => String(u._id) === editId) : undefined
 
   return (
     <div className="space-y-5">
@@ -78,33 +81,63 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                     <th className={TH}>Role</th>
                     <th className={TH}>Outlets</th>
                     <th className={TH}>Status</th>
+                    <th className={TH} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {users.map((u) => (
-                    <tr key={String(u._id)} className={u.active ? '' : 'bg-sunken/50 text-faint'}>
-                      <td className="px-4 py-3 font-medium text-ink">{u.name}</td>
-                      <td className="px-4 py-3 font-mono tabular-nums text-muted">{u.phone}</td>
-                      <td className="px-4 py-3 text-muted">{ROLE_LABEL[u.role] ?? u.role}</td>
-                      <td className="px-4 py-3 text-muted">
-                        {u.restaurantIds.length > 0
-                          ? u.restaurantIds.map((id) => outletName.get(String(id)) ?? '—').join(', ')
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <ActiveToggle id={String(u._id)} active={u.active} action={toggleUserActive} />
-                      </td>
-                    </tr>
-                  ))}
+                  {users.map((u) => {
+                    const isEditing = editId === String(u._id)
+                    return (
+                      <tr
+                        key={String(u._id)}
+                        className={isEditing ? 'bg-accent/5' : u.active ? '' : 'bg-sunken/50 text-faint'}
+                      >
+                        <td className="px-4 py-3 font-medium text-ink">{u.name}</td>
+                        <td className="px-4 py-3 font-mono tabular-nums text-muted">{u.phone}</td>
+                        <td className="px-4 py-3 text-muted">{ROLE_LABEL[u.role] ?? u.role}</td>
+                        <td className="px-4 py-3 text-muted">
+                          {u.restaurantIds.length > 0
+                            ? u.restaurantIds.map((id) => outletName.get(String(id)) ?? '—').join(', ')
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <ActiveToggle id={String(u._id)} active={u.active} action={toggleUserActive} />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link
+                            href={isEditing ? '/admin/setup?tab=staff' : `/admin/setup?tab=staff&edit=${String(u._id)}`}
+                            className="text-sm font-medium text-accent hover:underline"
+                          >
+                            {isEditing ? 'Cancel' : 'Edit'}
+                          </Link>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           </Card>
 
           <StaffForm
+            key={editId ?? 'new'}
             outlets={outlets
-              .filter((o) => o.active)
+              // An outlet a manager already holds must stay selectable even if
+              // it was deactivated after the fact, or editing them would
+              // silently drop it the moment you hit save.
+              .filter((o) => o.active || editingUser?.restaurantIds.some((id) => String(id) === String(o._id)))
               .map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
+            values={
+              editingUser
+                ? {
+                    id: String(editingUser._id),
+                    name: editingUser.name,
+                    phone: editingUser.phone,
+                    role: editingUser.role,
+                    restaurantIds: editingUser.restaurantIds.map(String),
+                  }
+                : undefined
+            }
           />
         </>
       ) : (
