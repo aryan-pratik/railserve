@@ -118,4 +118,34 @@ describe('urgency ordering', () => {
     sortRunsByUrgency(runs, () => null)
     expect(runs.map((r) => r.trainNo)).toEqual(before)
   })
+
+  it('sinks a train that has already arrived below one still on its way, even though its raw time is earlier', () => {
+    const now = new Date('2026-08-27T09:00:00Z').getTime()
+    const eta: Record<string, Date> = {
+      '12506': new Date('2026-08-27T07:00:00Z'), // already passed
+      '12312': new Date('2026-08-27T10:00:00Z'), // still to come
+    }
+    const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null, now)
+    expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
+  })
+
+  it('orders multiple still-upcoming trains soonest-first', () => {
+    const now = new Date('2026-08-27T06:00:00Z').getTime()
+    const eta: Record<string, Date> = {
+      '12506': new Date('2026-08-27T08:00:00Z'),
+      '12312': new Date('2026-08-27T07:00:00Z'),
+    }
+    const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null, now)
+    expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
+  })
+
+  it('orders multiple already-passed trains most-overdue-first', () => {
+    const now = new Date('2026-08-27T09:00:00Z').getTime()
+    const eta: Record<string, Date> = {
+      '12506': new Date('2026-08-27T08:30:00Z'), // 30 min overdue
+      '12312': new Date('2026-08-27T07:00:00Z'), // 2h overdue
+    }
+    const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null, now)
+    expect(sorted.map((r) => r.trainNo)).toEqual(['12312', '12506'])
+  })
 })

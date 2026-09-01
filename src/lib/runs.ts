@@ -102,6 +102,33 @@ function byArrival(a: Date | null, b: Date | null): number {
 }
 
 /**
+ * Three tiers, in display order: still arriving, already arrived, unknown.
+ * Unknown stays last no matter what — it must not be able to look "more
+ * urgent" than a train that has simply already come and gone.
+ */
+function urgencyRank(a: Date | null, now: number): 0 | 1 | 2 {
+  if (a === null) return 2
+  return a.getTime() <= now ? 1 : 0
+}
+
+/**
+ * Soonest-first, but a train that has already reached its stop sinks below
+ * every train still to come — a raw time compare would otherwise keep it
+ * pinned near the top all afternoon just because its arrival hour is
+ * numerically small. Within the "still arriving" tier this is soonest-first;
+ * within "already arrived" it is oldest-first (most overdue first), since a
+ * run that has been sitting for two hours needs attention before one that
+ * finished five minutes ago.
+ */
+function compareUrgency(a: Date | null, b: Date | null, now: number): number {
+  const ra = urgencyRank(a, now)
+  const rb = urgencyRank(b, now)
+  if (ra !== rb) return ra - rb
+  if (ra === 2) return 0
+  return byArrival(a, b)
+}
+
+/**
  * Re-orders runs by when the train will *actually* arrive.
  *
  * groupIntoRuns sorts by the timetable, which is the best available answer
@@ -110,14 +137,19 @@ function byArrival(a: Date | null, b: Date | null): number {
  * and arrives sooner, or the kitchen cooks in timetable order and the food
  * needed first is the food made last.
  *
+ * A train whose arrival has already passed sinks below every train still
+ * arriving, regardless of raw time value — see compareUrgency.
+ *
  * Kept separate from groupIntoRuns so this module stays pure — live timing is a
- * database read, and the caller already holds it.
+ * database read, and the caller already holds it. `now` defaults to the real
+ * clock; tests pass a fixed value.
  */
 export function sortRunsByUrgency<T>(
   runs: T[],
   effectiveArrivalFor: (run: T) => Date | null,
+  now: number = Date.now(),
 ): T[] {
-  return [...runs].sort((a, b) => byArrival(effectiveArrivalFor(a), effectiveArrivalFor(b)))
+  return [...runs].sort((a, b) => compareUrgency(effectiveArrivalFor(a), effectiveArrivalFor(b), now))
 }
 
 /** Groups orders into runs, each internally sorted by coach. */
