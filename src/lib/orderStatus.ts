@@ -119,3 +119,16 @@ export function missingQuoteFields(
     return v === null || v === undefined || v === ''
   })
 }
+
+/**
+ * Shapes an admin-typed custom status ("Refund pending") into the same
+ * SCREAMING_SNAKE_CASE form as the fixed statuses, so `statusLabel`'s fallback
+ * formatter renders it back consistently (e.g. "Refund pending").
+ */
+export function normalizeCustomStatus(raw: string): string {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}

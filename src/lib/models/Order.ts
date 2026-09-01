@@ -1,5 +1,4 @@
 import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
-import { ORDER_STATUSES } from '../orderStatus'
 import {
   ORDER_SOURCES,
   ORDER_TYPES,
@@ -25,8 +24,11 @@ const OrderItemSchema = new Schema(
 
 const OrderEventSchema = new Schema(
   {
-    fromStatus: { type: String, default: null, enum: [...ORDER_STATUSES, null] },
-    toStatus: { type: String, required: true, enum: ORDER_STATUSES },
+    // Not enum-constrained to ORDER_STATUSES: adminOverrideStatus (plan §4
+    // admin exception) can move an order to a custom status an admin typed in,
+    // and the event log has to be able to record that same value.
+    fromStatus: { type: String, default: null },
+    toStatus: { type: String, required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     meta: { type: Schema.Types.Mixed, default: {} },
     createdAt: { type: Date, required: true, default: () => new Date() },
@@ -58,7 +60,11 @@ const OrderSchema = new Schema(
     source: { type: String, required: true, enum: ORDER_SOURCES },
     orderType: { type: String, required: true, enum: ORDER_TYPES },
     externalOrderId: { type: String, required: true, trim: true },
-    status: { type: String, required: true, enum: ORDER_STATUSES },
+    // Not enum-constrained: every normal write goes through transitionOrder,
+    // which enforces ORDER_STATUSES itself via the TRANSITIONS allow-list.
+    // The one exception is adminOverrideStatus, which lets an admin set a
+    // custom status this schema must still accept.
+    status: { type: String, required: true },
 
     restaurantId: { type: Schema.Types.ObjectId, ref: 'Restaurant', default: null },
     stationCode: { type: String, required: true, uppercase: true, trim: true },

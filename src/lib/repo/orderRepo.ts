@@ -118,6 +118,15 @@ export async function findRestaurantIdsInScope(ctx: AuthContext) {
 }
 
 /**
+ * Distinct status values present in scope, including any custom ones an
+ * admin has set via adminOverrideStatus — used to build the status filter and
+ * the status edit dropdown on /admin/orders.
+ */
+export async function distinctStatuses(ctx: AuthContext): Promise<string[]> {
+  return Order.distinct('status', scoped(ctx))
+}
+
+/**
  * Scoped field update for the quote flow.
  *
  * Ordinary fields only — `status` is deliberately not writable here, so
