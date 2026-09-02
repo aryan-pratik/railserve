@@ -90,11 +90,6 @@ export function TrainLookupForm({
                 <span className="font-mono">{r.trainNo}</span>
               </span>
             }
-            action={
-              r.providerUpdatedAtIso ? (
-                <span className="text-xs text-faint">feed updated {ago(r.providerUpdatedAtIso)}</span>
-              ) : null
-            }
           />
 
           <div className="px-4 py-2">
@@ -122,6 +117,20 @@ export function TrainLookupForm({
               label="Expected arrival"
               value={r.etaAtIso ? `${istTime(r.etaAtIso)} IST` : 'not reported'}
               tone={r.delayMinutes && r.delayMinutes > 0 ? 'text-red-600' : ''}
+            />
+            {/* Directly under the ETA, because it is what the ETA is worth: a
+                projection made from a position an hour old is an hour-old
+                projection. The empty case is stated rather than hidden — a run
+                that has not left its source has no update, and RailKit sends
+                an empty string for it, which as a blank line reads as a bug in
+                us rather than as news about the train. */}
+            <Row
+              label="Feed last updated"
+              value={
+                r.providerUpdatedAtIso
+                  ? `${istTime(r.providerUpdatedAtIso)} IST · ${ago(r.providerUpdatedAtIso)}`
+                  : 'never — this run has not reported yet'
+              }
             />
             <Row
               label="Delay"

@@ -46,6 +46,30 @@ export function StaleFlag({ timing }: { timing: TimingView }) {
   )
 }
 
+/**
+ * When the railway's own feed last had news.
+ *
+ * Distinct from StaleFlag, which is our side of it: a reading fetched thirty
+ * seconds ago can rest on a position the feed took forty minutes ago, because
+ * a train between stations reports nothing. The ETA is only ever as good as
+ * this timestamp, so an ETA shown without it is an ETA of unknown age.
+ *
+ * Rendered as a wall-clock time rather than "12m ago" on purpose: these pages
+ * are server-rendered and long-lived on a kitchen screen, and a relative label
+ * baked at render silently ages into a lie. An absolute time never does.
+ */
+export function FeedUpdated({ at }: { at: Date | null }) {
+  if (!at) return null
+  return (
+    <span
+      className="text-xs font-medium tabular-nums text-faint"
+      title="When the railway feed itself last reported this train. Our own fetch may be newer than this."
+    >
+      feed {formatTimeIST(at)}
+    </span>
+  )
+}
+
 export function PlatformBadge({ platform }: { platform: string | null }) {
   if (!platform) {
     return (
@@ -85,6 +109,7 @@ export function TrainTiming({
       <DelayPill delayMinutes={timing.delayMinutes} />
       {showPlatform ? <PlatformBadge platform={timing.platform} /> : null}
       <StaleFlag timing={timing} />
+      <FeedUpdated at={timing.providerUpdatedAt} />
     </div>
   )
 }

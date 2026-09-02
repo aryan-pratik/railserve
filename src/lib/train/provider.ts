@@ -9,6 +9,16 @@ export type TrainStatusReading = {
   etaAt: Date | null
   delayMinutes: number | null
   platform: string | null
+  /**
+   * When the upstream itself last had news — not when we asked.
+   *
+   * These are different numbers, and only this one bounds how far the ETA can
+   * be trusted: a train between stations reports nothing, so a reading fetched
+   * a second ago can rest on a position forty minutes old. `fetchedAt` on the
+   * cache row answers "is our copy current"; this answers "is theirs".
+   * Providers whose payload does not carry it return null.
+   */
+  providerUpdatedAt: Date | null
 }
 
 /**

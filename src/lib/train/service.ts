@@ -91,9 +91,10 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         currentStationCode: null,
         currentStationName: null,
         statusNote: null,
-        providerUpdatedAt: null,
         stopsAway: null,
         distanceKm: null,
+        // providerUpdatedAt is NOT overridden here: it comes from the reading
+        // spread above, which every provider now supplies.
       }
 
   await TrainStatus.findOneAndUpdate(
@@ -103,6 +104,7 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         etaAt: detail.etaAt,
         delayMinutes: detail.delayMinutes,
         platform: detail.platform,
+        providerUpdatedAt: detail.providerUpdatedAt,
         fetchedAt: now,
         lastSuccessAt: now,
         lastError: null,
@@ -229,6 +231,7 @@ export async function timingForOrders<
                 delayMinutes: row.delayMinutes ?? null,
                 platform: row.platform ?? null,
                 fetchedAt: row.fetchedAt,
+                providerUpdatedAt: row.providerUpdatedAt ?? null,
               }
             : null,
           now,
@@ -252,6 +255,7 @@ export function timingFor<
       platform: null,
       ageMinutes: null,
       stale: false,
+      providerUpdatedAt: null,
     }
   }
   return (
@@ -268,16 +272,22 @@ export function timingFor<
       platform: null,
       ageMinutes: null,
       stale: false,
+      providerUpdatedAt: null,
     }
   )
 }
 
 export type TrainFeedHealth = {
+  /** True when the latest attempt for at least one train failed. */
   failing: boolean
-  /** The provider's own message, when it is failing. */
+  /** The provider's own message from the most recent failure. */
   message: string | null
-  /** Last time a fetch actually succeeded, if ever. */
+  /** Last time a fetch actually succeeded on the train that is failing. */
   lastSuccessAt: Date | null
+  /** Train numbers whose latest attempt failed, newest failure first. */
+  failingTrains: string[]
+  /** How many trains were attempted in the window at all. */
+  trainsTried: number
 }
 
 /**
@@ -289,26 +299,42 @@ export type TrainFeedHealth = {
  * that genuinely has no live data all rendered identically as a scheduled
  * time. This is the missing half: the reason, so it can be said out loud.
  *
- * Judged on the most recent attempt across all trains rather than per train,
- * because every failure mode worth a banner is account-wide.
+ * Judged per train rather than on the newest attempt overall, which was wrong
+ * in both directions. It overstated — one train with no data on an otherwise
+ * healthy feed read as "the feed is down" — and, worse, it under-reported: the
+ * verdict came from whichever row was fetched last, so a single success after
+ * a failure hid the failure completely, and the train with no live status sat
+ * on a timetable time with nothing anywhere saying so. Each cache row already
+ * IS the latest attempt for its train, so counting them is the whole fix.
  */
 export async function trainFeedHealth(withinMinutes = 120): Promise<TrainFeedHealth> {
   await connectDb()
 
-  const row = await TrainStatus.findOne({
+  const rows = await TrainStatus.find({
     fetchedAt: { $gte: new Date(Date.now() - withinMinutes * 60_000) },
   })
     .sort({ fetchedAt: -1 })
-    .select('lastError lastSuccessAt')
+    .select('trainNo lastError lastSuccessAt')
     .lean()
 
   // No attempt in the window is not a failure — it means nothing needed
   // polling, which is the normal state of a quiet morning.
-  if (!row?.lastError) return { failing: false, message: null, lastSuccessAt: null }
+  const failed = rows.filter((r) => r.lastError)
+  if (!failed.length) {
+    return {
+      failing: false,
+      message: null,
+      lastSuccessAt: null,
+      failingTrains: [],
+      trainsTried: rows.length,
+    }
+  }
 
   return {
     failing: true,
-    message: row.lastError,
-    lastSuccessAt: row.lastSuccessAt ?? null,
+    message: failed[0].lastError ?? null,
+    lastSuccessAt: failed[0].lastSuccessAt ?? null,
+    failingTrains: [...new Set(failed.map((r) => r.trainNo))],
+    trainsTried: rows.length,
   }
 }

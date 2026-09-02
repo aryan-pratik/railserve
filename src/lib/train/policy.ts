@@ -65,6 +65,14 @@ export type TimingView = {
   ageMinutes: number | null
   /** True when the reading exists but has aged past its tier. */
   stale: boolean
+  /**
+   * When the railway's own feed last had news, if it publishes that.
+   *
+   * `ageMinutes` is how long since WE asked; this is how long since THEY knew.
+   * A train between stations reports nothing, so the two diverge exactly when
+   * it matters — and the second is the one that bounds the ETA.
+   */
+  providerUpdatedAt: Date | null
 }
 
 /**
@@ -78,7 +86,13 @@ export type TimingView = {
  */
 export function buildTimingView(params: {
   scheduledArrival: Date | null
-  reading: { etaAt: Date | null; delayMinutes: number | null; platform: string | null; fetchedAt: Date } | null
+  reading: {
+    etaAt: Date | null
+    delayMinutes: number | null
+    platform: string | null
+    fetchedAt: Date
+    providerUpdatedAt?: Date | null
+  } | null
   now: Date
 }): TimingView {
   const { scheduledArrival, reading, now } = params
@@ -91,6 +105,7 @@ export function buildTimingView(params: {
       platform: null,
       ageMinutes: null,
       stale: false,
+      providerUpdatedAt: null,
     }
   }
 
@@ -106,6 +121,7 @@ export function buildTimingView(params: {
     platform: reading.platform,
     ageMinutes,
     stale: isStale(reading.fetchedAt, minutesToArrival, now),
+    providerUpdatedAt: reading.providerUpdatedAt ?? null,
   }
 }
 

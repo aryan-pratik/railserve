@@ -111,6 +111,25 @@ describe('timing view', () => {
     expect(v.ageMinutes).toBe(0)
   })
 
+  it('carries the feed\'s own update time through, separately from our fetch age', () => {
+    // Two different ages: we asked just now, the railway last knew 40 minutes
+    // ago. Only the second bounds the ETA, so it must survive to the UI.
+    const feedAt = at('2026-08-27T12:45:00+05:30')
+    const v = buildTimingView({
+      scheduledArrival: scheduled,
+      reading: {
+        etaAt: at('2026-08-27T14:45:00+05:30'),
+        delayMinutes: 80,
+        platform: '3',
+        fetchedAt: now,
+        providerUpdatedAt: feedAt,
+      },
+      now,
+    })
+    expect(v.ageMinutes).toBe(0)
+    expect(v.providerUpdatedAt).toEqual(feedAt)
+  })
+
   it('keeps a stale reading but flags it and reports its age', () => {
     // Plan §8: keep the last known value, mark it stale, show the age.
     // Never present a stale ETA as live.
