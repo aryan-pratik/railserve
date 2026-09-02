@@ -18,6 +18,11 @@ const TrainStatusSchema = new Schema(
     platform: { type: String, default: null },
 
     fetchedAt: { type: Date, required: true },
+    // When the railway feed itself last had news, as opposed to when we last
+    // asked (`fetchedAt`). A reading a second old can rest on a position forty
+    // minutes old, and only this field can say so. Null when the provider does
+    // not publish one, or before a run has started.
+    providerUpdatedAt: { type: Date, default: null },
 
     // Set when the last fetch failed. The previous values are kept — degrading
     // to a known-old ETA beats showing nothing (§8) — but callers must be able

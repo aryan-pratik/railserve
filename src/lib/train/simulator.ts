@@ -47,6 +47,9 @@ export class SimulatedTrainStatusProvider implements TrainStatusProvider {
     const scheduled = this.scheduledArrivalFor?.(trainNo) ?? null
     const etaAt = scheduled ? new Date(scheduled.getTime() + delayMinutes * 60_000) : null
 
-    return { etaAt, delayMinutes, platform }
+    // A healthy feed, simulated: there is no real upstream to be behind, so
+    // the reading is as current as the moment it was made. This keeps the
+    // "feed updated" line exercised offline rather than only in production.
+    return { etaAt, delayMinutes, platform, providerUpdatedAt: new Date() }
   }
 }

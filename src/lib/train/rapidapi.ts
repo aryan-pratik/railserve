@@ -113,6 +113,10 @@ export class RapidApiTrainStatusProvider implements TrainStatusProvider {
         row.expected_platform !== undefined && row.expected_platform !== null
           ? String(row.expected_platform)
           : null,
+      // This vendor sends no feed timestamp of any kind, so the age of its
+      // data is genuinely unknown. Null rather than the fetch time: claiming
+      // the feed is as fresh as our request would be an invention.
+      providerUpdatedAt: null,
     }
   }
 }
