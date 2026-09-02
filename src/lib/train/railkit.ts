@@ -69,6 +69,17 @@ type RailKitResponse = {
   }
 }
 
+/**
+ * How many departures back to look for a run that reaches us on a given date.
+ *
+ * Only ever spent on a station this process has not seen before, and only
+ * until one of them answers — from there the response names the exact offset,
+ * so a stop four days from its origin still resolves as long as one of the
+ * last three departures is queryable. Raising it costs a call per uncached
+ * station on trains that genuinely have no data.
+ */
+const MAX_DAY_OFFSET = 2
+
 const MONTHS: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
@@ -81,6 +92,12 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
    * Days between the run's departure from origin and its arrival at the
    * station we care about, learned from the first response and reused after.
    *
+   * Keyed by train AND station, because that is what it is a property of: on
+   * 12561 the offset is 0 at Samastipur (20:15 the same evening) and 1 at
+   * Kanpur (09:35 the next morning). Keyed by train alone, the first station
+   * looked up would set the offset for every other one, and a second station
+   * would silently be told about a run a day either side of the right one.
+   *
    * RailKit keys a run by the date it LEFT ITS SOURCE, while an order's
    * serviceDate is the date the train reaches the platform we deliver on.
    * For 12561 those differ by a day: the run serving Kanpur at 09:35 on the
@@ -89,9 +106,13 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
    * wrong reads tomorrow's train and reports it perfectly on time.
    *
    * The offset is a property of the timetable, not of the day, so it is worth
-   * exactly one extra call per train per process.
+   * exactly one extra call per train-and-station per process.
    */
   private readonly dayOffset = new Map<string, number>()
+
+  private static offsetKey(trainNo: string, stationCode: string): string {
+    return `${trainNo}|${stationCode.toUpperCase()}`
+  }
 
   constructor(apiKey: string) {
     // configure() sets module-level state in the SDK rather than returning a
@@ -116,36 +137,92 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       etaAt: parseDayTime(row.arrival?.actual ?? row.arrival?.scheduled, body.data?.date),
       delayMinutes: parseDelay(row.arrival?.delay),
       platform: normalisePlatform(row.platform),
+      // Free — it was already in the payload the ETA came out of. `lastUpdate`
+      // is "" until the run starts, which is a real answer ("nothing has
+      // happened yet"), not a parse failure.
+      providerUpdatedAt: parseLastUpdate(body.data?.lastUpdate),
     }
   }
 
-  /** Fetches the right departure for this service date, learning the offset once. */
+  /**
+   * Fetches the right departure for this service date, learning the offset once.
+   *
+   * The offset cannot simply be read off an offset-0 response, because for the
+   * trains that need one that response is often the one that does not exist.
+   * 12873 reaches Kanpur on the 2nd having left Hatia on the 1st, and RailKit
+   * answers the 2nd with "Train data not available for date: 02-Sep-2026" —
+   * so asking today, reading the offset, and retrying never gets past step one.
+   * That is a permanent failure, not a transient one: every later poll repeats
+   * the same doomed call, and the board shows a timetable time for a train two
+   * hours down until somebody notices.
+   *
+   * So an uncalibrated station probes forward a day at a time until a
+   * departure answers. The first one that does names the true offset outright
+   * — it carries both the run's departure date and the stop's own date — so
+   * this converges on the exact run rather than settling for the run it
+   * happened to find.
+   */
   private async resolve(
     trainNo: string,
     serviceDate: string,
     stationCode: string,
   ): Promise<{ body: RailKitResponse; row: RailKitStation | undefined }> {
-    const known = this.dayOffset.get(trainNo)
-    let { body, row } = await this.fetchFor(trainNo, serviceDate, stationCode, known ?? 0)
+    const key = RailKitTrainStatusProvider.offsetKey(trainNo, stationCode)
+    const known = this.dayOffset.get(key)
+    if (known !== undefined) {
+      return this.fetchFor(trainNo, serviceDate, stationCode, known)
+    }
 
-    // Any response tells us how many days after departure this train reaches
-    // this station, because it carries both dates. Learn it once, then ask for
-    // the right departure from then on.
-    if (known === undefined && row) {
-      const offset = dayOffsetOf(row.arrival?.scheduled, body.data?.date)
-      if (offset !== null) {
-        this.dayOffset.set(trainNo, offset)
-        if (offset !== 0) {
-          const retry = await this.fetchFor(trainNo, serviceDate, stationCode, offset)
-          if (retry.row) {
-            body = retry.body
-            row = retry.row
-          }
-        }
+    // Whatever went wrong on the first probe is the honest failure to report:
+    // later probes ask about departures nobody enquired after, and their
+    // errors describe dates the caller never mentioned.
+    let firstFailure: unknown = null
+
+    for (let probe = 0; probe <= MAX_DAY_OFFSET; probe++) {
+      let attempt: { body: RailKitResponse; row: RailKitStation | undefined }
+      try {
+        attempt = await this.fetchFor(trainNo, serviceDate, stationCode, probe)
+      } catch (err) {
+        firstFailure ??= err
+        continue
+      }
+      if (!attempt.row) {
+        firstFailure ??= new TrainStatusUnavailable(
+          `train ${trainNo} does not stop at ${stationCode.toUpperCase()} on the returned route`,
+        )
+        continue
+      }
+
+      // A real run in hand: it states its own offset, however far it is from
+      // the one we guessed.
+      const offset = dayOffsetOf(attempt.row.arrival?.scheduled, attempt.body.data?.date)
+      if (offset === null || offset === probe) {
+        this.dayOffset.set(key, offset ?? probe)
+        return attempt
+      }
+
+      // Right train, wrong departure. Go straight to the one that reaches us
+      // on the date we were asked about — and take its answer, including "does
+      // not stop here": falling back to the run in hand would report a
+      // different day's train as though it were this one, which is the whole
+      // failure this offset exists to prevent.
+      this.dayOffset.set(key, offset)
+      try {
+        return await this.fetchFor(trainNo, serviceDate, stationCode, offset)
+      } catch (err) {
+        // RailKit answers a departure it has dropped with "Train data not
+        // available for date: 01-Sep-2026" — a date nobody typed, on a page
+        // where they typed the 2nd. Say which run we went looking for, or the
+        // message reads as a bug in us.
+        throw new TrainStatusUnavailable(
+          `no data for the run of ${trainNo} reaching ${stationCode.toUpperCase()} on ` +
+            `${serviceDate}: it departs its source on ${shiftIsoDate(serviceDate, -offset)}, and ` +
+            `${err instanceof Error ? err.message : 'the feed refused'}`,
+        )
       }
     }
 
-    return { body, row }
+    throw firstFailure ?? new TrainStatusUnavailable(`no data for train ${trainNo}`)
   }
 
   /**
