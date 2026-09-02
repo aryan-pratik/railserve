@@ -58,6 +58,48 @@ describe('train status cache', () => {
     expect(after.lastSuccessAt?.getTime()).toBe(good.lastSuccessAt?.getTime())
   })
 
+  it('keeps the last known value when a successful reading carries no arrival time', async () => {
+    const scheduled = new Date('2026-08-27T13:25:00+05:30')
+    const good = await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
+    expect(good.etaAt).toBeInstanceOf(Date)
+
+    // Seen in production: RailKit returned "--" for Kanpur on 12561 while the
+    // halt before it reported 1h26m down and the halt after it carried a
+    // projection — only the stop we needed was missing. That is a successful
+    // call, not a failure, and copying it over replaced a 10:36 ETA with
+    // nothing, so the board fell back to a booked time that still looked like
+    // an answer.
+    vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
+      name: 'blank',
+      getStatus: async () => ({ etaAt: null, delayMinutes: null, platform: null, providerUpdatedAt: null }),
+    })
+
+    const after = await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
+    expect(after.etaAt?.getTime()).toBe(good.etaAt?.getTime())
+    expect(after.delayMinutes).toBe(good.delayMinutes)
+    expect(after.platform).toBe(good.platform)
+    // Nothing was learned, so the "last time we knew something" marker holds —
+    // otherwise the age shown to a person resets on an empty answer.
+    expect(after.lastSuccessAt?.getTime()).toBe(good.lastSuccessAt?.getTime())
+    // It was still a successful call, so it is not reported as a feed failure.
+    expect(after.lastError).toBeNull()
+  })
+
+  it('still records a reading that has a delay but no arrival time', async () => {
+    const scheduled = new Date('2026-08-27T13:25:00+05:30')
+    await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
+
+    vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
+      name: 'partial',
+      getStatus: async () => ({ etaAt: null, delayMinutes: 45, platform: '4', providerUpdatedAt: null }),
+    })
+
+    const after = await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
+    // A delay with no ETA is still news — "45 minutes down" is actionable.
+    expect(after.delayMinutes).toBe(45)
+    expect(after.platform).toBe('4')
+  })
+
   it('serves many orders on one train from a single provider call', async () => {
     const spy = vi.spyOn(providerFactory, 'getTrainStatusProvider')
     const orders = Array.from({ length: 10 }, () => ({

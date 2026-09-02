@@ -33,13 +33,44 @@ export async function refreshTrainStatus(
 
   try {
     const reading = await provider.getStatus(key.trainNo, key.serviceDate, key.stationCode)
+
+    // A reading that carries no arrival time is the feed having nothing to
+    // say, not the train having no arrival time — and the two must not be
+    // written the same way.
+    //
+    // RailKit sometimes publishes no time for a stop at all: 12561 sat at
+    // "actual": "--" for Kanpur while the halt before it (Prayagraj) reported
+    // 1h26m down and the halt after it (Aligarh) carried a projection. Only
+    // the one stop we care about was missing. Copying that over a good ETA
+    // replaced 10:36 with nothing, and the board fell back to a booked time —
+    // which is worse than saying nothing, because it still looks like an
+    // answer.
+    //
+    // So an empty reading keeps what we already knew, exactly as a failed
+    // fetch does. lastSuccessAt deliberately does not move: it means the last
+    // time we actually learned something, and the age shown to a person
+    // should not reset because we asked and were told nothing.
+    const learnedSomething = reading.etaAt !== null || reading.delayMinutes !== null
+    const live = learnedSomething
+      ? { etaAt: reading.etaAt, delayMinutes: reading.delayMinutes }
+      : {}
+    // Platform is independent: it survives after arrival and is worth keeping
+    // whenever it is offered, but never blanked by an omission.
+    const platform = reading.platform !== null ? { platform: reading.platform } : {}
+    // Always written, including when it is null. This is how old the upstream's
+    // own information is, and holding a previous run's value here would
+    // overstate how far the ETA above can be trusted.
+    const upstream = { providerUpdatedAt: reading.providerUpdatedAt }
+
     const doc = await TrainStatus.findOneAndUpdate(
       filter,
       {
         $set: {
-          ...reading,
+          ...live,
+          ...platform,
+          ...upstream,
           fetchedAt: now,
-          lastSuccessAt: now,
+          ...(learnedSomething ? { lastSuccessAt: now } : {}),
           lastError: null,
           provider: provider.name,
         },
@@ -250,6 +281,7 @@ export function timingFor<
   if (!order.trainNo) {
     return {
       effectiveArrival: order.scheduledArrival ?? null,
+      scheduledArrival: order.scheduledArrival ?? null,
       source: 'SCHEDULED',
       delayMinutes: null,
       platform: null,
@@ -267,6 +299,7 @@ export function timingFor<
       }),
     ) ?? {
       effectiveArrival: order.scheduledArrival ?? null,
+      scheduledArrival: order.scheduledArrival ?? null,
       source: 'SCHEDULED',
       delayMinutes: null,
       platform: null,
