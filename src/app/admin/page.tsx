@@ -103,6 +103,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         ),
       ],
       arrivalLabel: formatTimeIST(t.effectiveArrival),
+      // Only when the live ETA has actually moved off the booked time —
+      // otherwise the card would print the same time twice.
+      bookedLabel:
+        t.scheduledArrival && t.effectiveArrival &&
+        t.scheduledArrival.getTime() !== t.effectiveArrival.getTime()
+          ? formatTimeIST(t.scheduledArrival)
+          : null,
       delayMinutes: t.delayMinutes,
       platform: t.platform,
       arrivalIso: t.effectiveArrival?.toISOString() ?? null,

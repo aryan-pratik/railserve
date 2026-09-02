@@ -33,6 +33,11 @@ export type TrainGroup = {
   stationCode: string
   outletNames: string[]
   arrivalLabel: string
+  /**
+   * The time the orders were booked against, when it differs from the live
+   * ETA. Null when they agree, so the card does not print the same time twice.
+   */
+  bookedLabel: string | null
   delayMinutes: number | null
   platform: string | null
   arrivalIso: string | null
@@ -135,11 +140,28 @@ export function TrainGroups({
                       <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted">
                         ETA at next stop
                       </span>
-                      <span className="block text-sm font-bold tabular-nums text-accent">
-                        {g.arrivalLabel}
+                      <span className="flex items-baseline justify-end gap-1.5">
+                        {/* What the orders were booked against, when the live
+                            ETA has moved off it. Without this the card shows a
+                            time with nothing to compare it to, and a two-hour
+                            change looks the same as no change at all. */}
+                        {g.bookedLabel ? (
+                          <span
+                            className="text-xs tabular-nums text-faint line-through decoration-faint/60"
+                            title="The arrival time these orders were booked against"
+                          >
+                            {g.bookedLabel}
+                          </span>
+                        ) : null}
+                        <span className="text-sm font-bold tabular-nums text-accent">
+                          {g.arrivalLabel}
+                        </span>
                       </span>
                       {g.delayMinutes !== null && g.delayMinutes > 5 ? (
-                        <span className="block text-[11px] font-semibold text-red-600">
+                        <span
+                          className="block text-[11px] font-semibold text-red-600"
+                          title="How late the railway reports this train, against its own timetable"
+                        >
                           {lateLabel(g.delayMinutes)}
                         </span>
                       ) : null}
