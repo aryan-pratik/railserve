@@ -31,8 +31,21 @@ path); this doc is specifically about *this* VM's constraints.
   never reachable from outside the box even if the NSG ever changes.
   `uiis`'s own postgres/redis containers are untouched.
 - **Own pm2 processes**: `railserve-web` (`next start -p 3001`) and
-  `railserve-worker` (`scripts/worker.ts` — train polling, leave-now alerts,
-  Gmail watch renewal). Neither touches `uiis`'s pm2/docker processes.
+  `railserve-worker`. Neither touches `uiis`'s pm2/docker processes.
+
+  `railserve-worker` is **stale** — it runs a `scripts/worker.ts` that was
+  deleted from the repo when BullMQ was dropped, so the copy on the VM is the
+  only one left. It polls the VM's own Mongo, not the Vercel database the
+  crontab feeds, and it spends `TRAIN_API_KEY` quota doing it. Anything
+  periodic now goes through the cron endpoints below; retire this process
+  unless the VM-hosted app at `/railserve/` is still being used.
+
+- **Crontab** (`crontab -l` as `azureuser`): this VM is also the scheduler for
+  the **Vercel** deployment, because Hobby allows only one cron invocation a
+  day. It drives `/api/cron/train-poll` every 2 minutes and
+  `/api/cron/gmail-sync` every minute against `railserve.vercel.app`, both
+  authenticated with `x-cron-token`. Back the crontab up before editing it —
+  there is no other copy.
 - **nginx**: one added `location /railserve/` block inside the existing
   `/etc/nginx/sites-available/uiis` file (that file is the whole site config
   for port 8080 — there's nowhere else to put it without a second
