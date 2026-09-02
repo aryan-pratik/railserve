@@ -74,8 +74,24 @@ testing (including mobile builds) without touching production data.
 
 ## Cron
 
-`vercel.json` schedules `/api/cron/train-poll` every 10 minutes. It refreshes
-live train status and fires the leave-now alert.
+`/api/cron/train-poll` refreshes live train status and fires the leave-now
+alert. **`vercel.json` does not schedule it** — Hobby allows one cron
+invocation per day, which is useless for this, so both cron endpoints are
+driven from the Azure VM's crontab instead (see `DEPLOY.md`):
+
+```
+*/2 * * * *  ... /api/cron/train-poll     # every 2 minutes
+*   * * * *  ... /api/cron/gmail-sync     # every minute
+```
+
+Two minutes is not the polling rate. The tick makes no upstream call unless a
+train's own tier has elapsed (40 min when it is over two hours out, 30 in the
+hour before that, 15 inside the last hour), so this is a cheap clock rather
+than a poll — a train on the 40-minute tier is skipped 19 ticks out of 20.
+
+This doc previously claimed `vercel.json` scheduled it. It never did, and the
+result was that nothing refreshed train status unless somebody had a board
+open, and the leave-now alert never fired at all.
 
 `/api/cron/gmail-sync` polls Gmail for new order emails and ingests them —
 same shape, same auth, same no-worker approach. No Pub/Sub topic and no
