@@ -75,6 +75,48 @@ export function FeedUpdated({ at }: { at: Date | null }) {
   )
 }
 
+/**
+ * Our own polling cycle: when this train was last checked, and when it is due
+ * again.
+ *
+ * The board reloads every 30 seconds, which makes everything on it look
+ * equally live. It is not — the data behind a train more than two hours out is
+ * only re-fetched every 40 minutes, and the render in between is the same
+ * cached row painted again. Without this, a reading confirmed seconds ago and
+ * one that has sat untouched for half an hour are the same picture, and the
+ * only way to tell a working poller from a stuck one is to stare at a number
+ * that may not be due to move for another twenty minutes.
+ *
+ * "next" is the earliest, not the exact moment — the cron ticks every two
+ * minutes and any board render can trigger the refresh early — so once a row
+ * is past due it says so rather than printing a time in the past.
+ */
+export function CheckCycle({
+  checkedAt, nextCheckAt, now,
+}: {
+  checkedAt: Date | null
+  nextCheckAt: Date | null
+  now: Date
+}) {
+  if (!checkedAt) return null
+
+  const due = !nextCheckAt || nextCheckAt <= now
+
+  return (
+    <span
+      className="text-xs tabular-nums text-faint"
+      title={
+        'When this app last asked the railway about this train, and when it is ' +
+        'due to ask again. Trains further out are checked less often — 40 min ' +
+        'over two hours away, 30 min inside that, 15 min in the last hour.'
+      }
+    >
+      checked {formatTimeIST(checkedAt)} · next{' '}
+      {due ? 'due now' : formatTimeIST(nextCheckAt)}
+    </span>
+  )
+}
+
 export function PlatformBadge({ platform }: { platform: string | null }) {
   if (!platform) {
     return (
@@ -123,10 +165,11 @@ function WasTime({ timing }: { timing: TimingView }) {
 
 /** One-line arrival summary: was → now, live/scheduled, delay, platform, staleness. */
 export function TrainTiming({
-  timing, showPlatform = true,
+  timing, showPlatform = true, now = new Date(),
 }: {
   timing: TimingView
   showPlatform?: boolean
+  now?: Date
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -147,6 +190,11 @@ export function TrainTiming({
       {showPlatform ? <PlatformBadge platform={timing.platform} /> : null}
       <StaleFlag timing={timing} />
       <FeedUpdated at={timing.providerUpdatedAt} />
+      <CheckCycle
+        checkedAt={timing.checkedAt}
+        nextCheckAt={timing.nextCheckAt}
+        now={now}
+      />
     </div>
   )
 }

@@ -288,6 +288,8 @@ export function timingFor<
       ageMinutes: null,
       stale: false,
       providerUpdatedAt: null,
+      checkedAt: null,
+      nextCheckAt: null,
     }
   }
   return (
@@ -306,6 +308,8 @@ export function timingFor<
       ageMinutes: null,
       stale: false,
       providerUpdatedAt: null,
+      checkedAt: null,
+      nextCheckAt: null,
     }
   )
 }

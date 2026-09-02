@@ -83,6 +83,22 @@ export type TimingView = {
    * it matters — and the second is the one that bounds the ETA.
    */
   providerUpdatedAt: Date | null
+  /**
+   * When WE last asked the provider, and the earliest we will ask again.
+   *
+   * The board refreshes itself every 30 seconds but the data behind it does
+   * not — a train on the 40-minute tier is skipped 19 renders out of 20, by
+   * design. Without these two the screen looks equally live either way, so a
+   * time that has not moved in half an hour is indistinguishable from one
+   * confirmed a moment ago, and there is no way to tell a working system from
+   * a stuck one except by watching a number that may not be due to change.
+   *
+   * `nextCheckAt` is the earliest, not the exact moment: the cron ticks every
+   * two minutes and any board render can also trigger the refresh, so the real
+   * update lands shortly after.
+   */
+  checkedAt: Date | null
+  nextCheckAt: Date | null
 }
 
 /**
@@ -117,6 +133,8 @@ export function buildTimingView(params: {
       ageMinutes: null,
       stale: false,
       providerUpdatedAt: null,
+      checkedAt: null,
+      nextCheckAt: null,
     }
   }
 
@@ -134,6 +152,12 @@ export function buildTimingView(params: {
     ageMinutes,
     stale: isStale(reading.fetchedAt, minutesToArrival, now),
     providerUpdatedAt: reading.providerUpdatedAt ?? null,
+    checkedAt: reading.fetchedAt,
+    // Same tier isStale() is about to apply, so the UI and the poller cannot
+    // disagree about when this row comes due.
+    nextCheckAt: new Date(
+      reading.fetchedAt.getTime() + pollIntervalMinutes(minutesToArrival) * 60_000,
+    ),
   }
 }
 

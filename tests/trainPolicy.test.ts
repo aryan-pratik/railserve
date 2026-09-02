@@ -111,6 +111,50 @@ describe('timing view', () => {
     expect(v.ageMinutes).toBe(0)
   })
 
+  it('reports when it last checked and when the next check is due', () => {
+    // now is 10:00Z; an ETA of 11:25Z is 85 minutes out, which is the 30-minute
+    // tier. Checked at 09:55Z, so due again at 10:25Z.
+    const v = buildTimingView({
+      scheduledArrival: scheduled,
+      reading: {
+        etaAt: at('2026-08-27T11:25:00Z'),
+        delayMinutes: 10,
+        platform: '3',
+        fetchedAt: at('2026-08-27T09:55:00Z'),
+      },
+      now,
+    })
+    expect(v.checkedAt).toEqual(at('2026-08-27T09:55:00Z'))
+    expect(v.nextCheckAt).toEqual(at('2026-08-27T10:25:00Z'))
+    // The UI and the poller must agree about when this row comes due.
+    expect(v.stale).toBe(false)
+  })
+
+  it('gives the same due time the staleness check is about to apply', () => {
+    // Inside the last hour the tier tightens to 15 minutes, so a reading taken
+    // 20 minutes ago is already past due — and both fields must say so.
+    const fetchedAt = at('2026-08-27T09:40:00Z')
+    const v = buildTimingView({
+      scheduledArrival: scheduled,
+      reading: {
+        etaAt: at('2026-08-27T10:30:00Z'),
+        delayMinutes: 0,
+        platform: '1',
+        fetchedAt,
+      },
+      now,
+    })
+    expect(v.nextCheckAt).toEqual(at('2026-08-27T09:55:00Z'))
+    expect(v.nextCheckAt!.getTime()).toBeLessThan(now.getTime())
+    expect(v.stale).toBe(true)
+  })
+
+  it('has nothing to report about checking when no reading is held', () => {
+    const v = buildTimingView({ scheduledArrival: scheduled, reading: null, now })
+    expect(v.checkedAt).toBeNull()
+    expect(v.nextCheckAt).toBeNull()
+  })
+
   it('carries the feed\'s own update time through, separately from our fetch age', () => {
     // Two different ages: we asked just now, the railway last knew 40 minutes
     // ago. Only the second bounds the ETA, so it must survive to the UI.

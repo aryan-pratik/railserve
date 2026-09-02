@@ -41,6 +41,14 @@ export type TrainGroup = {
   delayMinutes: number | null
   platform: string | null
   arrivalIso: string | null
+  /**
+   * Our own polling cycle for this train: when it was last checked against the
+   * railway, and when it comes due again. The board reloads far more often
+   * than the data behind it changes, so without these a row confirmed seconds
+   * ago and one untouched for half an hour look identical.
+   */
+  checkedAtIso: string | null
+  nextCheckAtIso: string | null
   orders: GroupOrder[]
 }
 
@@ -58,6 +66,16 @@ const STATUS_PILL: Record<string, { bg: string; text: string; ring: string; dot:
 }
 
 const TH = 'px-4 py-3 text-left text-xs font-semibold text-muted tracking-wide uppercase'
+
+/** "9:10 am" in IST, from the ISO strings the server hands this client component. */
+function hhmm(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
 
 export function TrainGroups({
   groups,
@@ -138,7 +156,7 @@ export function TrainGroups({
                   <div className="flex items-center gap-4 shrink-0">
                     <div className="text-right">
                       <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted">
-                        ETA at next stop
+                        ETA at {g.stationCode}
                       </span>
                       <span className="flex items-baseline justify-end gap-1.5">
                         {/* What the orders were booked against, when the live
@@ -163,6 +181,22 @@ export function TrainGroups({
                           title="How late the railway reports this train, against its own timetable"
                         >
                           {lateLabel(g.delayMinutes)}
+                        </span>
+                      ) : null}
+                      {g.checkedAtIso ? (
+                        <span
+                          className="mt-0.5 block text-[10px] tabular-nums text-faint"
+                          title={
+                            'When this app last asked the railway about this train, and when ' +
+                            'it is due to ask again. Trains further out are checked less ' +
+                            'often — 40 min over two hours away, 30 min inside that, 15 min ' +
+                            'in the last hour.'
+                          }
+                        >
+                          checked {hhmm(g.checkedAtIso)} · next{' '}
+                          {g.nextCheckAtIso && new Date(g.nextCheckAtIso).getTime() > now
+                            ? hhmm(g.nextCheckAtIso)
+                            : 'due now'}
                         </span>
                       ) : null}
                     </div>

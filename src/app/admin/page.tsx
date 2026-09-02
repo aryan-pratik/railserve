@@ -113,6 +113,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
       delayMinutes: t.delayMinutes,
       platform: t.platform,
       arrivalIso: t.effectiveArrival?.toISOString() ?? null,
+      checkedAtIso: t.checkedAt?.toISOString() ?? null,
+      nextCheckAtIso: t.nextCheckAt?.toISOString() ?? null,
       orders: run.orders.map((o) => ({
         id: String(o._id),
         externalOrderId: o.externalOrderId,
