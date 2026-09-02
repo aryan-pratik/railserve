@@ -24,6 +24,11 @@ export function DelayPill({ delayMinutes }: { delayMinutes: number | null }) {
           ? 'bg-red-100 text-red-800 ring-red-200'
           : 'bg-amber-100 text-amber-800 ring-amber-200'
       }`}
+      // Worth stating, because it will not always equal the gap between the two
+      // times shown next to it: this is the railway's figure against the
+      // railway's timetable, while the struck-through time came from the
+      // aggregator's email. When they disagree, this one is about the train.
+      title="How late the railway reports this train, against its own timetable"
     >
       {label}
     </span>
@@ -85,7 +90,38 @@ export function PlatformBadge({ platform }: { platform: string | null }) {
   )
 }
 
-/** One-line arrival summary: time, live/scheduled, delay, platform, staleness. */
+/**
+ * The time the order was booked against, shown before the live one.
+ *
+ * Only when the two differ: repeating an unchanged time twice is noise on a
+ * board read at a glance. When they do differ it is the whole point — "09:10"
+ * alone does not say whether the kitchen planned around 08:39 or 06:35, and
+ * that difference is what somebody is actually reacting to.
+ *
+ * It also makes a real data problem visible. The delay pill is the railway's
+ * own figure, measured against ITS timetable, while this time comes from the
+ * aggregator's email — and on this route two of them disagree by about two
+ * hours. With one number on screen that is invisible; with both, it is obvious.
+ */
+function WasTime({ timing }: { timing: TimingView }) {
+  const was = timing.scheduledArrival
+  const now = timing.effectiveArrival
+  if (!was || !now || was.getTime() === now.getTime()) return null
+
+  return (
+    <>
+      <span
+        className="text-sm tabular-nums text-faint line-through decoration-faint/60"
+        title="The arrival time this order was booked against"
+      >
+        {formatTimeIST(was)}
+      </span>
+      <span aria-hidden className="text-xs text-faint">→</span>
+    </>
+  )
+}
+
+/** One-line arrival summary: was → now, live/scheduled, delay, platform, staleness. */
 export function TrainTiming({
   timing, showPlatform = true,
 }: {
@@ -94,6 +130,7 @@ export function TrainTiming({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <WasTime timing={timing} />
       <span className="text-sm font-semibold tabular-nums text-ink">
         {formatTimeIST(timing.effectiveArrival)}
       </span>

@@ -58,6 +58,16 @@ export function computeDispatchAt(params: {
 export type TimingView = {
   /** The time the run is actually expected, live if we have it. */
   effectiveArrival: Date | null
+  /**
+   * The time the ORDER was booked against, kept alongside the live one.
+   *
+   * Shown rather than replaced, because "09:10" on its own says nothing about
+   * whether that is the time the kitchen planned around. Seeing both is also
+   * the only way to notice when an aggregator's stated arrival disagrees with
+   * the railway's — on this route two of them are out by about two hours, and
+   * with a single number on screen nobody would ever find that.
+   */
+  scheduledArrival: Date | null
   source: 'LIVE' | 'SCHEDULED'
   delayMinutes: number | null
   platform: string | null
@@ -100,6 +110,7 @@ export function buildTimingView(params: {
   if (!reading) {
     return {
       effectiveArrival: scheduledArrival,
+      scheduledArrival,
       source: 'SCHEDULED',
       delayMinutes: null,
       platform: null,
@@ -115,6 +126,7 @@ export function buildTimingView(params: {
 
   return {
     effectiveArrival,
+    scheduledArrival,
     // A reading with no usable ETA is not live timing, whatever else it carried.
     source: reading.etaAt ? 'LIVE' : 'SCHEDULED',
     delayMinutes: reading.delayMinutes,
