@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatTimeIST } from '@/lib/format'
 import type { TimingView } from '@/lib/train/policy'
-import { DelayPill, FeedUpdated, PlatformBadge, StaleFlag } from './TrainTiming'
+import { CheckCycle, DelayPill, FeedUpdated, PlatformBadge, StaleFlag } from './TrainTiming'
 import { UrgencyRail } from './UrgencyRail'
 import { Card, CoachChip, StatusBadge, TypeBadge } from './ui'
 
@@ -105,6 +105,13 @@ export function TrainRunCard({
             <DelayPill delayMinutes={run.timing.delayMinutes} />
             <StaleFlag timing={run.timing} />
             <FeedUpdated at={run.timing.providerUpdatedAt} />
+          </div>
+          <div className="mt-1 flex justify-end">
+            <CheckCycle
+              checkedAt={run.timing.checkedAt}
+              nextCheckAt={run.timing.nextCheckAt}
+              now={new Date(serverNow)}
+            />
           </div>
         </div>
       </div>
