@@ -7,9 +7,10 @@ import { findById } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
 import { transitionRun, handRunToRider, type RunActionResult } from '@/lib/repo/runRepo'
 import { NotFoundError } from '@/lib/authContext'
-import { timingForOrders, timingFor } from '@/lib/train/service'
+import { timingForOrders, timingFor, forceRefreshTrainStatus } from '@/lib/train/service'
 import { env } from '@/lib/env'
 import { shouldWarnAboutDelay } from '@/lib/train/policy'
+import type { RefreshTrainState } from '@/components/RefreshTrainButton'
 
 /**
  * Plan §9 delay guard: before printing a KOT, check live status. If the train
@@ -44,6 +45,27 @@ export async function checkKotDelay(orderId: string): Promise<{
     expected: t.effectiveArrival ? t.effectiveArrival.toISOString() : null,
     thresholdMinutes: threshold,
   }
+}
+
+/**
+ * "Check now" for the train behind one order — see RefreshTrainButton. Any
+ * order riding the same train shares this cache row, so one click updates
+ * the whole board's view of it, not just this order's.
+ */
+export async function forceRefreshOrderTrain(
+  _prev: RefreshTrainState,
+  formData: FormData,
+): Promise<RefreshTrainState> {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const order = await findById(ctx, orderId)
+  if (!order) return { error: 'Order not found' }
+
+  const row = await forceRefreshTrainStatus(order)
+  revalidatePath('/store')
+  if (!row) return { error: 'This order has no train.' }
+  if (row.lastError) return { error: row.lastError }
+  return { ok: 'Refreshed' }
 }
 
 export type StoreActionState = { error?: string; ok?: string }

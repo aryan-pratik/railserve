@@ -8,7 +8,9 @@ import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
 import { Card, CardHeader, StatusBadge, TypeBadge } from '@/components/ui'
 import { TrainTiming } from '@/components/TrainTiming'
+import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { timingForOrders, timingFor } from '@/lib/train/service'
+import { forceRefreshOrderTrain } from './actions'
 import { EventLog } from '@/components/EventLog'
 import { DeliveryProof } from '@/components/DeliveryProof'
 import { AssignAgents, TransitionButtons } from './AdminOrderActions'
@@ -91,7 +93,17 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
               <Row label="Train" value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}` : 'Not specified'} />
               <Row label="Station" value={order.stationCode} />
               <Row label="Scheduled arrival" value={formatIST(order.scheduledArrival)} />
-              <Row label="Expected" value={<TrainTiming timing={timing} />} />
+              <Row
+                label="Expected"
+                value={
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <TrainTiming timing={timing} />
+                    {order.trainNo ? (
+                      <RefreshTrainButton orderId={String(order._id)} action={forceRefreshOrderTrain} />
+                    ) : null}
+                  </span>
+                }
+              />
               {order.orderType === 'BULK' ? (
                 <>
                   <Row label="Pax" value={order.pax ?? '—'} />

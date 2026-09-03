@@ -57,7 +57,15 @@ export async function runTrainPollingTick(now = new Date()): Promise<PollSummary
     const minutesToArrival = target ? minutesBetween(now, target) : null
 
     let row = cachedRow
-    if (isStale(cachedRow?.fetchedAt ?? null, minutesToArrival, now, cachedRow?.arrived ?? false)) {
+    if (
+      isStale(
+        cachedRow?.fetchedAt ?? null,
+        minutesToArrival,
+        now,
+        cachedRow?.arrived ?? false,
+        cachedRow?.lastError != null,
+      )
+    ) {
       row = await refreshTrainStatus(key, { scheduledArrival: g.scheduledArrival })
       if (row.lastError) summary.failures += 1
       else summary.refreshed += 1

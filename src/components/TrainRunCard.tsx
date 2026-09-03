@@ -46,11 +46,18 @@ export function TrainRunCard({
   run,
   orderHref,
   footer,
+  refreshAction,
 }: {
   run: RunCardData
   /** Omit to render rows as plain text — the admin board links, the KOT view does not. */
   orderHref?: (orderId: string) => string
   footer?: ReactNode
+  /**
+   * "Check now" for this train, when the surface offers it. Left undefined on
+   * a surface that should not show it — the rider board does not, since a
+   * rider is not the one deciding whether to spend an extra API call.
+   */
+  refreshAction?: ReactNode
 }) {
   const codTotal = run.orders
     .filter((o) => o.paymentMode === 'COD')
@@ -106,12 +113,13 @@ export function TrainRunCard({
             <StaleFlag timing={run.timing} />
             <FeedUpdated at={run.timing.providerUpdatedAt} />
           </div>
-          <div className="mt-1 flex justify-end">
+          <div className="mt-1 flex items-center justify-end gap-1">
             <CheckCycle
               checkedAt={run.timing.checkedAt}
               nextCheckAt={run.timing.nextCheckAt}
               now={new Date(serverNow)}
             />
+            {refreshAction}
           </div>
         </div>
       </div>

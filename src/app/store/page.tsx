@@ -16,6 +16,8 @@ import { AutoRefresh } from '@/components/AutoRefresh'
 import { env } from '@/lib/env'
 import { ButtonLink, EmptyState, PageHeader, Tabs } from '@/components/ui'
 import { StoreRunActions } from './StoreRunActions'
+import { forceRefreshOrderTrain } from './actions'
+import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 
 export const metadata = { title: 'Board · RailServe' }
 
@@ -156,6 +158,11 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
               key={card.key}
               run={card}
               orderHref={(id) => `/store/orders/${id}`}
+              refreshAction={
+                card.orders[0] ? (
+                  <RefreshTrainButton orderId={card.orders[0].id} action={forceRefreshOrderTrain} />
+                ) : null
+              }
               footer={
                 <StoreRunActions
                   runKey={card.key}

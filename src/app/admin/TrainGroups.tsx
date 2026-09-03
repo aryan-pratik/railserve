@@ -6,6 +6,7 @@ import { formatRupees } from '@/lib/format'
 import { statusLabel } from '@/components/ui'
 import { IconTrain, IconChevronDown } from '@/components/Icons'
 import { OrderSlideOver } from './OrderSlideOver'
+import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
 
 export type GroupOrder = {
   id: string
@@ -82,9 +83,12 @@ function hhmm(iso: string): string {
 export function TrainGroups({
   groups,
   serverNow,
+  refreshAction,
 }: {
   groups: TrainGroup[]
   serverNow: string
+  /** "Check now" for a group's train — see RefreshTrainButton. */
+  refreshAction: (prev: RefreshTrainState, formData: FormData) => Promise<RefreshTrainState>
 }) {
   const ticked = useNowMs(30_000)
   const now = ticked ?? new Date(serverNow).getTime()
@@ -201,9 +205,9 @@ export function TrainGroups({
                             className="mt-0.5 block text-[10px] tabular-nums text-faint"
                             title={
                               'When this app last asked the railway about this train, and when ' +
-                              'it is due to ask again. Trains further out are checked less ' +
-                              'often — 40 min over two hours away, 30 min inside that, 15 min ' +
-                              'in the last hour.'
+                              'it is due to ask again. Checks get more frequent the closer the ' +
+                              'train gets — as little as once an hour when it is far out, down ' +
+                              'to every minute in its last five.'
                             }
                           >
                             checked {hhmm(g.checkedAtIso)} · next{' '}
@@ -225,6 +229,15 @@ export function TrainGroups({
                     </div>
                   </div>
                 </button>
+
+                {/* Outside the toggle button on purpose — a submit button
+                    cannot nest inside another button, and a click here must
+                    not also expand or collapse the row. */}
+                {g.orders[0] ? (
+                  <div className="flex items-center pr-3">
+                    <RefreshTrainButton orderId={g.orders[0].id} action={refreshAction} />
+                  </div>
+                ) : null}
               </div>
 
               {isOpen ? (

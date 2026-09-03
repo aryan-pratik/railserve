@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button, FormNote, StatusBadge, statusLabel } from '@/components/ui'
 import { formatIST, formatMoney, formatTimeIST } from '@/lib/format'
-import { adminTransitionAction, type ActionState } from './orders/[id]/actions'
+import { adminTransitionAction, forceRefreshOrderTrain, type ActionState } from './orders/[id]/actions'
 import { fetchOrderDetail, type OrderDetail } from './orderDetail'
+import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 
 const initial: ActionState = {}
 
@@ -153,6 +154,9 @@ export function OrderSlideOver({
                       <span className="rounded bg-ink px-1.5 py-0.5 text-[11px] font-bold text-white">
                         PF {detail.platform}
                       </span>
+                    ) : null}
+                    {detail.trainNo ? (
+                      <RefreshTrainButton orderId={detail.id} action={forceRefreshOrderTrain} />
                     ) : null}
                   </span>
                 </div>
