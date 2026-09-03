@@ -71,7 +71,7 @@ describe('train status cache', () => {
     // an answer.
     vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
       name: 'blank',
-      getStatus: async () => ({ etaAt: null, delayMinutes: null, platform: null, providerUpdatedAt: null }),
+      getStatus: async () => ({ etaAt: null, delayMinutes: null, platform: null, providerUpdatedAt: null, arrived: false }),
     })
 
     const after = await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
@@ -85,13 +85,44 @@ describe('train status cache', () => {
     expect(after.lastError).toBeNull()
   })
 
+  it('marks a row arrived from a successful reading, and never un-marks it', async () => {
+    vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
+      name: 'departed',
+      getStatus: async () => ({
+        etaAt: new Date('2026-08-27T13:39:00+05:30'),
+        delayMinutes: 4,
+        platform: '2',
+        providerUpdatedAt: null,
+        arrived: true,
+      }),
+    })
+    const arrived = await refreshTrainStatus(KEY, { scheduledArrival: new Date('2026-08-27T13:25:00+05:30') })
+    expect(arrived.arrived).toBe(true)
+
+    // A later call claiming arrived:false — a stale cached response replayed,
+    // say — must not put the train back into rotation. $max only ever moves
+    // this forward.
+    vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
+      name: 'confused',
+      getStatus: async () => ({
+        etaAt: new Date('2026-08-27T13:39:00+05:30'),
+        delayMinutes: 4,
+        platform: '2',
+        providerUpdatedAt: null,
+        arrived: false,
+      }),
+    })
+    const after = await refreshTrainStatus(KEY, { scheduledArrival: new Date('2026-08-27T13:25:00+05:30') })
+    expect(after.arrived).toBe(true)
+  })
+
   it('still records a reading that has a delay but no arrival time', async () => {
     const scheduled = new Date('2026-08-27T13:25:00+05:30')
     await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
 
     vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
       name: 'partial',
-      getStatus: async () => ({ etaAt: null, delayMinutes: 45, platform: '4', providerUpdatedAt: null }),
+      getStatus: async () => ({ etaAt: null, delayMinutes: 45, platform: '4', providerUpdatedAt: null, arrived: false }),
     })
 
     const after = await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
@@ -206,5 +237,25 @@ describe('polling worker tick', () => {
       const fired = o.events.filter((e) => (e.meta as Record<string, unknown>)?.action === 'LEAVE_NOW')
       expect(fired).toHaveLength(1)
     }
+  })
+
+  it('never refreshes a train once it has been confirmed arrived, however old the row gets', async () => {
+    // Seen in production: trains that had already departed CNB were still
+    // being re-polled every 15 minutes because the tick only ever asked
+    // "has enough time passed", never "is this train even still moving".
+    // A row old enough to fail every tier must still be left untouched once
+    // arrived is set, exactly as a provider would set it after a real
+    // departure — this is the mechanism, not the provider, being tested.
+    const veryOld = new Date(Date.now() - 999 * 60_000)
+    await TrainStatus.updateOne(
+      { trainNo: '12312' },
+      { $set: { fetchedAt: veryOld, arrived: true } },
+    )
+
+    await runTrainPollingTick()
+
+    const row = await TrainStatus.findOne({ trainNo: '12312' })
+    // Untouched fetchedAt is the proof: no upstream call was made for it.
+    expect(row!.fetchedAt.getTime()).toBe(veryOld.getTime())
   })
 })

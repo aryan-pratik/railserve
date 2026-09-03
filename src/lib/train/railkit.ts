@@ -141,6 +141,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       // is "" until the run starts, which is a real answer ("nothing has
       // happened yet"), not a parse failure.
       providerUpdatedAt: parseLastUpdate(body.data?.lastUpdate),
+      arrived: hasDeparted(row),
     }
   }
 
@@ -286,6 +287,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       providerUpdatedAt: parseLastUpdate(body.data?.lastUpdate),
       stopsAway,
       distanceKm: Number.isFinite(distance) && distance > 0 ? distance : null,
+      arrived: hasDeparted(row),
     }
   }
 
@@ -431,6 +433,23 @@ function parseDelay(value: string | undefined): number | null {
   // Fail closed rather than guess: a delay we cannot read is not a delay of
   // zero, and reporting zero would quietly cancel the KOT warning.
   return null
+}
+
+/**
+ * True once RailKit itself says the train has left this halt.
+ *
+ * `status` moves passed → current → upcoming as the train approaches, so
+ * `passed` means departure is done, not merely that arrival happened — a
+ * train sitting at the platform is `current`, and its exact departure time
+ * can still change while it is. Only `passed` is genuinely final.
+ *
+ * Deliberately not inferred from comparing the ETA to wall-clock time: a
+ * train running later than our last known reading would still show an ETA in
+ * the past, and treating that as "arrived" would stop polling exactly the
+ * train most in need of another check.
+ */
+function hasDeparted(row: RailKitStation): boolean {
+  return row.status === 'passed'
 }
 
 /** Strips a "PF " prefix if one ever appears — the UI renders "PF {platform}" itself. */

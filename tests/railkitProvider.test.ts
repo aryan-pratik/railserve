@@ -186,6 +186,57 @@ describe('RailKitTrainStatusProvider', () => {
     )
   })
 
+  describe('arrived — when polling should stop', () => {
+    it('is false while the halt is still upcoming', async () => {
+      // CNB in the fixture is "upcoming" — the ordinary case, the train has
+      // not reached it yet.
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('12561', '2026-09-02', 'CNB')
+      expect(r.arrived).toBe(false)
+    })
+
+    it('is true once RailKit marks the halt passed', async () => {
+      // Not inferred from the ETA being in the past — genuinely told so.
+      const body = structuredClone(RAILKIT_12561) as {
+        data: { timeline: { stationCode: string; status?: string }[] }
+      }
+      const cnb = body.data.timeline.find((s) => s.stationCode === 'CNB')!
+      cnb.status = 'passed'
+      trackTrain.mockResolvedValue(body)
+
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('12561', '2026-09-02', 'CNB')
+      expect(r.arrived).toBe(true)
+    })
+
+    it('is false while the train is sitting at the platform, not yet departed', async () => {
+      // "current" means it is AT the halt right now — its exact departure
+      // time can still change, so this is not final yet.
+      const body = structuredClone(RAILKIT_12561) as {
+        data: { timeline: { stationCode: string; status?: string }[] }
+      }
+      const cnb = body.data.timeline.find((s) => s.stationCode === 'CNB')!
+      cnb.status = 'current'
+      trackTrain.mockResolvedValue(body)
+
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('12561', '2026-09-02', 'CNB')
+      expect(r.arrived).toBe(false)
+    })
+
+    it('agrees between getStatus and getDetail for the same response', async () => {
+      const body = structuredClone(RAILKIT_12561) as {
+        data: { timeline: { stationCode: string; status?: string }[] }
+      }
+      body.data.timeline.find((s) => s.stationCode === 'CNB')!.status = 'passed'
+      trackTrain.mockResolvedValue(body)
+
+      const p = new RailKitTrainStatusProvider('key')
+      const detail = await p.getDetail('12561', '2026-09-02', 'CNB')
+      expect(detail.arrived).toBe(true)
+    })
+  })
+
   describe('delay strings', () => {
     const withDelay = (delay: string, scheduled = '09:35 02-Sep') => {
       const body = structuredClone(RAILKIT_12561) as {
