@@ -49,6 +49,8 @@ export type TrainGroup = {
    */
   checkedAtIso: string | null
   nextCheckAtIso: string | null
+  /** The provider has confirmed this train left the station — see plan §8. */
+  arrived: boolean
   orders: GroupOrder[]
 }
 
@@ -184,20 +186,32 @@ export function TrainGroups({
                         </span>
                       ) : null}
                       {g.checkedAtIso ? (
-                        <span
-                          className="mt-0.5 block text-[10px] tabular-nums text-faint"
-                          title={
-                            'When this app last asked the railway about this train, and when ' +
-                            'it is due to ask again. Trains further out are checked less ' +
-                            'often — 40 min over two hours away, 30 min inside that, 15 min ' +
-                            'in the last hour.'
-                          }
-                        >
-                          checked {hhmm(g.checkedAtIso)} · next{' '}
-                          {g.nextCheckAtIso && new Date(g.nextCheckAtIso).getTime() > now
-                            ? hhmm(g.nextCheckAtIso)
-                            : 'due now'}
-                        </span>
+                        g.arrived ? (
+                          // A different message entirely, not "next: due now" —
+                          // that would read as about to check again, when the
+                          // true answer is there is no next check.
+                          <span
+                            className="mt-0.5 block text-[10px] font-medium tabular-nums text-faint"
+                            title="This train has left the station. Its arrival, delay and platform here are final, so live tracking has stopped."
+                          >
+                            arrived · tracking stopped
+                          </span>
+                        ) : (
+                          <span
+                            className="mt-0.5 block text-[10px] tabular-nums text-faint"
+                            title={
+                              'When this app last asked the railway about this train, and when ' +
+                              'it is due to ask again. Trains further out are checked less ' +
+                              'often — 40 min over two hours away, 30 min inside that, 15 min ' +
+                              'in the last hour.'
+                            }
+                          >
+                            checked {hhmm(g.checkedAtIso)} · next{' '}
+                            {g.nextCheckAtIso && new Date(g.nextCheckAtIso).getTime() > now
+                              ? hhmm(g.nextCheckAtIso)
+                              : 'due now'}
+                          </span>
+                        )
                       ) : null}
                     </div>
 

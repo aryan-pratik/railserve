@@ -110,6 +110,13 @@ export type TimingView = {
    */
   checkedAt: Date | null
   nextCheckAt: Date | null
+  /**
+   * True once the provider has confirmed this train left the station — see
+   * TrainStatusReading.arrived. `nextCheckAt` is null exactly when this is
+   * true: there is no next check, so the UI should say so plainly rather than
+   * show a countdown that will never arrive.
+   */
+  arrived: boolean
 }
 
 /**
@@ -129,6 +136,7 @@ export function buildTimingView(params: {
     platform: string | null
     fetchedAt: Date
     providerUpdatedAt?: Date | null
+    arrived?: boolean
   } | null
   now: Date
 }): TimingView {
@@ -146,9 +154,11 @@ export function buildTimingView(params: {
       providerUpdatedAt: null,
       checkedAt: null,
       nextCheckAt: null,
+      arrived: false,
     }
   }
 
+  const arrived = reading.arrived ?? false
   const effectiveArrival = reading.etaAt ?? scheduledArrival
   const minutesToArrival = effectiveArrival ? minutesBetween(now, effectiveArrival) : null
   const ageMinutes = Math.max(0, Math.floor((now.getTime() - reading.fetchedAt.getTime()) / 60_000))
@@ -161,14 +171,17 @@ export function buildTimingView(params: {
     delayMinutes: reading.delayMinutes,
     platform: reading.platform,
     ageMinutes,
-    stale: isStale(reading.fetchedAt, minutesToArrival, now),
+    stale: isStale(reading.fetchedAt, minutesToArrival, now, arrived),
     providerUpdatedAt: reading.providerUpdatedAt ?? null,
     checkedAt: reading.fetchedAt,
     // Same tier isStale() is about to apply, so the UI and the poller cannot
-    // disagree about when this row comes due.
-    nextCheckAt: new Date(
-      reading.fetchedAt.getTime() + pollIntervalMinutes(minutesToArrival) * 60_000,
-    ),
+    // disagree about when this row comes due — and once arrived, there is no
+    // "due" left to compute: null here is what tells the UI to stop showing
+    // a countdown and say the train has arrived instead.
+    nextCheckAt: arrived
+      ? null
+      : new Date(reading.fetchedAt.getTime() + pollIntervalMinutes(minutesToArrival) * 60_000),
+    arrived,
   }
 }
 

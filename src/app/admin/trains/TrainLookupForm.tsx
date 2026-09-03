@@ -104,6 +104,15 @@ export function TrainLookupForm({
               <p className="mb-3 rounded-lg bg-sunken px-3 py-2 text-sm text-ink">{r.statusNote}</p>
             ) : null}
 
+            {r.arrived ? (
+              <p
+                className="mb-3 text-xs font-medium text-faint"
+                title="This train has left the station. Its arrival, delay and platform here are final, so live tracking has stopped."
+              >
+                Train arrived · tracking stopped
+              </p>
+            ) : null}
+
             {/* What we are actually asking about — a delay is meaningless
                 without saying delayed to WHERE. */}
             <Row label="Delivering at" value={place(r.stationName, r.stationCode)} />

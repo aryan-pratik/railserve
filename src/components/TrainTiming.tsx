@@ -90,15 +90,31 @@ export function FeedUpdated({ at }: { at: Date | null }) {
  * "next" is the earliest, not the exact moment — the cron ticks every two
  * minutes and any board render can trigger the refresh early — so once a row
  * is past due it says so rather than printing a time in the past.
+ *
+ * An arrived train gets a different message entirely rather than "next: due
+ * now" — that would read as about to check again, when the true answer is
+ * there is no next check. The train left; asking again would learn nothing.
  */
 export function CheckCycle({
-  checkedAt, nextCheckAt, now,
+  checkedAt, nextCheckAt, now, arrived = false,
 }: {
   checkedAt: Date | null
   nextCheckAt: Date | null
   now: Date
+  arrived?: boolean
 }) {
   if (!checkedAt) return null
+
+  if (arrived) {
+    return (
+      <span
+        className="text-xs font-medium tabular-nums text-faint"
+        title="This train has left the station. Its arrival, delay and platform here are final, so live tracking has stopped."
+      >
+        arrived · tracking stopped
+      </span>
+    )
+  }
 
   const due = !nextCheckAt || nextCheckAt <= now
 
@@ -194,6 +210,7 @@ export function TrainTiming({
         checkedAt={timing.checkedAt}
         nextCheckAt={timing.nextCheckAt}
         now={now}
+        arrived={timing.arrived}
       />
     </div>
   )
