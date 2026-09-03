@@ -24,6 +24,13 @@ const TrainStatusSchema = new Schema(
     // not publish one, or before a run has started.
     providerUpdatedAt: { type: Date, default: null },
 
+    // True once the provider confirms the train has actually left this
+    // station, at which point its arrival/platform/delay here are final and
+    // polling stops (see TrainStatusReading.arrived for why this is not
+    // inferred from etaAt vs now). Never reset back to false — a later
+    // failed or empty read must not un-arrive a train that genuinely came.
+    arrived: { type: Boolean, default: false },
+
     // Set when the last fetch failed. The previous values are kept — degrading
     // to a known-old ETA beats showing nothing (§8) — but callers must be able
     // to tell the difference.

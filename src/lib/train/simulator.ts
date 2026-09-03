@@ -50,6 +50,10 @@ export class SimulatedTrainStatusProvider implements TrainStatusProvider {
     // A healthy feed, simulated: there is no real upstream to be behind, so
     // the reading is as current as the moment it was made. This keeps the
     // "feed updated" line exercised offline rather than only in production.
-    return { etaAt, delayMinutes, platform, providerUpdatedAt: new Date() }
+    //
+    // arrived stays false always, deliberately. A demo train that stopped
+    // polling itself would look broken rather than realistic, and the offline
+    // provider has no station-status concept to answer it honestly with.
+    return { etaAt, delayMinutes, platform, providerUpdatedAt: new Date(), arrived: false }
   }
 }

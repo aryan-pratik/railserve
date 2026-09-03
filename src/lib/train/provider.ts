@@ -19,6 +19,20 @@ export type TrainStatusReading = {
    * Providers whose payload does not carry it return null.
    */
   providerUpdatedAt: Date | null
+  /**
+   * True once the provider confirms the train has actually left this
+   * station — not merely that our projected ETA has passed.
+   *
+   * Those are different claims. An ETA slipping into the past just means a
+   * late train hasn't caught up to our last read yet, and stopping there
+   * would silently give up on exactly the train most worth still checking.
+   * "Arrived" means the feed itself says so — a `passed` halt with a real
+   * departure time — after which the platform, delay and arrival at this
+   * station are history and cannot change again, so nothing is gained by
+   * asking again. Providers that cannot tell the difference return false and
+   * polling continues exactly as before; nothing regresses for them.
+   */
+  arrived: boolean
 }
 
 /**
@@ -52,6 +66,8 @@ export type TrainDetail = {
   /** Stops still to go before it reaches us, when the route says. */
   stopsAway: number | null
   distanceKm: number | null
+  /** See TrainStatusReading.arrived — same meaning, same caution about it. */
+  arrived: boolean
 }
 
 export interface TrainStatusProvider {

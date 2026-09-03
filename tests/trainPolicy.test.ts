@@ -47,6 +47,23 @@ describe('staleness', () => {
     expect(isStale(fetchedAt, 180, now)).toBe(false)
     expect(isStale(fetchedAt, 30, now)).toBe(true)
   })
+
+  it('never refetches an arrived train, however old the row is', () => {
+    // Seen in production: trains that had departed CNB up to 13 hours earlier
+    // were still being re-polled every 15 minutes, because staleness only
+    // ever looked at age and proximity — never at whether the train itself
+    // was done. A day-old row for an arrived train must stay "not stale"
+    // forever, not just outlast one tier.
+    const veryOld = at('2026-08-26T00:00:00Z')
+    expect(isStale(veryOld, -800, now, true)).toBe(false)
+  })
+
+  it('still polls on the normal tier when the train has not been confirmed arrived', () => {
+    // arrived defaults to false, so existing callers that do not know about
+    // it behave exactly as before.
+    const fetchedAt = at('2026-08-27T09:40:00Z')
+    expect(isStale(fetchedAt, -800, now)).toBe(true)
+  })
 })
 
 describe('dispatchAt (plan §9)', () => {

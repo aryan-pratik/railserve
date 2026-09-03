@@ -74,6 +74,11 @@ export async function refreshTrainStatus(
           lastError: null,
           provider: provider.name,
         },
+        // $max rather than $set: false BSON-compares below true, so this can
+        // only ever flip a row from not-arrived to arrived, never back. A
+        // provider hiccup reporting arrived:false the moment after a genuine
+        // arrival must not put the train back into rotation.
+        $max: { arrived: reading.arrived },
       },
       { upsert: true, returnDocument: 'after' },
     )
@@ -141,6 +146,10 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         lastError: null,
         provider: provider.name,
       },
+      // Same one-way $max as refreshTrainStatus — an admin's manual lookup
+      // should stop the automatic tick from polling this train too, not just
+      // report the answer once.
+      $max: { arrived: detail.arrived },
     },
     { upsert: true },
   )
@@ -208,7 +217,7 @@ export async function getTrainStatus(
   const target = cachedRow?.etaAt ?? opts.scheduledArrival ?? null
   const minutesToArrival = target ? minutesBetween(now, target) : null
 
-  if (cachedRow && !isStale(cachedRow.fetchedAt, minutesToArrival, now)) {
+  if (cachedRow && !isStale(cachedRow.fetchedAt, minutesToArrival, now, cachedRow.arrived)) {
     return cachedRow
   }
   if (opts.allowFetch === false) return cachedRow

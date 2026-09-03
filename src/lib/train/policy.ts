@@ -24,12 +24,23 @@ export function pollIntervalMinutes(minutesToArrival: number | null): number {
   return 15
 }
 
-/** True when a cached reading has aged past its tier. */
+/**
+ * True when a cached reading has aged past its tier.
+ *
+ * A row already confirmed `arrived` is never stale, whatever its age: the
+ * train left this station, so its arrival/platform/delay here are final and
+ * every further call would spend quota to learn something that cannot have
+ * changed. This is the one thing that overrides the tier outright, rather
+ * than widening it — a train that has arrived is not "due in 40 minutes"
+ * again next service date, it is simply done.
+ */
 export function isStale(
   fetchedAt: Date | null,
   minutesToArrival: number | null,
   now: Date,
+  arrived = false,
 ): boolean {
+  if (arrived) return false
   if (!fetchedAt) return true
   const ageMinutes = (now.getTime() - fetchedAt.getTime()) / 60_000
   return ageMinutes >= pollIntervalMinutes(minutesToArrival)

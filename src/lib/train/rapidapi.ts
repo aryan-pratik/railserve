@@ -117,6 +117,11 @@ export class RapidApiTrainStatusProvider implements TrainStatusProvider {
       // data is genuinely unknown. Null rather than the fetch time: claiming
       // the feed is as fresh as our request would be an invention.
       providerUpdatedAt: null,
+      // This vendor's payload carries no station-level status (passed/
+      // current/upcoming), only times — there is nothing here to tell arrival
+      // apart from a delayed train still approaching. Always false, so
+      // polling behaves exactly as it did before this concept existed.
+      arrived: false,
     }
   }
 }
