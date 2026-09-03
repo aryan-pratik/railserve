@@ -29,6 +29,8 @@ export type TrainLookup = {
   providerUpdatedAtIso: string | null
   stopsAway: number | null
   distanceKm: number | null
+  /** The provider has confirmed this train left the station — see plan §8. */
+  arrived: boolean
   provider: string
   simulated: boolean
 }
@@ -83,6 +85,7 @@ export async function lookupTrain(
         providerUpdatedAtIso: d.providerUpdatedAt?.toISOString() ?? null,
         stopsAway: d.stopsAway,
         distanceKm: d.distanceKm,
+        arrived: d.arrived,
         provider: 'live',
         simulated: isSimulatedProvider(),
       },

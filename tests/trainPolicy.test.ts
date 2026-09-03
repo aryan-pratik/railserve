@@ -166,6 +166,39 @@ describe('timing view', () => {
     expect(v.stale).toBe(true)
   })
 
+  it('reports no next check for an arrived train, not a due time', () => {
+    // A day-old reading would normally read as badly overdue. Arrived means
+    // there is no "due" left to compute — nextCheckAt must be null, not a
+    // time already far in the past, or the UI would show a countdown that
+    // implies polling is still trying and failing.
+    const v = buildTimingView({
+      scheduledArrival: scheduled,
+      reading: {
+        etaAt: at('2026-08-27T13:39:00+05:30'),
+        delayMinutes: 4,
+        platform: '2',
+        fetchedAt: at('2026-08-26T09:00:00Z'),
+        arrived: true,
+      },
+      now,
+    })
+    expect(v.arrived).toBe(true)
+    expect(v.nextCheckAt).toBeNull()
+    expect(v.stale).toBe(false)
+    // The arrival itself is still reported — arrived does not mean unknown.
+    expect(v.effectiveArrival).toEqual(at('2026-08-27T13:39:00+05:30'))
+  })
+
+  it('defaults arrived to false for a provider that does not report it', () => {
+    const v = buildTimingView({
+      scheduledArrival: scheduled,
+      reading: { etaAt: at('2026-08-27T14:45:00+05:30'), delayMinutes: 80, platform: '3', fetchedAt: now },
+      now,
+    })
+    expect(v.arrived).toBe(false)
+    expect(v.nextCheckAt).not.toBeNull()
+  })
+
   it('has nothing to report about checking when no reading is held', () => {
     const v = buildTimingView({ scheduledArrival: scheduled, reading: null, now })
     expect(v.checkedAt).toBeNull()

@@ -156,6 +156,17 @@ export function OrderSlideOver({
                     ) : null}
                   </span>
                 </div>
+                {detail.arrived ? (
+                  // A separate line rather than another badge crowding the row
+                  // above — this is the reason nothing on this order's timing
+                  // will move again, worth its own sentence.
+                  <p
+                    className="text-xs font-medium text-faint"
+                    title="This train has left the station. Its arrival, delay and platform here are final, so live tracking has stopped."
+                  >
+                    Train arrived · tracking stopped
+                  </p>
+                ) : null}
                 <Row
                   label={detail.handoverPoint ? 'Handover' : 'Seat'}
                   value={detail.handoverPoint ?? detail.seat ?? '—'}

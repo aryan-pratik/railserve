@@ -272,6 +272,7 @@ export async function timingForOrders<
                 platform: row.platform ?? null,
                 fetchedAt: row.fetchedAt,
                 providerUpdatedAt: row.providerUpdatedAt ?? null,
+                arrived: row.arrived ?? false,
               }
             : null,
           now,
@@ -299,6 +300,7 @@ export function timingFor<
       providerUpdatedAt: null,
       checkedAt: null,
       nextCheckAt: null,
+      arrived: false,
     }
   }
   return (
@@ -319,6 +321,7 @@ export function timingFor<
       providerUpdatedAt: null,
       checkedAt: null,
       nextCheckAt: null,
+      arrived: false,
     }
   )
 }

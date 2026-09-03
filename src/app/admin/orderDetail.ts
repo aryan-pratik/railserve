@@ -34,6 +34,8 @@ export type OrderDetail = {
   platform: string | null
   timingSource: 'LIVE' | 'SCHEDULED'
   stale: boolean
+  /** The provider has confirmed this train left the station — see plan §8. */
+  arrived: boolean
   seat: string | null
   handoverPoint: string | null
   pax: number | null
@@ -96,6 +98,7 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
     platform: t.platform,
     timingSource: t.source,
     stale: t.stale,
+    arrived: t.arrived,
     seat: order.rawSeat ?? null,
     handoverPoint: order.handoverPoint ?? null,
     pax: order.pax ?? null,
