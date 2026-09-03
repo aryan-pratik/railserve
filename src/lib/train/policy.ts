@@ -6,23 +6,50 @@
 /**
  * Minutes between refreshes for one train, by how far off its arrival is.
  *
- * The cadence widens the further away the train is, because a delay two hours
- * out is not yet a decision — nobody is cooking or walking to a platform on
- * it, and the vendor's own projection that far ahead assumes the train
- * recovers anyway. What matters is being current when someone acts.
+ * Correct data at the moment someone acts on it matters more than the cost of
+ * asking for it — the `arrived` flag (see isStale) is what actually bounds
+ * spend, by cutting a train off the moment it is confirmed done, so the tight
+ * bands below only ever apply for a train's last 15-ish minutes of relevance,
+ * not indefinitely. That is what makes tightening here safe rather than a
+ * cost trade-off: nothing here is optimizing calls away from correctness.
+ *
+ * The bands widen far out (nothing is decided two hours before a train, and
+ * the vendor's own projection that far ahead assumes recovery anyway) and
+ * tighten hard in the stretch that actually matters: 5-15 minutes out is
+ * where a rider is typically told to leave (walk + buffer), and the last 5
+ * minutes is where a platform change or a last-second delay update is worth
+ * the most.
  *
  * These intervals are read against a fixed tick (the cron runs every two
- * minutes); the tick makes no upstream call unless one of these has elapsed,
- * so a train sitting on the 40-minute tier is skipped 19 ticks out of 20.
+ * minutes); the tick makes no upstream call unless one of these has elapsed.
  */
 export function pollIntervalMinutes(minutesToArrival: number | null): number {
   // No scheduled time to reason about: poll at the slowest cadence rather than
   // hammering a paid API for a train we cannot place.
   if (minutesToArrival === null) return 40
+  if (minutesToArrival > 180) return 60
   if (minutesToArrival > 120) return 40
-  if (minutesToArrival > 60) return 30
-  return 15
+  if (minutesToArrival > 60) return 15
+  if (minutesToArrival > 30) return 10
+  if (minutesToArrival > 15) return 5
+  if (minutesToArrival > 5) return 2
+  if (minutesToArrival >= 0) return 1
+  // Past due and not yet confirmed arrived: still worth checking briskly —
+  // this is a late train, exactly the one most likely to still be moving.
+  return 2
 }
+
+/**
+ * How soon to retry after a failed fetch, regardless of the tier above.
+ *
+ * Without this, a transient failure during the tightest band — the one that
+ * exists specifically so a delay update lands before dispatch — could leave a
+ * row silent for up to its own tier, because a failed fetch still stamps
+ * `fetchedAt`. A gap here is the one moment "efficient" and "correct" would
+ * actually conflict, so it does not: retrying every few minutes on an error
+ * costs a handful of extra calls only while something is actually wrong.
+ */
+const RETRY_AFTER_ERROR_MINUTES = 3
 
 /**
  * True when a cached reading has aged past its tier.
@@ -39,11 +66,15 @@ export function isStale(
   minutesToArrival: number | null,
   now: Date,
   arrived = false,
+  hasError = false,
 ): boolean {
   if (arrived) return false
   if (!fetchedAt) return true
   const ageMinutes = (now.getTime() - fetchedAt.getTime()) / 60_000
-  return ageMinutes >= pollIntervalMinutes(minutesToArrival)
+  const tier = hasError
+    ? Math.min(pollIntervalMinutes(minutesToArrival), RETRY_AFTER_ERROR_MINUTES)
+    : pollIntervalMinutes(minutesToArrival)
+  return ageMinutes >= tier
 }
 
 export function minutesBetween(from: Date, to: Date): number {

@@ -123,8 +123,9 @@ export function CheckCycle({
       className="text-xs tabular-nums text-faint"
       title={
         'When this app last asked the railway about this train, and when it is ' +
-        'due to ask again. Trains further out are checked less often — 40 min ' +
-        'over two hours away, 30 min inside that, 15 min in the last hour.'
+        'due to ask again. Checks get more frequent the closer the train gets — ' +
+        'as little as once an hour when it is far out, down to every minute in ' +
+        'its last five.'
       }
     >
       checked {formatTimeIST(checkedAt)} · next{' '}

@@ -192,6 +192,33 @@ export async function warmTrainStatus(order: {
   }
 }
 
+/**
+ * An explicit, person-triggered refresh — "check now" on an order, as opposed
+ * to warmTrainStatus (silent, fires on order creation) or the polling tick
+ * (silent, background). Bypasses the tier entirely: someone asked right now,
+ * so the answer is fetched right now, not whenever it would next come due.
+ *
+ * Unlike warmTrainStatus, failure is NOT swallowed — someone clicked a button
+ * and is looking at the screen waiting for an answer, so they get to know if
+ * the train API rejected it or the plan is out of quota, rather than a
+ * silent no-op that looks like the click did nothing.
+ *
+ * Returns null for a trainless order rather than throwing: there is nothing
+ * to refresh, and that is a legitimate state, not an error.
+ */
+export async function forceRefreshTrainStatus(order: {
+  trainNo?: string | null
+  serviceDate: string
+  stationCode: string
+  scheduledArrival?: Date | null
+}): Promise<TrainStatusDoc | null> {
+  if (!order.trainNo) return null
+  return refreshTrainStatus(
+    { trainNo: order.trainNo, serviceDate: order.serviceDate, stationCode: order.stationCode },
+    { scheduledArrival: order.scheduledArrival ?? null },
+  )
+}
+
 /** Reads the cache without touching the provider. */
 export async function readCachedStatus(key: TrainKey): Promise<TrainStatusDoc | null> {
   await connectDb()
@@ -217,7 +244,10 @@ export async function getTrainStatus(
   const target = cachedRow?.etaAt ?? opts.scheduledArrival ?? null
   const minutesToArrival = target ? minutesBetween(now, target) : null
 
-  if (cachedRow && !isStale(cachedRow.fetchedAt, minutesToArrival, now, cachedRow.arrived)) {
+  if (
+    cachedRow &&
+    !isStale(cachedRow.fetchedAt, minutesToArrival, now, cachedRow.arrived, cachedRow.lastError != null)
+  ) {
     return cachedRow
   }
   if (opts.allowFetch === false) return cachedRow

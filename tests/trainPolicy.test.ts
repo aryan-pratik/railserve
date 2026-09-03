@@ -8,22 +8,36 @@ import { SimulatedTrainStatusProvider } from '../src/lib/train/simulator'
 const at = (iso: string) => new Date(iso)
 
 describe('polling cadence (plan §8)', () => {
-  it('tightens as the train approaches', () => {
-    // Over two hours out: nothing is being decided, so ask rarely.
+  it('tightens the further the train has closed in, all the way to arrival', () => {
+    // Beyond 3h: nothing is being decided yet.
+    expect(pollIntervalMinutes(200)).toBe(60)
+    expect(pollIntervalMinutes(181)).toBe(60)
+    // 2-3h: still early, but worth a slightly closer eye than the far tier.
     expect(pollIntervalMinutes(180)).toBe(40)
     expect(pollIntervalMinutes(121)).toBe(40)
-    // One to two hours: the kitchen decision is coming into view.
-    expect(pollIntervalMinutes(120)).toBe(30)
-    expect(pollIntervalMinutes(61)).toBe(30)
-    // Inside the hour: cooking and dispatch both happen in here.
-    expect(pollIntervalMinutes(60)).toBe(15)
-    expect(pollIntervalMinutes(30)).toBe(15)
-    expect(pollIntervalMinutes(0)).toBe(15)
+    // 1-2h: the kitchen decision is coming into view.
+    expect(pollIntervalMinutes(120)).toBe(15)
+    expect(pollIntervalMinutes(61)).toBe(15)
+    // 30-60 min: the cooking window.
+    expect(pollIntervalMinutes(60)).toBe(10)
+    expect(pollIntervalMinutes(31)).toBe(10)
+    // 15-30 min: approaching the dispatch decision.
+    expect(pollIntervalMinutes(30)).toBe(5)
+    expect(pollIntervalMinutes(16)).toBe(5)
+    // 5-15 min: the walk+buffer window most outlets dispatch within — a rider
+    // may be told to leave right now, so this is the tightest pre-arrival band.
+    expect(pollIntervalMinutes(15)).toBe(2)
+    expect(pollIntervalMinutes(6)).toBe(2)
+    // 0-5 min: platform changes and last-second delay updates matter most here.
+    expect(pollIntervalMinutes(5)).toBe(1)
+    expect(pollIntervalMinutes(0)).toBe(1)
   })
 
-  it('keeps polling a train that has already arrived, at the tightest tier', () => {
-    // Negative means the ETA has passed; the agent still needs platform updates.
-    expect(pollIntervalMinutes(-10)).toBe(15)
+  it('keeps checking briskly on a late train that has not been confirmed arrived', () => {
+    // Negative means our projection has already passed — exactly the train
+    // most likely to still be moving, so this is not the slow tier.
+    expect(pollIntervalMinutes(-1)).toBe(2)
+    expect(pollIntervalMinutes(-700)).toBe(2)
   })
 
   it('falls back to the slowest tier when there is no time to reason about', () => {
@@ -63,6 +77,37 @@ describe('staleness', () => {
     // it behave exactly as before.
     const fetchedAt = at('2026-08-27T09:40:00Z')
     expect(isStale(fetchedAt, -800, now)).toBe(true)
+  })
+
+  it('retries a failed reading sooner than its normal tier', () => {
+    // Without this, a transient failure during the tightest band — the one
+    // that exists so a delay lands before dispatch — could leave a row
+    // silent for up to its own tier, because a failed fetch still stamps
+    // fetchedAt. This is the one place "efficient" and "correct" would
+    // actually conflict, so the retry wins.
+    //
+    // 2 minutes out sits on the 1-minute tier; a 2-minute-old errored row
+    // would read as fresh under that tier alone but must not.
+    const fetchedAt = at('2026-08-27T09:58:00Z') // 2 minutes before `now`
+    expect(isStale(fetchedAt, 2, now, false, false)).toBe(true) // no error: normal 1-min tier, already due
+    expect(isStale(fetchedAt, 2, now, false, true)).toBe(true) // error: 3-min retry, also due
+  })
+
+  it('does not retry an error faster than the tier when the tier is already tighter', () => {
+    // The error retry is a ceiling on how long to wait, not a floor that
+    // slows anything down — whichever is shorter wins.
+    const fetchedAt = at('2026-08-27T09:59:30Z') // 30 seconds before `now`
+    // 2 minutes out: normal tier is 1 minute, tighter than the 3-minute
+    // retry allowance, so a fresh 30-second-old row stays fresh even with
+    // an error on it.
+    expect(isStale(fetchedAt, 2, now, false, true)).toBe(false)
+  })
+
+  it('leaves an arrived row alone even if it happens to carry an error', () => {
+    // arrived overrides everything, including the error-retry path — there
+    // is nothing left to learn by retrying a train that already left.
+    const veryOld = at('2026-08-26T00:00:00Z')
+    expect(isStale(veryOld, -800, now, true, true)).toBe(false)
   })
 })
 
@@ -129,8 +174,8 @@ describe('timing view', () => {
   })
 
   it('reports when it last checked and when the next check is due', () => {
-    // now is 10:00Z; an ETA of 11:25Z is 85 minutes out, which is the 30-minute
-    // tier. Checked at 09:55Z, so due again at 10:25Z.
+    // now is 10:00Z; an ETA of 11:25Z is 85 minutes out, which is the 15-minute
+    // tier (1-2h out). Checked at 09:55Z, so due again at 10:10Z.
     const v = buildTimingView({
       scheduledArrival: scheduled,
       reading: {
@@ -142,14 +187,15 @@ describe('timing view', () => {
       now,
     })
     expect(v.checkedAt).toEqual(at('2026-08-27T09:55:00Z'))
-    expect(v.nextCheckAt).toEqual(at('2026-08-27T10:25:00Z'))
+    expect(v.nextCheckAt).toEqual(at('2026-08-27T10:10:00Z'))
     // The UI and the poller must agree about when this row comes due.
     expect(v.stale).toBe(false)
   })
 
   it('gives the same due time the staleness check is about to apply', () => {
-    // Inside the last hour the tier tightens to 15 minutes, so a reading taken
-    // 20 minutes ago is already past due — and both fields must say so.
+    // ETA is exactly 30 minutes out, which sits in the 15-30 min band (5-minute
+    // tier), so a reading taken 20 minutes ago is already past due — and both
+    // fields must say so.
     const fetchedAt = at('2026-08-27T09:40:00Z')
     const v = buildTimingView({
       scheduledArrival: scheduled,
@@ -161,7 +207,7 @@ describe('timing view', () => {
       },
       now,
     })
-    expect(v.nextCheckAt).toEqual(at('2026-08-27T09:55:00Z'))
+    expect(v.nextCheckAt).toEqual(at('2026-08-27T09:45:00Z'))
     expect(v.nextCheckAt!.getTime()).toBeLessThan(now.getTime())
     expect(v.stale).toBe(true)
   })

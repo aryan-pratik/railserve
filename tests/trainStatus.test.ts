@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { TrainStatus } from '../src/lib/models'
-import { refreshTrainStatus, readCachedStatus, timingForOrders, timingFor } from '../src/lib/train/service'
+import {
+  refreshTrainStatus, readCachedStatus, timingForOrders, timingFor, forceRefreshTrainStatus,
+} from '../src/lib/train/service'
 import { runTrainPollingTick } from '../src/lib/queue/trainPolling'
 import { findMany } from '../src/lib/repo/orderRepo'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
@@ -129,6 +131,50 @@ describe('train status cache', () => {
     // A delay with no ETA is still news — "45 minutes down" is actionable.
     expect(after.delayMinutes).toBe(45)
     expect(after.platform).toBe('4')
+  })
+
+  describe('forceRefreshTrainStatus — the "check now" button', () => {
+    it('hits the provider even when the row is fresh, unlike the tiered path', async () => {
+      const scheduled = new Date('2026-08-27T13:25:00+05:30')
+      const first = await refreshTrainStatus(KEY, { scheduledArrival: scheduled })
+      expect(first.lastError).toBeNull()
+
+      const spy = vi.spyOn(providerFactory, 'getTrainStatusProvider')
+      await forceRefreshTrainStatus({
+        trainNo: KEY.trainNo,
+        serviceDate: KEY.serviceDate,
+        stationCode: KEY.stationCode,
+        scheduledArrival: scheduled,
+      })
+      // The row was seconds old — getTrainStatus would have skipped it as
+      // fresh. A forced refresh must ask anyway, which is the whole point of
+      // a person clicking a "check now" button.
+      expect(spy).toHaveBeenCalled()
+    })
+
+    it('returns null for an order with no train, rather than throwing', async () => {
+      const result = await forceRefreshTrainStatus({
+        trainNo: null,
+        serviceDate: '2026-08-27',
+        stationCode: 'CNB',
+      })
+      expect(result).toBeNull()
+    })
+
+    it('surfaces a provider failure on the row, for the caller to show', async () => {
+      vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
+        name: 'boom',
+        getStatus: async () => {
+          throw new TrainStatusUnavailable('quota exhausted')
+        },
+      })
+      const row = await forceRefreshTrainStatus({
+        trainNo: KEY.trainNo,
+        serviceDate: KEY.serviceDate,
+        stationCode: KEY.stationCode,
+      })
+      expect(row?.lastError).toContain('quota exhausted')
+    })
   })
 
   it('serves many orders on one train from a single provider call', async () => {

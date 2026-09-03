@@ -11,6 +11,7 @@ import { ButtonLink, EmptyState } from '@/components/ui'
 import { OrdersTable } from '@/components/OrdersTable'
 import { TrainGroups, type TrainGroup } from './TrainGroups'
 import { OrdersToolbar } from './OrdersToolbar'
+import { forceRefreshOrderTrain } from './orders/[id]/actions'
 import type { QueryFilter } from 'mongoose'
 
 export const metadata = { title: 'Orders · RailServe' }
@@ -193,7 +194,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           action={<ButtonLink href="/admin/orders/new" variant="primary">+ Add Order</ButtonLink>}
         />
       ) : isGrouped ? (
-        <TrainGroups groups={groups} serverNow={serverNow} />
+        <TrainGroups groups={groups} serverNow={serverNow} refreshAction={forceRefreshOrderTrain} />
       ) : (
         <OrdersTable
           orders={visible.map((o) => ({
