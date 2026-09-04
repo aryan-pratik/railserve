@@ -13,7 +13,7 @@ import { timingForOrders, timingFor } from '@/lib/train/service'
 import { forceRefreshOrderTrain } from './actions'
 import { EventLog } from '@/components/EventLog'
 import { DeliveryProof } from '@/components/DeliveryProof'
-import { AssignAgents, TransitionButtons } from './AdminOrderActions'
+import { AssignAgents, RemarkForm, TransitionButtons } from './AdminOrderActions'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -194,6 +194,11 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
         </div>
 
         <div className="space-y-5">
+          <Card>
+            <CardHeader title="Remark" />
+            <RemarkForm orderId={String(order._id)} remark={order.remark ?? null} />
+          </Card>
+
           <Card>
             <CardHeader title="Admin actions" />
             <TransitionButtons orderId={String(order._id)} options={options} />

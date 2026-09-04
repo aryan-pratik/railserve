@@ -93,6 +93,10 @@ const OrderSchema = new Schema(
 
     readyBy: { type: Date, default: null },
     notes: { type: String, default: null },
+    // Admin-editable instruction for the kitchen/store (e.g. "less spicy"),
+    // separate from `notes` above which is set once at creation and printed
+    // on the KOT — this is not.
+    remark: { type: String, default: null, trim: true },
 
     items: { type: [OrderItemSchema], default: [] },
     events: { type: [OrderEventSchema], default: [] },

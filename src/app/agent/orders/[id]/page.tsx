@@ -62,6 +62,13 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
           </div>
         </div>
 
+        {order.remark ? (
+          <div className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Remark</div>
+            <div className="mt-1 whitespace-pre-wrap">{order.remark}</div>
+          </div>
+        ) : null}
+
         {/* Tap to call: the agent is on a platform holding a phone. */}
         {order.contactPhone ? (
           <a
