@@ -17,6 +17,7 @@ export type OrderRow = {
   scheduledArrival?: Maybe<Date>
   amountPaise?: Maybe<number>
   outletName?: Maybe<string>
+  remark?: Maybe<string>
 }
 
 const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted'
@@ -48,6 +49,7 @@ export function OrdersTable({
             <th className={TH}>Seat</th>
             <th className={TH}>Passenger</th>
             {showOutlet ? <th className={TH}>Outlet</th> : null}
+            <th className={TH}>Remark</th>
             <th className={`${TH} text-right`}>Amount</th>
             <th className={TH}>Status</th>
           </tr>
@@ -75,6 +77,12 @@ export function OrdersTable({
               <td className="px-3 py-2.5"><CoachChip coach={o.coach} berth={o.berth} /></td>
               <td className="px-3 py-2.5 text-ink">{o.contactName ?? '—'}</td>
               {showOutlet ? <td className="px-3 py-2.5 text-muted">{o.outletName ?? '—'}</td> : null}
+              <td
+                className="max-w-[180px] truncate px-3 py-2.5 text-amber-800"
+                title={o.remark ?? undefined}
+              >
+                {o.remark ?? '—'}
+              </td>
               <td className="px-3 py-2.5 text-right tabular-nums text-ink">
                 {formatRupees(o.amountPaise)}
               </td>

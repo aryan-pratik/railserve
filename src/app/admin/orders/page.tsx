@@ -161,6 +161,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           scheduledArrival: o.scheduledArrival?.toISOString() ?? null,
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
+          remark: o.remark,
         }))}
         showOutlet
         statusOptions={statusOptions}
