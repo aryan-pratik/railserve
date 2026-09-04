@@ -74,6 +74,7 @@ export async function GET(request: Request) {
           contactPhone: o.contactPhone,
           amountPaise: o.amountPaise,
           paymentMode: o.paymentMode,
+          remark: o.remark ?? null,
           items: o.items.map((i) => ({
             id: String(i._id), name: i.name, qty: i.qty,
             isPacking: i.isPacking, spec: i.spec ?? null,

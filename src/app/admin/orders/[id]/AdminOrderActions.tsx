@@ -2,7 +2,12 @@
 
 import { useActionState } from 'react'
 import { Button, FormNote } from '@/components/ui'
-import { adminTransitionAction, assignAgentsAction, type ActionState } from './actions'
+import {
+  adminTransitionAction,
+  assignAgentsAction,
+  updateOrderRemarkAction,
+  type ActionState,
+} from './actions'
 
 const initial: ActionState = {}
 
@@ -85,5 +90,33 @@ export function TransitionButtons({
       </div>
       <FormNote state={state} />
     </div>
+  )
+}
+
+/**
+ * Free-text instruction for the kitchen/store (e.g. "less spicy"), separate
+ * from the read-only creation-time Notes card and never printed on the KOT.
+ * Editable any time, not just at accept — the admin usually fills it in
+ * right when accepting, but nothing enforces that.
+ */
+export function RemarkForm({ orderId, remark }: { orderId: string; remark: string | null }) {
+  const [state, action, pending] = useActionState(updateOrderRemarkAction, initial)
+
+  return (
+    <form action={action} className="space-y-2 p-4">
+      <input type="hidden" name="orderId" value={orderId} />
+      <textarea
+        name="remark"
+        defaultValue={remark ?? ''}
+        maxLength={500}
+        rows={3}
+        placeholder="e.g. Make it less spicy"
+        className="w-full rounded-lg border border-line-strong bg-transparent p-2 text-sm"
+      />
+      <FormNote state={state} />
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+        {pending ? 'Saving…' : 'Save remark'}
+      </Button>
+    </form>
   )
 }

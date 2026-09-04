@@ -106,6 +106,18 @@ export function DeliveryScreen({
         </View>
       </View>
 
+      {order.remark ? (
+        <>
+          <Rule />
+          <View style={{ paddingVertical: 22 }}>
+            <Text style={s.label}>REMARK</Text>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: C.amber, marginTop: 8 }}>
+              {order.remark}
+            </Text>
+          </View>
+        </>
+      ) : null}
+
       <Rule />
 
       {/* Getting the money wrong is the mistake that costs the rider. */}

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
-import { findById } from '@/lib/repo/orderRepo'
+import { findById, updateOrderFields } from '@/lib/repo/orderRepo'
 import { forceRefreshTrainStatus } from '@/lib/train/service'
 import type { OrderStatus } from '@/lib/orderStatus'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
@@ -71,4 +71,27 @@ export async function adminTransitionAction(
   revalidatePath('/admin/orders')
   revalidatePath('/store')
   return { ok: `Order moved to ${to.replace('_', ' ')}.` }
+}
+
+export async function updateOrderRemarkAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const raw = String(formData.get('remark') ?? '').trim()
+  if (raw.length > 500) return { error: 'Keep the remark under 500 characters.' }
+  const remark = raw.length > 0 ? raw : null
+
+  try {
+    const ok = await updateOrderFields(ctx, orderId, { remark })
+    if (!ok) return { error: 'Order not found.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not save the remark.' }
+  }
+
+  revalidatePath(`/admin/orders/${orderId}`)
+  revalidatePath(`/store/orders/${orderId}`)
+  revalidatePath('/store')
+  return { ok: 'Remark saved.' }
 }

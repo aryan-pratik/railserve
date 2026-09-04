@@ -21,6 +21,7 @@ export type RunOrder = {
   contactPhone: string | null
   amountPaise: number | null
   paymentMode: string | null
+  remark: string | null
   items: OrderItem[]
   delivery: {
     deliveredAt: string | null

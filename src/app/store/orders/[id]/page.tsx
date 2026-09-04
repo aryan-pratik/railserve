@@ -69,6 +69,15 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
         </Card>
       ) : null}
 
+      {order.remark ? (
+        <Card>
+          <CardHeader title="Remark from admin" />
+          <p className="m-4 whitespace-pre-wrap rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+            {order.remark}
+          </p>
+        </Card>
+      ) : null}
+
       {order.notes ? (
         <Card>
           <CardHeader title="Notes" />
