@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { Restaurant, Order } from '@/lib/models'
+import { Restaurant } from '@/lib/models'
+import { countOrders } from '@/lib/repo/orderRepo'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,7 @@ export const dynamic = 'force-dynamic'
  * See scripts/delete-rajbhog-outlet.ts for the equivalent local script.
  */
 async function handle() {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   await connectDb()
 
   const candidates = await Restaurant.find({
@@ -31,7 +32,7 @@ async function handle() {
   }
 
   const r = candidates[0]
-  const orderCount = await Order.countDocuments({ restaurantId: r._id })
+  const orderCount = await countOrders(ctx, { restaurantId: r._id })
 
   if (orderCount > 0) {
     return NextResponse.json(
