@@ -4,7 +4,7 @@
  * clever parser trying to serve both.
  */
 
-const MONTHS: Record<string, number> = {
+export const MONTHS: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 }
@@ -81,7 +81,7 @@ export function rupeeStringToPaise(raw: string): number | null {
 export function normalisePaymentMode(raw: string): 'PREPAID' | 'COD' | 'INVOICE' | null {
   const v = raw.trim().toUpperCase()
   if (v === 'CASH_ON_DELIVERY' || v === 'COD' || v === 'CASH') return 'COD'
-  if (v === 'PREPAID' || v === 'PAID' || v === 'ONLINE') return 'PREPAID'
+  if (v === 'PREPAID' || v === 'PRE_PAID' || v === 'PAID' || v === 'ONLINE') return 'PREPAID'
   if (v === 'INVOICE' || v === 'CREDIT') return 'INVOICE'
   return null
 }
