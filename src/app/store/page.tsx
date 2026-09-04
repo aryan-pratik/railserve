@@ -192,6 +192,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
             scheduledArrival: o.scheduledArrival,
             amountPaise: o.amountPaise,
             outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,
+            remark: o.remark,
           }))}
           hrefFor={(id) => `/store/orders/${id}`}
           showOutlet={multiOutlet}

@@ -77,6 +77,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
           scheduledArrival: o.scheduledArrival,
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
+          remark: o.remark,
         }))}
         hrefFor={(id) => `/store/orders/${id}`}
         showOutlet={multiOutlet}

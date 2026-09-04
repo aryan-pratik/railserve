@@ -210,6 +210,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
             scheduledArrival: o.scheduledArrival,
             amountPaise: o.amountPaise,
             outletName: outletName.get(String(o.restaurantId)) ?? null,
+            remark: o.remark,
           }))}
           hrefFor={(id) => `/admin/orders/${id}`}
           showOutlet
