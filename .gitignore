@@ -55,3 +55,6 @@ next-env.d.ts
 
 # Local DB snapshots taken by reset:admin — never commit real order data.
 /.backups/
+
+# Session/machine-specific runbooks — not project documentation.
+*.local.md
