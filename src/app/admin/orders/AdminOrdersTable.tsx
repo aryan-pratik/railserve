@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatTimeIST, formatServiceDate, paiseToRupees } from '@/lib/format'
 import { CoachChip, EmptyState, StatusBadge, TypeBadge, statusLabel } from '@/components/ui'
+import { OrderTableColGroup } from '@/components/OrdersTable'
 import { updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
 
 type Maybe<T> = T | null | undefined
@@ -54,7 +55,8 @@ export function AdminOrdersTable({
 
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
+        <OrderTableColGroup showOutlet={showOutlet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={TH}>Order</th>
@@ -99,9 +101,9 @@ function AdminOrderRow({
       <td className="px-3 py-2.5">
         <Link
           href={`/admin/orders/${order.id}`}
-          className="flex items-center gap-1.5 font-medium text-accent hover:underline"
+          className="flex min-w-0 items-center gap-1.5 font-medium text-accent hover:underline"
         >
-          <span className="font-mono text-xs">{order.externalOrderId}</span>
+          <span className="truncate font-mono text-xs">{order.externalOrderId}</span>
           <TypeBadge type={order.orderType} />
         </Link>
       </td>
@@ -122,7 +124,7 @@ function AdminOrderRow({
       <td className="px-3 py-2.5 text-ink">{order.contactName ?? '—'}</td>
       {showOutlet ? <td className="px-3 py-2.5 text-muted">{order.outletName ?? '—'}</td> : null}
       <td
-        className="max-w-[180px] truncate px-3 py-2.5 text-amber-800"
+        className="truncate px-3 py-2.5 text-amber-800"
         title={order.remark ?? undefined}
       >
         {order.remark ?? '—'}
