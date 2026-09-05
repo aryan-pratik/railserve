@@ -3,7 +3,8 @@ import { findMany } from '@/lib/repo/orderRepo'
 import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { formatIST, paiseToRupees, todayIST } from '@/lib/format'
+import { formatIST, paiseToRupees } from '@/lib/format'
+import { resolveDateRange } from '@/lib/dateFilter'
 import type { QueryFilter } from 'mongoose'
 
 export const dynamic = 'force-dynamic'
@@ -43,9 +44,14 @@ export async function GET(request: Request) {
   // return the wrong rows rather than fail.
   const isFullRange = url.searchParams.get('range') === 'all'
 
-  const date = url.searchParams.get('date') || (isFullRange ? '' : todayIST())
-  const dateFrom = url.searchParams.get('from') ?? ''
-  const dateTo = url.searchParams.get('to') ?? ''
+  // A bare `date` is a legacy single-day link (bookmarked before the mode
+  // selector existed) — treat it as a one-day range rather than dropping it.
+  const legacyDate = url.searchParams.get('date') ?? ''
+  const mode = url.searchParams.get('mode') || (legacyDate ? 'range' : isFullRange ? 'all' : 'today')
+  const month = url.searchParams.get('month') ?? ''
+  const rawFrom = url.searchParams.get('from') || legacyDate
+  const rawTo = url.searchParams.get('to') || legacyDate
+  const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const outlet = url.searchParams.get('outlet') ?? ''
   const status = url.searchParams.get('status') ?? ''
   const train = url.searchParams.get('train') ?? ''
@@ -57,9 +63,7 @@ export async function GET(request: Request) {
     : (TABS[tab] ?? (isFullRange ? null : (LIVE_STATUSES as string[])))
 
   const filter: QueryFilter<Record<string, unknown>> = {}
-  if (date) {
-    filter.serviceDate = date
-  } else if (dateFrom || dateTo) {
+  if (dateFrom || dateTo) {
     const range: Record<string, string> = {}
     if (dateFrom) range.$gte = dateFrom
     if (dateTo) range.$lte = dateTo
@@ -116,7 +120,7 @@ export async function GET(request: Request) {
       headers: {
         'content-type': 'text/csv; charset=utf-8',
         'content-disposition': `attachment; filename="railserve-orders-${
-          date || (dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'end'}` : 'all')
+          dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'end'}` : 'all'
         }.csv"`,
         'cache-control': 'no-store',
       },

@@ -2,8 +2,10 @@ import { requireRole } from '@/lib/session'
 import { dailyCounts, outletAnalytics } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { formatRupees, formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
-import { Button, Card, CardHeader, EmptyState, Field, PageHeader, inputClass } from '@/components/ui'
+import { formatRupees, formatServiceDate, todayIST } from '@/lib/format'
+import { Button, Card, CardHeader, EmptyState, PageHeader } from '@/components/ui'
+import { DateFilter } from '@/components/DateFilter'
+import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 
 export const metadata = { title: 'Analytics · RailServe' }
 
@@ -144,10 +146,15 @@ function OrdersPerDayChart({ daily }: { daily: { serviceDate: string; orders: nu
 export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>) {
   const ctx = await requireRole('ADMIN')
   const sp = await props.searchParams
-  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
 
-  const to = one(sp.to) || todayIST()
-  const from = one(sp.from) || shiftServiceDate(to, -29)
+  const mode = (one(sp.mode) || 'month') as DateFilterMode
+  const month = one(sp.month)
+  const rawFrom = one(sp.from)
+  const rawTo = one(sp.to)
+  const resolved = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
+  const from = resolved.from || todayIST()
+  const to = resolved.to || todayIST()
 
   const [stats, daily, outlets] = await Promise.all([
     outletAnalytics(ctx, { from, to }),
@@ -199,16 +206,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
         note={`${formatServiceDate(from)} — ${formatServiceDate(to)}`}
         action={
           <form method="get" className="flex items-end gap-2">
-            <div className="w-36">
-              <Field label="From" htmlFor="from">
-                <input id="from" name="from" type="date" defaultValue={from} className={inputClass} />
-              </Field>
-            </div>
-            <div className="w-36">
-              <Field label="To" htmlFor="to">
-                <input id="to" name="to" type="date" defaultValue={to} className={inputClass} />
-              </Field>
-            </div>
+            <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} />
             <Button type="submit">Show</Button>
           </form>
         }

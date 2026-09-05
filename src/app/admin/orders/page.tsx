@@ -8,6 +8,8 @@ import { IconDownload } from '@/components/Icons'
 import {
   Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Tabs, inputClass, statusLabel,
 } from '@/components/ui'
+import { DateFilter } from '@/components/DateFilter'
+import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import type { QueryFilter } from 'mongoose'
 
 /**
@@ -40,8 +42,11 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
   const outlet = one(sp.outlet)
   const status = one(sp.status)
-  const dateFrom = one(sp.from)
-  const dateTo = one(sp.to)
+  const mode = (one(sp.mode) || 'all') as DateFilterMode
+  const month = one(sp.month)
+  const rawFrom = one(sp.from)
+  const rawTo = one(sp.to)
+  const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const train = one(sp.train)
   const payment = one(sp.payment)
 
@@ -88,7 +93,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, from: dateFrom, to: dateTo, train, payment, ...over,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, payment, ...over,
     })) {
       if (v) u.set(k, v)
     }
@@ -144,19 +149,16 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
-          <Field label="From" htmlFor="from">
-            <input id="from" type="date" name="from" defaultValue={dateFrom} className={inputClass}
-              max={dateTo || undefined} />
-          </Field>
-          <Field label="To" htmlFor="to">
-            <input id="to" type="date" name="to" defaultValue={dateTo} className={inputClass}
-              min={dateFrom || undefined} />
-          </Field>
           <input name="train" defaultValue={train} placeholder="Train no"
             className={`${inputClass} font-mono`} aria-label="Train number" />
           <div className="flex gap-2">
             <Button type="submit" variant="secondary" className="flex-1">Filter</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
+          </div>
+          <div className="sm:col-span-6">
+            <Field label="Date">
+              <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
+            </Field>
           </div>
         </form>
       </Card>

@@ -18,6 +18,7 @@ export type GroupOrder = {
   berth: string | null
   handoverPoint: string | null
   itemCount: number
+  itemNames: string[]
   pax: number | null
   amountPaise: number | null
   paymentMode: string | null
@@ -331,15 +332,31 @@ export function TrainGroups({
                             </td>
 
                             {/* Items */}
-                            <td className="whitespace-nowrap px-4 py-3.5">
-                              <div className="font-medium text-ink">
-                                {o.pax ? `${o.pax} pax thali` : `${o.itemCount} item${o.itemCount === 1 ? '' : 's'}`}
-                              </div>
-                              {o.pax && o.itemCount > 1 ? (
-                                <div className="text-[11px] text-muted">+{o.itemCount - 1} packing items</div>
-                              ) : o.pax ? (
-                                <div className="text-[11px] text-muted">{o.pax} pax</div>
-                              ) : null}
+                            <td className="max-w-[180px] px-4 py-3.5">
+                              {o.pax ? (
+                                <>
+                                  <div className="font-medium text-ink">{o.pax} pax thali</div>
+                                  {o.itemCount > 1 ? (
+                                    <div className="text-[11px] text-muted">+{o.itemCount - 1} packing items</div>
+                                  ) : (
+                                    <div className="text-[11px] text-muted">{o.pax} pax</div>
+                                  )}
+                                </>
+                              ) : o.itemNames.length > 0 ? (
+                                <div
+                                  className="flex min-w-0 items-center gap-1.5 font-medium text-ink"
+                                  title={o.itemNames.join('\n')}
+                                >
+                                  <span className="truncate">{o.itemNames[0]}</span>
+                                  {o.itemNames.length > 1 ? (
+                                    <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10px] font-semibold text-muted">
+                                      +{o.itemNames.length - 1}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="font-medium text-muted">0 items</div>
+                              )}
                             </td>
 
                             {/* Amount */}

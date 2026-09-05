@@ -11,7 +11,10 @@ import type { NextConfig } from 'next'
 // Anyone can register a devtunnels subdomain, so this allowance is dev-only:
 // carrying it into production would hand that wildcard a real CSRF bypass.
 // (`*` matches exactly one label; `**` is needed to span the region prefix.)
-const devTunnelOrigins = ['**.devtunnels.ms', 'localhost:3000']
+// '100.108.31.61' is a Tailscale address this app gets opened from during dev
+// (another device on the tailnet) — same cross-origin dev-asset block as the
+// tunnel case above, just a raw IP instead of a hostname.
+const devTunnelOrigins = ['**.devtunnels.ms', 'localhost:3000', '100.108.31.61']
 const isDev = process.env.NODE_ENV !== 'production'
 
 // Set only for the VM build, where nginx shares port 8080 with another app
