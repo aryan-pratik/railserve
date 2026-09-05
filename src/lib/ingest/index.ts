@@ -8,6 +8,7 @@ import { DailyYatriParser } from './parsers/dailyYatri'
 import { OlfParser } from './parsers/olf'
 import { YatribhojanParser } from './parsers/yatribhojan'
 import { RajBhogParser } from './parsers/rajbhog'
+import { ZoopParser } from './parsers/zoop'
 import { matchOutlet } from './outletMatch'
 import { warmTrainStatus } from '../train/service'
 import type { OrderParser, ParsedOrder } from './types'
@@ -19,6 +20,7 @@ export const PARSERS: OrderParser[] = [
   new OlfParser(),
   new YatribhojanParser(),
   new RajBhogParser(),
+  new ZoopParser(),
 ]
 
 export type IngestSource = {
