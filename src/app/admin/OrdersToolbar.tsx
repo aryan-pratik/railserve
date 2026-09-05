@@ -2,12 +2,17 @@
 
 import Link from 'next/link'
 import { IconSearch, IconDownload } from '@/components/Icons'
+import { DateFilter } from '@/components/DateFilter'
+import type { DateFilterMode } from '@/lib/dateFilter'
 
 export type ToolbarTab = { key: string; label: string; count: number; active: boolean }
 
 export type ToolbarState = {
   tab: string
-  date: string
+  mode: string
+  month: string
+  from: string
+  to: string
   outlet: string
   train: string
   payment: string
@@ -46,7 +51,11 @@ export function OrdersToolbar({
   }
 
   const exportHref = (() => {
-    const u = new URLSearchParams({ date: current.date })
+    const u = new URLSearchParams()
+    if (current.mode) u.set('mode', current.mode)
+    if (current.month) u.set('month', current.month)
+    if (current.from) u.set('from', current.from)
+    if (current.to) u.set('to', current.to)
     if (current.outlet) u.set('outlet', current.outlet)
     if (current.tab) u.set('tab', current.tab)
     if (current.upcoming) u.set('upcoming', current.upcoming)
@@ -89,7 +98,7 @@ export function OrdersToolbar({
           {/* Today / Upcoming Toggle */}
           <div className="flex items-center rounded-lg border border-line bg-sunken/60 p-0.5 text-xs font-medium">
             <Link
-              href={href({ upcoming: '', date: '' })}
+              href={href({ upcoming: '', mode: '', month: '', from: '', to: '' })}
               className={`rounded-md px-2.5 py-1 transition-colors ${
                 !isUpcoming
                   ? 'bg-surface text-ink font-semibold shadow-2xs'
@@ -99,7 +108,7 @@ export function OrdersToolbar({
               Today{todayCount !== undefined ? ` (${todayCount})` : ''}
             </Link>
             <Link
-              href={href({ upcoming: '1', date: '' })}
+              href={href({ upcoming: '1', mode: '', month: '', from: '', to: '' })}
               className={`flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
                 isUpcoming
                   ? 'bg-surface text-ink font-semibold shadow-2xs'
@@ -218,15 +227,14 @@ export function OrdersToolbar({
           <option value="INVOICE">Invoice</option>
         </select>
 
-        {/* Date Picker (Hidden when in upcoming mode unless explicitly picked) */}
+        {/* Date Filter (Hidden when in upcoming mode) */}
         {!isUpcoming ? (
-          <input
-            type="date"
-            name="date"
-            defaultValue={current.date}
-            aria-label="Service date"
-            onChange={(e) => e.currentTarget.form?.requestSubmit()}
-            className="rounded-xl border border-line bg-surface px-3 py-1.5 text-xs sm:text-sm font-medium text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent"
+          <DateFilter
+            mode={(current.mode || 'today') as DateFilterMode}
+            month={current.month}
+            from={current.from}
+            to={current.to}
+            autoSubmit
           />
         ) : null}
 

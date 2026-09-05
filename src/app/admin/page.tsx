@@ -6,6 +6,7 @@ import { Restaurant } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate, formatTimeIST } from '@/lib/format'
+import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { AutoRefresh } from '@/components/AutoRefresh'
 import { ButtonLink, EmptyState } from '@/components/ui'
 import { OrdersTable } from '@/components/OrdersTable'
@@ -32,8 +33,17 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   const today = todayIST()
   const tabKey = one(sp.tab)
   const isUpcoming = one(sp.upcoming) === '1'
-  const date = one(sp.date)
-  const activeDate = date || (!isUpcoming ? today : '')
+  const mode = (one(sp.mode) || 'today') as DateFilterMode
+  const month = one(sp.month)
+  const rangeFrom = one(sp.from)
+  const rangeTo = one(sp.to)
+  const resolvedRange = resolveDateRange(mode, { month, from: rangeFrom, to: rangeTo })
+  const activeFrom = resolvedRange.from || today
+  const activeTo = resolvedRange.to || today
+  const activeDateLabel =
+    activeFrom === activeTo
+      ? formatServiceDate(activeFrom)
+      : `${formatServiceDate(activeFrom)} – ${formatServiceDate(activeTo)}`
   const outlet = one(sp.outlet)
   const train = one(sp.train)
   const payment = one(sp.payment)
@@ -49,9 +59,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   const dayFilter: QueryFilter<Record<string, unknown>> = isUpcoming
     ? { serviceDate: { $gt: today } }
-    : activeDate
-    ? { serviceDate: activeDate }
-    : {}
+    : { serviceDate: { $gte: activeFrom, $lte: activeTo } }
 
   if (outlet) dayFilter.restaurantId = outlet
   if (train) dayFilter.trainNo = train
@@ -127,6 +135,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         berth: o.berth ?? null,
         handoverPoint: o.handoverPoint ?? null,
         itemCount: o.items.filter((i) => !i.isPacking).length,
+        itemNames: o.items
+          .filter((i) => !i.isPacking)
+          .map((i) => (i.qty > 1 ? `${i.name} ×${i.qty}` : i.name)),
         pax: o.pax ?? null,
         amountPaise: o.amountPaise ?? null,
         paymentMode: o.paymentMode ?? null,
@@ -175,7 +186,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         }))}
         outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} — ${o.stationCode}` }))}
         trains={trainNos}
-        current={{ tab: tabKey, date: activeDate, outlet, train, payment, sort, q, group, upcoming: isUpcoming ? '1' : '' }}
+        current={{ tab: tabKey, mode, month, from: rangeFrom, to: rangeTo, outlet, train, payment, sort, q, group, upcoming: isUpcoming ? '1' : '' }}
         todayCount={todayCount}
         upcomingCount={upcomingCount}
       />
@@ -189,7 +200,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
               ? 'No orders match your selected filters. Try clearing filters.'
               : isUpcoming
               ? 'Bulk orders booked for future dates will appear here automatically.'
-              : `No orders for ${activeDate ? formatServiceDate(activeDate) : 'selected dates'}. New orders will appear here automatically.`
+              : `No orders for ${activeDateLabel}. New orders will appear here automatically.`
           }
           action={<ButtonLink href="/admin/orders/new" variant="primary">+ Add Order</ButtonLink>}
         />
@@ -222,7 +233,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         <span>
           Showing {isGrouped ? `${groups.length} train${groups.length === 1 ? '' : 's'} · ` : ''}
           {visible.length} order{visible.length === 1 ? '' : 's'}
-          {isUpcoming ? ' (Upcoming)' : activeDate ? ` for ${formatServiceDate(activeDate)}` : ''}
+          {isUpcoming ? ' (Upcoming)' : ` for ${activeDateLabel}`}
         </span>
         <Link
           href="/admin/orders"
