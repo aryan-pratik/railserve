@@ -6,7 +6,7 @@ import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { AdminOrdersTable } from './AdminOrdersTable'
 import { IconDownload } from '@/components/Icons'
 import {
-  Button, ButtonAnchor, ButtonLink, Card, PageHeader, Tabs, inputClass, statusLabel,
+  Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Tabs, inputClass, statusLabel,
 } from '@/components/ui'
 import type { QueryFilter } from 'mongoose'
 
@@ -40,7 +40,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
   const outlet = one(sp.outlet)
   const status = one(sp.status)
-  const date = one(sp.date)
+  const dateFrom = one(sp.from)
+  const dateTo = one(sp.to)
   const train = one(sp.train)
   const payment = one(sp.payment)
 
@@ -53,7 +54,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const base: QueryFilter<Record<string, unknown>> = {}
   if (outlet) base.restaurantId = outlet
   if (status) base.status = status
-  if (date) base.serviceDate = date
+  if (dateFrom || dateTo) {
+    const range: Record<string, string> = {}
+    if (dateFrom) range.$gte = dateFrom
+    if (dateTo) range.$lte = dateTo
+    base.serviceDate = range
+  }
   if (train) base.trainNo = train.toUpperCase()
 
   const filter = payment ? { ...base, paymentMode: payment } : base
@@ -75,13 +81,15 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const statusOptions = [...ORDER_STATUSES, ...customStatuses]
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
-  const hasFilters = Boolean(outlet || status || date || train || payment)
+  const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || payment)
 
   // Every link and the export carry the filters already in play, so switching
   // payment mode narrows the current view instead of resetting it.
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
-    for (const [k, v] of Object.entries({ outlet, status, date, train, payment, ...over })) {
+    for (const [k, v] of Object.entries({
+      outlet, status, from: dateFrom, to: dateTo, train, payment, ...over,
+    })) {
       if (v) u.set(k, v)
     }
     return u.toString()
@@ -119,7 +127,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs tabs={paymentTabs} />
 
       <Card className="p-3">
-        <form className="grid gap-2 sm:grid-cols-5" method="get">
+        <form className="grid items-end gap-2 sm:grid-cols-6" method="get">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
@@ -136,8 +144,14 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
-          <input type="date" name="date" defaultValue={date} className={inputClass}
-            aria-label="Service date" />
+          <Field label="From" htmlFor="from">
+            <input id="from" type="date" name="from" defaultValue={dateFrom} className={inputClass}
+              max={dateTo || undefined} />
+          </Field>
+          <Field label="To" htmlFor="to">
+            <input id="to" type="date" name="to" defaultValue={dateTo} className={inputClass}
+              min={dateFrom || undefined} />
+          </Field>
           <input name="train" defaultValue={train} placeholder="Train no"
             className={`${inputClass} font-mono`} aria-label="Train number" />
           <div className="flex gap-2">

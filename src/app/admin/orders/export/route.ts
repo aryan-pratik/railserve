@@ -44,6 +44,8 @@ export async function GET(request: Request) {
   const isFullRange = url.searchParams.get('range') === 'all'
 
   const date = url.searchParams.get('date') || (isFullRange ? '' : todayIST())
+  const dateFrom = url.searchParams.get('from') ?? ''
+  const dateTo = url.searchParams.get('to') ?? ''
   const outlet = url.searchParams.get('outlet') ?? ''
   const status = url.searchParams.get('status') ?? ''
   const train = url.searchParams.get('train') ?? ''
@@ -55,7 +57,14 @@ export async function GET(request: Request) {
     : (TABS[tab] ?? (isFullRange ? null : (LIVE_STATUSES as string[])))
 
   const filter: QueryFilter<Record<string, unknown>> = {}
-  if (date) filter.serviceDate = date
+  if (date) {
+    filter.serviceDate = date
+  } else if (dateFrom || dateTo) {
+    const range: Record<string, string> = {}
+    if (dateFrom) range.$gte = dateFrom
+    if (dateTo) range.$lte = dateTo
+    filter.serviceDate = range
+  }
   if (statuses) filter.status = { $in: statuses }
   if (outlet) filter.restaurantId = outlet
   if (train) filter.trainNo = train.toUpperCase()
@@ -106,7 +115,9 @@ export async function GET(request: Request) {
     {
       headers: {
         'content-type': 'text/csv; charset=utf-8',
-        'content-disposition': `attachment; filename="railserve-orders-${date || 'all'}.csv"`,
+        'content-disposition': `attachment; filename="railserve-orders-${
+          date || (dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'end'}` : 'all')
+        }.csv"`,
         'cache-control': 'no-store',
       },
     },
