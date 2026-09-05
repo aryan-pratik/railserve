@@ -22,6 +22,39 @@ export type OrderRow = {
 
 const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted'
 
+/**
+ * Column widths for the shared order-table shape (Order, Date, Train, Seat,
+ * Passenger, [Outlet], Remark, Amount, Status), as percentages summing to
+ * 100 so the table (table-layout: fixed) never grows past its container —
+ * cells wrap or truncate instead of forcing a horizontal scrollbar.
+ */
+export function OrderTableColGroup({ showOutlet }: { showOutlet: boolean }) {
+  return showOutlet ? (
+    <colgroup>
+      <col style={{ width: '13%' }} />
+      <col style={{ width: '13%' }} />
+      <col style={{ width: '11%' }} />
+      <col style={{ width: '6%' }} />
+      <col style={{ width: '13%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '8%' }} />
+      <col style={{ width: '12%' }} />
+    </colgroup>
+  ) : (
+    <colgroup>
+      <col style={{ width: '15%' }} />
+      <col style={{ width: '15%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '7%' }} />
+      <col style={{ width: '15%' }} />
+      <col style={{ width: '14%' }} />
+      <col style={{ width: '9%' }} />
+      <col style={{ width: '13%' }} />
+    </colgroup>
+  )
+}
+
 /** Flat list for lookup and history — the board is where live work happens. */
 export function OrdersTable({
   orders,
@@ -40,7 +73,8 @@ export function OrdersTable({
 
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
+        <OrderTableColGroup showOutlet={showOutlet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={TH}>Order</th>
@@ -58,8 +92,8 @@ export function OrdersTable({
           {orders.map((o) => (
             <tr key={o.id} className="transition hover:bg-sunken/60">
               <td className="px-3 py-2.5">
-                <Link href={hrefFor(o.id)} className="flex items-center gap-1.5 font-medium text-accent hover:underline">
-                  <span className="font-mono text-xs">{o.externalOrderId}</span>
+                <Link href={hrefFor(o.id)} className="flex min-w-0 items-center gap-1.5 font-medium text-accent hover:underline">
+                  <span className="truncate font-mono text-xs">{o.externalOrderId}</span>
                   <TypeBadge type={o.orderType} />
                 </Link>
               </td>
@@ -78,7 +112,7 @@ export function OrdersTable({
               <td className="px-3 py-2.5 text-ink">{o.contactName ?? '—'}</td>
               {showOutlet ? <td className="px-3 py-2.5 text-muted">{o.outletName ?? '—'}</td> : null}
               <td
-                className="max-w-[180px] truncate px-3 py-2.5 text-amber-800"
+                className="truncate px-3 py-2.5 text-amber-800"
                 title={o.remark ?? undefined}
               >
                 {o.remark ?? '—'}
