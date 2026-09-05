@@ -7,7 +7,7 @@
  * `timers/promises`). Keeping the vocabulary free of the ODM lets both sides
  * share one source of truth.
  */
-export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'OLF', 'YATRIBHOJAN', 'RAJBHOG', 'MANUAL'] as const
+export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'OLF', 'YATRIBHOJAN', 'RAJBHOG', 'ZOOP', 'MANUAL'] as const
 export const ORDER_TYPES = ['RETAIL', 'BULK'] as const
 export const PAYMENT_MODES = ['PREPAID', 'COD', 'INVOICE'] as const
 export const PROOF_TYPES = ['OTP', 'PHOTO', 'SIGNATURE'] as const
