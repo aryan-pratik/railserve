@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, Field, FormNote, inputClass, textareaClass } from '@/components/ui'
 import { parseBulkEnquiry } from '@/lib/ingest/parsers/bulkEnquiry'
 import { createEnquiryAction, type EnquiryState } from '../actions'
 
@@ -49,7 +49,7 @@ export function EnquiryForm({ today }: { today: string }) {
             onChange={(e) => setPaste(e.target.value)}
             rows={8}
             placeholder={'*Query*\nDate =03-Sep\nLocation =Kanpur Central\nTrain no -\nTime  = 7:30PM\nPax = 75\nMenu = ...'}
-            className={`${inputClass} font-mono text-xs`}
+            className={`${textareaClass} font-mono text-xs`}
           />
           <div className="flex flex-wrap items-center gap-3">
             <Button type="button" onClick={applyParse} disabled={!paste.trim()}>
@@ -102,30 +102,28 @@ export function EnquiryForm({ today }: { today: string }) {
             </Field>
             <Field label="Contact phone" htmlFor="contactPhone">
               <input id="contactPhone" name="contactPhone" value={contactPhone}
-                onChange={(e) => setContactPhone(e.target.value)}
+                onChange={(e) => setContactPhone(e.target.value)} inputMode="tel" autoComplete="off"
                 className={`${inputClass} font-mono tabular-nums`} />
             </Field>
             <div className="sm:col-span-2">
               <Field label="Menu" htmlFor="menuSpec"
                 hint="One block, line breaks preserved. This prints on the KOT as-is.">
                 <textarea id="menuSpec" name="menuSpec" rows={4} value={menuSpec}
-                  onChange={(e) => setMenuSpec(e.target.value)} className={inputClass} />
+                  onChange={(e) => setMenuSpec(e.target.value)} className={textareaClass} />
               </Field>
             </div>
             <div className="sm:col-span-2">
               <Field label="Notes" htmlFor="notes"
                 hint="Anything the parser did not recognise lands here. Nothing is dropped.">
                 <textarea id="notes" name="notes" rows={3} value={notes}
-                  onChange={(e) => setNotes(e.target.value)} className={inputClass} />
+                  onChange={(e) => setNotes(e.target.value)} className={textareaClass} />
               </Field>
             </div>
           </div>
         </Card>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={pending} size="lg">
-            {pending ? 'Saving…' : 'Save enquiry'}
-          </Button>
+          <Button type="submit" pending={pending} size="lg">Save enquiry</Button>
           <FormNote state={state} />
           <span className="text-sm text-muted">
             Saved at ENQUIRY. It reaches an outlet only after you quote and confirm.

@@ -32,7 +32,7 @@ export function QuoteForm({
 
         <Field label="Outlet" htmlFor="restaurantId">
           <select id="restaurantId" name="restaurantId" defaultValue={values.restaurantId} className={inputClass}>
-            <option value="">Choose an outlet…</option>
+            <option value="">Choose an outlet</option>
             {outlets.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
@@ -68,15 +68,13 @@ export function QuoteForm({
 
         <div className="sm:col-span-2">
           <Field label="Handover point" htmlFor="handoverPoint"
-            hint="Where and to whom, e.g. “coach B5 door, contact Mr Sharma”.">
+            hint="Where and to whom. For example: coach B5 door, contact Mr Sharma.">
             <input id="handoverPoint" name="handoverPoint" defaultValue={values.handoverPoint} className={inputClass} />
           </Field>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Saving…' : 'Save quote'}
-          </Button>
+          <Button type="submit" pending={pending}>Save quote</Button>
           <FormNote state={state} />
         </div>
       </form>
@@ -111,7 +109,7 @@ export function ConfirmForm({
               >
                 <input type="checkbox" name="packingItems" value={choice}
                   defaultChecked={alreadyPacked.includes(choice)}
-                  className="rounded border-line-strong accent-accent" />
+                  className="size-4 rounded border-line-strong accent-accent" />
                 {choice}
               </label>
             ))}
@@ -119,9 +117,7 @@ export function ConfirmForm({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" variant="go" disabled={pending}>
-            {pending ? 'Confirming…' : 'Confirm order'}
-          </Button>
+          <Button type="submit" variant="go" pending={pending}>Confirm order</Button>
           <span className="text-xs text-muted">
             Refused unless outlet, phone, amount, payment mode and ready-by are all set.
           </span>

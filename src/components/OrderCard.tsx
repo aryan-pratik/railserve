@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
-import { Card, StatusBadge, TypeBadge } from '@/components/ui'
+import { Card, Dash, PaymentBadge, StatusBadge, TypeBadge } from '@/components/ui'
 import { ReadyByCountdown } from '@/components/ReadyByCountdown'
 
 export type OrderCardData = {
@@ -67,11 +67,13 @@ export function OrderCard({
                 {order.handoverPoint ? ` · ${order.handoverPoint}` : ''}
               </>
             ) : (
-              <>Seat <span className="font-mono font-medium text-ink">{order.rawSeat ?? '–'}</span></>
+              <>Seat <span className="font-mono font-medium text-ink">{order.rawSeat ?? <Dash />}</span></>
             )}
           </div>
           {timing ?? (
-            <div className="text-xs tabular-nums text-faint">Arrives {formatIST(order.scheduledArrival)}</div>
+            <div className="text-xs tabular-nums text-faint">
+              {order.scheduledArrival ? `Arrives ${formatIST(order.scheduledArrival)}` : 'Arrival time unknown'}
+            </div>
           )}
         </div>
 
@@ -101,13 +103,16 @@ export function OrderCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
-        <span
-          className={`rounded px-2 py-1 text-sm font-bold tabular-nums ${
-            cod ? 'bg-amber-100 text-amber-900' : 'bg-sunken text-muted'
-          }`}
-        >
-          {cod ? `COLLECT ${formatMoney(order.amountPaise)}` : `${order.paymentMode ?? '–'} · ${formatMoney(order.amountPaise)}`}
-        </span>
+        {cod ? (
+          <span className="rounded px-2 py-1 text-sm font-bold tabular-nums bg-amber-100 text-amber-900">
+            COLLECT {formatMoney(order.amountPaise)}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-2 text-sm">
+            <PaymentBadge mode={order.paymentMode} />
+            <span className="font-semibold tabular-nums text-ink">{formatMoney(order.amountPaise)}</span>
+          </span>
+        )}
         <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
       </div>
     </Card>

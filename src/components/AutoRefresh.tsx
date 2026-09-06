@@ -24,11 +24,11 @@ export function AutoRefresh({ seconds = 15 }: { seconds?: number }) {
 
   return (
     <span
-      className="no-print inline-flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted"
-      title={`This board refreshes itself every ${seconds} seconds`}
+      className="no-print inline-flex h-7 items-center gap-1.5 px-1 text-xs font-medium text-muted"
+      title={`This screen refreshes itself every ${seconds} seconds`}
     >
-      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
-      <span className="tabular-nums">Live · every {seconds}s</span>
+      <span aria-hidden className="inline-block size-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
+      <span className="tabular-nums">Refreshes every {seconds}s</span>
     </span>
   )
 }

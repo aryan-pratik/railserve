@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { inputClass } from '@/components/ui'
+import { IconChevronDown } from '@/components/Icons'
 
 export type OutletOption = { id: string; label: string }
 
@@ -37,7 +38,7 @@ export function OutletMultiSelect({
 
   const summary =
     selected.size === 0
-      ? 'Select outlets…'
+      ? 'Select outlets'
       : selected.size === 1
         ? (options.find((o) => selected.has(o.id))?.label ?? '1 selected')
         : `${selected.size} outlets selected`
@@ -45,7 +46,7 @@ export function OutletMultiSelect({
   if (disabled) {
     return (
       <div className={`${inputClass} flex items-center text-faint disabled:cursor-not-allowed`}>
-        {summary === 'Select outlets…' ? 'None (admins see every outlet)' : summary}
+        {selected.size === 0 ? 'None (admins see every outlet)' : summary}
       </div>
     )
   }
@@ -53,10 +54,10 @@ export function OutletMultiSelect({
   return (
     <details ref={detailsRef} className="group relative">
       <summary
-        className={`${inputClass} flex list-none items-center justify-between text-left [&::-webkit-details-marker]:hidden`}
+        className={`${inputClass} flex cursor-pointer list-none items-center justify-between text-left [&::-webkit-details-marker]:hidden`}
       >
         <span className={selected.size === 0 ? 'text-faint' : 'text-ink'}>{summary}</span>
-        <span aria-hidden className="text-faint transition group-open:rotate-180">▾</span>
+        <IconChevronDown size={16} aria-hidden className="shrink-0 text-faint transition-transform group-open:rotate-180" />
       </summary>
 
       <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-line-strong bg-surface shadow-lg">
@@ -65,8 +66,8 @@ export function OutletMultiSelect({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search outlets…"
-            className={`${inputClass} py-1.5 text-sm`}
+            placeholder="Search outlets"
+            className={`${inputClass} h-8`}
           />
         </div>
 
@@ -90,7 +91,7 @@ export function OutletMultiSelect({
                     return next
                   })
                 }}
-                className="size-4 rounded border-line-strong"
+                className="size-4 rounded border-line-strong accent-accent"
               />
               {o.label}
             </label>

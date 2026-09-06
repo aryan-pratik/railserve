@@ -7,8 +7,8 @@ export default async function StoreLayout({ children }: LayoutProps<'/store'>) {
   return (
     <AppShell
       nav={[
-        { href: '/store', label: 'Kitchen Board', icon: 'board' },
-        { href: '/store/history', label: 'Order History', icon: 'history' },
+        { href: '/store', label: 'Kitchen board', icon: 'board' },
+        { href: '/store/history', label: 'Order history', icon: 'history' },
         { href: '/store/payments', label: 'Payments', icon: 'payments' },
       ]}
     >

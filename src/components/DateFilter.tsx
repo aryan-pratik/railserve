@@ -5,19 +5,15 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { DayPicker, type DateRange } from 'react-day-picker'
 import 'react-day-picker/style.css'
 import type { DateFilterMode } from '@/lib/dateFilter'
-
-const PILL =
-  'rounded-md px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap'
-
-function pillClass(active: boolean) {
-  return `${PILL} ${active ? 'bg-surface text-ink font-semibold shadow-2xs' : 'text-muted hover:text-ink'}`
-}
+import { IconChevronLeft, IconChevronRight } from './Icons'
+import { Button, IconButton, segmentClass, segmentedClass } from './ui'
+import { useNavTransition } from './navPending'
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-/** Local calendar day, not UTC — the day the user actually clicked. */
+/** Local calendar day, not UTC: the day the user actually clicked. */
 function toYMD(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
@@ -36,8 +32,7 @@ const CALENDAR_VARS = {
   '--rdp-accent-color': 'var(--color-accent)',
   '--rdp-accent-background-color': 'var(--color-accent-soft)',
   // The library's defaults (44px day cells, 2.75rem nav bar) are sized for a
-  // standalone page, not a toolbar popover — this keeps the whole thing
-  // closer to the width of the pill row that opens it.
+  // standalone page, not a toolbar popover.
   '--rdp-day-height': '30px',
   '--rdp-day-width': '30px',
   '--rdp-day_button-height': '28px',
@@ -49,16 +44,17 @@ const CALENDAR_VARS = {
 } as CSSProperties
 
 /**
- * Today / This month / Custom month / Custom range. The last two are pills
- * that open a popover on hover (or click, for touch/keyboard) with a month
- * grid or a react-day-picker range calendar — picking a value applies it
- * immediately.
+ * Today / This month / a chosen month / a chosen range.
  *
- * With `autoSubmit`, applying pushes the new mode/month/from/to straight into
- * the URL (merged with whatever search params are already there) — no native
- * form submission involved, so there's nothing to race. Without it (the
- * manual-submit lookup pages), the choice is carried as hidden inputs for the
- * page's own Filter/Show button to pick up.
+ * The last two open a popover on click. Hover used to open them too, which
+ * meant the calendar sprang out whenever the pointer crossed the toolbar on
+ * its way to the search box.
+ *
+ * With `autoSubmit`, picking a value pushes it into the URL straight away,
+ * merged with the search params already there. Without it, the choice rides
+ * as hidden inputs for the page's own Apply button. The hidden inputs are
+ * rendered in both cases, so a form submitted from the search box beside
+ * this control carries the date along instead of dropping back to today.
  */
 export function DateFilter({
   mode: initialMode,
@@ -72,14 +68,15 @@ export function DateFilter({
   month: string
   from: string
   to: string
-  /** Adds an "All time" pill — for lookup views with no default filter. */
+  /** Adds an "All time" option, for lookup views with no default filter. */
   allowAll?: boolean
-  /** Pushes the selection into the URL as soon as it's complete. */
+  /** Pushes the selection into the URL as soon as it is complete. */
   autoSubmit?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const [, startNav] = useNavTransition()
 
   const [mode, setMode] = useState<DateFilterMode>(initialMode)
   const [month, setMonth] = useState(initialMonth)
@@ -90,16 +87,12 @@ export function DateFilter({
     () => Number((initialMonth || String(new Date().getFullYear())).slice(0, 4)),
   )
 
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const monthWrapRef = useRef<HTMLDivElement>(null)
-  const rangeWrapRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!openPanel) return
     function onDocMouseDown(e: MouseEvent) {
-      const target = e.target as Node
-      if (monthWrapRef.current?.contains(target)) return
-      if (rangeWrapRef.current?.contains(target)) return
+      if (rootRef.current?.contains(e.target as Node)) return
       setOpenPanel(null)
     }
     function onKeyDown(e: KeyboardEvent) {
@@ -113,19 +106,6 @@ export function DateFilter({
     }
   }, [openPanel])
 
-  function cancelClose() {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current)
-      closeTimer.current = null
-    }
-  }
-  function scheduleClose() {
-    cancelClose()
-    closeTimer.current = setTimeout(() => setOpenPanel(null), 150)
-  }
-
-  /** Commits a full mode + value, closes any open popover, and — for
-   *  autoSubmit callers — pushes it into the URL right away. */
   function apply(next: { mode: DateFilterMode; month?: string; from?: string; to?: string }) {
     const nextMonth = next.month ?? ''
     const nextFrom = next.from ?? ''
@@ -140,13 +120,11 @@ export function DateFilter({
 
     const params = new URLSearchParams(searchParams.toString())
     params.set('mode', next.mode)
-    if (nextMonth) params.set('month', nextMonth)
-    else params.delete('month')
-    if (nextFrom) params.set('from', nextFrom)
-    else params.delete('from')
-    if (nextTo) params.set('to', nextTo)
-    else params.delete('to')
-    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+    for (const [k, v] of [['month', nextMonth], ['from', nextFrom], ['to', nextTo]] as const) {
+      if (v) params.set(k, v)
+      else params.delete(k)
+    }
+    startNav(() => router.push(`${pathname}?${params.toString()}`, { scroll: false }))
   }
 
   const plainOptions: { value: DateFilterMode; label: string }[] = [
@@ -158,60 +136,47 @@ export function DateFilter({
   const monthLabel =
     mode === 'custom-month' && month
       ? `${MONTH_LABELS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`
-      : 'Custom month'
+      : 'Pick a month'
   const rangeLabel =
-    mode === 'range' && from && to ? `${from.slice(5)} – ${to.slice(5)}` : 'Custom range'
+    mode === 'range' && from && to ? `${from.slice(5)} to ${to.slice(5)}` : 'Pick dates'
 
   const pendingRange: DateRange | undefined =
     mode === 'range' && (from || to) ? { from: fromYMD(from), to: fromYMD(to) } : undefined
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-sunken/60 p-0.5">
+    <div ref={rootRef} className={segmentedClass}>
       {plainOptions.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => apply({ mode: o.value })}
-          className={pillClass(mode === o.value)}
+          aria-pressed={mode === o.value}
+          className={segmentClass(mode === o.value)}
         >
           {o.label}
         </button>
       ))}
 
-      {/* Custom month */}
-      <div
-        ref={monthWrapRef}
-        className="relative"
-        onMouseEnter={() => { cancelClose(); setOpenPanel('month') }}
-        onMouseLeave={scheduleClose}
-      >
+      <div className="relative">
         <button
           type="button"
           onClick={() => setOpenPanel((p) => (p === 'month' ? null : 'month'))}
-          className={pillClass(mode === 'custom-month')}
+          aria-expanded={openPanel === 'month'}
+          aria-haspopup="dialog"
+          className={segmentClass(mode === 'custom-month')}
         >
           {monthLabel}
         </button>
         {openPanel === 'month' ? (
           <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-line bg-surface p-3 shadow-lg">
             <div className="mb-2 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setCursorYear((y) => y - 1)}
-                aria-label="Previous year"
-                className="rounded-md px-2 py-1 text-muted hover:bg-sunken hover:text-ink"
-              >
-                ‹
-              </button>
+              <IconButton aria-label="Previous year" size="sm" onClick={() => setCursorYear((y) => y - 1)}>
+                <IconChevronLeft size={16} />
+              </IconButton>
               <span className="text-sm font-semibold tabular-nums text-ink">{cursorYear}</span>
-              <button
-                type="button"
-                onClick={() => setCursorYear((y) => y + 1)}
-                aria-label="Next year"
-                className="rounded-md px-2 py-1 text-muted hover:bg-sunken hover:text-ink"
-              >
-                ›
-              </button>
+              <IconButton aria-label="Next year" size="sm" onClick={() => setCursorYear((y) => y + 1)}>
+                <IconChevronRight size={16} />
+              </IconButton>
             </div>
             <div className="grid grid-cols-3 gap-1.5">
               {MONTH_LABELS.map((label, i) => {
@@ -222,6 +187,7 @@ export function DateFilter({
                     key={value}
                     type="button"
                     onClick={() => apply({ mode: 'custom-month', month: value })}
+                    aria-pressed={active}
                     className={`rounded-lg px-2 py-2 text-xs font-medium transition-colors ${
                       active ? 'bg-accent text-white' : 'text-ink hover:bg-sunken'
                     }`}
@@ -235,17 +201,13 @@ export function DateFilter({
         ) : null}
       </div>
 
-      {/* Custom range */}
-      <div
-        ref={rangeWrapRef}
-        className="relative"
-        onMouseEnter={() => { cancelClose(); setOpenPanel('range') }}
-        onMouseLeave={scheduleClose}
-      >
+      <div className="relative">
         <button
           type="button"
           onClick={() => setOpenPanel((p) => (p === 'range' ? null : 'range'))}
-          className={pillClass(mode === 'range')}
+          aria-expanded={openPanel === 'range'}
+          aria-haspopup="dialog"
+          className={segmentClass(mode === 'range')}
         >
           {rangeLabel}
         </button>
@@ -259,7 +221,7 @@ export function DateFilter({
               selected={pendingRange}
               defaultMonth={pendingRange?.from ?? new Date()}
               onSelect={(range) => {
-                // Never auto-applies — a range takes two clicks (start, end),
+                // Never auto-applies: a range takes two clicks (start, end),
                 // and closing after the first would never let the second land.
                 setMode('range')
                 setFrom(range?.from ? toYMD(range.from) : '')
@@ -268,45 +230,34 @@ export function DateFilter({
             />
             <div className="mt-1 flex items-center justify-between gap-2 border-t border-line pt-2">
               <span className="text-[11px] text-muted">
-                {from && to && from !== to
-                  ? `${from} – ${to}`
-                  : from
-                  ? `${from} only`
-                  : 'Pick a start date'}
+                {from && to && from !== to ? `${from} to ${to}` : from ? `${from} only` : 'Pick a start date'}
               </span>
               <div className="flex gap-1.5">
                 {from ? (
-                  <button
-                    type="button"
-                    onClick={() => { setFrom(''); setTo('') }}
-                    className="rounded-md px-2 py-1 text-[11px] font-medium text-muted hover:bg-sunken hover:text-ink"
-                  >
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setFrom(''); setTo('') }}>
                     Clear
-                  </button>
+                  </Button>
                 ) : null}
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   disabled={!from}
                   onClick={() => apply({ mode: 'range', from, to: to || from })}
-                  className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Apply
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         ) : null}
       </div>
 
-      {/* Manual-submit pages read the selection back off these on their own Filter/Show click. */}
-      {!autoSubmit ? (
-        <>
-          <input type="hidden" name="mode" value={mode} readOnly />
-          {month ? <input type="hidden" name="month" value={month} readOnly /> : null}
-          {from ? <input type="hidden" name="from" value={from} readOnly /> : null}
-          {to ? <input type="hidden" name="to" value={to} readOnly /> : null}
-        </>
-      ) : null}
+      {/* Carried by whichever form this sits in, so a submit from a field
+          beside it keeps the date selection. */}
+      <input type="hidden" name="mode" value={mode} readOnly />
+      {month ? <input type="hidden" name="month" value={month} readOnly /> : null}
+      {from ? <input type="hidden" name="from" value={from} readOnly /> : null}
+      {to ? <input type="hidden" name="to" value={to} readOnly /> : null}
     </div>
   )
 }

@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { focusRing } from './ui'
+import { LinkHint } from './LinkHint'
 import {
   IconOrders,
   IconList,
@@ -13,7 +15,6 @@ import {
   IconBoard,
   IconHistory,
   IconRuns,
-  IconDashboard,
 } from './Icons'
 
 export type NavItem = {
@@ -21,7 +22,6 @@ export type NavItem = {
   label: string
   icon?: string
   count?: number
-  description?: string
 }
 
 const ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -35,8 +35,9 @@ const ICONS: Record<string, React.ComponentType<{ size?: number; className?: str
   board: IconBoard,
   history: IconHistory,
   runs: IconRuns,
-  dashboard: IconDashboard,
 }
+
+const ROOTS = new Set(['/admin', '/store', '/agent'])
 
 export function NavLinks({
   items,
@@ -48,11 +49,11 @@ export function NavLinks({
   const pathname = usePathname()
 
   return (
-    <nav className="space-y-1" aria-label="Main Navigation">
+    <nav className="space-y-0.5" aria-label="Main">
       {items.map((item) => {
-        const IconComponent = (item.icon && ICONS[item.icon]) ? ICONS[item.icon] : IconOrders
-        const isRootPage = item.href === '/admin' || item.href === '/store' || item.href === '/agent'
-        const active = isRootPage
+        const Icon = (item.icon && ICONS[item.icon]) || IconOrders
+        // A section root only matches itself; /admin must not light up on /admin/orders.
+        const active = ROOTS.has(item.href)
           ? pathname === item.href
           : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
@@ -62,28 +63,20 @@ export function NavLinks({
             href={item.href}
             onClick={onItemClick}
             aria-current={active ? 'page' : undefined}
-            className={`group flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 ${
-              active
-                ? 'bg-accent-soft text-accent shadow-xs font-semibold'
-                : 'text-muted hover:bg-sunken hover:text-ink'
+            className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${focusRing} ${
+              active ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sunken hover:text-ink'
             }`}
           >
-            <div className="flex items-center gap-3 min-w-0">
-              <IconComponent
-                size={19}
-                className={`shrink-0 transition-colors ${
-                  active ? 'text-accent' : 'text-faint group-hover:text-ink'
-                }`}
-              />
-              <span className="truncate">{item.label}</span>
-            </div>
-
-            {item.count !== undefined && item.count > 0 ? (
+            <Icon
+              size={18}
+              className={`shrink-0 ${active ? 'text-accent' : 'text-faint group-hover:text-ink'}`}
+            />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            <LinkHint />
+            {item.count ? (
               <span
-                className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums transition-colors ${
-                  active
-                    ? 'bg-accent text-white'
-                    : 'bg-red-600 text-white'
+                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                  active ? 'bg-accent text-white' : 'bg-red-600 text-white'
                 }`}
               >
                 {item.count}

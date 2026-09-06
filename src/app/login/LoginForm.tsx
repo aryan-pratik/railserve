@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Button, Field, inputClass } from '@/components/ui'
+import { Button, Field, Notice, inputClass } from '@/components/ui'
 import { login, type LoginState } from './actions'
 
 const initial: LoginState = {}
@@ -23,8 +23,9 @@ export function LoginForm() {
           inputMode="numeric"
           autoComplete="username"
           required
-          placeholder="9000000001"
-          className={`${inputClass} font-mono tabular-nums`}
+          placeholder="10-digit mobile number"
+          spellCheck={false}
+          className={`${inputClass} h-11 font-mono tabular-nums`}
         />
       </Field>
 
@@ -35,18 +36,14 @@ export function LoginForm() {
           type="password"
           autoComplete="current-password"
           required
-          className={inputClass}
+          className={`${inputClass} h-11`}
         />
       </Field>
 
-      {state.error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 ring-1 ring-inset ring-red-200">
-          {state.error}
-        </p>
-      ) : null}
+      {state.error ? <Notice tone="danger">{state.error}</Notice> : null}
 
-      <Button type="submit" size="lg" disabled={pending} className="w-full">
-        {pending ? 'Signing in…' : 'Sign in'}
+      <Button type="submit" size="lg" pending={pending} className="w-full">
+        Sign in
       </Button>
     </form>
   )

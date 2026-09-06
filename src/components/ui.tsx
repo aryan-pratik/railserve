@@ -1,5 +1,35 @@
 import type { ComponentProps, ReactNode } from 'react'
 import Link from 'next/link'
+import { IconArrowLeft } from './Icons'
+import { LinkHint } from './LinkHint'
+import { Spinner } from './Spinner'
+import { EMPTY } from '@/lib/format'
+
+export { Spinner }
+
+/*
+ * The shared vocabulary of every screen.
+ *
+ * Surfaces, buttons, inputs, badges, tabs and the empty/loading/error states
+ * live here so that a control looks the same on the admin board, the kitchen
+ * board and the rider's phone. A page that needs something this file does
+ * not have should add it here, not style a one-off.
+ */
+
+/* ── focus ────────────────────────────────────────────────────────────────── */
+
+/**
+ * The one focus ring. Drawn in accent with an offset so it reads on a filled
+ * button, a white card and a hovered row alike. Keyboard-only, so pointer
+ * users never see it.
+ */
+export const focusRing =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
+
+/** Same ring, drawn inside the element, for rows and cells that have no room around them. */
+export const focusRingInset =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
 
 /* ── surfaces ─────────────────────────────────────────────────────────────── */
 
@@ -13,7 +43,7 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
 
 export function CardHeader({ title, action }: { title: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">{title}</h2>
       {action}
     </div>
@@ -23,25 +53,140 @@ export function CardHeader({ title, action }: { title: ReactNode; action?: React
 export function EmptyState({ title, note, action }: { title: string; note: string; action?: ReactNode }) {
   return (
     <div className="rounded-xl border border-dashed border-line-strong bg-surface p-10 text-center">
-      <p className="font-medium text-ink">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-sm text-muted">{note}</p>
+      <p className="font-medium text-ink text-balance">{title}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted text-pretty">{note}</p>
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   )
 }
 
-export function PageHeader({ title, note, action }: { title: string; note?: string; action?: ReactNode }) {
+/**
+ * Every screen opens with this: a title, an optional line under it, and the
+ * screen's actions on the right. Badges next to the title (an order's status,
+ * its type) go in `badges` so they sit on the title's baseline rather than
+ * being improvised into the title string.
+ */
+export function PageHeader({
+  title,
+  badges,
+  note,
+  action,
+  back,
+}: {
+  title: ReactNode
+  badges?: ReactNode
+  note?: ReactNode
+  action?: ReactNode
+  /** A way back to the list this detail screen came from. */
+  back?: { href: string; label: string }
+}) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-      {/* Capped at a readable measure. Unbounded, a one-sentence note runs the
-          full width of a 1400px console and pushes the action onto its own
-          line, where — being the only thing there — it lands flush left and
-          aligns to nothing. */}
-      <div className="min-w-0 max-w-[68ch]">
-        <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
-        {note ? <p className="mt-1 text-sm leading-relaxed text-muted">{note}</p> : null}
+    <div className="space-y-2">
+      {back ? <BackLink href={back.href}>{back.label}</BackLink> : null}
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        {/* Capped at a readable measure. Unbounded, a one-sentence note runs the
+            full width of a 1400px console and pushes the action onto its own
+            line, where it lands flush left and aligns to nothing. */}
+        <div className="min-w-0 max-w-[68ch]">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <h1 className="text-xl font-semibold tracking-tight text-ink text-balance">{title}</h1>
+            {badges}
+          </div>
+          {note ? <p className="mt-1 text-sm leading-relaxed text-muted text-pretty">{note}</p> : null}
+        </div>
+        {action ? <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div> : null}
       </div>
-      {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
+    </div>
+  )
+}
+
+/** "All orders", "Back to the board": the link at the top of a detail screen. */
+export function BackLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center gap-1.5 rounded-lg py-1 pr-2 text-sm font-medium text-muted transition-colors hover:text-ink ${focusRing}`}
+    >
+      <IconArrowLeft size={15} aria-hidden />
+      {children}
+    </Link>
+  )
+}
+
+/* ── notices ──────────────────────────────────────────────────────────────── */
+
+type Tone = 'info' | 'warn' | 'danger' | 'success'
+
+const NOTICE: Record<Tone, string> = {
+  info: 'bg-sunken text-ink ring-line-strong',
+  warn: 'bg-amber-50 text-amber-900 ring-amber-200',
+  danger: 'bg-red-50 text-red-800 ring-red-200',
+  success: 'bg-emerald-50 text-emerald-900 ring-emerald-200',
+}
+
+/**
+ * A sentence the operator needs to read before trusting the screen: the feed
+ * is down, ingestion has stalled, these times are simulated. Tinted by tone,
+ * never by a coloured left border.
+ */
+export function Notice({
+  tone = 'info',
+  children,
+  className = '',
+}: {
+  tone?: Tone
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      role={tone === 'danger' ? 'alert' : 'status'}
+      className={`rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset text-pretty ${NOTICE[tone]} ${className}`}
+    >
+      {children}
+    </div>
+  )
+}
+
+/* ── stats ────────────────────────────────────────────────────────────────── */
+
+/**
+ * One instrument panel, not a row of free-floating cards. Divided columns
+ * keep the strip full-width however many figures it carries, so its right
+ * edge lines up with whatever table sits below it.
+ */
+export function StatStrip({ children, columns }: { children: ReactNode; columns: 2 | 3 | 4 | 5 }) {
+  const cols = {
+    2: 'sm:grid-cols-2',
+    3: 'sm:grid-cols-3',
+    4: 'sm:grid-cols-2 lg:grid-cols-4',
+    5: 'sm:grid-cols-3 lg:grid-cols-5',
+  }[columns]
+  return (
+    <Card className={`grid divide-y divide-line sm:divide-x sm:divide-y-0 ${cols}`}>
+      {children}
+    </Card>
+  )
+}
+
+export function Stat({
+  label,
+  value,
+  note,
+  tone = 'text-ink',
+}: {
+  label: string
+  value: string
+  note?: string | null
+  /** Text colour class for the figure. Accent for the one present-tense number, red for a loss. */
+  tone?: string
+}) {
+  return (
+    <div className="px-5 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</div>
+      <div className={`mt-1.5 text-2xl font-semibold tabular-nums tracking-tight ${tone}`}>{value}</div>
+      {/* Reserved height so a strip with and without notes lines up. */}
+      <div className="mt-1 h-4 text-xs text-faint">{note}</div>
     </div>
   )
 }
@@ -55,33 +200,22 @@ const VARIANT: Record<Variant, string> = {
   primary: 'bg-accent text-white hover:bg-accent-hover',
   secondary: 'border border-line-strong bg-surface text-ink hover:bg-sunken',
   ghost: 'text-muted hover:bg-sunken hover:text-ink',
-  danger: 'border border-red-300 bg-white text-red-700 hover:bg-red-50',
+  danger: 'border border-red-300 bg-surface text-red-700 hover:bg-red-50',
   // The one action an agent takes with their thumb, on a platform, in a hurry.
   go: 'bg-emerald-600 text-white hover:bg-emerald-700',
 }
 
 const SIZE: Record<Size, string> = {
-  sm: 'px-2.5 py-1.5 text-xs',
-  md: 'px-3.5 py-2 text-sm',
-  lg: 'px-4 py-3 text-base',
+  sm: 'h-8 px-2.5 text-xs',
+  md: 'h-9 px-3.5 text-sm',
+  lg: 'h-12 px-4 text-base',
 }
-
-/**
- * A focus ring that is actually visible.
- *
- * Offset so it reads against both the button's own fill and the row hover
- * behind it, and drawn in ink rather than accent so it stays visible on the
- * accent-filled primary variant. Keyboard-only, so pointer users never see it.
- */
-const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ' +
-  'focus-visible:ring-offset-2 focus-visible:ring-offset-surface'
 
 function buttonClass(variant: Variant, size: Size, className: string) {
   return (
-    'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition ' +
-    'disabled:cursor-not-allowed disabled:opacity-50 ' +
-    `${FOCUS_RING} ${VARIANT[variant]} ${SIZE[size]} ${className}`
+    'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap ' +
+    'transition-colors disabled:cursor-not-allowed disabled:opacity-50 ' +
+    `${focusRing} ${VARIANT[variant]} ${SIZE[size]} ${className}`
   )
 }
 
@@ -89,9 +223,27 @@ export function Button({
   variant = 'primary',
   size = 'md',
   className = '',
+  pending = false,
+  disabled,
+  children,
   ...props
-}: ComponentProps<'button'> & { variant?: Variant; size?: Size }) {
-  return <button {...props} className={buttonClass(variant, size, className)} />
+}: ComponentProps<'button'> & {
+  variant?: Variant
+  size?: Size
+  /** The request has started: disable, and show a spinner beside the label. */
+  pending?: boolean
+}) {
+  return (
+    <button
+      {...props}
+      disabled={disabled || pending}
+      aria-busy={pending || undefined}
+      className={buttonClass(variant, size, className)}
+    >
+      {pending ? <Spinner size={size === 'lg' ? 18 : 14} /> : null}
+      {children}
+    </button>
+  )
 }
 
 export function ButtonLink({
@@ -106,10 +258,9 @@ export function ButtonLink({
 /**
  * A button that is a plain anchor rather than a Link.
  *
- * For hrefs the router must not intercept — a file download, or anything
+ * For hrefs the router must not intercept: a file download, or anything
  * leaving the app. Routing a CSV route handler client-side navigates the page
- * to it instead of saving a file, so the distinction is load-bearing, not
- * stylistic.
+ * to it instead of saving a file, so the distinction is load-bearing.
  */
 export function ButtonAnchor({
   variant = 'secondary',
@@ -120,14 +271,48 @@ export function ButtonAnchor({
   return <a {...props} className={buttonClass(variant, size, className)} />
 }
 
+/**
+ * A square button holding one icon. `aria-label` is required, not optional:
+ * an icon-only control with no name is unusable by a screen reader and
+ * un-hoverable on a phone.
+ */
+export function IconButton({
+  'aria-label': label,
+  size = 'md',
+  className = '',
+  children,
+  ...props
+}: Omit<ComponentProps<'button'>, 'aria-label'> & { 'aria-label': string; size?: 'sm' | 'md' }) {
+  return (
+    <button
+      type="button"
+      {...props}
+      aria-label={label}
+      title={props.title ?? label}
+      className={`inline-flex shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunken hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 ${
+        size === 'sm' ? 'size-7' : 'size-9'
+      } ${focusRing} ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
 /* ── forms ────────────────────────────────────────────────────────────────── */
 
-export const inputClass =
+/** An input or select at its natural width: for toolbars, where it sits beside other controls. */
+export const inputBase =
+  'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink outline-none ' +
+  'placeholder:text-faint disabled:bg-sunken disabled:text-faint ' +
+  'focus:border-accent focus:ring-2 focus:ring-accent'
+
+/** The same, filling its column: for forms laid out in a grid. */
+export const inputClass = `w-full ${inputBase}`
+
+/** Same border and focus treatment for anything taller than one line. */
+export const textareaClass =
   'w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none ' +
   'placeholder:text-faint disabled:bg-sunken disabled:text-faint ' +
-  // ring-accent/20 composited to 1.39:1 against white — below the 3:1 that
-  // SC 1.4.11 asks of a focus indicator, so the ring was decorative and a 1px
-  // border change was carrying the whole signal. Full-opacity accent instead.
   'focus:border-accent focus:ring-2 focus:ring-accent'
 
 export function Field({
@@ -141,17 +326,55 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint && !error ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+      {hint && !error ? <p className="mt-1 text-xs text-muted text-pretty">{hint}</p> : null}
       {error ? <p className="mt-1 text-xs font-medium text-red-600">{error}</p> : null}
     </div>
   )
 }
 
 /** Inline result of a server action. Every form reports success and failure the same way. */
-export function FormNote({ state }: { state: { error?: string; ok?: string } }) {
-  if (state.error) return <span className="text-sm font-medium text-red-600">{state.error}</span>
-  if (state.ok) return <span className="text-sm font-medium text-emerald-700">{state.ok}</span>
+export function FormNote({ state, className = '' }: { state: { error?: string; ok?: string }; className?: string }) {
+  if (state.error) {
+    return (
+      <span role="alert" className={`text-sm font-medium text-red-600 ${className}`}>
+        {state.error}
+      </span>
+    )
+  }
+  if (state.ok) {
+    return (
+      <span role="status" className={`text-sm font-medium text-emerald-700 ${className}`}>
+        {state.ok}
+      </span>
+    )
+  }
   return null
+}
+
+/**
+ * A row of exclusive choices: Today / Upcoming, All time / This month.
+ * One control, one shape, wherever it appears.
+ */
+export const segmentedClass =
+  'inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-sunken/60 p-0.5'
+
+export function segmentClass(active: boolean) {
+  return (
+    'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap ' +
+    `transition-colors ${focusRing} ${
+      active ? 'bg-surface text-ink font-semibold shadow-2xs' : 'text-muted hover:text-ink'
+    }`
+  )
+}
+
+/* ── tables ───────────────────────────────────────────────────────────────── */
+
+/** Column header for every table. Left-aligned by default; add text-right for numbers. */
+export const thClass = 'px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted'
+
+/** What an empty cell shows. */
+export function Dash() {
+  return <span className="text-faint">{EMPTY}</span>
 }
 
 /* ── badges ───────────────────────────────────────────────────────────────── */
@@ -177,7 +400,7 @@ const STATUS_STYLES: Record<string, string> = {
   LOST: 'bg-slate-200 text-slate-600 ring-slate-300',
 }
 
-/** Short labels — the board shows these hundreds of times a day. */
+/** Short labels: the board shows these hundreds of times a day. */
 const STATUS_LABEL: Record<string, string> = {
   KOT_PRINTED: 'KOT sent',
   PREPARED: 'Ready',
@@ -191,7 +414,7 @@ export function statusLabel(status: string) {
 export function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
+      className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
         STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-700 ring-slate-200'
       }`}
     >
@@ -210,9 +433,25 @@ export function TypeBadge({ type }: { type: string }) {
   )
 }
 
+/** A payment mode as a pill. COD is loud because it is cash a rider must collect. */
+export function PaymentBadge({ mode, amount }: { mode: string | null | undefined; amount?: string }) {
+  if (!mode) return <Dash />
+  const cod = mode === 'COD'
+  return (
+    <span
+      className={`inline-flex whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide ring-1 ring-inset ${
+        cod ? 'bg-amber-100 text-amber-900 ring-amber-200' : 'bg-sunken text-muted ring-line-strong'
+      }`}
+    >
+      {cod ? 'COD' : mode.charAt(0) + mode.slice(1).toLowerCase()}
+      {amount ? <span className="ml-1 tabular-nums">{amount}</span> : null}
+    </span>
+  )
+}
+
 /** The coach is what an agent walks the platform by, so it reads first. */
 export function CoachChip({ coach, berth, size = 'md' }: { coach: string | null | undefined; berth?: string | null | undefined; size?: 'md' | 'lg' }) {
-  if (!coach) return <span className="text-sm text-faint">–</span>
+  if (!coach) return <Dash />
   return (
     // Wraps rather than overflows: a berth dropping to a second line is
     // readable, a coach code painted across the next column is not.
@@ -238,14 +477,24 @@ export function CoachChip({ coach, berth, size = 'md' }: { coach: string | null 
 
 export type Tab = { href: string; label: string; count?: number; active: boolean }
 
-export function Tabs({ tabs }: { tabs: Tab[] }) {
+export function Tabs({
+  tabs,
+  label = 'Sections',
+  action,
+}: {
+  tabs: Tab[]
+  label?: string
+  /** Controls that belong on the same line as the tabs, at the right. */
+  action?: ReactNode
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-line">
+    <nav aria-label={label} className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line">
       {tabs.map((t) => (
         <Link
           key={t.href}
           href={t.href}
-          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition ${
+          aria-current={t.active ? 'page' : undefined}
+          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${focusRingInset} ${
             t.active
               ? 'border-accent text-accent'
               : 'border-transparent text-muted hover:border-line-strong hover:text-ink'
@@ -261,8 +510,10 @@ export function Tabs({ tabs }: { tabs: Tab[] }) {
               {t.count}
             </span>
           ) : null}
+          <LinkHint />
         </Link>
       ))}
-    </div>
+      {action ? <div className="ml-auto flex flex-wrap items-center gap-2 pb-1.5">{action}</div> : null}
+    </nav>
   )
 }

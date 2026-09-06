@@ -3,7 +3,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { todayIST } from '@/lib/format'
 import { OrderComposer } from '@/components/OrderComposer'
-import { PageHeader, ButtonLink } from '@/components/ui'
+import { PageHeader } from '@/components/ui'
 import { createOrderAction, pasteOrderAction } from '@/app/actions/orders'
 
 export const metadata = { title: 'New order · RailServe' }
@@ -21,8 +21,8 @@ export default async function AdminNewOrderPage() {
     <div className="mx-auto max-w-3xl space-y-5">
       <PageHeader
         title="New order"
+        back={{ href: '/admin', label: 'Back to the board' }}
         note="Paste an aggregator message, or enter a phone order by hand."
-        action={<ButtonLink href="/admin">Back to board</ButtonLink>}
       />
       <OrderComposer
         outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}

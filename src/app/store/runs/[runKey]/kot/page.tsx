@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
@@ -6,6 +5,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { KotTicket } from '@/components/KotTicket'
 import { PrintButton } from '../../../orders/[id]/kot/PrintButton'
+import { BackLink } from '@/components/ui'
 
 export const metadata = { title: 'KOT batch · RailServe' }
 
@@ -33,9 +33,7 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
-        <Link href="/store" className="text-sm text-muted underline-offset-2 hover:underline">
-          ← Back to the board
-        </Link>
+        <BackLink href="/store">Back to the board</BackLink>
         <div className="flex items-center gap-3">
           <span className="text-xs text-faint">
             {run.orders.length} ticket{run.orders.length === 1 ? '' : 's'} ·{' '}

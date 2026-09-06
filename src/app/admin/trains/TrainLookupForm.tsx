@@ -1,16 +1,16 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Button, Card, CardHeader, Field, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, Dash, Field, Notice, inputClass } from '@/components/ui'
 import { lookupTrain, type LookupState } from './actions'
 
 const initial: LookupState = {}
 
-function Row({ label, value, tone = '' }: { label: string; value: string; tone?: string }) {
+function Row({ label, value, tone = '' }: { label: string; value: React.ReactNode; tone?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-line py-2.5 last:border-0">
       <span className="text-sm text-muted">{label}</span>
-      <span className={`text-right text-sm font-medium text-ink ${tone}`}>{value}</span>
+      <span className={`text-right text-sm font-medium text-ink ${tone}`}>{value ?? <Dash />}</span>
     </div>
   )
 }
@@ -29,10 +29,10 @@ function ago(iso: string): string {
   return `${h}h ${mins % 60}m ago`
 }
 
-/** "KANPUR CENTRAL (CNB)" — a bare code means nothing to someone new. */
-function place(name: string | null, code: string | null): string {
+/** "KANPUR CENTRAL (CNB)": a bare code means nothing to someone new. */
+function place(name: string | null, code: string | null): string | null {
   if (name && code) return `${name} (${code})`
-  return name ?? code ?? '–'
+  return name ?? code
 }
 
 export function TrainLookupForm({
@@ -48,35 +48,34 @@ export function TrainLookupForm({
     <div className="space-y-4">
       <Card>
         <CardHeader title="Look up a train" />
-        <form action={action} className="grid gap-4 p-4 sm:grid-cols-4">
+        <form action={action} className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Train number" htmlFor="trainNo">
-            <input id="trainNo" name="trainNo" required inputMode="numeric"
-              placeholder="12561" className={inputClass} />
+            <input id="trainNo" name="trainNo" required inputMode="numeric" autoComplete="off" spellCheck={false}
+              placeholder="12561" className={`${inputClass} font-mono`} />
           </Field>
 
           <Field label="Station code" htmlFor="stationCode"
             hint={stations.length ? `Your outlets: ${stations.join(', ')}` : undefined}>
-            <input id="stationCode" name="stationCode" required list="station-codes"
+            <input id="stationCode" name="stationCode" required list="station-codes" autoComplete="off" spellCheck={false}
               defaultValue={stations[0] ?? ''} placeholder="CNB"
-              className={`${inputClass} uppercase`} />
+              className={`${inputClass} font-mono uppercase`} />
             <datalist id="station-codes">
               {stations.map((s) => <option key={s} value={s} />)}
             </datalist>
           </Field>
 
           <Field label="Date" htmlFor="serviceDate" hint="The day it reaches this station.">
-            <input id="serviceDate" name="serviceDate" type="date" defaultValue={today}
-              className={inputClass} />
+            <input id="serviceDate" name="serviceDate" type="date" defaultValue={today} className={inputClass} />
           </Field>
 
           <div className="flex items-end">
-            <Button type="submit" disabled={pending} className="w-full">
-              {pending ? 'Checking…' : 'Check status'}
-            </Button>
+            <Button type="submit" pending={pending} className="w-full">Check status</Button>
           </div>
 
           {state.error ? (
-            <p className="text-sm font-medium text-red-600 sm:col-span-4">{state.error}</p>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <Notice tone="danger">{state.error}</Notice>
+            </div>
           ) : null}
         </form>
       </Card>
@@ -92,95 +91,74 @@ export function TrainLookupForm({
             }
           />
 
-          <div className="px-4 py-2">
+          <div className="space-y-2 px-4 py-3">
             {r.simulated ? (
-              <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                These times are <strong>simulated</strong>, not live. No real train API is
-                configured for this environment.
-              </p>
+              <Notice tone="warn">These times are simulated, not live. No real train API is configured for this environment.</Notice>
             ) : null}
 
-            {r.statusNote ? (
-              <p className="mb-3 rounded-lg bg-sunken px-3 py-2 text-sm text-ink">{r.statusNote}</p>
-            ) : null}
+            {r.statusNote ? <Notice>{r.statusNote}</Notice> : null}
 
             {r.arrived ? (
-              <p
-                className="mb-3 text-xs font-medium text-faint"
-                title="This train has left the station. Its arrival, delay and platform here are final, so live tracking has stopped."
-              >
+              <p className="text-xs font-medium text-faint" title="This train has left the station, so live tracking has stopped.">
                 Train arrived · tracking stopped
               </p>
             ) : null}
 
-            {/* What we are actually asking about — a delay is meaningless
-                without saying delayed to WHERE. */}
-            <Row label="Delivering at" value={place(r.stationName, r.stationCode)} />
-            <Row label="Service date" value={r.serviceDate} />
-
-            <Row
-              label="Scheduled arrival"
-              value={r.scheduledArrivalIso ? `${istTime(r.scheduledArrivalIso)} IST` : 'not published'}
-            />
-            <Row
-              label="Expected arrival"
-              value={r.etaAtIso ? `${istTime(r.etaAtIso)} IST` : 'not reported'}
-              tone={r.delayMinutes && r.delayMinutes > 0 ? 'text-red-600' : ''}
-            />
-            {/* Directly under the ETA, because it is what the ETA is worth: a
-                projection made from a position an hour old is an hour-old
-                projection. The empty case is stated rather than hidden — a run
-                that has not left its source has no update, and RailKit sends
-                an empty string for it, which as a blank line reads as a bug in
-                us rather than as news about the train. */}
-            <Row
-              label="Feed last updated"
-              value={
-                r.providerUpdatedAtIso
-                  ? `${istTime(r.providerUpdatedAtIso)} IST · ${ago(r.providerUpdatedAtIso)}`
-                  : 'never (this run has not reported yet)'
-              }
-            />
-            <Row
-              label="Delay"
-              value={
-                r.delayMinutes === null
-                  ? 'unknown'
-                  : r.delayMinutes <= 0
-                    ? 'on time'
-                    : r.delayMinutes >= 60
-                      ? `${Math.floor(r.delayMinutes / 60)}h ${r.delayMinutes % 60}m late`
-                      : `${r.delayMinutes} min late`
-              }
-              tone={r.delayMinutes && r.delayMinutes > 0 ? 'text-red-600' : ''}
-            />
-            <Row label="Platform" value={r.platform ? `PF ${r.platform}` : 'not announced'} />
-
-            <Row
-              label="Train is now at"
-              value={
-                r.currentStationCode
-                  ? place(r.currentStationName, r.currentStationCode)
-                  : 'not started yet'
-              }
-            />
-            <Row
-              label="Still to go"
-              value={[
-                r.stopsAway !== null
-                  ? r.stopsAway === 0
-                    ? 'at this station'
-                    : `${r.stopsAway} stop${r.stopsAway === 1 ? '' : 's'}`
-                  : null,
-                r.distanceKm !== null ? `${r.distanceKm} km into the run` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ') || '–'}
-            />
+            <div>
+              <Row label="Delivering at" value={place(r.stationName, r.stationCode)} />
+              <Row label="Service date" value={r.serviceDate} />
+              <Row label="Scheduled arrival" value={r.scheduledArrivalIso ? `${istTime(r.scheduledArrivalIso)} IST` : 'not published'} />
+              <Row
+                label="Expected arrival"
+                value={r.etaAtIso ? `${istTime(r.etaAtIso)} IST` : 'not reported'}
+                tone={r.delayMinutes && r.delayMinutes > 0 ? 'text-red-600' : ''}
+              />
+              {/* Directly under the ETA, because it is what the ETA is worth: a
+                  projection made from a position an hour old is an hour-old projection. */}
+              <Row
+                label="Feed last updated"
+                value={
+                  r.providerUpdatedAtIso
+                    ? `${istTime(r.providerUpdatedAtIso)} IST · ${ago(r.providerUpdatedAtIso)}`
+                    : 'never (this run has not reported yet)'
+                }
+              />
+              <Row
+                label="Delay"
+                value={
+                  r.delayMinutes === null
+                    ? 'unknown'
+                    : r.delayMinutes <= 0
+                      ? 'on time'
+                      : r.delayMinutes >= 60
+                        ? `${Math.floor(r.delayMinutes / 60)}h ${r.delayMinutes % 60}m late`
+                        : `${r.delayMinutes} min late`
+                }
+                tone={r.delayMinutes && r.delayMinutes > 0 ? 'text-red-600' : ''}
+              />
+              <Row label="Platform" value={r.platform ? `PF ${r.platform}` : 'not announced'} />
+              <Row
+                label="Train is now at"
+                value={r.currentStationCode ? place(r.currentStationName, r.currentStationCode) : 'not started yet'}
+              />
+              <Row
+                label="Still to go"
+                value={[
+                  r.stopsAway !== null
+                    ? r.stopsAway === 0
+                      ? 'at this station'
+                      : `${r.stopsAway} stop${r.stopsAway === 1 ? '' : 's'}`
+                    : null,
+                  r.distanceKm !== null ? `${r.distanceKm} km into the run` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || null}
+              />
+            </div>
           </div>
 
-          <p className="border-t border-line px-4 py-2.5 text-xs text-muted">
-            This reading is now cached for {r.trainNo} at {r.stationCode}, so the store and rider
+          <p className="border-t border-line px-4 py-2.5 text-xs text-muted text-pretty">
+            This reading is now cached for {r.trainNo} at {r.stationCode}, so the kitchen and rider
             boards show the same times without spending another API request.
           </p>
         </Card>

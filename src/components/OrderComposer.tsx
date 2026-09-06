@@ -1,7 +1,8 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, Field, FormNote, inputClass, textareaClass } from '@/components/ui'
+import { IconPlus } from '@/components/Icons'
 import { PACKING_CHOICES } from '@/lib/validation/order'
 
 export type ComposerState = { error?: string; ok?: string }
@@ -48,15 +49,11 @@ export function OrderComposer({
             name="body"
             aria-label="Paste the aggregator order message"
             rows={7}
-            placeholder={
-              'Order From YatriRestro\nOrder Id : #1000584365\n…paste the whole message'
-            }
-            className={`${inputClass} font-mono text-xs`}
+            placeholder={'Order From YatriRestro\nOrder Id : #1000584365\n(paste the whole message)'}
+            className={`${textareaClass} font-mono text-xs`}
           />
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={pasting}>
-              {pasting ? 'Reading…' : 'Create from paste'}
-            </Button>
+            <Button type="submit" pending={pasting}>Create from paste</Button>
             <span className="text-xs text-muted">
               The outlet, train, seat and items are read from the message.
             </span>
@@ -161,7 +158,7 @@ export function OrderComposer({
               <input id="contactName" name="contactName" className={inputClass} />
             </Field>
             <Field label="Contact phone" htmlFor="contactPhone">
-              <input id="contactPhone" name="contactPhone" inputMode="tel"
+              <input id="contactPhone" name="contactPhone" inputMode="tel" autoComplete="off"
                 className={`${inputClass} font-mono`} />
             </Field>
           </div>
@@ -174,15 +171,15 @@ export function OrderComposer({
               <>
                 <Field label="Menu" htmlFor="menuSpec"
                   hint="The whole thali as one block. This prints on the ticket verbatim.">
-                  <textarea id="menuSpec" name="menuSpec" rows={4} className={inputClass} />
+                  <textarea id="menuSpec" name="menuSpec" rows={4} className={textareaClass} />
                 </Field>
                 <Field label="Packing"
                   hint="The part of a large order that gets forgotten.">
                   <div className="flex flex-wrap gap-2">
                     {PACKING_CHOICES.map((p) => (
                       <label key={p}
-                        className="flex items-center gap-1.5 rounded-lg border border-line-strong px-2.5 py-1.5 text-sm has-checked:border-accent has-checked:bg-accent-soft has-checked:text-accent">
-                        <input type="checkbox" name="packingItems" value={p} className="size-4 rounded border-line-strong" />
+                        className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-line-strong px-2.5 py-1.5 text-sm has-checked:border-accent has-checked:bg-accent-soft has-checked:text-accent">
+                        <input type="checkbox" name="packingItems" value={p} className="size-4 rounded border-line-strong accent-accent" />
                         {p}
                       </label>
                     ))}
@@ -207,7 +204,8 @@ export function OrderComposer({
                 </div>
                 <div className="flex gap-2">
                   <Button type="button" size="sm" variant="secondary" onClick={() => setRows((n) => n + 1)}>
-                    + Add item
+                    <IconPlus size={13} />
+                    Add item
                   </Button>
                   {rows > 1 ? (
                     <Button type="button" size="sm" variant="ghost" onClick={() => setRows((n) => n - 1)}>
@@ -229,7 +227,7 @@ export function OrderComposer({
             </Field>
             <Field label="Mode" htmlFor="paymentMode">
               <select id="paymentMode" name="paymentMode" className={inputClass}>
-                <option value="">–</option>
+                <option value="">Not set</option>
                 <option value="PREPAID">Prepaid</option>
                 <option value="COD">Cash on delivery</option>
                 <option value="INVOICE">Invoice</option>
@@ -241,10 +239,8 @@ export function OrderComposer({
           </div>
         </Card>
 
-        <div className="flex items-center gap-3">
-          <Button type="submit" size="lg" disabled={creating}>
-            {creating ? 'Creating…' : 'Create order'}
-          </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" size="lg" pending={creating}>Create order</Button>
           <FormNote state={createState} />
         </div>
       </form>

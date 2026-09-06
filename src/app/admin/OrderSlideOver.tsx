@@ -1,9 +1,9 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Button, FormNote, StatusBadge, statusLabel } from '@/components/ui'
+import { Button, ButtonLink, Dash, FormNote, IconButton, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
+import { IconClose, IconPhone } from '@/components/Icons'
 import { formatIST, formatMoney, formatTimeIST } from '@/lib/format'
 import { adminTransitionAction, forceRefreshOrderTrain, type ActionState } from './orders/[id]/actions'
 import { fetchOrderDetail, type OrderDetail } from './orderDetail'
@@ -11,36 +11,45 @@ import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 
 const initial: ActionState = {}
 
+/** What the board already knows about a row, painted before the fetch lands. */
+export type OrderPreview = {
+  id: string
+  externalOrderId: string
+  status: string
+  outletName: string | null
+}
+
 /**
  * Order detail, slid in from the right.
  *
  * A panel rather than a page because the board is the workspace: an admin
- * checks an order, acts on it, and carries on down the list. Navigating away
- * and back would lose their place in it every time.
+ * checks an order, acts on it, and carries on down the list.
  *
- * The board stays mounted underneath, so after a transition we refresh it
- * rather than re-fetching only the panel — the row's status badge has to move
- * too, or the list quietly disagrees with the panel on top of it.
+ * The header paints from the row that was clicked, so the panel is never
+ * blank: the id, status and outlet are on screen the same frame it opens,
+ * and the fetch fills in the rest underneath a skeleton.
+ *
+ * After a transition the board is refreshed too, or the row's status badge
+ * quietly disagrees with the panel on top of it.
  */
 export function OrderSlideOver({
-  orderId,
+  preview,
   onClose,
 }: {
-  orderId: string | null
+  preview: OrderPreview | null
   onClose: () => void
 }) {
   const router = useRouter()
-  // Keyed by the order it belongs to, and derived during render rather than
-  // cleared in an effect. Clearing synchronously in an effect costs an extra
-  // render pass, and — worse — briefly shows the previous order's details under
-  // the new order's heading.
+  const orderId = preview?.id ?? null
+  // Keyed by the order it belongs to and derived during render, so switching
+  // rows never shows the previous order's items under the new order's heading.
   const [loaded, setLoaded] = useState<{ id: string; detail: OrderDetail | null } | null>(null)
   const detail = loaded && loaded.id === orderId ? loaded.detail : null
+  const loading = Boolean(orderId) && (!loaded || loaded.id !== orderId)
   const [state, transition, pending] = useActionState(adminTransitionAction, initial)
   const panelRef = useRef<HTMLDivElement>(null)
   const lastOk = useRef<string | undefined>(undefined)
 
-  // Load whenever the selected order changes.
   useEffect(() => {
     if (!orderId) return
     let live = true
@@ -59,67 +68,58 @@ export function OrderSlideOver({
     }
   }, [state.ok, orderId, router])
 
-  // Escape closes, and focus moves in on open — a panel a keyboard user can
-  // open but not leave is worse than no panel.
+  // Escape closes; focus moves in on open and back to the row on close.
   useEffect(() => {
     if (!orderId) return
+    const opener = document.activeElement as HTMLElement | null
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     panelRef.current?.focus()
-    return () => document.removeEventListener('keydown', onKey)
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previous
+      opener?.focus?.()
+    }
   }, [orderId, onClose])
 
-  if (!orderId) return null
+  if (!preview || !orderId) return null
+
+  const status = detail?.status ?? preview.status
+  const outlet = detail?.outlet
+    ? `${detail.outlet.name} · ${detail.outlet.stationCode}`
+    : preview.outletName ?? 'No outlet'
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-40 bg-ink/25 backdrop-blur-[1px]"
-        onClick={onClose}
-        aria-hidden
-      />
+      <div className="fixed inset-0 z-40 bg-ink/25" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="Order details"
+        aria-label={`Order ${preview.externalOrderId}`}
         className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-line bg-canvas shadow-2xl outline-none"
       >
-        <header className="flex items-start justify-between gap-3 border-b border-line bg-surface px-5 py-4">
+        <header className="flex items-start justify-between gap-3 border-b border-line bg-surface px-4 py-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
-              Order details
-            </h2>
-            {detail ? (
-              <>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-base font-semibold text-ink">
-                    {detail.externalOrderId}
-                  </span>
-                  <StatusBadge status={detail.status} />
-                </div>
-                <p className="mt-0.5 truncate text-xs text-muted">
-                  {detail.outlet ? `${detail.outlet.name} · ${detail.outlet.stationCode}` : 'No outlet'}
-                </p>
-              </>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-base font-semibold text-ink">{preview.externalOrderId}</span>
+              <StatusBadge status={status} />
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted">{outlet}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close order details"
-            className="rounded-lg p-1.5 text-muted transition hover:bg-sunken hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
-          >
-            ✕
-          </button>
+          <IconButton aria-label="Close" size="sm" onClick={onClose}>
+            <IconClose size={18} />
+          </IconButton>
         </header>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {!loaded || loaded.id !== orderId ? (
-            <p className="text-sm text-muted">Loading…</p>
+        <div className="flex-1 space-y-3 overflow-y-auto p-4 [overscroll-behavior:contain]">
+          {loading ? (
+            <PanelSkeleton />
           ) : !detail ? (
-            <p className="text-sm text-muted">This order could not be loaded.</p>
+            <p className="text-sm text-muted">This order could not be loaded. It may have been deleted.</p>
           ) : (
             <>
               <Section title="Journey">
@@ -128,20 +128,16 @@ export function OrderSlideOver({
                     ? `${detail.trainNo}${detail.trainName ? ` ${detail.trainName}` : ''}`
                     : 'Not specified'
                 } mono />
-                <Row label="Station" value={detail.outlet?.stationCode ?? '–'} mono />
+                <Row label="Station" value={detail.outlet?.stationCode ?? null} mono />
                 <Row label="Scheduled" value={formatTimeIST(detail.scheduledArrival)} />
                 <div className="flex items-baseline justify-between gap-3 py-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted">
-                    Expected
-                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted">Expected</span>
                   <span className="flex flex-wrap items-center justify-end gap-1.5">
                     <span className="text-sm font-semibold tabular-nums text-ink">
                       {formatTimeIST(detail.expectedArrival)}
                     </span>
                     {detail.timingSource === 'LIVE' && !detail.stale ? (
-                      <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                        LIVE
-                      </span>
+                      <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">LIVE</span>
                     ) : null}
                     {detail.delayMinutes !== null && detail.delayMinutes > 5 ? (
                       <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
@@ -151,9 +147,7 @@ export function OrderSlideOver({
                       </span>
                     ) : null}
                     {detail.platform ? (
-                      <span className="rounded bg-ink px-1.5 py-0.5 text-[11px] font-bold text-white">
-                        PF {detail.platform}
-                      </span>
+                      <span className="rounded bg-ink px-1.5 py-0.5 text-[11px] font-bold text-white">PF {detail.platform}</span>
                     ) : null}
                     {detail.trainNo ? (
                       <RefreshTrainButton orderId={detail.id} action={forceRefreshOrderTrain} />
@@ -161,19 +155,13 @@ export function OrderSlideOver({
                   </span>
                 </div>
                 {detail.arrived ? (
-                  // A separate line rather than another badge crowding the row
-                  // above — this is the reason nothing on this order's timing
-                  // will move again, worth its own sentence.
-                  <p
-                    className="text-xs font-medium text-faint"
-                    title="This train has left the station. Its arrival, delay and platform here are final, so live tracking has stopped."
-                  >
+                  <p className="text-xs text-faint" title="This train has left the station, so live tracking has stopped.">
                     Train arrived · tracking stopped
                   </p>
                 ) : null}
                 <Row
                   label={detail.handoverPoint ? 'Handover' : 'Seat'}
-                  value={detail.handoverPoint ?? detail.seat ?? '–'}
+                  value={detail.handoverPoint ?? detail.seat ?? null}
                   mono={!detail.handoverPoint}
                 />
                 {detail.pax ? <Row label="Pax" value={String(detail.pax)} /> : null}
@@ -188,32 +176,18 @@ export function OrderSlideOver({
                         {i.name}
                         <span className="ml-1.5 tabular-nums text-muted">×{i.qty}</span>
                         {i.spec ? (
-                          <span className="mt-1 block whitespace-pre-wrap text-xs text-muted">
-                            {i.spec}
-                          </span>
+                          <span className="mt-1 block whitespace-pre-wrap text-xs text-muted">{i.spec}</span>
                         ) : null}
                       </span>
                       {i.pricePaise != null ? (
-                        <span className="shrink-0 text-sm tabular-nums text-muted">
-                          {formatMoney(i.pricePaise)}
-                        </span>
+                        <span className="shrink-0 text-sm tabular-nums text-muted">{formatMoney(i.pricePaise)}</span>
                       ) : null}
                     </li>
                   ))}
                 </ul>
                 <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-bold ${
-                      detail.paymentMode === 'COD'
-                        ? 'bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-200'
-                        : 'text-muted'
-                    }`}
-                  >
-                    {detail.paymentMode ?? '–'}
-                  </span>
-                  <span className="text-base font-semibold tabular-nums text-ink">
-                    {formatMoney(detail.amountPaise)}
-                  </span>
+                  <PaymentBadge mode={detail.paymentMode} />
+                  <span className="text-base font-semibold tabular-nums text-ink">{formatMoney(detail.amountPaise)}</span>
                 </div>
               </Section>
 
@@ -221,20 +195,16 @@ export function OrderSlideOver({
                 <Section title="Passenger">
                   <div className="flex items-center justify-between gap-3 py-1">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">
-                        {detail.contactName ?? '–'}
-                      </p>
+                      <p className="truncate text-sm font-medium text-ink">{detail.contactName ?? <Dash />}</p>
                       {detail.contactPhone ? (
-                        <p className="font-mono text-xs text-muted">{detail.contactPhone}</p>
+                        <p className="font-mono text-xs tabular-nums text-muted">{detail.contactPhone}</p>
                       ) : null}
                     </div>
                     {detail.contactPhone ? (
-                      <a
-                        href={`tel:${detail.contactPhone}`}
-                        className="rounded-lg border border-line-strong px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-sunken"
-                      >
+                      <ButtonLink href={`tel:${detail.contactPhone}`} size="sm">
+                        <IconPhone size={14} />
                         Call
-                      </a>
+                      </ButtonLink>
                     ) : null}
                   </div>
                 </Section>
@@ -252,13 +222,7 @@ export function OrderSlideOver({
                     <form key={n.to} action={transition}>
                       <input type="hidden" name="orderId" value={detail.id} />
                       <input type="hidden" name="to" value={n.to} />
-                      <Button
-                        type="submit"
-                        size="lg"
-                        variant={n.danger ? 'danger' : 'primary'}
-                        disabled={pending}
-                        className="w-full"
-                      >
+                      <Button type="submit" size="lg" variant={n.danger ? 'danger' : 'primary'} pending={pending} className="w-full">
                         {n.label}
                       </Button>
                     </form>
@@ -282,26 +246,44 @@ export function OrderSlideOver({
                             ? e.action.toLowerCase().replace(/_/g, ' ')
                             : statusLabel(e.toStatus)}
                         </span>
-                        <span className="block text-xs text-muted">
-                          {formatIST(e.at)} · {e.actor}
-                        </span>
+                        <span className="block text-xs text-muted">{formatIST(e.at)} · {e.actor}</span>
                       </span>
                     </li>
                   ))}
                 </ol>
               </Section>
 
-              <Link
-                href={`/admin/orders/${detail.id}`}
-                className="block text-center text-sm font-medium text-accent underline-offset-2 hover:underline"
-              >
-                Open the full order page →
-              </Link>
+              <ButtonLink href={`/admin/orders/${detail.id}`} className="w-full">
+                Open the full order page
+              </ButtonLink>
             </>
           )}
         </div>
       </div>
     </>
+  )
+}
+
+function PanelSkeleton() {
+  const bar = 'rounded bg-sunken motion-safe:animate-pulse'
+  return (
+    <div aria-busy="true" className="space-y-3">
+      <span className="sr-only">Loading order</span>
+      {[5, 3, 2].map((rows, i) => (
+        <div key={i} className="rounded-xl border border-line bg-surface p-4">
+          <div className={`${bar} mb-3 h-3 w-16`} />
+          <div className="space-y-2.5">
+            {Array.from({ length: rows }).map((_, j) => (
+              <div key={j} className="flex justify-between gap-4">
+                <div className={`${bar} h-3 w-20`} />
+                <div className={`${bar} h-3 w-32`} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className={`${bar} h-12 w-full`} />
+    </div>
   )
 }
 
@@ -314,11 +296,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1.5">
       <span className="text-xs font-semibold uppercase tracking-wider text-muted">{label}</span>
-      <span className={`text-sm text-ink ${mono ? 'font-mono' : ''}`}>{value}</span>
+      <span className={`text-right text-sm text-ink ${mono ? 'font-mono' : ''}`}>{value ?? <Dash />}</span>
     </div>
   )
 }

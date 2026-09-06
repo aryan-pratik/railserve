@@ -58,3 +58,4 @@ next-env.d.ts
 
 # Session/machine-specific runbooks — not project documentation.
 *.local.md
+captures/

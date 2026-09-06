@@ -48,11 +48,18 @@ export function utcToIstLocal(date: Date | string | null | undefined): string {
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
 }
 
+/**
+ * What an absent value prints as. A plain hyphen: it reads as "nothing here"
+ * in a table cell without pretending to be punctuation, and it is the one
+ * character every font and thermal printer renders the same way.
+ */
+export const EMPTY = '-'
+
 /** e.g. "27 Aug, 1:25 pm" */
 export function formatIST(date: Date | string | null | undefined): string {
-  if (!date) return '—'
+  if (!date) return EMPTY
   const d = typeof date === 'string' ? new Date(date) : date
-  if (Number.isNaN(d.getTime())) return '—'
+  if (Number.isNaN(d.getTime())) return EMPTY
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
@@ -61,9 +68,9 @@ export function formatIST(date: Date | string | null | undefined): string {
 
 /** e.g. "1:25 pm" */
 export function formatTimeIST(date: Date | string | null | undefined): string {
-  if (!date) return '—'
+  if (!date) return EMPTY
   const d = typeof date === 'string' ? new Date(date) : date
-  if (Number.isNaN(d.getTime())) return '—'
+  if (Number.isNaN(d.getTime())) return EMPTY
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     hour: 'numeric', minute: '2-digit', hour12: true,
@@ -78,6 +85,26 @@ export function formatServiceDate(serviceDate: string): string {
     timeZone: 'Asia/Kolkata',
     weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
   }).format(d)
+}
+
+/**
+ * e.g. "Mon 07 Sep" for table cells, where the full form with its year and
+ * commas needs 130px and the column has 100. The year is never in doubt on a
+ * screen that shows a week of orders; put the full date in a title.
+ */
+export function formatShortDate(serviceDate: string): string {
+  const d = new Date(`${serviceDate}T12:00:00${IST_OFFSET}`)
+  if (Number.isNaN(d.getTime())) return serviceDate
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata', weekday: 'short', day: '2-digit', month: 'short',
+  }).formatToParts(d)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return `${get('weekday')} ${get('day')} ${get('month')}`
+}
+
+/** "Mon 01 Sep to Tue 30 Sep", or the single day when both ends agree. */
+export function formatDateRange(from: string, to: string): string {
+  return from === to ? formatServiceDate(from) : `${formatServiceDate(from)} to ${formatServiceDate(to)}`
 }
 
 // --- money -------------------------------------------------------------
@@ -97,7 +124,7 @@ export function paiseToRupees(paise: number | null | undefined): string {
 
 /** e.g. "₹236.00" */
 export function formatMoney(paise: number | null | undefined): string {
-  if (paise === null || paise === undefined) return '—'
+  if (paise === null || paise === undefined) return EMPTY
   return new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', minimumFractionDigits: 2,
   }).format(paise / 100)
@@ -108,7 +135,7 @@ export function formatMoney(paise: number | null | undefined): string {
  * formatMoney stays the exact form, for the KOT and anything money-critical.
  */
 export function formatRupees(paise: number | null | undefined): string {
-  if (paise === null || paise === undefined) return '—'
+  if (paise === null || paise === undefined) return EMPTY
   return new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0,
   }).format(paise / 100)

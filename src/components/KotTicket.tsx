@@ -94,11 +94,11 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
       />
       {isBulk ? (
         <>
-          <Line label="Pax" value={String(order.pax ?? '–')} />
-          <Line label="Handover" value={order.handoverPoint ?? '–'} />
+          <Line label="Pax" value={String(order.pax ?? '-')} />
+          <Line label="Handover" value={order.handoverPoint ?? '-'} />
         </>
       ) : (
-        <Line label="Seat" value={order.rawSeat ?? '–'} />
+        <Line label="Seat" value={order.rawSeat ?? '-'} />
       )}
       <Line label="Arrives" value={formatTimeIST(order.scheduledArrival)} />
       {order.readyBy ? <Line label="READY BY" value={formatTimeIST(order.readyBy)} /> : null}
@@ -157,7 +157,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
       <Rule />
 
       <div className="flex items-center justify-between text-[13px] font-bold">
-        <span>{order.paymentMode ?? '–'}</span>
+        <span>{order.paymentMode ?? '-'}</span>
         <span>{formatMoney(order.amountPaise)}</span>
       </div>
 

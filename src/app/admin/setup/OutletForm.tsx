@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Button, Card, CardHeader, Field, FormNote, inputClass } from '@/components/ui'
+import { Button, Card, CardHeader, Field, FormNote, inputClass, textareaClass } from '@/components/ui'
 import { saveRestaurant, type RestaurantState } from './outletActions'
 
 const initial: RestaurantState = {}
@@ -33,7 +33,7 @@ export function OutletForm({ values = {} }: { values?: OutletValues }) {
 
         <Field label="Station code" htmlFor="stationCode">
           <input id="stationCode" name="stationCode" required defaultValue={values.stationCode}
-            placeholder="CNB" className={`${inputClass} uppercase`} />
+            placeholder="CNB" autoCapitalize="characters" spellCheck={false} className={`${inputClass} font-mono uppercase`} />
         </Field>
 
         <Field label="Station name" htmlFor="stationName">
@@ -54,20 +54,20 @@ export function OutletForm({ values = {} }: { values?: OutletValues }) {
 
         <Field label="Contact phone" htmlFor="contactPhone">
           <input id="contactPhone" name="contactPhone" defaultValue={values.contactPhone}
-            className={inputClass} />
+            inputMode="tel" autoComplete="off" className={`${inputClass} font-mono`} />
         </Field>
 
         <div className="sm:col-span-2">
           <Field label="Name aliases" htmlFor="aliases"
             hint="One per line, or comma separated. Aggregator emails spell outlet names inconsistently; these are how an email will be matched to this kitchen.">
             <textarea id="aliases" name="aliases" rows={3} defaultValue={values.aliases}
-              className={inputClass} />
+              className={textareaClass} />
           </Field>
         </div>
 
-        <div className="sm:col-span-2 flex items-center gap-3">
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Saving…' : values.id ? 'Save changes' : 'Create outlet'}
+        <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+          <Button type="submit" pending={pending}>
+            {values.id ? 'Save changes' : 'Create outlet'}
           </Button>
           <FormNote state={state} />
         </div>

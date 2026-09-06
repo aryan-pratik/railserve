@@ -1,26 +1,36 @@
-import Link from 'next/link'
+'use client'
 
-/** Same switch as the admin Orders toolbar, factored out so the store board can use it too. */
+import Link from 'next/link'
+import { focusRing } from './ui'
+import { LinkHint } from './LinkHint'
+
+/**
+ * Grouped by train, or one row per order. A link rather than a checkbox
+ * because the choice lives in the URL, where a bookmark or a shared link
+ * keeps it; the switch is only how it looks.
+ */
 export function GroupByTrainToggle({ href, isGrouped }: { href: string; isGrouped: boolean }) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-2 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-lg"
+      role="switch"
+      aria-checked={isGrouped}
+      className={`inline-flex h-7 items-center gap-2 rounded-lg px-1 text-xs font-medium text-ink ${focusRing}`}
     >
       <span
-        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out ${
+        aria-hidden
+        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
           isGrouped ? 'bg-accent' : 'bg-line-strong'
         }`}
       >
         <span
-          className={`pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out mt-0.5 ml-0.5 ${
+          className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none ${
             isGrouped ? 'translate-x-4' : 'translate-x-0'
           }`}
         />
       </span>
-      <span className="text-xs font-medium text-ink group-hover:text-accent transition-colors">
-        Group by Train
-      </span>
+      <span className="whitespace-nowrap">Group by train</span>
+      <LinkHint />
     </Link>
   )
 }

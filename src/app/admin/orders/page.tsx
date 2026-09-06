@@ -4,21 +4,18 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { AdminOrdersTable } from './AdminOrdersTable'
-import { IconDownload } from '@/components/Icons'
+import { IconDownload, IconPlus } from '@/components/Icons'
 import {
   Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Tabs, inputClass, statusLabel,
 } from '@/components/ui'
 import { DateFilter } from '@/components/DateFilter'
+import { QueryForm } from '@/components/QueryForm'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import type { QueryFilter } from 'mongoose'
 
 /**
- * The payment modes an order can carry, in the order they are worth scanning:
- * the two that actually settle money differently come first, and "All" leads
- * because arriving here without a payment question in mind is the common case.
- *
- * Mirrors the PAYMENT_MODES union on the order model — a mode missing here is
- * simply unreachable from the tabs, never a crash.
+ * The payment modes an order can carry, in the order they are worth scanning.
+ * Mirrors the PAYMENT_MODES union on the order model.
  */
 const PAYMENT_TABS = [
   { value: '', label: 'All' },
@@ -27,13 +24,13 @@ const PAYMENT_TABS = [
   { value: 'INVOICE', label: 'Invoice' },
 ] as const
 
-export const metadata = { title: 'Orders · RailServe' }
+export const metadata = { title: 'All orders · RailServe' }
 
 /**
  * Lookup across every outlet.
  *
  * The board is where live work happens; this is where an order is found again
- * once it has left the board — a query, a refund, a reconciliation.
+ * once it has left the board: a query, a refund, a reconciliation.
  */
 export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>) {
   const ctx = await requireRole('ADMIN')
@@ -50,12 +47,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const train = one(sp.train)
   const payment = one(sp.payment)
 
-  await connectDb()
-  const outlets = await Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean()
-
-  // Filters are additive on top of the caller's scope — never instead of it.
+  // Filters are additive on top of the caller's scope, never instead of it.
   // Payment is layered on last and kept separable, because the tab counts are
-  // taken from everything *except* it.
+  // taken from everything except it.
   const base: QueryFilter<Record<string, unknown>> = {}
   if (outlet) base.restaurantId = outlet
   if (status) base.status = status
@@ -69,17 +63,15 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
 
   const filter = payment ? { ...base, paymentMode: payment } : base
 
-  // Counted on `base`, so each tab shows what it would return rather than what
-  // is on screen — tabs that all read 0 except the one you are standing on are
-  // a dead end.
-  const [orders, paymentCounts, statusesInUse] = await Promise.all([
+  await connectDb()
+  const [outlets, orders, paymentCounts, statusesInUse] = await Promise.all([
+    Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, filter, { sort: { createdAt: -1 }, limit: 200 }),
     countByPaymentMode(ctx, base),
     distinctStatuses(ctx),
   ])
 
-  // Custom statuses an admin has typed in via adminOverrideStatus, so they
-  // stay selectable (for filtering and re-use) once they exist.
+  // Custom statuses an admin has typed in stay selectable once they exist.
   const customStatuses = statusesInUse
     .filter((s) => !(ORDER_STATUSES as readonly string[]).includes(s))
     .sort()
@@ -88,8 +80,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
   const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || payment)
 
-  // Every link and the export carry the filters already in play, so switching
-  // payment mode narrows the current view instead of resetting it.
+  // Every link and the export carry the filters already in play.
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
@@ -100,14 +91,17 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     return u.toString()
   }
 
-  const paymentTabs = PAYMENT_TABS.map((t) => ({
-    href: `/admin/orders${query({ payment: t.value }) ? `?${query({ payment: t.value })}` : ''}`,
-    label: t.label,
-    count: t.value
-      ? (paymentCounts[t.value] ?? 0)
-      : Object.values(paymentCounts).reduce((a, b) => a + b, 0),
-    active: payment === t.value,
-  }))
+  const paymentTabs = PAYMENT_TABS.map((t) => {
+    const qs = query({ payment: t.value })
+    return {
+      href: `/admin/orders${qs ? `?${qs}` : ''}`,
+      label: t.label,
+      count: t.value
+        ? (paymentCounts[t.value] ?? 0)
+        : Object.values(paymentCounts).reduce((a, b) => a + b, 0),
+      active: payment === t.value,
+    }
+  })
 
   const exportHref = `/admin/orders/export?range=all&${query({})}`
 
@@ -116,23 +110,26 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <PageHeader
         title="All orders"
         note={`${orders.length} order${orders.length === 1 ? '' : 's'}${
-          hasFilters ? ' matching your filters' : ' across all outlets'
+          hasFilters ? ' matching these filters' : ' across all outlets'
         }.`}
         action={
-          <div className="flex items-center gap-2">
+          <>
             <ButtonAnchor href={exportHref} download>
               <IconDownload size={15} />
               Export CSV
             </ButtonAnchor>
-            <ButtonLink href="/admin/orders/new" variant="primary">+ New order</ButtonLink>
-          </div>
+            <ButtonLink href="/admin/orders/new" variant="primary">
+              <IconPlus size={15} />
+              New order
+            </ButtonLink>
+          </>
         }
       />
 
-      <Tabs tabs={paymentTabs} />
+      <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <form className="grid items-end gap-2 sm:grid-cols-6" method="get">
+        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
@@ -149,18 +146,19 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
-          <input name="train" defaultValue={train} placeholder="Train no"
+          <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
+            autoComplete="off" spellCheck={false}
             className={`${inputClass} font-mono`} aria-label="Train number" />
           <div className="flex gap-2">
-            <Button type="submit" variant="secondary" className="flex-1">Filter</Button>
+            <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
-          <div className="sm:col-span-6">
+          <div className="sm:col-span-2 lg:col-span-4">
             <Field label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
             </Field>
           </div>
-        </form>
+        </QueryForm>
       </Card>
 
       <AdminOrdersTable
