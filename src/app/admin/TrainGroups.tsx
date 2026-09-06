@@ -7,6 +7,7 @@ import { statusLabel } from '@/components/ui'
 import { IconTrain, IconChevronDown } from '@/components/Icons'
 import { OrderSlideOver } from './OrderSlideOver'
 import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
+import { UrgencyRail } from '@/components/UrgencyRail'
 
 export type GroupOrder = {
   id: string
@@ -112,9 +113,6 @@ export function TrainGroups({
       <div className="space-y-3">
         {groups.map((g) => {
           const isOpen = open.has(g.key)
-          const minutesAway = g.arrivalIso
-            ? Math.round((new Date(g.arrivalIso).getTime() - now) / 60_000)
-            : null
 
           return (
             <div
@@ -124,8 +122,8 @@ export function TrainGroups({
               }`}
             >
               <div className="flex items-stretch">
-                {/* Left urgency accent bar */}
-                <span className={`w-1.5 shrink-0 ${accent(minutesAway)}`} aria-hidden />
+                {/* Left urgency rail — same countdown/elapsed readout as the store board */}
+                <UrgencyRail at={g.arrivalIso} serverNow={serverNow} />
 
                 <button
                   type="button"
@@ -440,9 +438,3 @@ function lateLabel(mins: number): string {
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m late` : `${mins}m late`
 }
 
-function accent(minutesAway: number | null): string {
-  if (minutesAway === null || minutesAway < -90) return 'bg-line'
-  if (minutesAway <= 20) return 'bg-red-600'
-  if (minutesAway <= 45) return 'bg-amber-500'
-  return 'bg-accent'
-}
