@@ -55,7 +55,13 @@ export function AdminOrdersTable({
 
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-      <table className="w-full table-fixed text-sm">
+        {/* Consistent with the payments table: the min-width gives the
+            overflow-x-auto wrapper something coherent to scroll. Without it
+            these percentages resolve against a 375px phone, where the seat and
+            amount columns land at ~40px and their contents, which have no
+            space to break at, spill out of them. Wider than the floor, the
+            table is simply 100% and nothing scrolls. */}
+      <table className="w-full min-w-[56rem] table-fixed text-sm">
         <OrderTableColGroup showOutlet={showOutlet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
@@ -111,7 +117,7 @@ function AdminOrderRow({
         {formatServiceDate(order.serviceDate)}
       </td>
       <td className="px-3 py-2.5 whitespace-nowrap">
-        <span className="font-mono tabular-nums text-ink">{order.trainNo ?? '—'}</span>
+        <span className="font-mono tabular-nums text-ink">{order.trainNo ?? '–'}</span>
         {order.scheduledArrival ? (
           <span className="ml-1.5 tabular-nums text-xs text-muted">
             {formatTimeIST(order.scheduledArrival)}
@@ -121,13 +127,13 @@ function AdminOrderRow({
       <td className="px-3 py-2.5">
         <CoachChip coach={order.coach} berth={order.berth} />
       </td>
-      <td className="px-3 py-2.5 text-ink">{order.contactName ?? '—'}</td>
-      {showOutlet ? <td className="px-3 py-2.5 text-muted">{order.outletName ?? '—'}</td> : null}
+      <td className="px-3 py-2.5 text-ink">{order.contactName ?? '–'}</td>
+      {showOutlet ? <td className="px-3 py-2.5 text-muted">{order.outletName ?? '–'}</td> : null}
       <td
         className="truncate px-3 py-2.5 text-amber-800"
         title={order.remark ?? undefined}
       >
-        {order.remark ?? '—'}
+        {order.remark ?? '–'}
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-ink">
         {editing === 'amount' ? (

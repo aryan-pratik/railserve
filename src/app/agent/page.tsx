@@ -89,7 +89,7 @@ export default async function AgentRunsPage() {
 
       {isSimulatedProvider() ? (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Train times are <strong>simulated</strong> — no TRAIN_API_KEY is configured.
+          Train times are <strong>simulated</strong>. No TRAIN_API_KEY is configured.
         </p>
       ) : null}
     </div>

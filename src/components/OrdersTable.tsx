@@ -25,28 +25,33 @@ const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider t
 /**
  * Column widths for the shared order-table shape (Order, Date, Train, Seat,
  * Passenger, [Outlet], Remark, Amount, Status), as percentages summing to
- * 100 so the table (table-layout: fixed) never grows past its container —
+ * 100 so the table (table-layout: fixed) never grows past its container:
  * cells wrap or truncate instead of forcing a horizontal scrollbar.
+ *
+ * Seat was 6-7%, sized for "B5". A quota code like RAC/S4 plus a berth needs
+ * around 95px and had only ~81px, so it painted over the passenger's name.
+ * The extra width comes from Order, Date and Train, whose contents are fixed
+ * width and were never using theirs.
  */
 export function OrderTableColGroup({ showOutlet }: { showOutlet: boolean }) {
   return showOutlet ? (
     <colgroup>
-      <col style={{ width: '13%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '10%' }} />
+      <col style={{ width: '10%' }} />
       <col style={{ width: '13%' }} />
       <col style={{ width: '11%' }} />
-      <col style={{ width: '6%' }} />
-      <col style={{ width: '13%' }} />
-      <col style={{ width: '12%' }} />
       <col style={{ width: '12%' }} />
       <col style={{ width: '8%' }} />
       <col style={{ width: '12%' }} />
     </colgroup>
   ) : (
     <colgroup>
-      <col style={{ width: '15%' }} />
-      <col style={{ width: '15%' }} />
-      <col style={{ width: '12%' }} />
-      <col style={{ width: '7%' }} />
+      <col style={{ width: '14%' }} />
+      <col style={{ width: '13%' }} />
+      <col style={{ width: '11%' }} />
+      <col style={{ width: '11%' }} />
       <col style={{ width: '15%' }} />
       <col style={{ width: '14%' }} />
       <col style={{ width: '9%' }} />
@@ -73,7 +78,13 @@ export function OrdersTable({
 
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-      <table className="w-full table-fixed text-sm">
+        {/* Consistent with the payments table: the min-width gives the
+            overflow-x-auto wrapper something coherent to scroll. Without it
+            these percentages resolve against a 375px phone, where the seat and
+            amount columns land at ~40px and their contents, which have no
+            space to break at, spill out of them. Wider than the floor, the
+            table is simply 100% and nothing scrolls. */}
+      <table className="w-full min-w-[56rem] table-fixed text-sm">
         <OrderTableColGroup showOutlet={showOutlet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
@@ -101,7 +112,7 @@ export function OrdersTable({
                 {formatServiceDate(o.serviceDate)}
               </td>
               <td className="px-3 py-2.5 whitespace-nowrap">
-                <span className="font-mono tabular-nums text-ink">{o.trainNo ?? '—'}</span>
+                <span className="font-mono tabular-nums text-ink">{o.trainNo ?? '–'}</span>
                 {o.scheduledArrival ? (
                   <span className="ml-1.5 tabular-nums text-xs text-muted">
                     {formatTimeIST(o.scheduledArrival)}
@@ -109,13 +120,13 @@ export function OrdersTable({
                 ) : null}
               </td>
               <td className="px-3 py-2.5"><CoachChip coach={o.coach} berth={o.berth} /></td>
-              <td className="px-3 py-2.5 text-ink">{o.contactName ?? '—'}</td>
-              {showOutlet ? <td className="px-3 py-2.5 text-muted">{o.outletName ?? '—'}</td> : null}
+              <td className="px-3 py-2.5 text-ink">{o.contactName ?? '–'}</td>
+              {showOutlet ? <td className="px-3 py-2.5 text-muted">{o.outletName ?? '–'}</td> : null}
               <td
                 className="truncate px-3 py-2.5 text-amber-800"
                 title={o.remark ?? undefined}
               >
-                {o.remark ?? '—'}
+                {o.remark ?? '–'}
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums text-ink">
                 {formatRupees(o.amountPaise)}

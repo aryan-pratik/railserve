@@ -139,7 +139,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
             <option value="">All outlets</option>
             {outlets.map((o) => (
               <option key={String(o._id)} value={String(o._id)}>
-                {o.name} — {o.stationCode}
+                {o.name} · {o.stationCode}
               </option>
             ))}
           </select>

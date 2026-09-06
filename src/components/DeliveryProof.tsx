@@ -56,7 +56,7 @@ export async function DeliveryProof({
           </a>
         ) : delivery.proofType === 'PHOTO' && delivery.proofValue ? (
           <p className="text-xs text-muted">
-            A photo is on file but cannot be shown — proof storage is unavailable.
+            A photo is on file but cannot be shown. Proof storage is unavailable.
           </p>
         ) : null}
 
@@ -80,7 +80,7 @@ export async function DeliveryProof({
 
         {delivery.failureReason ? (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-inset ring-red-200">
-            Not delivered — {delivery.failureReason}
+            Not delivered: {delivery.failureReason}
           </p>
         ) : null}
       </div>

@@ -78,7 +78,7 @@ export default async function EnquiriesPage() {
                         ) : null}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-ink">
-                        {o.pax ?? <span className="text-faint">—</span>}
+                        {o.pax ?? <span className="text-faint">–</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         {o.amountPaise ? (

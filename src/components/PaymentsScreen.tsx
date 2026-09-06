@@ -72,7 +72,7 @@ export async function PaymentsScreen({
     <div className="space-y-6">
       <PageHeader
         title="Payments"
-        note="Money received in the bank account, read straight from the credit alerts. Nothing here is an order — tying a payment to one is what the remark is for."
+        note="Money received in the bank account, read straight from the credit alerts. Nothing here is an order. Tying a payment to one is what the remark is for."
         action={
           <>
             <PaymentsLive />

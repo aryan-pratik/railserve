@@ -49,7 +49,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
               <>
                 <GenerateKotButton orderId={id} reprint />
                 <span className="text-sm font-medium text-emerald-700">
-                  On the ready shelf — waiting for the rider
+                  On the ready shelf, waiting for the rider
                 </span>
               </>
             ) : null}
@@ -61,7 +61,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
         <Card>
           <CardHeader title="Passenger" />
           <div className="flex items-center justify-between px-4 py-3 text-sm">
-            <span className="text-muted">{order.contactName ?? '—'}</span>
+            <span className="text-muted">{order.contactName ?? '–'}</span>
             <a href={`tel:${order.contactPhone}`} className="font-mono font-medium text-accent hover:underline">
               {order.contactPhone}
             </a>

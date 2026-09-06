@@ -12,7 +12,7 @@ export const metadata = { title: 'Analytics · RailServe' }
 const TH = 'px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted'
 
 function pct(n: number, d: number): string {
-  if (d === 0) return '—'
+  if (d === 0) return '–'
   return `${Math.round((n / d) * 100)}%`
 }
 
@@ -112,7 +112,7 @@ function OrdersPerDayChart({ daily }: { daily: { serviceDate: string; orders: nu
 
         return (
           <g key={d.serviceDate}>
-            <title>{`${d.serviceDate} — ${d.delivered} delivered, ${other} not delivered`}</title>
+            <title>{`${d.serviceDate}: ${d.delivered} delivered, ${other} not delivered`}</title>
             {hOther > 0 ? (
               <path d={capPath(x, otherY, BAR_W, hOther)} className="fill-line-strong" />
             ) : null}
@@ -203,7 +203,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
     <div className="space-y-5">
       <PageHeader
         title="Analytics"
-        note={`${formatServiceDate(from)} — ${formatServiceDate(to)}`}
+        note={`${formatServiceDate(from)} – ${formatServiceDate(to)}`}
         action={
           <form method="get" className="flex items-end gap-2">
             <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} />
@@ -248,7 +248,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
                   {stats.map((s) => (
                     <tr key={s.restaurantId ?? 'none'} className="transition hover:bg-sunken/60">
                       <td className="px-4 py-2.5 font-medium text-ink">
-                        {s.restaurantId ? (name.get(s.restaurantId) ?? '—') : 'Unassigned'}
+                        {s.restaurantId ? (name.get(s.restaurantId) ?? '–') : 'Unassigned'}
                       </td>
                       <td className="px-4 py-2.5 tabular-nums text-muted">{s.orders}</td>
                       <td className="px-4 py-2.5 tabular-nums text-muted">{s.delivered}</td>
@@ -268,7 +268,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
                       <td className="px-4 py-2.5 tabular-nums text-muted">
                         {s.avgReceivedToDeliveredMinutes !== null
                           ? `${s.avgReceivedToDeliveredMinutes} min`
-                          : '—'}
+                          : '–'}
                       </td>
                       <td className="px-4 py-2.5 font-medium tabular-nums text-ink">
                         {formatRupees(s.revenuePaise)}

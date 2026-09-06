@@ -2,7 +2,7 @@ import { requireRole } from '@/lib/session'
 import { findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { shiftServiceDate, todayIST } from '@/lib/format'
+import { formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
 import { OrdersTable } from '@/components/OrdersTable'
 import { Button, Card, Field, PageHeader, inputClass } from '@/components/ui'
 
@@ -44,22 +44,32 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
 
   return (
     <div className="space-y-4">
-      <PageHeader title="History" note={`${orders.length} order${orders.length === 1 ? '' : 's'} from ${from} to ${to}`} />
+      <PageHeader
+        title="History"
+        note={`${orders.length} order${orders.length === 1 ? '' : 's'} from ${formatServiceDate(from)} to ${formatServiceDate(to)}`}
+      />
 
       <Card>
-        <form className="grid gap-3 p-4 sm:grid-cols-4">
+        <form className="grid items-end gap-3 p-4 sm:grid-cols-4">
           <Field label="From" htmlFor="from">
             <input id="from" name="from" type="date" defaultValue={from} className={inputClass} />
           </Field>
           <Field label="To" htmlFor="to">
             <input id="to" name="to" type="date" defaultValue={to} className={inputClass} />
           </Field>
-          <Field label="Search" htmlFor="q" hint="Order id, train number or phone.">
-            <input id="q" name="q" defaultValue={q} placeholder="12561" className={inputClass} />
+          {/* The hint moves into the placeholder. As a line of its own it made
+              this cell taller than its neighbours, and items-end then aligned
+              the button to the bottom of the hint instead of to the inputs. */}
+          <Field label="Search" htmlFor="q">
+            <input
+              id="q"
+              name="q"
+              defaultValue={q}
+              placeholder="Order id, train number or phone"
+              className={inputClass}
+            />
           </Field>
-          <div className="flex items-end">
-            <Button type="submit" variant="secondary" className="w-full">Apply</Button>
-          </div>
+          <Button type="submit" variant="secondary">Apply</Button>
         </form>
       </Card>
 

@@ -77,7 +77,7 @@ export default async function EnquiryDetail(props: PageProps<'/admin/enquiries/[
         <>
           <QuoteForm
             orderId={id}
-            outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} — ${o.stationCode}` }))}
+            outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
             values={{
               restaurantId: order.restaurantId ? String(order.restaurantId) : '',
               amountRupees: paiseToRupees(order.amountPaise ?? null),
@@ -110,10 +110,10 @@ export default async function EnquiryDetail(props: PageProps<'/admin/enquiries/[
         </div>
         <div className="divide-y divide-line text-sm">
           {[
-            ['Payment', order.paymentMode ?? '—'],
+            ['Payment', order.paymentMode ?? '–'],
             ['Ready by', formatIST(order.readyBy)],
-            ['Handover', order.handoverPoint ?? '—'],
-            ['Contact', order.contactPhone ? `${order.contactName ?? ''} ${order.contactPhone}` : '—'],
+            ['Handover', order.handoverPoint ?? '–'],
+            ['Contact', order.contactPhone ? `${order.contactName ?? ''} ${order.contactPhone}` : '–'],
           ].map(([k, v]) => (
             <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
               <span className="text-muted">{k}</span>

@@ -97,7 +97,7 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
                     {/* Coach is the thing the agent navigates by, so it leads. */}
                     <div className="w-16 shrink-0 text-center">
                       <div className="rounded-lg bg-ink px-2 py-1.5 text-lg font-bold leading-none text-white">
-                        {o.coach ?? '—'}
+                        {o.coach ?? '–'}
                       </div>
                       {o.berth ? (
                         <div className="mt-1 text-xs font-medium text-muted">

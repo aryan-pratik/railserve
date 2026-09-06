@@ -58,7 +58,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     <div className="space-y-5">
       <PageHeader
         title="Setup"
-        note="Outlets and the people who work them. Nothing here is deleted — it is deactivated, so existing orders keep pointing at something real."
+        note="Outlets and the people who work them. Nothing here is deleted. It is deactivated, so existing orders keep pointing at something real."
       />
 
       <Tabs
@@ -97,8 +97,8 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                         <td className="px-4 py-3 text-muted">{ROLE_LABEL[u.role] ?? u.role}</td>
                         <td className="px-4 py-3 text-muted">
                           {u.restaurantIds.length > 0
-                            ? u.restaurantIds.map((id) => outletName.get(String(id)) ?? '—').join(', ')
-                            : '—'}
+                            ? u.restaurantIds.map((id) => outletName.get(String(id)) ?? '–').join(', ')
+                            : '–'}
                         </td>
                         <td className="px-4 py-3">
                           <ActiveToggle id={String(u._id)} active={u.active} action={toggleUserActive} />
@@ -164,7 +164,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                         <span className="ml-1.5 text-xs text-faint">{o.stationName}</span>
                       </td>
                       <td className="px-4 py-3 text-xs text-faint">
-                        {o.aliases.length ? o.aliases.join(', ') : '—'}
+                        {o.aliases.length ? o.aliases.join(', ') : '–'}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-muted">{o.walkToPlatformMinutes}m</td>
                       <td className="px-4 py-3">
