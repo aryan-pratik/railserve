@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { syncGmailHistory } from '@/lib/ingest/gmail/sync'
-import { env } from '@/lib/env'
+import { cronAuthFailure } from '@/lib/cronAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,18 +17,8 @@ export const dynamic = 'force-dynamic'
  * up before credentials exist is safe.
  */
 async function handle(request: Request) {
-  const expected = env.CRON_TOKEN
-  if (expected) {
-    const url = new URL(request.url)
-    const supplied =
-      request.headers.get('x-cron-token') ??
-      request.headers.get('authorization')?.replace(/^Bearer /i, '') ??
-      url.searchParams.get('token') ??
-      ''
-    if (supplied !== expected) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const failure = cronAuthFailure(request)
+  if (failure) return NextResponse.json({ error: failure }, { status: 401 })
 
   try {
     const summary = await syncGmailHistory()

@@ -19,6 +19,7 @@
     "reset:admin": "tsx --env-file=.env.local scripts/reset-to-admin.ts",
     "seed:rider": "tsx --env-file=.env.local scripts/seed-rider-demo.ts",
     "gmail:setup": "tsx --env-file=.env.local scripts/gmail-setup.ts",
+    "gmail:watch": "tsx --env-file=.env.local scripts/gmail-watch.ts",
     "backfill:payments": "tsx --env-file=.env.local scripts/backfill-payments.ts"
   },
   "dependencies": {

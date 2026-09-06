@@ -2,9 +2,9 @@ import { findPayments, latestBalance, paymentTotals } from '@/lib/repo/paymentRe
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { formatIST, formatMoney } from '@/lib/format'
 import type { AuthContext } from '@/lib/authContext'
-import { AutoRefresh } from './AutoRefresh'
 import { DateFilter } from './DateFilter'
 import { IconDownload, IconSearch } from './Icons'
+import { PaymentsLive } from './PaymentsLive'
 import { PaymentsTable } from './PaymentsTable'
 import { ButtonAnchor, Card, EmptyState, PageHeader } from './ui'
 
@@ -75,7 +75,7 @@ export async function PaymentsScreen({
         note="Money received in the bank account, read straight from the credit alerts. Nothing here is an order — tying a payment to one is what the remark is for."
         action={
           <>
-            <AutoRefresh seconds={30} />
+            <PaymentsLive />
             {privileged ? (
               <ButtonAnchor href={exportHref} download>
                 <IconDownload size={15} />
