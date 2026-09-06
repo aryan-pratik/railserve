@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui'
+import { IconCamera } from '@/components/Icons'
 
 /**
  * Capture a delivery photo and put it in the bucket before the form submits.
@@ -65,7 +66,7 @@ export function ProofPhotoField({
 
   async function onPick(file: File) {
     try {
-      setStatus({ kind: 'working', label: 'Preparing…' })
+      setStatus({ kind: 'working', label: 'Preparing photo' })
       const blob = await downscale(file)
 
       const signed = await requestUpload(orderId, 'image/jpeg')
@@ -74,7 +75,7 @@ export function ProofPhotoField({
         return
       }
 
-      setStatus({ kind: 'working', label: 'Uploading…' })
+      setStatus({ kind: 'working', label: 'Uploading' })
       const res = await fetch(signed.uploadUrl, {
         method: 'PUT',
         body: blob,
@@ -138,10 +139,10 @@ export function ProofPhotoField({
           variant="secondary"
           size="lg"
           className="w-full"
-          disabled={status.kind === 'working'}
+          pending={status.kind === 'working'}
           onClick={() => inputRef.current?.click()}
         >
-          {status.kind === 'working' ? status.label : '📷 Take delivery photo'}
+          {status.kind === 'working' ? status.label : <><IconCamera size={18} /> Take delivery photo</>}
         </Button>
       )}
 

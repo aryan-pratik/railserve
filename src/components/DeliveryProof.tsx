@@ -1,6 +1,6 @@
 import { formatIST, formatMoney } from '@/lib/format'
 import { getProofStore } from '@/lib/storage'
-import { Card, CardHeader } from './ui'
+import { Card, CardHeader, Notice } from './ui'
 
 type Maybe<T> = T | null | undefined
 
@@ -55,9 +55,7 @@ export async function DeliveryProof({
             />
           </a>
         ) : delivery.proofType === 'PHOTO' && delivery.proofValue ? (
-          <p className="text-xs text-muted">
-            A photo is on file but cannot be shown. Proof storage is unavailable.
-          </p>
+          <Notice>A photo is on file but cannot be shown right now. Proof storage is unavailable.</Notice>
         ) : null}
 
         <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
@@ -79,9 +77,7 @@ export async function DeliveryProof({
         </dl>
 
         {delivery.failureReason ? (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-inset ring-red-200">
-            Not delivered: {delivery.failureReason}
-          </p>
+          <Notice tone="danger">Not delivered: {delivery.failureReason}</Notice>
         ) : null}
       </div>
     </Card>

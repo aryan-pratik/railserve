@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useTransition } from 'react'
 import { Button, FormNote } from '@/components/ui'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   acceptOrder, checkKotDelay, generateKot, markPrepared, type StoreActionState,
 } from './actions'
@@ -11,11 +12,9 @@ const initial: StoreActionState = {}
 export function AcceptButton({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState(acceptOrder, initial)
   return (
-    <form action={action}>
+    <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="orderId" value={orderId} />
-      <Button type="submit" disabled={pending}>
-        {pending ? 'Accepting…' : 'Accept'}
-      </Button>
+      <Button type="submit" pending={pending}>Accept</Button>
       <FormNote state={state} />
     </form>
   )
@@ -31,9 +30,8 @@ function formatDelay(minutes: number | null): string {
 }
 
 /**
- * Plan §9: the delay guard asks, it does not block. The manager decides whether
- * a late train means the kitchen should wait — the system has no idea how long
- * the dish keeps, or how full the pass is.
+ * The delay guard asks, it does not block. The manager decides whether a late
+ * train means the kitchen should wait.
  */
 export function GenerateKotButton({ orderId, reprint }: { orderId: string; reprint?: boolean }) {
   const [checking, startChecking] = useTransition()
@@ -48,8 +46,7 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
           return
         }
       } catch {
-        // A train-status outage must never block order flow (plan §13.6).
-        // Fall through and print.
+        // A train-status outage must never block order flow. Fall through and print.
       }
       const fd = new FormData()
       fd.set('orderId', orderId)
@@ -62,37 +59,19 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
       <Button
         type="button"
         onClick={onClick}
-        disabled={checking}
+        pending={checking}
         variant={reprint ? 'secondary' : 'primary'}
       >
-        {checking ? 'Checking train…' : reprint ? 'Reprint KOT' : 'Generate KOT'}
+        {checking ? 'Checking the train' : reprint ? 'Reprint KOT' : 'Generate KOT'}
       </Button>
 
       {delay ? (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
-        >
-          <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-ink">
-              <span className="font-mono">{delay.trainNo}</span> is running late
-            </h3>
-            <p className="mt-2 text-sm text-muted">
-              Running <strong className="text-ink">{formatDelay(delay.delayMinutes)}</strong> late
-              {delay.expected ? (
-                <>
-                  , expected{' '}
-                  <strong className="text-ink tabular-nums">
-                    {new Date(delay.expected).toLocaleTimeString('en-IN', {
-                      timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true,
-                    })}
-                  </strong>
-                </>
-              ) : null}
-              . Print the KOT anyway?
-            </p>
-            <div className="mt-4 flex gap-2">
+        <ConfirmDialog
+          titleId={`kot-delay-${orderId}`}
+          title={<><span className="font-mono">{delay.trainNo}</span> is running late</>}
+          onCancel={() => setDelay(null)}
+          actions={
+            <>
               <form action={generateKot} className="flex-1" onSubmit={() => setDelay(null)}>
                 <input type="hidden" name="orderId" value={orderId} />
                 <Button type="submit" className="w-full">Print anyway</Button>
@@ -100,9 +79,22 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
               <Button type="button" variant="secondary" onClick={() => setDelay(null)}>
                 Wait
               </Button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          Running <strong className="text-ink">{formatDelay(delay.delayMinutes)}</strong> late
+          {delay.expected ? (
+            <>
+              , now expected{' '}
+              <strong className="tabular-nums text-ink">
+                {new Date(delay.expected).toLocaleTimeString('en-IN', {
+                  timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true,
+                })}
+              </strong>
+            </>
+          ) : null}
+          . Print the KOT anyway?
+        </ConfirmDialog>
       ) : null}
     </>
   )
@@ -111,11 +103,9 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
 export function MarkPreparedButton({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState(markPrepared, initial)
   return (
-    <form action={action}>
+    <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="orderId" value={orderId} />
-      <Button type="submit" variant="go" disabled={pending}>
-        {pending ? 'Saving…' : 'Mark ready'}
-      </Button>
+      <Button type="submit" variant="go" pending={pending}>Mark ready</Button>
       <FormNote state={state} />
     </form>
   )

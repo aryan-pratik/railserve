@@ -1,21 +1,18 @@
 'use client'
 
 import { useActionState } from 'react'
+import { IconRefresh } from './Icons'
+import { IconButton, Spinner } from './ui'
 
 export type RefreshTrainState = { error?: string; ok?: string }
 
 /**
- * "Check now" for one train — bypasses the tier and asks the provider
+ * "Check now" for one train: bypasses the polling tier and asks the provider
  * immediately, whatever the row's age.
  *
  * One button per TRAIN, not per order: the cache row this hits is shared by
- * every order riding it, so refreshing from any one of them already updates
- * all the others. A button on every order row would imply each gets its own
- * independent check, which is not what happens — one click here is the whole
- * group's answer.
- *
- * Icon-only and compact on purpose: this sits inline with the delay/platform
- * badges next to a train's timing, not as a standalone call to action.
+ * every order riding it, so refreshing from any one of them updates all the
+ * others.
  */
 export function RefreshTrainButton({
   orderId, action,
@@ -28,19 +25,17 @@ export function RefreshTrainButton({
   return (
     <form action={formAction} className="inline-flex items-center gap-1">
       <input type="hidden" name="orderId" value={orderId} />
-      <button
+      <IconButton
         type="submit"
+        size="sm"
         disabled={pending}
-        title={state.error ?? 'Check this train right now, instead of waiting for the next automatic check'}
-        className="rounded p-1 text-faint transition hover:bg-sunken hover:text-ink disabled:opacity-50"
+        aria-label="Check this train now"
+        title={state.error ?? 'Check this train now, instead of waiting for the next automatic check'}
       >
-        <span aria-hidden className={`inline-block text-sm ${pending ? 'animate-spin' : ''}`}>
-          ↻
-        </span>
-        <span className="sr-only">Refresh live status now</span>
-      </button>
+        {pending ? <Spinner size={14} /> : <IconRefresh size={14} />}
+      </IconButton>
       {state.error ? (
-        <span className="text-[10px] font-medium text-red-600">{state.error}</span>
+        <span role="alert" className="text-[11px] font-medium text-red-600">{state.error}</span>
       ) : null}
     </form>
   )

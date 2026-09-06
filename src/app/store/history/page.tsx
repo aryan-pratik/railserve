@@ -2,18 +2,18 @@ import { requireRole } from '@/lib/session'
 import { findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
+import { formatDateRange, shiftServiceDate, todayIST } from '@/lib/format'
 import { OrdersTable } from '@/components/OrdersTable'
+import { QueryForm } from '@/components/QueryForm'
 import { Button, Card, Field, PageHeader, inputClass } from '@/components/ui'
 
-export const metadata = { title: 'History · RailServe' }
+export const metadata = { title: 'Order history · RailServe' }
 
 /**
  * Lookup, not live work.
  *
- * The board deliberately shows only what is still moving, so a delivered order
- * disappears from it the moment it lands. This is where it goes to be found
- * again — a passenger calls back, a payment is queried, a day gets reconciled.
+ * The board shows only what is still moving, so a delivered order disappears
+ * from it the moment it lands. This is where it goes to be found again.
  */
 export default async function StoreHistoryPage(props: PageProps<'/store/history'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
@@ -25,7 +25,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
 
   const filter: Record<string, unknown> = { serviceDate: { $gte: from, $lte: to } }
   if (q) {
-    // Order id or train number — the two things anyone actually has to hand.
+    // Order id, train number or phone: the things anyone actually has to hand.
     filter.$or = [
       { externalOrderId: { $regex: q, $options: 'i' } },
       { trainNo: { $regex: q, $options: 'i' } },
@@ -33,44 +33,43 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
     ]
   }
 
-  const orders = await findMany(ctx, filter, { sort: { serviceDate: -1, createdAt: -1 } })
-
   await connectDb()
   const multiOutlet = ctx.restaurantIds.length > 1 || ctx.role === 'ADMIN'
-  const outlets = multiOutlet
-    ? await Restaurant.find({}).select('name').lean()
-    : []
+  const [orders, outlets] = await Promise.all([
+    findMany(ctx, filter, { sort: { serviceDate: -1, createdAt: -1 } }),
+    multiOutlet ? Restaurant.find({}).select('name').lean() : Promise.resolve([]),
+  ])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="History"
-        note={`${orders.length} order${orders.length === 1 ? '' : 's'} from ${formatServiceDate(from)} to ${formatServiceDate(to)}`}
+        title="Order history"
+        note={`${orders.length} order${orders.length === 1 ? '' : 's'}, ${formatDateRange(from, to)}`}
       />
 
       <Card>
-        <form className="grid items-end gap-3 p-4 sm:grid-cols-4">
+        <QueryForm action="/store/history" className="grid items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="From" htmlFor="from">
             <input id="from" name="from" type="date" defaultValue={from} className={inputClass} />
           </Field>
           <Field label="To" htmlFor="to">
             <input id="to" name="to" type="date" defaultValue={to} className={inputClass} />
           </Field>
-          {/* The hint moves into the placeholder. As a line of its own it made
-              this cell taller than its neighbours, and items-end then aligned
-              the button to the bottom of the hint instead of to the inputs. */}
           <Field label="Search" htmlFor="q">
             <input
               id="q"
               name="q"
+              type="search"
               defaultValue={q}
               placeholder="Order id, train number or phone"
+              autoComplete="off"
+              spellCheck={false}
               className={inputClass}
             />
           </Field>
           <Button type="submit" variant="secondary">Apply</Button>
-        </form>
+        </QueryForm>
       </Card>
 
       <OrdersTable

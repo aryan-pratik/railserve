@@ -2,17 +2,16 @@ import { requireRole } from '@/lib/session'
 import { dailyCounts, outletAnalytics } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { formatRupees, formatServiceDate, todayIST } from '@/lib/format'
-import { Button, Card, CardHeader, EmptyState, PageHeader } from '@/components/ui'
+import { formatDateRange, formatRupees, todayIST, EMPTY } from '@/lib/format'
+import { Button, Card, CardHeader, EmptyState, PageHeader, Stat, StatStrip, thClass } from '@/components/ui'
+import { QueryForm } from '@/components/QueryForm'
 import { DateFilter } from '@/components/DateFilter'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 
 export const metadata = { title: 'Analytics · RailServe' }
 
-const TH = 'px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted'
-
 function pct(n: number, d: number): string {
-  if (d === 0) return '–'
+  if (d === 0) return EMPTY
   return `${Math.round((n / d) * 100)}%`
 }
 
@@ -200,77 +199,71 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
   ]
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         title="Analytics"
-        note={`${formatServiceDate(from)} – ${formatServiceDate(to)}`}
+        note={formatDateRange(from, to)}
         action={
-          <form method="get" className="flex items-end gap-2">
+          <QueryForm action="/admin/analytics" className="flex flex-wrap items-center gap-2">
             <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} />
-            <Button type="submit">Show</Button>
-          </form>
+            <Button type="submit" variant="secondary">Apply</Button>
+          </QueryForm>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <StatStrip columns={5}>
         {kpis.map((k) => (
-          <Card key={k.label} className="px-4 py-3.5">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted">{k.label}</div>
-            <div className={`mt-1 text-4xl font-semibold tabular-nums leading-none ${k.tone}`}>
-              {k.value}
-            </div>
-            <div className="mt-1.5 h-4 text-xs tabular-nums text-faint">{k.sub}</div>
-          </Card>
+          <Stat key={k.label} label={k.label} value={k.value} note={k.sub} tone={k.tone} />
         ))}
-      </div>
+      </StatStrip>
 
       {stats.length === 0 ? (
-        <EmptyState title="No orders in this range" note="Widen the dates, or create some orders." />
+        <EmptyState title="No orders in this range" note="Widen the dates to see more." />
       ) : (
         <>
           <Card className="overflow-hidden">
             <CardHeader title="By outlet" />
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[52rem] text-sm">
                 <thead className="border-b border-line bg-sunken/60">
                   <tr>
-                    <th className={TH}>Outlet</th>
-                    <th className={TH}>Orders</th>
-                    <th className={TH}>Delivered</th>
-                    <th className={TH}>Success</th>
-                    <th className={TH}>Missed</th>
-                    <th className={TH}>Missed value</th>
-                    <th className={TH}>Avg received → delivered</th>
-                    <th className={TH}>Value</th>
+                    <th className={thClass}>Outlet</th>
+                    <th className={`${thClass} text-right`}>Orders</th>
+                    <th className={`${thClass} text-right`}>Delivered</th>
+                    <th className={`${thClass} text-right`}>Success</th>
+                    <th className={`${thClass} text-right`}>Missed</th>
+                    <th className={`${thClass} text-right`}>Missed value</th>
+                    <th className={`${thClass} text-right`}>Received to delivered</th>
+                    <th className={`${thClass} text-right`}>Value</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {stats.map((s) => (
-                    <tr key={s.restaurantId ?? 'none'} className="transition hover:bg-sunken/60">
-                      <td className="px-4 py-2.5 font-medium text-ink">
-                        {s.restaurantId ? (name.get(s.restaurantId) ?? '–') : 'Unassigned'}
+                    <tr key={s.restaurantId ?? 'none'} className="transition-colors hover:bg-sunken/60">
+                      <td className="px-3 py-2.5 font-medium text-ink">
+                        {s.restaurantId ? (name.get(s.restaurantId) ?? 'Unknown outlet') : 'Unassigned'}
                       </td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted">{s.orders}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted">{s.delivered}</td>
-                      <td className="px-4 py-2.5 font-medium tabular-nums text-ink">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted">{s.orders}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted">{s.delivered}</td>
+                      <td className="px-3 py-2.5 text-right font-medium tabular-nums text-ink">
                         {pct(s.delivered, s.orders)}
                       </td>
                       <td
-                        className={`px-4 py-2.5 tabular-nums ${s.missed > 0 ? 'font-medium text-red-600' : 'text-muted'}`}
+                        className={`px-3 py-2.5 text-right tabular-nums ${s.missed > 0 ? 'font-medium text-red-600' : 'text-muted'}`}
                       >
                         {s.missed}
                       </td>
                       <td
-                        className={`px-4 py-2.5 tabular-nums ${s.missedRevenuePaise > 0 ? 'font-medium text-red-600' : 'text-muted'}`}
+                        className={`px-3 py-2.5 text-right tabular-nums ${s.missedRevenuePaise > 0 ? 'font-medium text-red-600' : 'text-muted'}`}
                       >
                         {formatRupees(s.missedRevenuePaise)}
                       </td>
-                      <td className="px-4 py-2.5 tabular-nums text-muted">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted">
                         {s.avgReceivedToDeliveredMinutes !== null
                           ? `${s.avgReceivedToDeliveredMinutes} min`
-                          : '–'}
+                          : EMPTY}
                       </td>
-                      <td className="px-4 py-2.5 font-medium tabular-nums text-ink">
+                      <td className="px-3 py-2.5 text-right font-medium tabular-nums text-ink">
                         {formatRupees(s.revenuePaise)}
                       </td>
                     </tr>

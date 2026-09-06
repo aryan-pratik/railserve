@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { NavLinks, type NavItem } from './NavLinks'
 import { IconTrain, IconMenu, IconClose, IconSignOut } from './Icons'
+import { IconButton, focusRing } from './ui'
 
 export type SidebarUser = {
   name: string
@@ -11,6 +13,19 @@ export type SidebarUser = {
   roleLabel: string
   roleHome: string
   outlets: string[]
+}
+
+function Brand({ href }: { href: string }) {
+  return (
+    <Link href={href} className={`flex items-center gap-2.5 rounded-lg ${focusRing}`}>
+      <span className="flex size-8 items-center justify-center rounded-lg bg-accent text-white">
+        <IconTrain size={18} />
+      </span>
+      <span className="text-base font-bold tracking-tight text-ink">
+        Rail<span className="text-accent">Serve</span>
+      </span>
+    </Link>
+  )
 }
 
 export function Sidebar({
@@ -22,166 +37,112 @@ export function Sidebar({
   user: SidebarUser
   logoutAction: () => Promise<void>
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const pathname = usePathname()
+  // The drawer is open for one pathname at a time. A navigation, including
+  // back/forward, changes the pathname and so closes it with no effect.
+  const [openAt, setOpenAt] = useState<string | null>(null)
+  const open = openAt === pathname
+  const setOpen = (next: boolean) => setOpenAt(next ? pathname : null)
 
-  // Close on Escape key
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMobileOpen(false)
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
     }
-    if (mobileOpen) {
-      document.addEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
+    document.addEventListener('keydown', onKey)
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = ''
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previous
     }
-  }, [mobileOpen])
+  }, [open])
 
-  // Get user initials for avatar
-  const initials = user.name
-    .split(' ')
-    .map((n) => n[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || 'RS'
+  const initials =
+    user.name
+      .split(' ')
+      .map((n) => n[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'RS'
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col justify-between p-4">
-      <div className="min-h-0 space-y-6 overflow-y-auto">
-        {/* Brand Header */}
-        <div className="flex items-center justify-between px-2">
-          <Link
-            href={user.roleHome}
-            className="flex items-center gap-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-lg"
-          >
-            <div className="flex size-10 items-center justify-center rounded-xl bg-accent text-white shadow-xs transition-transform group-hover:scale-105">
-              <IconTrain size={22} />
-            </div>
-            <div className="leading-tight">
-              <div className="flex items-center gap-1.5 font-bold text-base tracking-tight text-ink">
-                Rail<span className="text-accent">Serve</span>
-              </div>
-              <span className="text-[11px] font-medium text-muted tracking-wide">
-                Train Food Delivery
-              </span>
-            </div>
-          </Link>
+  const outletLabel =
+    user.outlets.length === 0
+      ? null
+      : user.outlets.length === 1
+        ? user.outlets[0]
+        : `${user.outlets.length} outlets`
 
-          {/* Close button for mobile drawer */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close navigation menu"
-            className="lg:hidden rounded-lg p-1.5 text-muted hover:bg-sunken hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <IconClose size={20} />
-          </button>
-        </div>
-
-        {/* Navigation Items */}
-        <div>
-          <div className="px-2 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">
-              Navigation
-            </span>
-          </div>
-          <NavLinks items={items} onItemClick={() => setMobileOpen(false)} />
-        </div>
+  const content = (
+    <div className="flex h-full flex-col p-4">
+      <div className="flex items-center justify-between">
+        <Brand href={user.roleHome} />
+        <IconButton aria-label="Close menu" size="sm" className="lg:hidden" onClick={() => setOpen(false)}>
+          <IconClose size={18} />
+        </IconButton>
       </div>
 
-      {/* Bottom User Profile Section */}
-      <div className="space-y-3 pt-4 border-t border-line">
-        <div className="flex items-center justify-between gap-2.5 rounded-xl border border-line bg-surface p-2.5 shadow-2xs">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft font-semibold text-xs text-accent ring-1 ring-accent/20">
-              {initials}
-            </div>
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-xs font-semibold text-ink" title={user.name}>
-                {user.name}
-              </div>
-              <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted">
-                <span className="truncate">{user.roleLabel}</span>
-                {user.outlets.length > 0 ? (
-                  <span
-                    className="truncate text-faint"
-                    title={user.outlets.join(', ')}
-                  >
-                    · {user.outlets.length === 1 ? user.outlets[0] : `${user.outlets.length} outlets`}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+        <NavLinks items={items} onItemClick={() => setOpen(false)} />
+      </div>
 
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              title="Sign out"
-              aria-label="Sign out"
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-faint transition hover:bg-sunken hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <IconSignOut size={16} />
-            </button>
-          </form>
+      <div className="mt-4 flex items-center gap-2.5 border-t border-line pt-4">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent">
+          {initials}
+        </span>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-sm font-medium text-ink" title={user.name}>
+            {user.name}
+          </div>
+          <div className="truncate text-xs text-muted" title={user.outlets.join(', ') || undefined}>
+            {user.roleLabel}
+            {outletLabel ? ` · ${outletLabel}` : ''}
+          </div>
         </div>
+        <form action={logoutAction}>
+          <IconButton type="submit" aria-label="Sign out" size="sm">
+            <IconSignOut size={16} />
+          </IconButton>
+        </form>
       </div>
     </div>
   )
 
   return (
     <>
-      {/* Mobile Top Header */}
-      <header className="no-print sticky top-0 z-30 flex items-center justify-between border-b border-line bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
-        <Link href={user.roleHome} className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-white">
-            <IconTrain size={18} />
-          </div>
-          <span className="font-bold text-sm tracking-tight text-ink">
-            Rail<span className="text-accent">Serve</span>
-          </span>
-        </Link>
-
-        <button
-          type="button"
-          onClick={() => setMobileOpen(true)}
-          aria-expanded={mobileOpen}
-          aria-label="Open navigation menu"
-          className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface text-ink shadow-2xs hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
+      {/* Phone: a top bar with a menu button. */}
+      <header className="no-print sticky top-0 z-30 flex items-center justify-between border-b border-line bg-surface px-4 py-2.5 lg:hidden">
+        <Brand href={user.roleHome} />
+        <IconButton aria-label="Open menu" aria-expanded={open} onClick={() => setOpen(true)} className="border border-line bg-surface">
           <IconMenu size={19} />
-        </button>
+        </IconButton>
       </header>
 
-      {/* Mobile Drawer Backdrop */}
-      {mobileOpen ? (
+      {open ? (
         <div
-          className="fixed inset-0 z-40 bg-ink/30 backdrop-blur-[2px] transition-opacity lg:hidden"
-          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-ink/30 lg:hidden"
+          onClick={() => setOpen(false)}
           aria-hidden="true"
         />
       ) : null}
 
-      {/* Mobile Drawer Panel */}
+      {/* Drawer. Inert while closed so nothing inside it can take focus. */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] transform bg-surface shadow-2xl transition-transform duration-200 ease-out lg:hidden ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
         role="dialog"
         aria-modal="true"
-        aria-label="Navigation Menu"
+        aria-label="Menu"
+        inert={!open}
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-surface shadow-2xl transition-transform duration-200 ease-out motion-reduce:transition-none lg:hidden ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
-        {sidebarContent}
+        {content}
       </div>
 
-      {/* Desktop Persistent Sidebar */}
-      <aside className="no-print hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface lg:h-dvh lg:sticky lg:top-0 lg:self-start">
-        {sidebarContent}
+      {/* Desktop: a fixed column. */}
+      <aside className="no-print hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-60 lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface">
+        {content}
       </aside>
     </>
   )

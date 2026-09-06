@@ -1,8 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { IconSearch, IconDownload } from '@/components/Icons'
+import { IconDownload, IconSearch } from '@/components/Icons'
 import { DateFilter } from '@/components/DateFilter'
+import { GroupByTrainToggle } from '@/components/GroupByTrainToggle'
+import { QueryForm } from '@/components/QueryForm'
+import { LinkHint } from '@/components/LinkHint'
+import { ButtonAnchor, Tabs, inputBase, inputClass, segmentClass, segmentedClass } from '@/components/ui'
 import type { DateFilterMode } from '@/lib/dateFilter'
 
 export type ToolbarTab = { key: string; label: string; count: number; active: boolean }
@@ -22,6 +26,12 @@ export type ToolbarState = {
   upcoming?: string
 }
 
+/**
+ * The board's controls. Two rows: what to show (status tabs, today or
+ * upcoming, grouped or flat, export), then how to narrow it (search and
+ * filters). Every change navigates client-side; nothing here reloads the
+ * page.
+ */
 export function OrdersToolbar({
   tabs,
   outlets,
@@ -52,182 +62,84 @@ export function OrdersToolbar({
 
   const exportHref = (() => {
     const u = new URLSearchParams()
-    if (current.mode) u.set('mode', current.mode)
-    if (current.month) u.set('month', current.month)
-    if (current.from) u.set('from', current.from)
-    if (current.to) u.set('to', current.to)
-    if (current.outlet) u.set('outlet', current.outlet)
-    if (current.tab) u.set('tab', current.tab)
-    if (current.upcoming) u.set('upcoming', current.upcoming)
+    for (const k of ['mode', 'month', 'from', 'to', 'outlet', 'tab', 'upcoming', 'train', 'payment'] as const) {
+      const v = current[k]
+      if (v) u.set(k, v)
+    }
     return `/admin/orders/export?${u}`
   })()
 
+  const submitOnChange = (e: React.ChangeEvent<HTMLSelectElement>) =>
+    e.currentTarget.form?.requestSubmit()
+
   return (
     <div className="space-y-3">
-      {/* Row 1: Status Tabs + Group by Train Toggle + Export */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-0">
-        {/* Clean Status Tabs with Underline Indicator */}
-        <nav className="-mb-px flex flex-wrap items-center gap-6" aria-label="Order Status">
-          {tabs.map((t) => (
-            <Link
-              key={t.key || 'all'}
-              href={href({ tab: t.key })}
-              aria-current={t.active ? 'page' : undefined}
-              className={`flex items-center gap-2 border-b-2 py-3 text-sm font-medium transition-colors ${
-                t.active
-                  ? 'border-accent text-accent font-semibold'
-                  : 'border-transparent text-muted hover:border-line-strong hover:text-ink'
-              }`}
-            >
-              <span>{t.label}</span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                  t.active
-                    ? 'bg-accent-soft text-accent'
-                    : 'bg-sunken text-muted'
-                }`}
-              >
-                {t.count}
-              </span>
-            </Link>
-          ))}
-        </nav>
+      <Tabs
+        label="Order status"
+        tabs={tabs.map((t) => ({ href: href({ tab: t.key }), label: t.label, count: t.count, active: t.active }))}
+        action={
+          <>
+            <div className={segmentedClass} role="group" aria-label="Service day">
+              <Link href={href({ upcoming: '', mode: '', month: '', from: '', to: '' })} className={segmentClass(!isUpcoming)} aria-current={!isUpcoming ? 'page' : undefined}>
+                Today
+                {todayCount !== undefined ? <span className="tabular-nums text-muted">{todayCount}</span> : null}
+                <LinkHint />
+              </Link>
+              <Link href={href({ upcoming: '1', mode: '', month: '', from: '', to: '' })} className={segmentClass(isUpcoming)} aria-current={isUpcoming ? 'page' : undefined}>
+                Upcoming
+                {upcomingCount ? <span className="tabular-nums text-muted">{upcomingCount}</span> : null}
+                <LinkHint />
+              </Link>
+            </div>
+            <GroupByTrainToggle href={href({ group: isGrouped ? '0' : '1' })} isGrouped={isGrouped} />
+            <ButtonAnchor href={exportHref} download size="sm">
+              <IconDownload size={14} />
+              Export CSV
+            </ButtonAnchor>
+          </>
+        }
+      />
 
-        {/* Right Actions: Today/Upcoming switcher + Group by Train toggle + Export */}
-        <div className="flex items-center gap-3 py-1.5">
-          {/* Today / Upcoming Toggle */}
-          <div className="flex items-center rounded-lg border border-line bg-sunken/60 p-0.5 text-xs font-medium">
-            <Link
-              href={href({ upcoming: '', mode: '', month: '', from: '', to: '' })}
-              className={`rounded-md px-2.5 py-1 transition-colors ${
-                !isUpcoming
-                  ? 'bg-surface text-ink font-semibold shadow-2xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              Today{todayCount !== undefined ? ` (${todayCount})` : ''}
-            </Link>
-            <Link
-              href={href({ upcoming: '1', mode: '', month: '', from: '', to: '' })}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
-                isUpcoming
-                  ? 'bg-surface text-ink font-semibold shadow-2xs'
-                  : 'text-muted hover:text-ink'
-              }`}
-            >
-              <span>Upcoming</span>
-              {upcomingCount !== undefined && upcomingCount > 0 ? (
-                <span className="rounded-full bg-accent-soft px-1.5 py-0.2 text-[10px] font-bold text-accent">
-                  {upcomingCount}
-                </span>
-              ) : null}
-            </Link>
-          </div>
-
-          <span className="h-4 w-px bg-line" aria-hidden="true" />
-
-          {/* Group by Train Toggle */}
-          <Link
-            href={href({ group: isGrouped ? '0' : '1' })}
-            className="flex items-center gap-2 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-lg"
-          >
-            <span
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out ${
-                isGrouped ? 'bg-accent' : 'bg-line-strong'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out mt-0.5 ml-0.5 ${
-                  isGrouped ? 'translate-x-4' : 'translate-x-0'
-                }`}
-              />
-            </span>
-            <span className="text-xs font-medium text-ink group-hover:text-accent transition-colors">
-              Group by Train
-            </span>
-          </Link>
-
-          <span className="h-4 w-px bg-line" aria-hidden="true" />
-
-          {/* Export Link */}
-          <a
-            href={exportHref}
-            download
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <IconDownload size={14} />
-            <span>Export</span>
-          </a>
-        </div>
-      </div>
-
-      {/* Row 2: Unified Single-Row Search and Filter Bar */}
-      <form method="get" className="flex flex-wrap items-center gap-2.5">
+      <QueryForm action="/admin" className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="tab" value={current.tab} />
         <input type="hidden" name="group" value={current.group} />
         {isUpcoming ? <input type="hidden" name="upcoming" value="1" /> : null}
 
-        {/* Search Input */}
-        <div className="relative min-w-[220px] flex-1">
-          <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-faint">
-            <IconSearch size={15} />
-          </span>
+        <div className="relative min-w-[14rem] flex-1">
+          <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
             name="q"
+            type="search"
             defaultValue={current.q}
-            placeholder="Search by Order ID, Train No., PNR, Customer…"
+            placeholder="Order id, train, name or phone"
             aria-label="Search orders"
-            className="w-full rounded-xl border border-line bg-surface pl-9 pr-3 py-2 text-xs sm:text-sm text-ink outline-none transition placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent"
+            autoComplete="off"
+            spellCheck={false}
+            className={`${inputClass} pl-9`}
           />
         </div>
 
-        {/* Outlet Filter */}
-        <select
-          name="outlet"
-          defaultValue={current.outlet}
-          aria-label="Filter by Outlet"
-          onChange={(e) => e.currentTarget.form?.requestSubmit()}
-          className="rounded-xl border border-line bg-surface px-3 py-2 text-xs sm:text-sm font-medium text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent"
-        >
-          <option value="">All Outlets</option>
+        <select name="outlet" defaultValue={current.outlet} aria-label="Outlet" onChange={submitOnChange} className={`${inputBase} max-w-[16rem]`}>
+          <option value="">All outlets</option>
           {outlets.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
+            <option key={o.id} value={o.id}>{o.label}</option>
           ))}
         </select>
 
-        {/* Train Filter */}
-        <select
-          name="train"
-          defaultValue={current.train}
-          aria-label="Filter by Train"
-          onChange={(e) => e.currentTarget.form?.requestSubmit()}
-          className="rounded-xl border border-line bg-surface px-3 py-2 text-xs sm:text-sm font-medium font-mono text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent"
-        >
-          <option value="">All Trains</option>
+        <select name="train" defaultValue={current.train} aria-label="Train" onChange={submitOnChange} className={`${inputBase} font-mono`}>
+          <option value="">All trains</option>
           {trains.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
+            <option key={t} value={t}>{t}</option>
           ))}
         </select>
 
-        {/* Payment Filter */}
-        <select
-          name="payment"
-          defaultValue={current.payment}
-          aria-label="Filter by Payment Mode"
-          onChange={(e) => e.currentTarget.form?.requestSubmit()}
-          className="rounded-xl border border-line bg-surface px-3 py-2 text-xs sm:text-sm font-medium text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent"
-        >
-          <option value="">All Payments</option>
+        <select name="payment" defaultValue={current.payment} aria-label="Payment mode" onChange={submitOnChange} className={inputBase}>
+          <option value="">All payments</option>
           <option value="COD">COD</option>
           <option value="PREPAID">Prepaid</option>
           <option value="INVOICE">Invoice</option>
         </select>
 
-        {/* Date Filter (Hidden when in upcoming mode) */}
         {!isUpcoming ? (
           <DateFilter
             mode={(current.mode || 'today') as DateFilterMode}
@@ -238,28 +150,27 @@ export function OrdersToolbar({
           />
         ) : null}
 
-        {/* Sort Order */}
         <select
           name="sort"
           defaultValue={current.sort}
-          aria-label="Sort order"
-          onChange={(e) => e.currentTarget.form?.requestSubmit()}
-          className="rounded-xl border border-line bg-surface px-3 py-2 text-xs sm:text-sm font-medium text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent"
+          aria-label="Sort"
+          onChange={submitOnChange}
+          className={inputBase}
         >
-          <option value="urgent">Sort: Arriving soonest</option>
-          <option value="newest">Sort: Newest First</option>
+          <option value="urgent">Arriving soonest</option>
+          <option value="newest">Newest first</option>
         </select>
 
-        {/* Reset / Clear Filters Link */}
         {hasActiveFilters ? (
           <Link
             href={href({ q: '', outlet: '', train: '', payment: '' })}
-            className="text-xs font-semibold text-accent underline-offset-2 hover:underline px-1 py-2"
+            className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-accent hover:underline"
           >
-            Clear Filters
+            Clear filters
+            <LinkHint />
           </Link>
         ) : null}
-      </form>
+      </QueryForm>
     </div>
   )
 }

@@ -15,17 +15,18 @@ import { OrderFeed } from '@/components/OrderFeed'
 import { AutoRefresh } from '@/components/AutoRefresh'
 import { env } from '@/lib/env'
 import { ButtonLink, EmptyState, PageHeader, Tabs } from '@/components/ui'
+import { IconPlus } from '@/components/Icons'
 import { StoreRunActions } from './StoreRunActions'
 import { forceRefreshOrderTrain } from './actions'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 
-export const metadata = { title: 'Board · RailServe' }
+export const metadata = { title: 'Kitchen board · RailServe' }
 
 /**
- * The store board.
+ * The kitchen board.
  *
- * One card per train, ordered by when the train actually arrives — not by when
- * the order came in, and not by the timetable. A train running 90 minutes late
+ * One card per train, ordered by when the train actually arrives, not by when
+ * the order came in and not by the timetable. A train running 90 minutes late
  * drops below one that is on time, because the food that leaves first is the
  * food that should be cooked first.
  */
@@ -37,44 +38,36 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const showUpcoming = upcoming === '1'
   const groupParam = typeof group === 'string' ? group : ''
   const isGrouped = groupParam !== '0'
+  const multiOutlet = ctx.restaurantIds.length > 1
 
-  // The inactive tab needs a number, not its rows — so it gets a count, not a
-  // second full load of up to 500 documents.
-  const otherDay = showUpcoming
-    ? { serviceDate: today }
-    : { serviceDate: { $gt: today } }
+  // The inactive tab needs a number, not its rows: a count, not a second
+  // full load of up to 500 documents.
+  const otherDay = showUpcoming ? { serviceDate: today } : { serviceDate: { $gt: today } }
 
-  const [runs, otherCount] = await Promise.all([
+  await connectDb()
+  // Everything that does not depend on the runs goes out in the same round trip.
+  const [runs, otherCount, riderDocs, feedHealth, outlets] = await Promise.all([
     showUpcoming ? findUpcomingRuns(ctx, today) : findRuns(ctx, today),
     countOrders(ctx, { ...otherDay, status: { $in: LIVE_STATUSES } }),
-  ])
-
-  const riderDocs = await User.find({
-    role: 'DELIVERY_AGENT',
-    active: true,
-    ...(ctx.role === 'STORE_MANAGER' ? { restaurantIds: { $in: ctx.restaurantIds } } : {}),
-  })
-    .select('name')
-    .sort({ name: 1 })
-    .lean()
-  const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
-
-  const allOrders = runs.flatMap((r) => r.orders)
-  const [timings, feedHealth] = await Promise.all([
-    timingForOrders(allOrders),
-    trainFeedHealth(),
-  ])
-
-  // Outlet names only matter to a manager who holds more than one.
-  await connectDb()
-  const multiOutlet = ctx.restaurantIds.length > 1
-  const outletName = new Map<string, string>()
-  if (multiOutlet) {
-    const outlets = await Restaurant.find({ _id: { $in: ctx.restaurantIds } })
+    User.find({
+      role: 'DELIVERY_AGENT',
+      active: true,
+      ...(ctx.role === 'STORE_MANAGER' ? { restaurantIds: { $in: ctx.restaurantIds } } : {}),
+    })
       .select('name')
-      .lean()
-    for (const o of outlets) outletName.set(String(o._id), o.name)
-  }
+      .sort({ name: 1 })
+      .lean(),
+    trainFeedHealth(),
+    // Outlet names only matter to a manager who holds more than one.
+    multiOutlet
+      ? Restaurant.find({ _id: { $in: ctx.restaurantIds } }).select('name').lean()
+      : Promise.resolve([]),
+  ])
+
+  const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
+  const allOrders = runs.flatMap((r) => r.orders)
+  const timings = await timingForOrders(allOrders)
+  const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
   const cards: RunCardData[] = runs.map((run) => ({
     key: run.key,
@@ -103,9 +96,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const statusCounts = new Map(runs.map((r) => [r.key, r.statusCounts]))
   const orderCount = allOrders.length
 
-  // Same underlying orders as the grouped cards, just one row per order
-  // instead of one card per train — sorted the same way, soonest-arriving
-  // (and not-yet-arrived) first.
+  // Same orders as the grouped cards, one row per order, sorted the same way.
   const flatOrders = sortRunsByUrgency(allOrders, (o) => timingFor(o, timings).effectiveArrival)
 
   const groupHref = (g: string) => {
@@ -119,25 +110,28 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   return (
     <div className="space-y-4">
       <PageHeader
-        title={showUpcoming ? 'Upcoming' : 'Today'}
+        title="Kitchen board"
         note={showUpcoming ? 'Orders booked for a later date.' : formatServiceDate(today)}
-        action={<ButtonLink href="/store/orders/new" variant="primary">+ New order</ButtonLink>}
+        action={
+          <>
+            <AutoRefresh seconds={30} />
+            <OrderFeed />
+            <ButtonLink href="/store/orders/new" variant="primary">
+              <IconPlus size={15} />
+              New order
+            </ButtonLink>
+          </>
+        }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs
-          tabs={[
-            { href: '/store', label: 'Today', count: showUpcoming ? otherCount : orderCount, active: !showUpcoming },
-            { href: '/store?upcoming=1', label: 'Upcoming', count: showUpcoming ? orderCount : otherCount, active: showUpcoming },
-          ]}
-        />
-        <div className="flex items-center gap-3">
-          <GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />
-          <span className="h-4 w-px bg-line" aria-hidden="true" />
-          <AutoRefresh seconds={30} />
-          <OrderFeed />
-        </div>
-      </div>
+      <Tabs
+        label="Service day"
+        tabs={[
+          { href: '/store', label: 'Today', count: showUpcoming ? otherCount : orderCount, active: !showUpcoming },
+          { href: '/store?upcoming=1', label: 'Upcoming', count: showUpcoming ? orderCount : otherCount, active: showUpcoming },
+        ]}
+        action={<GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />}
+      />
 
       <TrainFeedNotice simulated={isSimulatedProvider()} health={feedHealth} />
 
@@ -146,7 +140,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
           title={showUpcoming ? 'Nothing booked ahead' : 'No orders yet today'}
           note={
             showUpcoming
-              ? 'Bulk orders booked for a later date will appear here.'
+              ? 'Bulk orders booked for a later date appear here.'
               : 'New orders appear here the moment they arrive, grouped by train.'
           }
           action={<ButtonLink href="/store/orders/new" variant="primary">Add one by hand</ButtonLink>}

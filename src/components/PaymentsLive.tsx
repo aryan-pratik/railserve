@@ -47,7 +47,7 @@ export function PaymentsLive() {
 
   return (
     <span
-      className="no-print inline-flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted"
+      className="no-print inline-flex h-7 items-center gap-1.5 px-1 text-xs font-medium text-muted"
       title={
         status === 'reconnecting'
           ? 'The live connection dropped and is being re-established.'
@@ -55,7 +55,8 @@ export function PaymentsLive() {
       }
     >
       <span
-        className={`inline-block h-1.5 w-1.5 rounded-full ${
+        aria-hidden
+        className={`inline-block size-1.5 rounded-full ${
           status === 'reconnecting' ? 'bg-amber-500' : 'bg-emerald-500 motion-safe:animate-pulse'
         }`}
       />

@@ -1,14 +1,14 @@
-import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
 import { formatIST } from '@/lib/format'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
-import { Button, Card, EmptyState, PageHeader, Tabs } from '@/components/ui'
+import { Button, ButtonLink, Card, EmptyState, Notice, PageHeader, Tabs } from '@/components/ui'
+import { IconChevronRight } from '@/components/Icons'
 import { PasteEmailForm, ResolveForm } from './InboxForms'
 import { dismissUnparsed } from './actions'
 
-export const metadata = { title: 'Unparsed inbox · RailServe' }
+export const metadata = { title: 'Inbox · RailServe' }
 
 const REASON_LABEL: Record<string, string> = {
   UNKNOWN_OUTLET: 'Outlet not recognised',
@@ -22,16 +22,7 @@ const REASON_STYLE: Record<string, string> = {
   PARSE_FAILED: 'bg-red-100 text-red-800 ring-red-200',
 }
 
-/**
- * The severity tint. A row here is an order nobody is cooking, so the card
- * carries its reason as a wash across its header, readable down a stack of
- * ten before a single label has been read.
- *
- * This was a 4px coloured left border. That reads as decoration rather than
- * state, and it is the single most recognisable tell of a generated interface;
- * tinting the surface the badge already sits on says the same thing using a
- * surface the design already owns.
- */
+/** The severity tint: a wash across the card header, readable down a stack of ten. */
 const REASON_TINT: Record<string, string> = {
   UNKNOWN_OUTLET: 'bg-amber-50/70',
   MISSING_FIELD: 'bg-orange-50/70',
@@ -44,25 +35,23 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
   const showResolved = (Array.isArray(sp.show) ? sp.show[0] : sp.show) === 'resolved'
 
   await connectDb()
-  const rows = await UnparsedInbox.find({ resolved: showResolved })
-    .sort({ createdAt: -1 })
-    .limit(100)
-    .lean()
-  const openCount = await UnparsedInbox.countDocuments({ resolved: false })
-  // The plan asks for this alert (§6, §13.4) and the check has existed all
-  // along, but nothing ever called it — so a lapsed Gmail watch, which stops
-  // ingestion outright and raises no error anywhere, had no way to reach a
-  // human. This page is where ingestion health belongs.
-  const ingest = await checkIngestStaleness()
+  const [rows, openCount, ingest] = await Promise.all([
+    UnparsedInbox.find({ resolved: showResolved }).sort({ createdAt: -1 }).limit(100).lean(),
+    UnparsedInbox.countDocuments({ resolved: false }),
+    // A lapsed Gmail watch stops ingestion outright and raises no error
+    // anywhere; this page is where ingestion health belongs.
+    checkIngestStaleness(),
+  ])
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
-        title="Unparsed inbox"
+        title="Inbox"
         note="Emails that could not become orders. Nothing here was discarded. This is the net that catches an aggregator changing its template."
       />
 
       <Tabs
+        label="Inbox"
         tabs={[
           { href: '/admin/inbox', label: 'Needs attention', count: openCount, active: !showResolved },
           { href: '/admin/inbox?show=resolved', label: 'Resolved', active: showResolved },
@@ -70,17 +59,15 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
       />
 
       {ingest.stale ? (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
-          Ingestion needs attention: {ingest.message}. Nothing here will look wrong;
-          the mailbox simply stops arriving.
-        </p>
+        <Notice tone="warn">
+          Ingestion needs attention: {ingest.message}. Nothing here will look wrong; the mailbox simply stops arriving.
+        </Notice>
       ) : null}
 
       {!showResolved && openCount > 0 ? (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-inset ring-red-200">
-          {openCount} email{openCount === 1 ? '' : 's'} did not become an order. That is food nobody
-          is cooking. Correct or dismiss each one.
-        </p>
+        <Notice tone="danger">
+          {openCount} email{openCount === 1 ? '' : 's'} did not become an order. That is food nobody is cooking. Correct or dismiss each one.
+        </Notice>
       ) : null}
 
       {rows.length === 0 ? (
@@ -118,41 +105,29 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
                 </div>
 
                 <div className="space-y-3 px-4 py-3">
-                  <p className="text-sm text-muted">{row.detail}</p>
+                  <p className="text-sm text-muted text-pretty">{row.detail}</p>
 
                   <details className="group text-sm">
-                    <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted transition hover:text-ink [&::-webkit-details-marker]:hidden">
-                      <span className="inline-block transition group-open:rotate-90">›</span>
+                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+                      <IconChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />
                       Raw email
                     </summary>
-                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-sunken/60 p-3 font-mono text-xs leading-relaxed text-muted">
-                      {body}
-                    </pre>
+                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-sunken/60 p-3 font-mono text-xs leading-relaxed text-muted">{body}</pre>
                   </details>
 
                   {row.resolved ? (
-                    <p className="text-sm font-medium text-emerald-700">
+                    <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-emerald-700">
                       Resolved {formatIST(row.resolvedAt)}
                       {row.resolvedOrderId ? (
-                        <>
-                          {' · '}
-                          <Link
-                            href={`/admin/orders/${String(row.resolvedOrderId)}`}
-                            className="text-accent underline underline-offset-2"
-                          >
-                            view order
-                          </Link>
-                        </>
+                        <ButtonLink href={`/admin/orders/${String(row.resolvedOrderId)}`} size="sm">View order</ButtonLink>
                       ) : null}
-                    </p>
+                    </div>
                   ) : (
                     <div className="flex flex-wrap items-start gap-2">
                       <ResolveForm id={String(row._id)} body={body} />
                       <form action={dismissUnparsed}>
                         <input type="hidden" name="id" value={String(row._id)} />
-                        <Button type="submit" variant="secondary" size="sm">
-                          Dismiss as not an order
-                        </Button>
+                        <Button type="submit" variant="secondary" size="sm">Dismiss as not an order</Button>
                       </form>
                     </div>
                   )}

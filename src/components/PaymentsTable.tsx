@@ -1,8 +1,10 @@
 'use client'
 
 import { useActionState, useEffect, useState } from 'react'
-import { formatMoney, formatServiceDate, formatTimeIST } from '@/lib/format'
+import { formatMoney, formatServiceDate, formatShortDate, formatTimeIST } from '@/lib/format'
 import { IconCheck, IconClose, IconPencil } from './Icons'
+import { IconButton, thClass, focusRingInset } from './ui'
+import { TableFrame } from './OrdersTable'
 import { updatePaymentRemarkAction, type PaymentActionState } from '@/app/actions/payments'
 
 type Maybe<T> = T | null | undefined
@@ -15,67 +17,54 @@ export type PaymentRow = {
   method?: Maybe<string>
   /** 'YYYY-MM-DD' in IST, as printed on the alert. */
   transactionDate: string
-  /** ISO string — when the alert email itself arrived, which carries the time. */
+  /** ISO string: when the alert email itself arrived, which carries the time. */
   receivedAt: string
   remark?: Maybe<string>
 }
 
-const TH = 'px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted'
-const TD = 'px-4 py-3 align-top'
-const ICON_BUTTON =
-  'inline-flex size-7 shrink-0 items-center justify-center rounded-md transition ' +
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+const TD = 'px-3 py-2.5 align-top'
 const EDIT_INPUT =
-  'min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-2 py-1 text-xs text-ink ' +
+  'h-7 min-w-0 flex-1 rounded border border-line-strong bg-surface px-2 text-xs text-ink ' +
   'outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent'
 const INITIAL_STATE: PaymentActionState = {}
 
 /**
- * Money in, one row per bank alert. Identical for admin and store manager —
- * the balance is a figure in the panel above, not a column, so there is one
- * table to keep right rather than two that drift.
+ * Money in, one row per bank alert. Identical for admin and store manager:
+ * the balance is a figure in the panel above, not a column.
  *
  * Amount is what anyone scans for, so it is right-aligned and tabular; the
- * RRN is monospaced because it gets read out digit by digit when someone is
- * quoting a reference over the phone.
+ * RRN is monospaced because it gets read out digit by digit over the phone.
  */
 export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
-      <div className="overflow-x-auto">
-        {/* The min-width gives the overflow-x-auto wrapper something coherent
-            to scroll. Without it these percentages resolve against a 375px
-            phone, where the amount column lands at ~45px and "₹1,240.50" —
-            which has no space to break at — spills out of it. Wider than the
-            floor, the table is simply 100% and nothing scrolls. */}
-        <table className="w-full min-w-[46rem] table-fixed text-sm">
-          {/* Widths follow how much each column can actually vary. The RRN
-              is always 12 digits and the amount rarely passes ₹9,999, so both
-              were holding width that the one free-text column needed. */}
-          <colgroup>
-            <col style={{ width: '21%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '15%' }} />
-            <col style={{ width: '16%' }} />
-            <col style={{ width: '36%' }} />
-          </colgroup>
-          <thead className="border-b border-line bg-sunken/60">
-            <tr>
-              <th className={TH}>From</th>
-              <th className={`${TH} text-right`}>Amount</th>
-              <th className={TH}>RRN</th>
-              <th className={TH}>Date</th>
-              <th className={TH}>Remark</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {payments.map((p) => (
-              <PaymentTableRow key={p.id} payment={p} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <TableFrame>
+      <table className="w-full min-w-[46rem] table-fixed text-sm">
+        {/* Widths follow how much each column can vary. The RRN is always 12
+            digits and the amount rarely passes four figures, so the free-text
+            remark gets what they do not need. */}
+        <colgroup>
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '36%' }} />
+        </colgroup>
+        <thead className="border-b border-line bg-sunken/60">
+          <tr>
+            <th className={thClass}>From</th>
+            <th className={`${thClass} text-right`}>Amount</th>
+            <th className={thClass}>RRN</th>
+            <th className={thClass}>Date</th>
+            <th className={thClass}>Remark</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {payments.map((p) => (
+            <PaymentTableRow key={p.id} payment={p} />
+          ))}
+        </tbody>
+      </table>
+    </TableFrame>
   )
 }
 
@@ -83,70 +72,47 @@ function PaymentTableRow({ payment }: { payment: PaymentRow }) {
   const [editing, setEditing] = useState(false)
 
   return (
-    <tr className="group transition hover:bg-sunken/50">
+    <tr className="group transition-colors hover:bg-sunken/50">
       <td className={TD}>
-        <div className="truncate font-medium text-ink" title={payment.payerName}>
-          {payment.payerName}
-        </div>
+        <div className="truncate font-medium text-ink" title={payment.payerName}>{payment.payerName}</div>
         {payment.method ? (
-          <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-faint">
-            {payment.method}
-          </div>
+          <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-faint">{payment.method}</div>
         ) : null}
       </td>
-      {/* Money in reads as money in. Exact paise, never rounded — this is the
-          column someone reconciles a bank statement against. */}
+      {/* Exact paise, never rounded: this is the column someone reconciles a bank statement against. */}
       <td className={`${TD} text-right font-semibold tabular-nums text-emerald-700`}>
         {formatMoney(payment.amountPaise)}
       </td>
       <td className={TD}>
-        <span
-          className="block truncate font-mono text-xs tabular-nums text-muted"
-          title={payment.rrn}
-        >
-          {payment.rrn}
-        </span>
+        <span className="block truncate font-mono text-xs tabular-nums text-muted" title={payment.rrn}>{payment.rrn}</span>
       </td>
       <td className={TD}>
-        <div className="whitespace-nowrap text-ink">{formatServiceDate(payment.transactionDate)}</div>
-        {/* The alert prints a date and no time; the email's own timestamp is
-            the only record of when in the day the money actually landed. */}
-        <div className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-faint">
-          {formatTimeIST(payment.receivedAt)}
+        <div className="whitespace-nowrap text-ink" title={formatServiceDate(payment.transactionDate)}>
+          {formatShortDate(payment.transactionDate)}
         </div>
+        {/* The alert prints a date and no time; the email's own timestamp is
+            the only record of when in the day the money landed. */}
+        <div className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-faint">{formatTimeIST(payment.receivedAt)}</div>
       </td>
       <td className={TD}>
         {editing ? (
-          <RemarkEditor
-            paymentId={payment.id}
-            initial={payment.remark}
-            onDone={() => setEditing(false)}
-          />
+          <RemarkEditor paymentId={payment.id} initial={payment.remark} onDone={() => setEditing(false)} />
         ) : (
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="flex w-full items-start gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className={`flex w-full items-start gap-1.5 rounded text-left ${focusRingInset}`}
             title={payment.remark ? 'Edit remark' : 'Add a remark'}
           >
-            {/* min-w-0 is load-bearing: a flex child defaults to
-                min-width:auto, so it refuses to shrink below its content and
-                a remark typed as one unbroken string escapes the cell and
-                drags the whole table into a horizontal scroll. break-words
-                then lets it break mid-string when there is no space to
-                break at. */}
-            <span
-              className={`min-w-0 flex-1 break-words ${
-                payment.remark ? 'text-amber-800' : 'italic text-faint'
-              }`}
-            >
+            {/* min-w-0 is load-bearing: a flex child refuses to shrink below
+                its content, so a remark typed as one unbroken string would
+                drag the table into a horizontal scroll. */}
+            <span className={`min-w-0 flex-1 break-words ${payment.remark ? 'text-amber-800' : 'text-faint'}`}>
               {payment.remark ?? 'Add a remark'}
             </span>
-            {/* Kept out of the way until the row is under the cursor or the
-                keyboard is on the control — a pencil on every row of a
-                hundred is noise competing with the amounts. */}
             <IconPencil
               size={13}
+              aria-hidden
               className="mt-0.5 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             />
           </button>
@@ -184,32 +150,16 @@ function RemarkEditor({
           placeholder="e.g. order 1000584805"
           className={EDIT_INPUT}
           aria-label="Remark"
-          // Escape abandons the edit — the same reflex as every other inline
-          // editor, and quicker than aiming at a 28px button.
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onDone()
-          }}
+          onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
         />
-        <button
-          type="submit"
-          disabled={pending}
-          className={`${ICON_BUTTON} text-emerald-700 hover:bg-emerald-50 disabled:opacity-40`}
-          aria-label="Save remark"
-        >
+        <IconButton type="submit" aria-label="Save remark" size="sm" disabled={pending} className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
           <IconCheck size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className={`${ICON_BUTTON} text-muted hover:bg-sunken hover:text-ink`}
-          aria-label="Cancel"
-        >
+        </IconButton>
+        <IconButton aria-label="Cancel" size="sm" onClick={onDone}>
           <IconClose size={14} />
-        </button>
+        </IconButton>
       </div>
-      {state.error ? (
-        <span className="text-[11px] font-medium text-red-600">{state.error}</span>
-      ) : null}
+      {state.error ? <span role="alert" className="text-[11px] font-medium text-red-600">{state.error}</span> : null}
     </form>
   )
 }

@@ -1,11 +1,10 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
-import { Card, CardHeader } from '@/components/ui'
+import { BackLink, Card, CardHeader } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
 import { EventLog } from '@/components/EventLog'
 import { AcceptButton, GenerateKotButton, MarkPreparedButton } from '../../StoreOrderActions'
@@ -26,10 +25,8 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <Link href="/store" className="text-sm text-muted underline-offset-2 hover:underline">
-        ← Back to the board
-      </Link>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <BackLink href="/store">Back to the board</BackLink>
 
       <OrderCard
         order={toCardData(order)}
@@ -48,9 +45,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
             {order.status === 'PREPARED' ? (
               <>
                 <GenerateKotButton orderId={id} reprint />
-                <span className="text-sm font-medium text-emerald-700">
-                  On the ready shelf, waiting for the rider
-                </span>
+                <span className="text-sm font-medium text-emerald-700">On the shelf, waiting for the rider</span>
               </>
             ) : null}
           </>
@@ -60,9 +55,9 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
       {order.contactPhone ? (
         <Card>
           <CardHeader title="Passenger" />
-          <div className="flex items-center justify-between px-4 py-3 text-sm">
-            <span className="text-muted">{order.contactName ?? '–'}</span>
-            <a href={`tel:${order.contactPhone}`} className="font-mono font-medium text-accent hover:underline">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+            <span className="text-ink">{order.contactName ?? 'Passenger'}</span>
+            <a href={`tel:${order.contactPhone}`} className="font-mono font-medium tabular-nums text-accent underline-offset-2 hover:underline">
               {order.contactPhone}
             </a>
           </div>
@@ -72,7 +67,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
       {order.remark ? (
         <Card>
           <CardHeader title="Remark from admin" />
-          <p className="m-4 whitespace-pre-wrap rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+          <p className="m-4 whitespace-pre-wrap rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
             {order.remark}
           </p>
         </Card>

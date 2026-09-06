@@ -3,15 +3,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui'
+import { IconBell } from '@/components/Icons'
 
 /**
- * Live order feed for the store dashboard (plan §10: SSE plus an audible alert
- * for new orders).
+ * Live order feed for the kitchen board: server-sent events plus an audible
+ * alert for new orders.
  *
- * The sound is generated with WebAudio rather than shipped as an asset — a
- * kitchen screen needs a noise, not a curated one, and browsers block
- * autoplaying audio until the page has been interacted with anyway, so the
- * control below doubles as that interaction.
+ * The sound is generated with WebAudio rather than shipped as an asset. A
+ * kitchen screen needs a noise, not a curated one, and browsers block audio
+ * until the page has been interacted with anyway, so the button below doubles
+ * as that interaction.
  */
 export function OrderFeed() {
   const router = useRouter()
@@ -43,7 +44,6 @@ export function OrderFeed() {
 
     es.onerror = () => setConnected(false)
     return () => es.close()
-    // soundOn is read through the ref-gated chime, so it must not re-subscribe.
   }, [router])
 
   function enableSound() {
@@ -55,25 +55,30 @@ export function OrderFeed() {
   }
 
   return (
-    <div className="no-print flex items-center gap-3 text-xs">
-      <span className="flex items-center gap-1.5 text-muted">
+    <div className="no-print flex flex-wrap items-center gap-2 text-xs">
+      <span className="inline-flex h-7 items-center gap-1.5 px-1 font-medium text-muted" title="New orders appear here as soon as they arrive.">
         <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${
-            connected ? 'animate-pulse bg-emerald-500' : 'bg-line-strong'
+          aria-hidden
+          className={`inline-block size-1.5 rounded-full ${
+            connected ? 'bg-emerald-500 motion-safe:animate-pulse' : 'bg-amber-500'
           }`}
         />
         {connected ? 'Live' : 'Reconnecting…'}
       </span>
 
       {soundOn ? (
-        <span className="text-faint">🔔 alert on</span>
+        <span className="inline-flex h-7 items-center gap-1 px-1 text-faint">
+          <IconBell size={13} aria-hidden />
+          Sound on
+        </span>
       ) : (
         <Button type="button" variant="secondary" size="sm" onClick={enableSound}>
-          Enable sound
+          <IconBell size={13} />
+          Sound on
         </Button>
       )}
 
-      {lastEvent ? <span className="font-medium text-emerald-700">{lastEvent}</span> : null}
+      {lastEvent ? <span role="status" className="font-medium text-emerald-700">{lastEvent}</span> : null}
     </div>
   )
 }

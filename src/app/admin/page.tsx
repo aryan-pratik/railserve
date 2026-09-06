@@ -5,10 +5,11 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
-import { todayIST, formatServiceDate, formatTimeIST } from '@/lib/format'
+import { todayIST, formatDateRange, formatTimeIST } from '@/lib/format'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { AutoRefresh } from '@/components/AutoRefresh'
-import { ButtonLink, EmptyState } from '@/components/ui'
+import { ButtonLink, EmptyState, PageHeader } from '@/components/ui'
+import { IconPlus } from '@/components/Icons'
 import { OrdersTable } from '@/components/OrdersTable'
 import { TrainGroups, type TrainGroup } from './TrainGroups'
 import { OrdersToolbar } from './OrdersToolbar'
@@ -18,9 +19,9 @@ import type { QueryFilter } from 'mongoose'
 export const metadata = { title: 'Orders · RailServe' }
 
 const TABS = [
-  { key: '', label: 'All Orders', statuses: null as string[] | null },
+  { key: '', label: 'All', statuses: null as string[] | null },
   { key: 'kitchen', label: 'Preparing', statuses: ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
-  { key: 'platform', label: 'On the Way', statuses: ['DISPATCHED'] },
+  { key: 'platform', label: 'On the way', statuses: ['DISPATCHED'] },
   { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
   { key: 'issues', label: 'Cancelled', statuses: ['FAILED', 'CANCELLED', 'LOST'] },
 ]
@@ -40,10 +41,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   const resolvedRange = resolveDateRange(mode, { month, from: rangeFrom, to: rangeTo })
   const activeFrom = resolvedRange.from || today
   const activeTo = resolvedRange.to || today
-  const activeDateLabel =
-    activeFrom === activeTo
-      ? formatServiceDate(activeFrom)
-      : `${formatServiceDate(activeFrom)} – ${formatServiceDate(activeTo)}`
+  const activeDateLabel = formatDateRange(activeFrom, activeTo)
   const outlet = one(sp.outlet)
   const train = one(sp.train)
   const payment = one(sp.payment)
@@ -53,9 +51,6 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   const isGrouped = group !== '0'
 
   const tab = TABS.find((t) => t.key === tabKey) ?? TABS[0]
-
-  await connectDb()
-  const outlets = await Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean()
 
   const dayFilter: QueryFilter<Record<string, unknown>> = isUpcoming
     ? { serviceDate: { $gt: today } }
@@ -73,7 +68,10 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     ]
   }
 
-  const [dayOrders, todayCount, upcomingCount] = await Promise.all([
+  await connectDb()
+  // Independent reads, so they go out together rather than one after another.
+  const [outlets, dayOrders, todayCount, upcomingCount] = await Promise.all([
+    Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     countOrders(ctx, { serviceDate: today, status: { $ne: 'CANCELLED' } }),
     countOrders(ctx, { serviceDate: { $gt: today }, status: { $ne: 'CANCELLED' } }),
@@ -112,7 +110,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         ),
       ],
       arrivalLabel: formatTimeIST(t.effectiveArrival),
-      // Only when the live ETA has actually moved off the booked time —
+      // Only when the live ETA has actually moved off the booked time;
       // otherwise the card would print the same time twice.
       bookedLabel:
         t.scheduledArrival && t.effectiveArrival &&
@@ -149,39 +147,34 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     }
   })
 
+  const counts = new Map(
+    TABS.map((t) => [
+      t.key,
+      t.statuses ? dayOrders.filter((o) => t.statuses!.includes(o.status)).length : dayOrders.length,
+    ]),
+  )
+
   return (
-    <div className="space-y-5">
-      {/* Page Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-ink">Orders</h1>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/60">
-              <span className="size-2 rounded-full bg-emerald-600 animate-pulse" aria-hidden />
-              Live
-            </span>
-          </div>
-          <p className="mt-0.5 text-xs sm:text-sm text-muted">
-            Manage and track all customer orders
-          </p>
-        </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Orders"
+        note={isUpcoming ? 'Booked for a later date.' : activeDateLabel}
+        action={
+          <>
+            <AutoRefresh seconds={30} />
+            <ButtonLink href="/admin/orders/new" variant="primary">
+              <IconPlus size={15} />
+              New order
+            </ButtonLink>
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-2.5">
-          <AutoRefresh seconds={30} />
-          <ButtonLink href="/admin/orders/new" variant="primary" className="rounded-xl shadow-2xs">
-            + New Order
-          </ButtonLink>
-        </div>
-      </header>
-
-      {/* Toolbar & Filters */}
       <OrdersToolbar
         tabs={TABS.map((t) => ({
           key: t.key,
           label: t.label,
-          count: t.statuses
-            ? dayOrders.filter((o) => t.statuses!.includes(o.status)).length
-            : dayOrders.length,
+          count: counts.get(t.key) ?? 0,
           active: t.key === tab.key,
         }))}
         outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
@@ -191,18 +184,23 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         upcomingCount={upcomingCount}
       />
 
-      {/* Orders Content (Grouped by Train or Flat List) */}
       {visible.length === 0 ? (
         <EmptyState
-          title={isUpcoming ? 'No upcoming orders found' : 'No orders found'}
+          title={isUpcoming ? 'Nothing booked ahead' : 'No orders'}
           note={
             q || outlet || train || payment
-              ? 'No orders match your selected filters. Try clearing filters.'
+              ? 'Nothing matches these filters.'
               : isUpcoming
-              ? 'Bulk orders booked for future dates will appear here automatically.'
-              : `No orders for ${activeDateLabel}. New orders will appear here automatically.`
+                ? 'Bulk orders booked for a later date appear here.'
+                : `No orders for ${activeDateLabel}. New orders appear here as they arrive.`
           }
-          action={<ButtonLink href="/admin/orders/new" variant="primary">+ Add Order</ButtonLink>}
+          action={
+            q || outlet || train || payment ? (
+              <ButtonLink href="/admin">Clear filters</ButtonLink>
+            ) : (
+              <ButtonLink href="/admin/orders/new" variant="primary">New order</ButtonLink>
+            )
+          }
         />
       ) : isGrouped ? (
         <TrainGroups groups={groups} serverNow={serverNow} refreshAction={forceRefreshOrderTrain} />
@@ -228,18 +226,14 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         />
       )}
 
-      {/* Footer Summary */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs text-muted border-t border-line">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-xs text-muted">
         <span>
-          Showing {isGrouped ? `${groups.length} train${groups.length === 1 ? '' : 's'} · ` : ''}
+          {isGrouped ? `${groups.length} train${groups.length === 1 ? '' : 's'} · ` : ''}
           {visible.length} order{visible.length === 1 ? '' : 's'}
-          {isUpcoming ? ' (Upcoming)' : ` for ${activeDateLabel}`}
+          {isUpcoming ? ' booked ahead' : ` on ${activeDateLabel}`}
         </span>
-        <Link
-          href="/admin/orders"
-          className="font-semibold text-accent underline-offset-2 hover:underline"
-        >
-          Search across all dates →
+        <Link href="/admin/orders" className="font-medium text-accent underline-offset-2 hover:underline">
+          Search across all dates
         </Link>
       </div>
     </div>

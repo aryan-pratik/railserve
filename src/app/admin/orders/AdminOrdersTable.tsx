@@ -2,9 +2,10 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { formatRupees, formatTimeIST, formatServiceDate, paiseToRupees } from '@/lib/format'
-import { CoachChip, EmptyState, StatusBadge, TypeBadge, statusLabel } from '@/components/ui'
-import { OrderTableColGroup } from '@/components/OrdersTable'
+import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST, paiseToRupees } from '@/lib/format'
+import { CoachChip, Dash, EmptyState, IconButton, StatusBadge, TypeBadge, statusLabel, thClass, focusRingInset } from '@/components/ui'
+import { IconCheck, IconClose, IconPencil } from '@/components/Icons'
+import { OrderTableColGroup, TableFrame } from '@/components/OrdersTable'
 import { updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
 
 type Maybe<T> = T | null | undefined
@@ -25,18 +26,16 @@ export type AdminOrderRow = {
   remark?: Maybe<string>
 }
 
-const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted'
-const EDIT_BUTTON =
-  'rounded transition hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+const EDIT_TRIGGER =
+  `group/edit inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-sunken ${focusRingInset}`
 const EDIT_INPUT =
-  'rounded border border-line-strong bg-surface px-1.5 py-1 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent'
+  'h-7 rounded border border-line-strong bg-surface px-1.5 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent'
 const INITIAL_STATE: ActionState = {}
 
 /**
- * Admin-only variant of OrdersTable with Amount and Status directly editable
- * inline. Kept separate from the shared OrdersTable (also used by
- * store/history and the store board's flat view) so those pages never gain
- * an edit affordance they were not asked for.
+ * Admin-only variant of OrdersTable with Amount and Status editable in place.
+ * Kept separate from the shared OrdersTable (used by store history and the
+ * store board's flat view) so those never gain an edit affordance.
  */
 export function AdminOrdersTable({
   orders,
@@ -54,40 +53,40 @@ export function AdminOrdersTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-sm">
-        {/* Consistent with the payments table: the min-width gives the
-            overflow-x-auto wrapper something coherent to scroll. Without it
-            these percentages resolve against a 375px phone, where the seat and
-            amount columns land at ~40px and their contents, which have no
-            space to break at, spill out of them. Wider than the floor, the
-            table is simply 100% and nothing scrolls. */}
+    <TableFrame>
       <table className="w-full min-w-[56rem] table-fixed text-sm">
         <OrderTableColGroup showOutlet={showOutlet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
-            <th className={TH}>Order</th>
-            <th className={TH}>Date</th>
-            <th className={TH}>Train</th>
-            <th className={TH}>Seat</th>
-            <th className={TH}>Passenger</th>
-            {showOutlet ? <th className={TH}>Outlet</th> : null}
-            <th className={TH}>Remark</th>
-            <th className={`${TH} text-right`}>Amount</th>
-            <th className={TH}>Status</th>
+            <th className={thClass}>Order</th>
+            <th className={thClass}>Date</th>
+            <th className={thClass}>Train</th>
+            <th className={thClass}>Seat</th>
+            <th className={thClass}>Passenger</th>
+            {showOutlet ? <th className={thClass}>Outlet</th> : null}
+            <th className={thClass}>Remark</th>
+            <th className={`${thClass} text-right`}>Amount</th>
+            <th className={thClass}>Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
           {orders.map((o) => (
-            <AdminOrderRow
-              key={o.id}
-              order={o}
-              showOutlet={showOutlet}
-              statusOptions={statusOptions}
-            />
+            <AdminOrderRow key={o.id} order={o} showOutlet={showOutlet} statusOptions={statusOptions} />
           ))}
         </tbody>
       </table>
-    </div>
+    </TableFrame>
+  )
+}
+
+/** A pencil that stays out of the way until the row is under the cursor or keyboard. */
+function Pencil() {
+  return (
+    <IconPencil
+      size={12}
+      aria-hidden
+      className="shrink-0 text-faint opacity-0 transition-opacity group-hover/edit:opacity-100 group-focus-visible/edit:opacity-100"
+    />
   )
 }
 
@@ -103,78 +102,64 @@ function AdminOrderRow({
   const [editing, setEditing] = useState<'amount' | 'status' | null>(null)
 
   return (
-    <tr className="transition hover:bg-sunken/60">
+    <tr className="transition-colors hover:bg-sunken/60">
       <td className="px-3 py-2.5">
-        <Link
-          href={`/admin/orders/${order.id}`}
-          className="flex min-w-0 items-center gap-1.5 font-medium text-accent hover:underline"
-        >
+        <Link href={`/admin/orders/${order.id}`} className="flex min-w-0 items-center gap-1.5 font-medium text-accent hover:underline">
           <span className="truncate font-mono text-xs">{order.externalOrderId}</span>
           <TypeBadge type={order.orderType} />
         </Link>
       </td>
-      <td className="px-3 py-2.5 whitespace-nowrap text-muted">
-        {formatServiceDate(order.serviceDate)}
+      <td className="whitespace-nowrap px-3 py-2.5 text-muted" title={formatServiceDate(order.serviceDate)}>
+        {formatShortDate(order.serviceDate)}
       </td>
-      <td className="px-3 py-2.5 whitespace-nowrap">
-        <span className="font-mono tabular-nums text-ink">{order.trainNo ?? '–'}</span>
+      <td className="whitespace-nowrap px-3 py-2.5">
+        <span className="font-mono tabular-nums text-ink">{order.trainNo ?? <Dash />}</span>
         {order.scheduledArrival ? (
-          <span className="ml-1.5 tabular-nums text-xs text-muted">
-            {formatTimeIST(order.scheduledArrival)}
-          </span>
+          <span className="ml-1.5 text-xs tabular-nums text-muted">{formatTimeIST(order.scheduledArrival)}</span>
         ) : null}
       </td>
       <td className="px-3 py-2.5">
         <CoachChip coach={order.coach} berth={order.berth} />
       </td>
-      <td className="px-3 py-2.5 text-ink">{order.contactName ?? '–'}</td>
-      {showOutlet ? <td className="px-3 py-2.5 text-muted">{order.outletName ?? '–'}</td> : null}
-      <td
-        className="truncate px-3 py-2.5 text-amber-800"
-        title={order.remark ?? undefined}
-      >
-        {order.remark ?? '–'}
+      <td className="truncate px-3 py-2.5 text-ink" title={order.contactName ?? undefined}>{order.contactName ?? <Dash />}</td>
+      {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={order.outletName ?? undefined}>{order.outletName ?? <Dash />}</td> : null}
+      <td className="truncate px-3 py-2.5 text-amber-800" title={order.remark ?? undefined}>
+        {order.remark ?? <Dash />}
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-ink">
         {editing === 'amount' ? (
-          <AmountEditor
-            orderId={order.id}
-            initial={order.amountPaise}
-            onDone={() => setEditing(null)}
-          />
+          <AmountEditor orderId={order.id} initial={order.amountPaise} onDone={() => setEditing(null)} />
         ) : (
-          <button
-            type="button"
-            onClick={() => setEditing('amount')}
-            className={`${EDIT_BUTTON} inline-flex items-center gap-1 px-1.5 py-0.5`}
-            title="Edit amount"
-          >
+          <button type="button" onClick={() => setEditing('amount')} className={`${EDIT_TRIGGER} ml-auto`} title="Edit amount">
             {formatRupees(order.amountPaise)}
-            <span className="text-faint" aria-hidden>✎</span>
+            <Pencil />
           </button>
         )}
       </td>
       <td className="px-3 py-2.5">
         {editing === 'status' ? (
-          <StatusEditor
-            orderId={order.id}
-            current={order.status}
-            options={statusOptions}
-            onDone={() => setEditing(null)}
-          />
+          <StatusEditor orderId={order.id} current={order.status} options={statusOptions} onDone={() => setEditing(null)} />
         ) : (
-          <button
-            type="button"
-            onClick={() => setEditing('status')}
-            className={`${EDIT_BUTTON} inline-flex items-center gap-1 p-0.5`}
-            title="Edit status"
-          >
+          <button type="button" onClick={() => setEditing('status')} className={EDIT_TRIGGER} title="Edit status">
             <StatusBadge status={order.status} />
-            <span className="text-faint" aria-hidden>✎</span>
+            <Pencil />
           </button>
         )}
       </td>
     </tr>
+  )
+}
+
+function EditorButtons({ pending, onCancel, disabled }: { pending: boolean; onCancel: () => void; disabled?: boolean }) {
+  return (
+    <>
+      <IconButton type="submit" aria-label="Save" size="sm" disabled={pending || disabled} className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
+        <IconCheck size={14} />
+      </IconButton>
+      <IconButton aria-label="Cancel" size="sm" onClick={onCancel}>
+        <IconClose size={14} />
+      </IconButton>
+    </>
   )
 }
 
@@ -205,15 +190,11 @@ function AmountEditor({
           autoFocus
           className={`${EDIT_INPUT} w-20 text-right`}
           aria-label="Amount in rupees"
+          onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
         />
-        <button type="submit" disabled={pending} className={`${EDIT_BUTTON} px-1.5 py-1 text-emerald-700`}>
-          ✓
-        </button>
-        <button type="button" onClick={onDone} className={`${EDIT_BUTTON} px-1.5 py-1 text-muted`}>
-          ✕
-        </button>
+        <EditorButtons pending={pending} onCancel={onDone} />
       </div>
-      {state.error ? <span className="text-[10px] font-medium text-red-600">{state.error}</span> : null}
+      {state.error ? <span role="alert" className="text-[11px] font-medium text-red-600">{state.error}</span> : null}
     </form>
   )
 }
@@ -251,22 +232,15 @@ function StatusEditor({
           onChange={(e) => setChoice(e.target.value)}
           className={EDIT_INPUT}
           aria-label="Status"
+          autoFocus
+          onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
         >
           {options.map((s) => (
             <option key={s} value={s}>{statusLabel(s)}</option>
           ))}
-          <option value={ADD_NEW}>Add new status…</option>
+          <option value={ADD_NEW}>Add a new status…</option>
         </select>
-        <button
-          type="submit"
-          disabled={pending || (isCustom && !custom.trim())}
-          className={`${EDIT_BUTTON} px-1.5 py-1 text-emerald-700`}
-        >
-          ✓
-        </button>
-        <button type="button" onClick={onDone} className={`${EDIT_BUTTON} px-1.5 py-1 text-muted`}>
-          ✕
-        </button>
+        <EditorButtons pending={pending} onCancel={onDone} disabled={isCustom && !custom.trim()} />
       </div>
       {isCustom ? (
         <input
@@ -278,7 +252,7 @@ function StatusEditor({
           aria-label="New status name"
         />
       ) : null}
-      {state.error ? <span className="text-[10px] font-medium text-red-600">{state.error}</span> : null}
+      {state.error ? <span role="alert" className="text-[11px] font-medium text-red-600">{state.error}</span> : null}
     </form>
   )
 }

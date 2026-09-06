@@ -35,8 +35,8 @@ export function StaffForm({
         </Field>
 
         <Field label="Phone" htmlFor="phone" hint="This is their login identifier.">
-          <input id="phone" name="phone" required inputMode="numeric" defaultValue={values.phone}
-            className={inputClass} />
+          <input id="phone" name="phone" required inputMode="tel" autoComplete="off" defaultValue={values.phone}
+            className={`${inputClass} font-mono`} />
         </Field>
 
         <Field label="Role" htmlFor="role">
@@ -66,12 +66,12 @@ export function StaffForm({
 
         <Field label={values.id ? 'New password' : 'Initial password'} htmlFor="password"
           hint={values.id ? 'Leave blank to keep their current password.' : undefined}>
-          <input id="password" name="password" type="text" className={inputClass} />
+          <input id="password" name="password" type="text" autoComplete="off" spellCheck={false} className={inputClass} />
         </Field>
 
-        <div className="sm:col-span-2 flex items-center gap-3">
-          <Button type="submit" disabled={pending}>
-            {pending ? 'Saving…' : values.id ? 'Save changes' : 'Create staff member'}
+        <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+          <Button type="submit" pending={pending}>
+            {values.id ? 'Save changes' : 'Create staff member'}
           </Button>
           <FormNote state={state} />
         </div>

@@ -1,4 +1,5 @@
 import { formatTimeIST } from '@/lib/format'
+import { IconArrowRight } from './Icons'
 import type { TimingView } from '@/lib/train/policy'
 
 export function DelayPill({ delayMinutes }: { delayMinutes: number | null }) {
@@ -138,7 +139,7 @@ export function PlatformBadge({ platform }: { platform: string | null }) {
   if (!platform) {
     return (
       <span className="rounded bg-sunken px-2 py-0.5 text-xs font-medium text-faint">
-        platform unknown
+        PF unknown
       </span>
     )
   }
@@ -175,7 +176,7 @@ function WasTime({ timing }: { timing: TimingView }) {
       >
         {formatTimeIST(was)}
       </span>
-      <span aria-hidden className="text-xs text-faint">→</span>
+      <IconArrowRight size={12} className="text-faint" aria-hidden />
     </>
   )
 }
