@@ -32,8 +32,8 @@ const TICK_MS = 30_000
  * and legibility is the entire job of this element.
  *
  * Urgent and overdue share a fill on purpose: they are distinguished by the
- * word NOW rather than by a hue step, which survives colour-blindness and a
- * monochrome printout.
+ * elapsed-time readout rather than by a hue step, which survives
+ * colour-blindness and a monochrome printout.
  *
  * Past this, the train is not "arriving now" — it left. An order still sitting
  * open is a data problem or an abandoned job, and it must stop competing for
@@ -90,9 +90,11 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
         ? `Train arrived ${span(-mins)} ago`
         : `Arrives in ${span(mins)}`
 
-  // Long past its halt: stop shouting. This is a stale order to clean up, not
-  // a delivery to run for.
-  if (stale) {
+  // Once the train has actually left the arrival station, "now" stops being
+  // true — it's not arriving now, it arrived a while ago. Show the elapsed
+  // time instead (same treatment whether or not it's crossed the stale
+  // threshold; only the colour band differs).
+  if (mins < 0) {
     return (
       <div
         className={`flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 self-stretch px-1 py-3 ${tone.bg} ${tone.fg}`}
@@ -105,10 +107,10 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
     )
   }
 
-  // Past its arrival time is the highest-stakes minute in the whole operation:
-  // the train is standing at the platform now. It gets the loudest state on the
-  // board, not the quietest.
-  if (mins <= 0) {
+  // Right at its arrival time is the highest-stakes minute in the whole
+  // operation: the train is standing at the platform now. It gets the
+  // loudest state on the board, not the quietest.
+  if (mins === 0) {
     return (
       <div
         className={`flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 self-stretch px-1 py-3 ${tone.bg} ${tone.fg}`}
@@ -116,9 +118,7 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
         aria-label={spoken}
       >
         <span className="text-base font-bold uppercase leading-none tracking-tight">now</span>
-        <span className="text-xs font-semibold leading-none tabular-nums">
-          {mins === 0 ? 'due' : `${span(-mins)} ago`}
-        </span>
+        <span className="text-xs font-semibold leading-none tabular-nums">due</span>
       </div>
     )
   }
