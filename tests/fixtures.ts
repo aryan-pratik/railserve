@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Order, Restaurant, UnparsedInbox, User } from '../src/lib/models'
+import { Counter, Order, Payment, Restaurant, UnparsedInbox, User } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -15,6 +15,7 @@ export async function resetDb() {
     // and have to be cleared explicitly for a test to see a fresh sequence.
     Counter.deleteMany({}),
     UnparsedInbox.deleteMany({}),
+    Payment.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
@@ -22,6 +23,9 @@ export async function resetDb() {
     { gmailMessageId: 1 },
     { unique: true, name: 'gmailMessageId_unique', partialFilterExpression: { gmailMessageId: { $type: 'string' } } },
   )
+  // Payment ingestion is idempotent on the RRN, so the tests that assert that
+  // need the index that enforces it.
+  await Payment.collection.createIndex({ rrn: 1 }, { unique: true, name: 'rrn_unique' })
 }
 
 export async function makeRestaurant(name: string, stationCode: string, aliases: string[] = []) {

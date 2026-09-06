@@ -250,6 +250,67 @@ export function IconRuns({ size = 20, className = '', ...props }: IconProps) {
   )
 }
 
+export function IconPayments({ size = 20, className = '', ...props }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      {...props}
+    >
+      <rect width="18" height="13" x="3" y="6" rx="2" />
+      <path d="M7 10h5" />
+      <path d="M7 13h5" />
+      <path d="M11 10a2.5 2.5 0 0 1 0 5H7l4 3" />
+    </svg>
+  )
+}
+
+export function IconPencil({ size = 16, className = '', ...props }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      {...props}
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+export function IconCheck({ size = 16, className = '', ...props }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      {...props}
+    >
+      <path d="m20 6-11 11-5-5" />
+    </svg>
+  )
+}
+
 export function IconSearch({ size = 18, className = '', ...props }: IconProps) {
   return (
     <svg

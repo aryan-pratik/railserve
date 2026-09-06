@@ -32,12 +32,16 @@ export function EmptyState({ title, note, action }: { title: string; note: strin
 
 export function PageHeader({ title, note, action }: { title: string; note?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+      {/* Capped at a readable measure. Unbounded, a one-sentence note runs the
+          full width of a 1400px console and pushes the action onto its own
+          line, where — being the only thing there — it lands flush left and
+          aligns to nothing. */}
+      <div className="min-w-0 max-w-[68ch]">
         <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
-        {note ? <p className="mt-0.5 text-sm text-muted">{note}</p> : null}
+        {note ? <p className="mt-1 text-sm leading-relaxed text-muted">{note}</p> : null}
       </div>
-      {action}
+      {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
     </div>
   )
 }

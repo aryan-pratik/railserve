@@ -9,6 +9,7 @@ export default async function StoreLayout({ children }: LayoutProps<'/store'>) {
       nav={[
         { href: '/store', label: 'Kitchen Board', icon: 'board' },
         { href: '/store/history', label: 'Order History', icon: 'history' },
+        { href: '/store/payments', label: 'Payments', icon: 'payments' },
       ]}
     >
       {children}

@@ -10,6 +10,7 @@ import { YatribhojanParser } from './parsers/yatribhojan'
 import { RajBhogParser } from './parsers/rajbhog'
 import { ZoopParser } from './parsers/zoop'
 import { matchOutlet } from './outletMatch'
+import { PAYMENT_PARSERS, recordPayment } from './payments'
 import { warmTrainStatus } from '../train/service'
 import type { OrderParser, ParsedOrder } from './types'
 
@@ -31,13 +32,24 @@ export type IngestSource = {
   from?: string | null
 }
 
-export type IngestOutcome =
+/**
+ * What writing a parsed order can produce. Narrower than IngestOutcome on
+ * purpose: by the time an order is being written, parsing has already
+ * succeeded, so neither a payment nor an unparsed row is reachable — and
+ * saying so in the type saves every caller a branch it can never take.
+ */
+export type OrderIngestOutcome =
   | { status: 'CREATED'; orderId: string; externalOrderId: string }
   | { status: 'DUPLICATE'; externalOrderId: string }
+
+export type IngestOutcome =
+  | OrderIngestOutcome
+  | { status: 'PAYMENT'; paymentId: string; rrn: string }
+  | { status: 'PAYMENT_DUPLICATE'; rrn: string }
   | { status: 'UNPARSED'; inboxId: string; reason: string; detail: string }
 
 /**
- * Turns a raw email into an order, or into an unparsed-inbox row. Never
+ * Turns a raw email into an order, a payment, or an unparsed-inbox row. Never
  * anything in between — plan §6: "Any required field null -> unparsedinbox.
  * Never insert a partial order."
  *
@@ -56,6 +68,12 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
     from: input.from ?? null,
     receivedAt: input.receivedAt,
   }
+
+  // Bank credit alerts arrive in the same mailbox and are not orders. They
+  // are recognised first, so they never reach the order parsers and never get
+  // filed as "an order nobody is cooking".
+  const paymentOutcome = await tryIngestPayment(input, rawPayload)
+  if (paymentOutcome) return paymentOutcome
 
   const parser = PARSERS.find((p) => p.matches(input.body))
 
@@ -102,13 +120,53 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   return createOrderFromParsed(parsed, outlet.restaurantId, rawPayload, input.gmailMessageId ?? null)
 }
 
+/**
+ * Records a bank alert, or returns null if this email is not one.
+ *
+ * A parser that matched but could not parse still lands in the unparsed inbox
+ * — that IS an alert worth someone's attention, because it means the bank
+ * changed its template and money is arriving that nobody is recording. What
+ * the plan's safety net is for; only the successful ones are quiet.
+ */
+async function tryIngestPayment(
+  input: IngestSource,
+  rawPayload: unknown,
+): Promise<IngestOutcome | null> {
+  const parser = PAYMENT_PARSERS.find((p) => p.matches(input.body))
+  if (!parser) return null
+
+  const result = parser.parse(input.body, input.receivedAt)
+
+  if (!result.ok) {
+    return recordUnparsed({
+      source: parser.provider,
+      rawPayload,
+      reason: result.reason,
+      detail: result.detail,
+      partial: result.partial ?? null,
+      gmailMessageId: input.gmailMessageId ?? null,
+    })
+  }
+
+  const recorded = await recordPayment(
+    result.payment,
+    rawPayload,
+    input.gmailMessageId ?? null,
+    input.receivedAt,
+  )
+
+  return recorded.status === 'CREATED'
+    ? { status: 'PAYMENT', paymentId: recorded.paymentId, rrn: recorded.rrn }
+    : { status: 'PAYMENT_DUPLICATE', rrn: recorded.rrn }
+}
+
 /** Shared by ingestion and by resolving an unparsed row. */
 export async function createOrderFromParsed(
   parsed: ParsedOrder,
   restaurantId: string,
   rawPayload: unknown,
   gmailMessageId: string | null,
-): Promise<IngestOutcome> {
+): Promise<OrderIngestOutcome> {
   const serviceDate = serviceDateFor(parsed.scheduledArrival ?? new Date())
 
   try {

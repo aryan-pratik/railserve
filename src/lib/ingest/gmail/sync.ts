@@ -74,6 +74,8 @@ export type SyncSummary = {
   processed: number
   created: number
   duplicates: number
+  /** Bank credit alerts recorded on the payments page rather than as orders. */
+  payments: number
   unparsed: number
   errors: string[]
 }
@@ -86,7 +88,9 @@ export type SyncSummary = {
  * externalOrderId and gmailMessageId.
  */
 export async function syncGmailHistory(): Promise<SyncSummary> {
-  const summary: SyncSummary = { processed: 0, created: 0, duplicates: 0, unparsed: 0, errors: [] }
+  const summary: SyncSummary = {
+    processed: 0, created: 0, duplicates: 0, payments: 0, unparsed: 0, errors: [],
+  }
   if (!isGmailConfigured()) return summary
 
   await connectDb()
@@ -150,6 +154,10 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
       summary.processed += 1
       if (outcome.status === 'CREATED') summary.created += 1
       else if (outcome.status === 'DUPLICATE') summary.duplicates += 1
+      else if (outcome.status === 'PAYMENT') summary.payments += 1
+      // A replayed payment alert is a no-op, like a replayed order — counted
+      // with the duplicates rather than as a payment that just arrived.
+      else if (outcome.status === 'PAYMENT_DUPLICATE') summary.duplicates += 1
       else summary.unparsed += 1
     } catch (err) {
       summary.errors.push(`${id}: ${err instanceof Error ? err.message : 'failed'}`)
@@ -161,7 +169,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
     {
       $set: {
         historyId: newHistoryId,
-        ...(summary.created > 0 ? { lastMessageAt: new Date() } : {}),
+        ...(summary.created > 0 || summary.payments > 0 ? { lastMessageAt: new Date() } : {}),
         lastError: summary.errors.length ? summary.errors.join('; ') : null,
       },
     },
