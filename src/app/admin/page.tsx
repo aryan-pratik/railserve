@@ -184,7 +184,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
             : dayOrders.length,
           active: t.key === tab.key,
         }))}
-        outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} — ${o.stationCode}` }))}
+        outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
         trains={trainNos}
         current={{ tab: tabKey, mode, month, from: rangeFrom, to: rangeTo, outlet, train, payment, sort, q, group, upcoming: isUpcoming ? '1' : '' }}
         todayCount={todayCount}

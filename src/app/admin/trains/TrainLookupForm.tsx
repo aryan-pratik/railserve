@@ -32,7 +32,7 @@ function ago(iso: string): string {
 /** "KANPUR CENTRAL (CNB)" — a bare code means nothing to someone new. */
 function place(name: string | null, code: string | null): string {
   if (name && code) return `${name} (${code})`
-  return name ?? code ?? '—'
+  return name ?? code ?? '–'
 }
 
 export function TrainLookupForm({
@@ -95,7 +95,7 @@ export function TrainLookupForm({
           <div className="px-4 py-2">
             {r.simulated ? (
               <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                These times are <strong>simulated</strong>, not live — no real train API is
+                These times are <strong>simulated</strong>, not live. No real train API is
                 configured for this environment.
               </p>
             ) : null}
@@ -138,7 +138,7 @@ export function TrainLookupForm({
               value={
                 r.providerUpdatedAtIso
                   ? `${istTime(r.providerUpdatedAtIso)} IST · ${ago(r.providerUpdatedAtIso)}`
-                  : 'never — this run has not reported yet'
+                  : 'never (this run has not reported yet)'
               }
             />
             <Row
@@ -175,7 +175,7 @@ export function TrainLookupForm({
                 r.distanceKm !== null ? `${r.distanceKm} km into the run` : null,
               ]
                 .filter(Boolean)
-                .join(' · ') || '—'}
+                .join(' · ') || '–'}
             />
           </div>
 

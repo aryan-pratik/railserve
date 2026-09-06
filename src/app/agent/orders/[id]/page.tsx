@@ -43,7 +43,7 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
 
         <div className="mt-3 flex items-start gap-3">
           <div className="rounded-lg bg-ink px-3 py-2 text-2xl font-bold leading-none text-white">
-            {order.coach ?? '—'}
+            {order.coach ?? '–'}
           </div>
           <div className="text-sm">
             {order.orderType === 'BULK' ? (
@@ -54,7 +54,7 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
             ) : (
               <>
                 <div className="font-semibold text-ink">
-                  Berth {order.berth ?? '—'}
+                  Berth {order.berth ?? '–'}
                 </div>
                 <div className="text-muted">{order.trainNo} {order.trainName}</div>
               </>
@@ -137,7 +137,7 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
         <Card className="p-4">
           <div className="text-sm font-semibold text-emerald-700">Delivered</div>
           <div className="mt-1 text-sm text-muted">
-            Received by {order.delivery.proofValue ?? '—'} at {formatIST(order.delivery.deliveredAt)}
+            Received by {order.delivery.proofValue ?? '–'} at {formatIST(order.delivery.deliveredAt)}
           </div>
           {order.delivery.amountCollectedPaise !== null ? (
             <div className="mt-1 text-sm text-muted">
@@ -148,7 +148,7 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
       ) : order.status === 'FAILED' ? (
         <Card className="p-4">
           <div className="text-sm font-semibold text-red-700">Not delivered</div>
-          <div className="mt-1 text-sm text-muted">{order.delivery.failureReason ?? '—'}</div>
+          <div className="mt-1 text-sm text-muted">{order.delivery.failureReason ?? '–'}</div>
         </Card>
       ) : order.status === 'PREPARED' ? (
         <Card>

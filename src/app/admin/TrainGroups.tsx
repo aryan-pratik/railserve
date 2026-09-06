@@ -205,7 +205,7 @@ export function TrainGroups({
                             title={
                               'When this app last asked the railway about this train, and when ' +
                               'it is due to ask again. Checks get more frequent the closer the ' +
-                              'train gets — as little as once an hour when it is far out, down ' +
+                              'train gets: as little as once an hour when it is far out, down ' +
                               'to every minute in its last five.'
                             }
                           >
@@ -302,7 +302,7 @@ export function TrainGroups({
                             {/* Customer */}
                             <td className="px-4 py-3.5">
                               <div className="font-medium text-ink">
-                                {o.contactName ?? '—'}
+                                {o.contactName ?? '–'}
                               </div>
                               {o.contactPhone ? (
                                 <div className="font-mono text-[11px] text-muted">
@@ -325,7 +325,7 @@ export function TrainGroups({
                                   {o.coach}{o.berth ? ` / ${o.berth}` : ''}
                                 </span>
                               ) : (
-                                <span className="text-muted">—</span>
+                                <span className="text-muted">–</span>
                               )}
                             </td>
 

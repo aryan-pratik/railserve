@@ -122,7 +122,7 @@ export function StoreRunActions({
           </form>
         ) : (
           <span className="text-xs font-medium text-amber-700">
-            {waiting} on the shelf — no active rider at this outlet
+            {waiting} on the shelf, and no active rider at this outlet
           </span>
         )
       ) : null}

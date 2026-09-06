@@ -25,7 +25,7 @@ export function TrainFeedNotice({
   if (simulated) {
     return (
       <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
-        Train times are <strong>simulated</strong> — set <code className="font-mono">TRAIN_API_KEY</code>{' '}
+        Train times are <strong>simulated</strong>. Set <code className="font-mono">TRAIN_API_KEY</code>{' '}
         and <code className="font-mono">TRAIN_API_PROVIDER=rapidapi</code> for live status.
       </p>
     )
@@ -42,7 +42,7 @@ export function TrainFeedNotice({
   if (health.failingTrains.length >= health.trainsTried) {
     return (
       <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-800 ring-1 ring-inset ring-red-200">
-        <strong>Live train feed is down</strong> — showing scheduled times, which do not account
+        <strong>Live train feed is down.</strong> Showing scheduled times, which do not account
         for delays. {health.message}
         {lastGood}
       </p>
@@ -59,7 +59,7 @@ export function TrainFeedNotice({
       <strong>
         No live status for {trains.length === 1 ? 'train' : 'trains'} {list}
       </strong>{' '}
-      — {trains.length === 1 ? 'that run is' : 'those runs are'} on scheduled times, which do not
+      {trains.length === 1 ? 'That run is' : 'Those runs are'} on scheduled times, which do not
       account for delays. The rest of this board is live. {health.message}
       {lastGood}
     </p>

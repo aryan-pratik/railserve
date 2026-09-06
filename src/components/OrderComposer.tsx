@@ -141,7 +141,7 @@ export function OrderComposer({
                 </Field>
                 <div className="sm:col-span-2">
                   <Field label="Handover point" htmlFor="handoverPoint"
-                    hint="Where the rider hands over — e.g. coach B5 door, contact Mr Sharma.">
+                    hint="Where the rider hands over. For example: coach B5 door, contact Mr Sharma.">
                     <input id="handoverPoint" name="handoverPoint" className={inputClass} />
                   </Field>
                 </div>
@@ -229,7 +229,7 @@ export function OrderComposer({
             </Field>
             <Field label="Mode" htmlFor="paymentMode">
               <select id="paymentMode" name="paymentMode" className={inputClass}>
-                <option value="">—</option>
+                <option value="">–</option>
                 <option value="PREPAID">Prepaid</option>
                 <option value="COD">Cash on delivery</option>
                 <option value="INVOICE">Invoice</option>

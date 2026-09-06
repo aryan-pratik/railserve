@@ -212,13 +212,16 @@ export function TypeBadge({ type }: { type: string }) {
 
 /** The coach is what an agent walks the platform by, so it reads first. */
 export function CoachChip({ coach, berth, size = 'md' }: { coach: string | null | undefined; berth?: string | null | undefined; size?: 'md' | 'lg' }) {
-  if (!coach) return <span className="text-sm text-faint">—</span>
+  if (!coach) return <span className="text-sm text-faint">–</span>
   return (
-    <span className="inline-flex items-baseline gap-1">
+    // Wraps rather than overflows: a berth dropping to a second line is
+    // readable, a coach code painted across the next column is not.
+    <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1 gap-y-0.5">
       <span
-        className={`rounded bg-ink font-bold tabular-nums text-white ${
+        className={`max-w-full truncate rounded bg-ink font-bold tabular-nums text-white ${
           size === 'lg' ? 'px-2.5 py-1 text-lg' : 'px-1.5 py-0.5 text-sm'
         }`}
+        title={coach}
       >
         {coach}
       </span>

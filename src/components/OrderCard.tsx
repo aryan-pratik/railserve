@@ -67,7 +67,7 @@ export function OrderCard({
                 {order.handoverPoint ? ` · ${order.handoverPoint}` : ''}
               </>
             ) : (
-              <>Seat <span className="font-mono font-medium text-ink">{order.rawSeat ?? '—'}</span></>
+              <>Seat <span className="font-mono font-medium text-ink">{order.rawSeat ?? '–'}</span></>
             )}
           </div>
           {timing ?? (
@@ -106,7 +106,7 @@ export function OrderCard({
             cod ? 'bg-amber-100 text-amber-900' : 'bg-sunken text-muted'
           }`}
         >
-          {cod ? `COLLECT ${formatMoney(order.amountPaise)}` : `${order.paymentMode ?? '—'} · ${formatMoney(order.amountPaise)}`}
+          {cod ? `COLLECT ${formatMoney(order.amountPaise)}` : `${order.paymentMode ?? '–'} · ${formatMoney(order.amountPaise)}`}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
       </div>

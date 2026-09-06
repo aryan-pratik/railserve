@@ -45,7 +45,7 @@ export function OutletMultiSelect({
   if (disabled) {
     return (
       <div className={`${inputClass} flex items-center text-faint disabled:cursor-not-allowed`}>
-        {summary === 'Select outlets…' ? 'None — admins see every outlet' : summary}
+        {summary === 'Select outlets…' ? 'None (admins see every outlet)' : summary}
       </div>
     )
   }

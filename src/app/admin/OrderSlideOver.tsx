@@ -128,7 +128,7 @@ export function OrderSlideOver({
                     ? `${detail.trainNo}${detail.trainName ? ` ${detail.trainName}` : ''}`
                     : 'Not specified'
                 } mono />
-                <Row label="Station" value={detail.outlet?.stationCode ?? '—'} mono />
+                <Row label="Station" value={detail.outlet?.stationCode ?? '–'} mono />
                 <Row label="Scheduled" value={formatTimeIST(detail.scheduledArrival)} />
                 <div className="flex items-baseline justify-between gap-3 py-1.5">
                   <span className="text-xs font-semibold uppercase tracking-wider text-muted">
@@ -173,7 +173,7 @@ export function OrderSlideOver({
                 ) : null}
                 <Row
                   label={detail.handoverPoint ? 'Handover' : 'Seat'}
-                  value={detail.handoverPoint ?? detail.seat ?? '—'}
+                  value={detail.handoverPoint ?? detail.seat ?? '–'}
                   mono={!detail.handoverPoint}
                 />
                 {detail.pax ? <Row label="Pax" value={String(detail.pax)} /> : null}
@@ -209,7 +209,7 @@ export function OrderSlideOver({
                         : 'text-muted'
                     }`}
                   >
-                    {detail.paymentMode ?? '—'}
+                    {detail.paymentMode ?? '–'}
                   </span>
                   <span className="text-base font-semibold tabular-nums text-ink">
                     {formatMoney(detail.amountPaise)}
@@ -222,7 +222,7 @@ export function OrderSlideOver({
                   <div className="flex items-center justify-between gap-3 py-1">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-ink">
-                        {detail.contactName ?? '—'}
+                        {detail.contactName ?? '–'}
                       </p>
                       {detail.contactPhone ? (
                         <p className="font-mono text-xs text-muted">{detail.contactPhone}</p>
@@ -267,7 +267,7 @@ export function OrderSlideOver({
                 </div>
               ) : (
                 <p className="text-sm text-muted">
-                  {statusLabel(detail.status)} — nothing further for an admin to do here.
+                  {statusLabel(detail.status)}. Nothing further for an admin to do here.
                 </p>
               )}
 

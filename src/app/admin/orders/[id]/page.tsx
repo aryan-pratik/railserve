@@ -106,25 +106,25 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
               />
               {order.orderType === 'BULK' ? (
                 <>
-                  <Row label="Pax" value={order.pax ?? '—'} />
-                  <Row label="Handover point" value={order.handoverPoint ?? '—'} />
+                  <Row label="Pax" value={order.pax ?? '–'} />
+                  <Row label="Handover point" value={order.handoverPoint ?? '–'} />
                   <Row label="Ready by" value={formatIST(order.readyBy)} />
                 </>
               ) : (
-                <Row label="Seat" value={order.rawSeat ?? '—'} />
+                <Row label="Seat" value={order.rawSeat ?? '–'} />
               )}
               <Row
                 label="Contact"
                 value={
                   order.contactPhone ? (
                     <>
-                      {order.contactName ?? '—'}{' '}
+                      {order.contactName ?? '–'}{' '}
                       <a href={`tel:${order.contactPhone}`} className="text-muted underline">
                         {order.contactPhone}
                       </a>
                     </>
                   ) : (
-                    '—'
+                    '–'
                   )
                 }
               />

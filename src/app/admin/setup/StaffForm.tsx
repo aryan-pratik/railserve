@@ -53,7 +53,7 @@ export function StaffForm({
             role === 'ADMIN'
               ? 'Admins see every outlet, so they hold none explicitly.'
               : role === 'STORE_MANAGER'
-                ? 'Every outlet this manager runs — all of them share one board.'
+                ? 'Every outlet this manager runs. They all share one board.'
                 : 'Riders see the live runs of the outlets they are attached to. Without one, their app is empty.'
           }>
           <OutletMultiSelect

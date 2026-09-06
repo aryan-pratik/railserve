@@ -23,14 +23,19 @@ const REASON_STYLE: Record<string, string> = {
 }
 
 /**
- * The severity edge. A row here is an order nobody is cooking, so the card
- * carries its reason on its left edge — the colour is readable down a stack of
+ * The severity tint. A row here is an order nobody is cooking, so the card
+ * carries its reason as a wash across its header, readable down a stack of
  * ten before a single label has been read.
+ *
+ * This was a 4px coloured left border. That reads as decoration rather than
+ * state, and it is the single most recognisable tell of a generated interface;
+ * tinting the surface the badge already sits on says the same thing using a
+ * surface the design already owns.
  */
-const REASON_EDGE: Record<string, string> = {
-  UNKNOWN_OUTLET: 'border-l-amber-400',
-  MISSING_FIELD: 'border-l-orange-400',
-  PARSE_FAILED: 'border-l-red-500',
+const REASON_TINT: Record<string, string> = {
+  UNKNOWN_OUTLET: 'bg-amber-50/70',
+  MISSING_FIELD: 'bg-orange-50/70',
+  PARSE_FAILED: 'bg-red-50/70',
 }
 
 export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
@@ -54,7 +59,7 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
     <div className="space-y-5">
       <PageHeader
         title="Unparsed inbox"
-        note="Emails that could not become orders. Nothing here was discarded — this is the net that catches an aggregator changing its template."
+        note="Emails that could not become orders. Nothing here was discarded. This is the net that catches an aggregator changing its template."
       />
 
       <Tabs
@@ -66,14 +71,14 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
 
       {ingest.stale ? (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
-          Ingestion needs attention — {ingest.message}. Nothing here will look wrong;
+          Ingestion needs attention: {ingest.message}. Nothing here will look wrong;
           the mailbox simply stops arriving.
         </p>
       ) : null}
 
       {!showResolved && openCount > 0 ? (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-inset ring-red-200">
-          {openCount} email{openCount === 1 ? '' : 's'} did not become an order — that is food nobody
+          {openCount} email{openCount === 1 ? '' : 's'} did not become an order. That is food nobody
           is cooking. Correct or dismiss each one.
         </p>
       ) : null}
@@ -92,13 +97,12 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
           {rows.map((row) => {
             const body = (row.rawPayload as { body?: string })?.body ?? ''
             return (
-              <Card
-                key={String(row._id)}
-                className={`border-l-4 ${
-                  row.resolved ? 'border-l-emerald-400' : (REASON_EDGE[row.reason] ?? 'border-l-line-strong')
-                }`}
-              >
-                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+              <Card key={String(row._id)}>
+                <div
+                  className={`flex flex-wrap items-center gap-2 rounded-t-xl border-b border-line px-4 py-2.5 ${
+                    row.resolved ? 'bg-emerald-50/70' : (REASON_TINT[row.reason] ?? 'bg-sunken/50')
+                  }`}
+                >
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
                       REASON_STYLE[row.reason] ?? 'bg-sunken text-muted ring-line-strong'
@@ -131,7 +135,7 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
                       Resolved {formatIST(row.resolvedAt)}
                       {row.resolvedOrderId ? (
                         <>
-                          {' — '}
+                          {' · '}
                           <Link
                             href={`/admin/orders/${String(row.resolvedOrderId)}`}
                             className="text-accent underline underline-offset-2"
@@ -147,7 +151,7 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
                       <form action={dismissUnparsed}>
                         <input type="hidden" name="id" value={String(row._id)} />
                         <Button type="submit" variant="secondary" size="sm">
-                          Not an order — dismiss
+                          Dismiss as not an order
                         </Button>
                       </form>
                     </div>

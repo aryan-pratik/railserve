@@ -114,7 +114,7 @@ export function EnquiryForm({ today }: { today: string }) {
             </div>
             <div className="sm:col-span-2">
               <Field label="Notes" htmlFor="notes"
-                hint="Anything the parser did not recognise lands here — nothing is dropped.">
+                hint="Anything the parser did not recognise lands here. Nothing is dropped.">
                 <textarea id="notes" name="notes" rows={3} value={notes}
                   onChange={(e) => setNotes(e.target.value)} className={inputClass} />
               </Field>

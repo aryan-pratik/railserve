@@ -83,7 +83,7 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
   // every card, ahead of the train number, with nothing saying 23 until what.
   const stale = mins < -STALE_AFTER_MINUTES
   const spoken = stale
-    ? `Train left ${span(-mins)} ago — this order is still open`
+    ? `Train left ${span(-mins)} ago, and this order is still open`
     : mins === 0
       ? 'Train due now'
       : mins < 0
