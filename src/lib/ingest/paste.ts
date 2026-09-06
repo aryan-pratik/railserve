@@ -69,9 +69,6 @@ export async function createOrderFromPaste(
   if (outcome.status === 'DUPLICATE') {
     return { ok: false, detail: `Order ${outcome.externalOrderId} is already in the system.` }
   }
-  if (outcome.status !== 'CREATED') {
-    return { ok: false, detail: outcome.detail }
-  }
 
   return {
     ok: true,

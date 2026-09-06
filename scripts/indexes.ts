@@ -6,8 +6,9 @@
  *   npm run indexes
  */
 import type { CreateIndexesOptions, IndexDescription, IndexSpecification } from 'mongodb'
+import mongoose from 'mongoose'
 import { connectDb, disconnectDb } from '../src/lib/db'
-import { Order, Restaurant, User, Counter, TrainStatus, UnparsedInbox } from '../src/lib/models'
+import { Order, Restaurant, User, Counter, TrainStatus, UnparsedInbox, Payment } from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
 
@@ -86,6 +87,36 @@ const UNPARSED_INBOX_INDEXES: Spec[] = [
   },
 ]
 
+const PAYMENT_INDEXES: Spec[] = [
+  {
+    name: 'rrn_unique',
+    index: { key: { rrn: 1 }, unique: true },
+    why: 'idempotent ingestion — the bank replays the same credit alert',
+  },
+  {
+    name: 'gmailMessageId_unique',
+    // PARTIAL, not sparse — same reasoning as the order index above: a pasted
+    // or backfilled payment omits the key entirely rather than storing a null
+    // that would collide with the next one.
+    index: {
+      key: { gmailMessageId: 1 },
+      unique: true,
+      partialFilterExpression: { gmailMessageId: { $type: 'string' } },
+    },
+    why: 'idempotent ingestion — same Gmail message replayed by history sync',
+  },
+  {
+    name: 'ledger',
+    index: { key: { transactionDate: -1, receivedAt: -1 } },
+    why: 'the payments page: newest first, filtered by date range',
+  },
+  {
+    name: 'payer',
+    index: { key: { payerName: 1 } },
+    why: '"did this person ever pay" — the payer-name search',
+  },
+]
+
 const USER_INDEXES: Spec[] = [
   { name: 'phone_unique', index: { key: { phone: 1 }, unique: true }, why: 'phone is the login identifier' },
   // Multikey on restaurantIds — one manager may hold several outlets.
@@ -110,6 +141,11 @@ async function ensure(collectionName: string, model: IndexCreator, specs: Spec[]
 
 async function main() {
   await connectDb()
+  // Which database, stated up front. Both npm scripts load .env.local, which
+  // is the dev database — running this against dev while believing it hit
+  // production looks exactly like success, and the missing unique index is
+  // then invisible until duplicate rows appear.
+  console.log(`Database: ${mongoose.connection.name}  (host ${mongoose.connection.host})`)
   console.log('Creating indexes explicitly (autoIndex is disabled).')
 
   await ensure('orders', Order, ORDER_INDEXES)
@@ -117,6 +153,7 @@ async function main() {
   await ensure('users', User, USER_INDEXES)
   await ensure('trainstatuses', TrainStatus, TRAIN_STATUS_INDEXES)
   await ensure('unparsedinboxes', UnparsedInbox, UNPARSED_INBOX_INDEXES)
+  await ensure('payments', Payment, PAYMENT_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })
