@@ -70,6 +70,27 @@ export async function paymentTotals(query: PaymentQuery = {}): Promise<PaymentTo
   return { count: row?.count ?? 0, totalPaise: row?.totalPaise ?? 0 }
 }
 
+/**
+ * A cheap fingerprint of the collection, for the live stream to poll.
+ *
+ * Deliberately two index-only reads rather than a real query: the newest _id
+ * (ObjectIds are monotonic, and _id is always indexed) plus a count taken from
+ * collection metadata rather than by scanning. This runs every few seconds per
+ * open tab, so it has to cost close to nothing.
+ *
+ * Catches an arriving payment, which is the thing anyone is waiting on. A
+ * remark edited by someone else does not move it — the editor's own action
+ * revalidates their page, and a second viewer picks it up on their next load.
+ */
+export async function paymentsSignature(): Promise<string> {
+  await connectDb()
+  const [newest, count] = await Promise.all([
+    Payment.findOne().sort({ _id: -1 }).select('_id').lean(),
+    Payment.estimatedDocumentCount(),
+  ])
+  return `${newest ? String(newest._id) : 'none'}:${count}`
+}
+
 export type BalanceReading = { balancePaise: number; asOf: Date } | null
 
 /**

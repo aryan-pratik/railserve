@@ -46,6 +46,12 @@ path); this doc is specifically about *this* VM's constraints.
   `/api/cron/gmail-sync` every minute against `railserve.vercel.app`, both
   authenticated with `x-cron-token`. Back the crontab up before editing it —
   there is no other copy.
+
+  If Gmail push is enabled (see `VERCEL.md`), add a **daily** line for
+  `/api/cron/gmail-watch`. The Gmail watch expires after 7 days and takes
+  push ingestion with it silently; this line is the only thing preventing
+  that. Keep the one-minute `gmail-sync` line as well — ingestion is
+  idempotent, and the poll is the backstop for a dropped notification.
 - **nginx**: one added `location /railserve/` block inside the existing
   `/etc/nginx/sites-available/uiis` file (that file is the whole site config
   for port 8080 — there's nowhere else to put it without a second

@@ -43,13 +43,21 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed text-sm">
+        {/* The min-width gives the overflow-x-auto wrapper something coherent
+            to scroll. Without it these percentages resolve against a 375px
+            phone, where the amount column lands at ~45px and "₹1,240.50" —
+            which has no space to break at — spills out of it. Wider than the
+            floor, the table is simply 100% and nothing scrolls. */}
+        <table className="w-full min-w-[46rem] table-fixed text-sm">
+          {/* Widths follow how much each column can actually vary. The RRN
+              is always 12 digits and the amount rarely passes ₹9,999, so both
+              were holding width that the one free-text column needed. */}
           <colgroup>
-            <col style={{ width: '24%' }} />
+            <col style={{ width: '21%' }} />
+            <col style={{ width: '12%' }} />
             <col style={{ width: '15%' }} />
-            <col style={{ width: '20%' }} />
             <col style={{ width: '16%' }} />
-            <col style={{ width: '25%' }} />
+            <col style={{ width: '36%' }} />
           </colgroup>
           <thead className="border-b border-line bg-sunken/60">
             <tr>
@@ -121,7 +129,17 @@ function PaymentTableRow({ payment }: { payment: PaymentRow }) {
             className="flex w-full items-start gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title={payment.remark ? 'Edit remark' : 'Add a remark'}
           >
-            <span className={payment.remark ? 'text-amber-800' : 'italic text-faint'}>
+            {/* min-w-0 is load-bearing: a flex child defaults to
+                min-width:auto, so it refuses to shrink below its content and
+                a remark typed as one unbroken string escapes the cell and
+                drags the whole table into a horizontal scroll. break-words
+                then lets it break mid-string when there is no space to
+                break at. */}
+            <span
+              className={`min-w-0 flex-1 break-words ${
+                payment.remark ? 'text-amber-800' : 'italic text-faint'
+              }`}
+            >
               {payment.remark ?? 'Add a remark'}
             </span>
             {/* Kept out of the way until the row is under the cursor or the

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { runTrainPollingTick, pruneOldTrainStatuses } from '@/lib/queue/trainPolling'
-import { env } from '@/lib/env'
+import { cronAuthFailure } from '@/lib/cronAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,20 +22,8 @@ export const dynamic = 'force-dynamic'
  * hit the upstream train API, so it should not be free for anyone to spin.
  */
 async function handle(request: Request) {
-  const expected = env.CRON_TOKEN
-  if (expected) {
-    const url = new URL(request.url)
-    const supplied =
-      request.headers.get('x-cron-token') ??
-      // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`; accept that
-      // shape too so the same endpoint works from their scheduler unchanged.
-      request.headers.get('authorization')?.replace(/^Bearer /i, '') ??
-      url.searchParams.get('token') ??
-      ''
-    if (supplied !== expected) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const failure = cronAuthFailure(request)
+  if (failure) return NextResponse.json({ error: failure }, { status: 401 })
 
   const prune = new URL(request.url).searchParams.get('prune') === '1'
 

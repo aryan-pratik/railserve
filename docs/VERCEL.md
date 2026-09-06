@@ -82,6 +82,7 @@ driven from the Azure VM's crontab instead (see `DEPLOY.md`):
 ```
 */2 * * * *  ... /api/cron/train-poll     # every 2 minutes
 *   * * * *  ... /api/cron/gmail-sync     # every minute
+17  4 * * *  ... /api/cron/gmail-watch    # daily, only if push is on
 ```
 
 Two minutes is not the polling rate. The tick makes no upstream call unless a
@@ -102,6 +103,43 @@ want order latency to be (every 2–5 minutes is reasonable). A no-op with
 `{"ok":true,"processed":0,...}` until `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`/
 `GMAIL_REFRESH_TOKEN` are set (`npm run gmail:setup`), so it's safe to wire up
 before credentials exist.
+
+## Gmail push (optional, replaces the one-minute poll)
+
+The poll above caps order and payment latency at 60 seconds. Push takes it to
+1–3 seconds: Gmail -> Pub/Sub -> `/api/gmail/webhook` -> `history.list`. The
+webhook route, `renewGmailWatch()` and `/api/cron/gmail-watch` all exist
+already; what turns it on is a topic, a subscription, and one `users.watch()`
+call. `npm run gmail:watch` prints the current state and the exact steps.
+
+In the **same Google Cloud project as the OAuth client**:
+
+1. Enable Pub/Sub (`console.cloud.google.com/apis/library/pubsub.googleapis.com`).
+2. Create a topic, e.g. `gmail-notifications`.
+3. On that topic, grant **Publisher** to `gmail-api-push@system.gserviceaccount.com`.
+   Gmail cannot publish without it, and `users.watch()` then fails with an
+   error naming the topic rather than the missing grant — which is a
+   confusing hour if you skip this step.
+4. Create a **push** subscription with endpoint
+   `https://railserve.vercel.app/api/gmail/webhook?token=<GMAIL_WEBHOOK_TOKEN>`
+   and an **acknowledgement deadline of 60s**. The webhook runs a full history
+   sync before answering; the 10s default expires underneath it and Pub/Sub
+   redelivers, which is wasteful rather than harmful (ingestion is idempotent).
+5. Set `GMAIL_TOPIC_NAME=projects/<project-id>/topics/gmail-notifications` and
+   `GMAIL_WEBHOOK_TOKEN=<long random string>` locally and in Vercel.
+6. `npm run gmail:watch -- --renew` to register it, then add the daily
+   `/api/cron/gmail-watch` line above.
+
+**The daily renewal is not optional.** A watch dies after exactly 7 days and
+takes ingestion with it, raising no error anywhere — the app keeps serving and
+the mailbox keeps filling while nothing arrives. Renewing daily rather than
+weekly leaves six consecutive failures' worth of slack. `/admin/inbox` shows a
+banner when the watch is inside 24 hours of expiry or nothing has ingested for
+`INGEST_STALE_ALERT_HOURS` during business hours.
+
+**Keep the one-minute poll running alongside push.** They are idempotent on
+`externalOrderId`, `gmailMessageId` and `rrn`, so the overlap costs nothing and
+the poll is what catches up if a push notification is ever dropped.
 
 - **Hobby allows one cron invocation per day.** On Hobby, either accept that or
   drive the endpoint from an external scheduler — it accepts `GET` and `POST`,

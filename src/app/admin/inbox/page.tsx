@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
 import { formatIST } from '@/lib/format'
+import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { Button, Card, EmptyState, PageHeader, Tabs } from '@/components/ui'
 import { PasteEmailForm, ResolveForm } from './InboxForms'
 import { dismissUnparsed } from './actions'
@@ -43,6 +44,11 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
     .limit(100)
     .lean()
   const openCount = await UnparsedInbox.countDocuments({ resolved: false })
+  // The plan asks for this alert (§6, §13.4) and the check has existed all
+  // along, but nothing ever called it — so a lapsed Gmail watch, which stops
+  // ingestion outright and raises no error anywhere, had no way to reach a
+  // human. This page is where ingestion health belongs.
+  const ingest = await checkIngestStaleness()
 
   return (
     <div className="space-y-5">
@@ -57,6 +63,13 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
           { href: '/admin/inbox?show=resolved', label: 'Resolved', active: showResolved },
         ]}
       />
+
+      {ingest.stale ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
+          Ingestion needs attention — {ingest.message}. Nothing here will look wrong;
+          the mailbox simply stops arriving.
+        </p>
+      ) : null}
 
       {!showResolved && openCount > 0 ? (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-inset ring-red-200">
