@@ -24,7 +24,7 @@ export default function PrivacyPage() {
           confirmation emails from food-delivery aggregators. It does not access any other
           Google account, and it does not send, delete, or modify email. Emails are parsed to
           create and track orders inside RailServe; the aggregator email content (order ID,
-          items, outlet, amount) is stored in RailServe's own database for that purpose only.
+          items, outlet, amount) is stored in RailServe&apos;s own database for that purpose only.
         </p>
 
         <h2 className="mt-8 text-lg font-medium">What is not done with this data</h2>
