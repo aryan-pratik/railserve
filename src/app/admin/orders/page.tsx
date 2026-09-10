@@ -26,6 +26,11 @@ const PAYMENT_TABS = [
 
 export const metadata = { title: 'All orders · RailServe' }
 
+/** Escapes regex metacharacters so a typed order id is matched literally. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /**
  * Lookup across every outlet.
  *
@@ -45,6 +50,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const rawTo = one(sp.to)
   const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const train = one(sp.train)
+  const orderId = one(sp.orderId)
   const payment = one(sp.payment)
 
   // Filters are additive on top of the caller's scope, never instead of it.
@@ -60,6 +66,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     base.serviceDate = range
   }
   if (train) base.trainNo = train.toUpperCase()
+  if (orderId) base.externalOrderId = { $regex: escapeRegExp(orderId), $options: 'i' }
 
   const filter = payment ? { ...base, paymentMode: payment } : base
 
@@ -78,13 +85,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const statusOptions = [...ORDER_STATUSES, ...customStatuses]
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
-  const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || payment)
+  const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || orderId || payment)
 
   // Every link and the export carry the filters already in play.
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, payment, ...over,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment, ...over,
     })) {
       if (v) u.set(k, v)
     }
@@ -129,7 +136,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
@@ -149,11 +156,14 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
             autoComplete="off" spellCheck={false}
             className={`${inputClass} font-mono`} aria-label="Train number" />
+          <input name="orderId" defaultValue={orderId} placeholder="Order ID"
+            autoComplete="off" spellCheck={false}
+            className={`${inputClass} font-mono`} aria-label="Order ID" />
           <div className="flex gap-2">
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2 lg:col-span-5">
             <Field label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
             </Field>
