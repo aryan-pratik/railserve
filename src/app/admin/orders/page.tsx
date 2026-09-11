@@ -1,12 +1,13 @@
 import { requireRole } from '@/lib/session'
-import { countByPaymentMode, distinctStatuses, findMany } from '@/lib/repo/orderRepo'
+import { countByPaymentMode, countOrders, distinctStatuses, findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { AdminOrdersTable } from './AdminOrdersTable'
 import { IconDownload, IconPlus } from '@/components/Icons'
 import {
-  Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Tabs, inputClass, statusLabel,
+  Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Pagination, Tabs,
+  PAGE_SIZE_OPTIONS, inputClass, statusLabel,
 } from '@/components/ui'
 import { DateFilter } from '@/components/DateFilter'
 import { QueryForm } from '@/components/QueryForm'
@@ -25,6 +26,8 @@ const PAYMENT_TABS = [
 ] as const
 
 export const metadata = { title: 'All orders · RailServe' }
+
+const DEFAULT_PAGE_SIZE = 20
 
 /** Escapes regex metacharacters so a typed order id is matched literally. */
 function escapeRegExp(value: string): string {
@@ -53,6 +56,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const orderId = one(sp.orderId)
   const payment = one(sp.payment)
 
+  const pageParam = Number.parseInt(one(sp.page), 10)
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+  const pageSizeParam = Number.parseInt(one(sp.pageSize), 10)
+  const pageSize = (PAGE_SIZE_OPTIONS as readonly number[]).includes(pageSizeParam)
+    ? pageSizeParam
+    : DEFAULT_PAGE_SIZE
+
   // Filters are additive on top of the caller's scope, never instead of it.
   // Payment is layered on last and kept separable, because the tab counts are
   // taken from everything except it.
@@ -71,11 +81,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const filter = payment ? { ...base, paymentMode: payment } : base
 
   await connectDb()
-  const [outlets, orders, paymentCounts, statusesInUse] = await Promise.all([
+  const [outlets, orders, paymentCounts, statusesInUse, totalCount] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
-    findMany(ctx, filter, { sort: { createdAt: -1 }, limit: 200 }),
+    findMany(ctx, filter, { sort: { createdAt: -1 }, limit: pageSize, skip: (page - 1) * pageSize }),
     countByPaymentMode(ctx, base),
     distinctStatuses(ctx),
+    countOrders(ctx, filter),
   ])
 
   // Custom statuses an admin has typed in stay selectable once they exist.
@@ -112,11 +123,26 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
 
   const exportHref = `/admin/orders/export?range=all&${query({})}`
 
+  // Separate from `query()`: a filter change should always land back on page
+  // 1, but the pager itself needs to carry the current page/size forward.
+  const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
+    const u = new URLSearchParams()
+    for (const [k, v] of Object.entries({
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment,
+    })) {
+      if (v) u.set(k, v)
+    }
+    if (p > 1) u.set('page', String(p))
+    if (ps !== DEFAULT_PAGE_SIZE) u.set('pageSize', String(ps))
+    const qs = u.toString()
+    return `/admin/orders${qs ? `?${qs}` : ''}`
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="All orders"
-        note={`${orders.length} order${orders.length === 1 ? '' : 's'}${
+        note={`${totalCount} order${totalCount === 1 ? '' : 's'}${
           hasFilters ? ' matching these filters' : ' across all outlets'
         }.`}
         action={
@@ -195,6 +221,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
             : 'Orders arriving by email appear here automatically.'
         }
       />
+
+      {totalCount > 0 ? (
+        <Card>
+          <Pagination page={page} pageSize={pageSize} total={totalCount} buildHref={paginationHref} />
+        </Card>
+      ) : null}
     </div>
   )
 }
