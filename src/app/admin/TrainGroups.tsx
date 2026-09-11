@@ -5,6 +5,7 @@ import { useNowMs } from '@/components/useNow'
 import { formatRupees } from '@/lib/format'
 import { Card, CoachChip, Dash, PaymentBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from '@/components/ui'
 import { IconChevronDown } from '@/components/Icons'
+import { CopyButton } from '@/components/CopyButton'
 import { OrderSlideOver, type OrderPreview } from './OrderSlideOver'
 import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
 import { UrgencyRail } from '@/components/UrgencyRail'
@@ -65,6 +66,34 @@ function hhmm(iso: string): string {
 
 function lateLabel(mins: number): string {
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m late` : `${mins}m late`
+}
+
+/** Everything shown in the train header, as plain text for pasting elsewhere. */
+function trainDetailsText(g: TrainGroup): string {
+  const lines = [
+    `${g.trainNo ?? 'No train no.'} ${g.trainName ?? ''}`.trim(),
+    g.stationCode + (g.platform ? ` · PF ${g.platform}` : ''),
+    `ETA ${g.arrivalLabel}${g.delayMinutes !== null && g.delayMinutes > 5 ? ` (${lateLabel(g.delayMinutes)})` : ''}`,
+  ]
+  return lines.join('\n')
+}
+
+/** Everything shown in an order row, as plain text for pasting elsewhere. */
+function orderDetailsText(o: GroupOrder): string {
+  const seat = o.handoverPoint
+    ? `Handover: ${o.handoverPoint}`
+    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
+  const items = o.pax ? `${o.pax} pax thali` : o.itemNames.length > 0 ? o.itemNames.join(', ') : 'No items'
+  const lines = [
+    `Order ${o.externalOrderId} (${o.orderType})`,
+    `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,
+    `Seat: ${seat}`,
+    `Items: ${items}`,
+    `Amount: ${formatRupees(o.amountPaise)}${o.paymentMode ? ` (${o.paymentMode})` : ''}`,
+    `Status: ${o.status}`,
+    `Placed: ${o.orderTimeLabel}`,
+  ]
+  return lines.join('\n')
 }
 
 function summarise(orders: GroupOrder[]): string {
@@ -136,7 +165,7 @@ export function TrainGroups({
               <div className="flex items-stretch">
                 <UrgencyRail at={g.arrivalIso} serverNow={serverNow} />
 
-                <div className="min-w-0 flex-1">
+                <div className="group min-w-0 flex-1">
                   <div className="flex items-center gap-1 pr-2">
                     <button
                       type="button"
@@ -208,6 +237,9 @@ export function TrainGroups({
                     {/* Outside the toggle on purpose: a submit button cannot
                         nest inside another button, and a click here must not
                         also expand or collapse the row. */}
+                    <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      <CopyButton text={trainDetailsText(g)} label="Copy train details" />
+                    </span>
                     {g.orders[0] ? (
                       <RefreshTrainButton orderId={g.orders[0].id} action={refreshAction} />
                     ) : null}
@@ -240,7 +272,7 @@ export function TrainGroups({
                             <tr
                               key={o.id}
                               onClick={() => select(o)}
-                              className="cursor-pointer transition-colors hover:bg-sunken/50"
+                              className="group cursor-pointer transition-colors hover:bg-sunken/50"
                             >
                               <td className="whitespace-nowrap px-3 py-2.5">
                                 <div className="flex items-center gap-1.5">
@@ -307,7 +339,12 @@ export function TrainGroups({
                               </td>
 
                               <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums text-muted">
-                                {o.orderTimeLabel}
+                                <div className="flex items-center gap-1">
+                                  {o.orderTimeLabel}
+                                  <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                                    <CopyButton text={orderDetailsText(o)} label="Copy order details" />
+                                  </span>
+                                </div>
                               </td>
                             </tr>
                           ))}
