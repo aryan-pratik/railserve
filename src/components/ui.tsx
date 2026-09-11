@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react'
 import Link from 'next/link'
-import { IconArrowLeft } from './Icons'
+import { IconArrowLeft, IconChevronLeft, IconChevronRight } from './Icons'
 import { LinkHint } from './LinkHint'
 import { Spinner } from './Spinner'
 import { EMPTY } from '@/lib/format'
@@ -470,6 +470,91 @@ export function CoachChip({ coach, berth, size = 'md' }: { coach: string | null 
         </span>
       ) : null}
     </span>
+  )
+}
+
+/* ── pagination ───────────────────────────────────────────────────────────── */
+
+export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const
+
+/** One arrow in the pager. No `href` means "there is no such page" — rendered inert, not linked. */
+function PageNavLink({ href, label, children }: { href?: string; label: string; children: ReactNode }) {
+  const className = `inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors ${
+    href ? `hover:bg-sunken hover:text-ink ${focusRing}` : 'cursor-not-allowed opacity-50'
+  }`
+  if (!href) {
+    return (
+      <span aria-hidden="true" className={className}>
+        {children}
+      </span>
+    )
+  }
+  return (
+    <Link href={href} aria-label={label} className={className}>
+      {children}
+    </Link>
+  )
+}
+
+/**
+ * Page-number-and-size control for a server-rendered list. `buildHref` gets
+ * the destination page/size and returns the full URL, so the caller can fold
+ * in whatever filters are already in play — this component knows nothing
+ * about them.
+ */
+export function Pagination({
+  page,
+  pageSize,
+  total,
+  buildHref,
+}: {
+  page: number
+  pageSize: number
+  total: number
+  buildHref: (target: { page: number; pageSize: number }) => string
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, total)
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs text-muted tabular-nums">
+          {total === 0 ? 'No results' : `${from}–${to} of ${total}`}
+        </span>
+        <div className={segmentedClass}>
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <Link
+              key={size}
+              href={buildHref({ page: 1, pageSize: size })}
+              aria-current={size === pageSize ? 'true' : undefined}
+              className={segmentClass(size === pageSize)}
+            >
+              {size}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <nav aria-label="Pages" className="flex items-center gap-1">
+        <PageNavLink
+          href={page > 1 ? buildHref({ page: page - 1, pageSize }) : undefined}
+          label="Previous page"
+        >
+          <IconChevronLeft size={16} />
+        </PageNavLink>
+        <span className="px-1.5 text-xs font-medium text-muted tabular-nums whitespace-nowrap">
+          Page {page} of {totalPages}
+        </span>
+        <PageNavLink
+          href={page < totalPages ? buildHref({ page: page + 1, pageSize }) : undefined}
+          label="Next page"
+        >
+          <IconChevronRight size={16} />
+        </PageNavLink>
+      </nav>
+    </div>
   )
 }
 

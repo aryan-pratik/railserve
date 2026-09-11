@@ -54,10 +54,11 @@ export function scoped(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}): Qu
 export async function findMany(
   ctx: AuthContext,
   filter: QueryFilter<OrderDoc> = {},
-  opts: { sort?: Record<string, 1 | -1>; limit?: number } = {},
+  opts: { sort?: Record<string, 1 | -1>; limit?: number; skip?: number } = {},
 ) {
   return Order.find(scoped(ctx, filter))
     .sort(opts.sort ?? { createdAt: -1 })
+    .skip(opts.skip ?? 0)
     .limit(opts.limit ?? 200)
     .lean()
 }
