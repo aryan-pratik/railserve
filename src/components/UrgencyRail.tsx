@@ -31,18 +31,16 @@ const TICK_MS = 30_000
  * greens take white. Mixing text colour per band is what maximises legibility,
  * and legibility is the entire job of this element.
  *
- * Urgent and overdue share a fill on purpose: they are distinguished by the
- * elapsed-time readout rather than by a hue step, which survives
- * colour-blindness and a monochrome printout.
- *
- * Past this, the train is not "arriving now" — it left. An order still sitting
- * open is a data problem or an abandoned job, and it must stop competing for
- * attention with the train that is actually at the platform.
+ * Once the train has actually arrived, urgency colour stops meaning anything —
+ * there is nothing left to hurry for. The rail goes blank (no fill) and only
+ * the elapsed-time readout remains, so a passed train never competes for
+ * attention with one that is still inbound.
  */
 const STALE_AFTER_MINUTES = 90
 
+const BLANK = { bg: 'bg-transparent', fg: 'text-muted' }
+
 function band(mins: number) {
-  if (mins < -STALE_AFTER_MINUTES) return { bg: 'bg-line-strong', fg: 'text-ink' }
   if (mins <= 20) return { bg: 'bg-red-600', fg: 'text-white' }   // 4.77:1
   if (mins <= 45) return { bg: 'bg-amber-500', fg: 'text-ink' }   // 8.61:1
   return { bg: 'bg-emerald-700', fg: 'text-white' }               // 5.36:1
@@ -77,7 +75,7 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
   }
 
   const mins = Math.round((new Date(at).getTime() - now) / 60_000)
-  const tone = band(mins)
+  const tone = mins < 0 ? BLANK : band(mins)
 
   // A screen reader would otherwise hear "23, min" as the first content of
   // every card, ahead of the train number, with nothing saying 23 until what.
@@ -92,8 +90,7 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
 
   // Once the train has actually left the arrival station, "now" stops being
   // true — it's not arriving now, it arrived a while ago. Show the elapsed
-  // time instead (same treatment whether or not it's crossed the stale
-  // threshold; only the colour band differs).
+  // time instead, with no urgency fill: there's nothing left to hurry for.
   if (mins < 0) {
     return (
       <div
