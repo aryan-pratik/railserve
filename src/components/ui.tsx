@@ -450,8 +450,23 @@ export function PaymentBadge({ mode, amount }: { mode: string | null | undefined
 }
 
 /** The coach is what an agent walks the platform by, so it reads first. */
-export function CoachChip({ coach, berth, size = 'md' }: { coach: string | null | undefined; berth?: string | null | undefined; size?: 'md' | 'lg' }) {
-  if (!coach) return <Dash />
+export function CoachChip({
+  coach,
+  berth,
+  rawSeat,
+  size = 'md',
+}: {
+  coach: string | null | undefined
+  berth?: string | null | undefined
+  rawSeat?: string | null | undefined
+  size?: 'md' | 'lg'
+}) {
+  if (!coach) {
+    // coach/berth failed to parse out of the ingested text — rawSeat still
+    // holds the original string (e.g. "RAC/B2, SEAT: 39"), show that instead
+    // of a bare dash so the seat isn't silently dropped from list views.
+    return rawSeat ? <span className="font-mono text-sm text-ink">{rawSeat}</span> : <Dash />
+  }
   return (
     // Wraps rather than overflows: a berth dropping to a second line is
     // readable, a coach code painted across the next column is not.

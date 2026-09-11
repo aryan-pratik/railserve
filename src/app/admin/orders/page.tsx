@@ -207,6 +207,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           trainNo: o.trainNo,
           coach: o.coach,
           berth: o.berth,
+          rawSeat: o.rawSeat,
           contactName: o.contactName,
           scheduledArrival: o.scheduledArrival?.toISOString() ?? null,
           amountPaise: o.amountPaise,

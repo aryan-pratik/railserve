@@ -131,6 +131,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         contactPhone: o.contactPhone ?? null,
         coach: o.coach ?? null,
         berth: o.berth ?? null,
+        rawSeat: o.rawSeat ?? null,
         handoverPoint: o.handoverPoint ?? null,
         itemCount: o.items.filter((i) => !i.isPacking).length,
         itemNames: o.items
