@@ -17,6 +17,7 @@ export type GroupOrder = {
   contactPhone: string | null
   coach: string | null
   berth: string | null
+  rawSeat: string | null
   handoverPoint: string | null
   itemCount: number
   itemNames: string[]
@@ -275,7 +276,7 @@ export function TrainGroups({
                                     Handover: {o.handoverPoint}
                                   </span>
                                 ) : (
-                                  <CoachChip coach={o.coach} berth={o.berth} />
+                                  <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
                                 )}
                               </td>
 

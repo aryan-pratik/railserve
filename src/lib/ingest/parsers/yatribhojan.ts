@@ -60,13 +60,19 @@ export class YatribhojanParser implements OrderParser {
     const trainNo = trainMatch?.[1] ?? null
     const trainName = trainMatch?.[2]?.trim() ?? null
 
+    // Vendor prefixes the coach with the booking status for RAC/WL berths,
+    // e.g. "RAC/B2, SEAT: 39" — the status isn't a coach code, so it's
+    // captured separately and stitched back into rawSeat rather than lost.
     const coachSeatRaw = field('COACH')
     const coachSeatMatch = coachSeatRaw
-      ? /^([A-Z]+\d*)\s*,\s*SEAT\s*:\s*(\d+)$/i.exec(coachSeatRaw)
+      ? /^(?:([A-Z]+)\/)?([A-Z]+\d*)\s*,\s*SEAT\s*:\s*(\d+)$/i.exec(coachSeatRaw)
       : null
-    const coach = coachSeatMatch?.[1] ?? null
-    const berth = coachSeatMatch?.[2] ?? null
-    const rawSeat = coach && berth ? `${coach}-${berth}` : coachSeatRaw
+    const seatStatus = coachSeatMatch?.[1] ?? null
+    const coach = coachSeatMatch?.[2] ?? null
+    const berth = coachSeatMatch?.[3] ?? null
+    const rawSeat = coach && berth
+      ? `${seatStatus ? `${seatStatus}/` : ''}${coach}-${berth}`
+      : coachSeatRaw
 
     const scheduledArrival = this.parseDelivery(field('DELIVERY'))
 

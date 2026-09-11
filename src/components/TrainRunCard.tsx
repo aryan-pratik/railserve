@@ -16,6 +16,7 @@ export type RunOrderRow = {
   status: string
   coach?: Maybe<string>
   berth?: Maybe<string>
+  rawSeat?: Maybe<string>
   handoverPoint?: Maybe<string>
   pax?: Maybe<number>
   contactName?: Maybe<string>
@@ -126,7 +127,7 @@ export function TrainRunCard({
                     {o.handoverPoint ? (
                       <span className="text-xs font-semibold text-fuchsia-700">Handover</span>
                     ) : (
-                      <CoachChip coach={o.coach} berth={o.berth} />
+                      <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
                     )}
                   </div>
 

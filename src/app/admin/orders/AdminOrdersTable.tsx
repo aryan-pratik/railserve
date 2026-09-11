@@ -19,6 +19,7 @@ export type AdminOrderRow = {
   trainNo?: Maybe<string>
   coach?: Maybe<string>
   berth?: Maybe<string>
+  rawSeat?: Maybe<string>
   contactName?: Maybe<string>
   scheduledArrival?: Maybe<string>
   amountPaise?: Maybe<number>
@@ -119,7 +120,7 @@ function AdminOrderRow({
         ) : null}
       </td>
       <td className="px-3 py-2.5">
-        <CoachChip coach={order.coach} berth={order.berth} />
+        <CoachChip coach={order.coach} berth={order.berth} rawSeat={order.rawSeat} />
       </td>
       <td className="truncate px-3 py-2.5 text-ink" title={order.contactName ?? undefined}>{order.contactName ?? <Dash />}</td>
       {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={order.outletName ?? undefined}>{order.outletName ?? <Dash />}</td> : null}

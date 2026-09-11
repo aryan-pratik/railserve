@@ -13,6 +13,7 @@ export type OrderRow = {
   trainNo?: Maybe<string>
   coach?: Maybe<string>
   berth?: Maybe<string>
+  rawSeat?: Maybe<string>
   contactName?: Maybe<string>
   scheduledArrival?: Maybe<Date>
   amountPaise?: Maybe<number>
@@ -116,7 +117,7 @@ export function OrdersTable({
                   <span className="ml-1.5 text-xs tabular-nums text-muted">{formatTimeIST(o.scheduledArrival)}</span>
                 ) : null}
               </td>
-              <td className="px-3 py-2.5"><CoachChip coach={o.coach} berth={o.berth} /></td>
+              <td className="px-3 py-2.5"><CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} /></td>
               <td className="truncate px-3 py-2.5 text-ink" title={o.contactName ?? undefined}>{o.contactName ?? <Dash />}</td>
               {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={o.outletName ?? undefined}>{o.outletName ?? <Dash />}</td> : null}
               <td className="truncate px-3 py-2.5 text-amber-800" title={o.remark ?? undefined}>

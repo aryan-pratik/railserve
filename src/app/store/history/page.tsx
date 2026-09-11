@@ -82,6 +82,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
           trainNo: o.trainNo,
           coach: o.coach,
           berth: o.berth,
+          rawSeat: o.rawSeat,
           contactName: o.contactName,
           scheduledArrival: o.scheduledArrival,
           amountPaise: o.amountPaise,
