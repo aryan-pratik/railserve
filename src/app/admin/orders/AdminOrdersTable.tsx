@@ -4,9 +4,11 @@ import { useActionState, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST, paiseToRupees } from '@/lib/format'
 import { CoachChip, Dash, EmptyState, IconButton, StatusBadge, TypeBadge, statusLabel, thClass, focusRingInset } from '@/components/ui'
-import { IconCheck, IconClose, IconPencil } from '@/components/Icons'
-import { OrderTableColGroup, TableFrame } from '@/components/OrdersTable'
-import { updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
+import { Button } from '@/components/ui'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { IconCheck, IconClose, IconPencil, IconTrash } from '@/components/Icons'
+import { TableFrame } from '@/components/OrdersTable'
+import { deleteOrderAction, updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
 
 type Maybe<T> = T | null | undefined
 
@@ -25,6 +27,40 @@ export type AdminOrderRow = {
   amountPaise?: Maybe<number>
   outletName?: Maybe<string>
   remark?: Maybe<string>
+}
+
+/**
+ * Same shape as OrdersTable's shared colgroup, plus a narrow trailing column
+ * for the delete action — kept local rather than widening the shared one,
+ * since store history and the board's flat view must not gain this column.
+ */
+function AdminColGroup({ showOutlet }: { showOutlet: boolean }) {
+  return showOutlet ? (
+    <colgroup>
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '9%' }} />
+      <col style={{ width: '10%' }} />
+      <col style={{ width: '9%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '10%' }} />
+      <col style={{ width: '11%' }} />
+      <col style={{ width: '7%' }} />
+      <col style={{ width: '11%' }} />
+      <col style={{ width: '9%' }} />
+    </colgroup>
+  ) : (
+    <colgroup>
+      <col style={{ width: '14%' }} />
+      <col style={{ width: '10%' }} />
+      <col style={{ width: '11%' }} />
+      <col style={{ width: '10%' }} />
+      <col style={{ width: '14%' }} />
+      <col style={{ width: '13%' }} />
+      <col style={{ width: '8%' }} />
+      <col style={{ width: '11%' }} />
+      <col style={{ width: '9%' }} />
+    </colgroup>
+  )
 }
 
 const EDIT_TRIGGER =
@@ -55,8 +91,8 @@ export function AdminOrdersTable({
 
   return (
     <TableFrame>
-      <table className="w-full min-w-[56rem] table-fixed text-sm">
-        <OrderTableColGroup showOutlet={showOutlet} />
+      <table className="w-full min-w-[60rem] table-fixed text-sm">
+        <AdminColGroup showOutlet={showOutlet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={thClass}>Order</th>
@@ -68,6 +104,7 @@ export function AdminOrdersTable({
             <th className={thClass}>Remark</th>
             <th className={`${thClass} text-right`}>Amount</th>
             <th className={thClass}>Status</th>
+            <th className={thClass}><span className="sr-only">Delete</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -120,7 +157,7 @@ function AdminOrderRow({
         ) : null}
       </td>
       <td className="px-3 py-2.5">
-        <CoachChip coach={order.coach} berth={order.berth} rawSeat={order.rawSeat} />
+        <CoachChip coach={order.coach} berth={order.berth} />
       </td>
       <td className="truncate px-3 py-2.5 text-ink" title={order.contactName ?? undefined}>{order.contactName ?? <Dash />}</td>
       {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={order.outletName ?? undefined}>{order.outletName ?? <Dash />}</td> : null}
@@ -147,7 +184,56 @@ function AdminOrderRow({
           </button>
         )}
       </td>
+      <td className="px-3 py-2.5 text-center">
+        <DeleteOrderCell orderId={order.id} externalOrderId={order.externalOrderId} />
+      </td>
     </tr>
+  )
+}
+
+/** Row-scoped: the confirm dialog names this order specifically, not "this order". */
+function DeleteOrderCell({ orderId, externalOrderId }: { orderId: string; externalOrderId: string }) {
+  const [state, action, pending] = useActionState(deleteOrderAction, INITIAL_STATE)
+  const [confirming, setConfirming] = useState(false)
+
+  return (
+    <>
+      <IconButton
+        aria-label={`Delete order ${externalOrderId}`}
+        size="sm"
+        onClick={() => setConfirming(true)}
+        className="text-faint hover:bg-red-50 hover:text-red-700"
+      >
+        <IconTrash size={14} />
+      </IconButton>
+
+      {confirming ? (
+        <ConfirmDialog
+          titleId={`delete-order-${orderId}`}
+          title="Delete this order?"
+          onCancel={() => setConfirming(false)}
+          actions={
+            <>
+              <form action={action} className="flex-1" onSubmit={() => setConfirming(false)}>
+                <input type="hidden" name="orderId" value={orderId} />
+                <Button type="submit" variant="danger" className="w-full" pending={pending}>
+                  Delete
+                </Button>
+              </form>
+              <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+            </>
+          }
+        >
+          <span className="font-mono">{externalOrderId}</span> and its full event log will be
+          permanently removed. This cannot be undone.
+        </ConfirmDialog>
+      ) : null}
+      {state.error ? (
+        <div role="alert" className="mt-1 text-[11px] font-medium text-red-600">{state.error}</div>
+      ) : null}
+    </>
   )
 }
 

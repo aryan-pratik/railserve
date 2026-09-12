@@ -1,10 +1,12 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { Button, FormNote, textareaClass } from '@/components/ui'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   adminTransitionAction,
   assignAgentsAction,
+  deleteOrderAction,
   updateOrderRemarkAction,
   type ActionState,
 } from './actions'
@@ -87,6 +89,49 @@ export function TransitionButtons({
         ))}
       </div>
       <FormNote state={state} />
+    </div>
+  )
+}
+
+/**
+ * Permanently removes the order. No status transition undoes this — unlike
+ * Cancel, the record and its event log are gone, so the confirm step spells
+ * out the order id being deleted rather than just asking "are you sure".
+ */
+export function DeleteOrderButton({ orderId, externalOrderId }: { orderId: string; externalOrderId: string }) {
+  const [state, action, pending] = useActionState(deleteOrderAction, initial)
+  const [confirming, setConfirming] = useState(false)
+
+  return (
+    <div className="space-y-2 p-4">
+      <Button type="button" variant="danger" size="sm" onClick={() => setConfirming(true)}>
+        Delete order
+      </Button>
+      <FormNote state={state} />
+
+      {confirming ? (
+        <ConfirmDialog
+          titleId={`delete-order-${orderId}`}
+          title="Delete this order?"
+          onCancel={() => setConfirming(false)}
+          actions={
+            <>
+              <form action={action} className="flex-1" onSubmit={() => setConfirming(false)}>
+                <input type="hidden" name="orderId" value={orderId} />
+                <Button type="submit" variant="danger" className="w-full" pending={pending}>
+                  Delete
+                </Button>
+              </form>
+              <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+            </>
+          }
+        >
+          <span className="font-mono">{externalOrderId}</span> and its full event log will be
+          permanently removed. This cannot be undone.
+        </ConfirmDialog>
+      ) : null}
     </div>
   )
 }

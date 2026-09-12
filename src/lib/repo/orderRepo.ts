@@ -150,6 +150,19 @@ export async function updateOrderFields(
   return res.matchedCount > 0
 }
 
+/**
+ * Permanently removes an order document. Unlike every status transition
+ * here, this has no undo and takes the order's embedded event log with it —
+ * there is no separate audit trail. Scoped like every other write, so a
+ * store manager (were this ever exposed to one) could not reach another
+ * outlet's order.
+ */
+export async function deleteOrder(ctx: AuthContext, orderId: string): Promise<boolean> {
+  if (!mongoose.isValidObjectId(orderId)) return false
+  const res = await Order.deleteOne(scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }))
+  return res.deletedCount > 0
+}
+
 /** Scoped append of packing items to an order. */
 export async function addOrderItems(
   ctx: AuthContext,
