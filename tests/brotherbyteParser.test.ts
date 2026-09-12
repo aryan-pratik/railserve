@@ -61,6 +61,33 @@ describe('BrotherByte parser', () => {
     ])
   })
 
+  it('parses a real order with a single-tab separator and an ISO delivery date', () => {
+    const r = parser.parse(fx.SAMPLE_SINGLE_TAB_ISO_DATE, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order).toMatchObject({
+      externalOrderId: '2485434969',
+      outletName: 'The Cosmozin Lounge',
+      stationName: 'KANPUR CENTRAL',
+      stationCode: 'CNB',
+      contactName: 'Utkarsh Yadav',
+      contactPhone: '6392455514',
+      trainNo: '15084',
+      trainName: 'FBD CPR EXPRESS',
+      coach: 'B2',
+      berth: '23',
+      rawSeat: 'B2-23',
+      amountPaise: 22731,
+      paymentMode: 'COD',
+    })
+    expect(r.order.items).toEqual([
+      { name: 'Veg Deluxe Thali (veg)', qty: 1, notes: 'Rice, Dal, Roti, Salad, Pickle' },
+    ])
+    // 2026-09-12 17:40 IST is YYYY-MM-DD for this sample.
+    expect(r.order.scheduledArrival?.toISOString()).toBe('2026-09-12T12:10:00.000Z')
+  })
+
   it('parses the legacy hand-typed colon/asterisk layout too', () => {
     const r = parser.parse(fx.SAMPLE_LEGACY_COLON_FORMAT, RECEIVED)
     expect(r.ok).toBe(true)

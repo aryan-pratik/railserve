@@ -44,15 +44,17 @@ import { looksLikePhone, normalisePaymentMode, rupeeStringToPaise } from './shar
  * Customer name and phone arrive as one field, "NAME (PHONE)", rather than
  * two separate fields.
  */
-// Label/value separator: a colon (with optional surrounding spaces), or two
-// or more whitespace characters run together (a real tab, or the multi-space
-// gutter an HTML table leaves behind once flattened to plain text — either
-// is fair game since the mail's actual whitespace hasn't been consistent
-// between samples). A single plain space does NOT count, on purpose: it's
-// what separates the words of a two-word label like "Customer Notes" from
-// each other, and treating it as a field separator would make field('Customer')
-// match that line instead of the real "Customer" line.
-const SEP = '(?:\\s*:\\s*|\\s{2,})'
+// Label/value separator: a colon (with optional surrounding spaces), a
+// single tab, or two or more whitespace characters run together (the
+// multi-space gutter an HTML table leaves behind once flattened to plain
+// text) — the mail's actual whitespace hasn't been consistent between
+// samples, and real mail has shown up with just one tab between label and
+// value, which \s{2,} alone does not cover. A single plain space does NOT
+// count, on purpose: it's what separates the words of a two-word label like
+// "Customer Notes" from each other, and treating it as a field separator
+// would make field('Customer') match that line instead of the real
+// "Customer" line.
+const SEP = '(?:\\s*:\\s*|\\s{2,}|\\t+)'
 
 export class BrotherByteParser implements OrderParser {
   readonly source = 'BROTHERBYTE' as const
@@ -168,16 +170,21 @@ export class BrotherByteParser implements OrderParser {
    * "09-12-2026 09:10 IST" (MM-DD-YYYY, HH:MM) — carries its own year.
    * Confirmed against a real order dated the same day it was received:
    * unlike every other aggregator in this codebase, BrotherByte puts the
-   * month first.
+   * month first. A later real order instead arrived as "2026-09-12 17:40 IST"
+   * (YYYY-MM-DD) — BrotherByte's own date format isn't consistent between
+   * samples, so both are accepted; the leading 4-digit group is what tells
+   * them apart.
    */
   private parseDeliveryDate(raw: string | null): Date | null {
     if (!raw) return null
-    const m = /(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})/.exec(raw)
+
+    const isoFirst = /(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})/.exec(raw)
+    const m = isoFirst ?? /(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})/.exec(raw)
     if (!m) return null
 
-    const month = Number(m[1])
-    const day = Number(m[2])
-    const year = Number(m[3])
+    const year = Number(isoFirst ? m[1] : m[3])
+    const month = Number(isoFirst ? m[2] : m[1])
+    const day = Number(isoFirst ? m[3] : m[2])
     const hour = Number(m[4])
     const minute = Number(m[5])
     if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null
