@@ -61,7 +61,7 @@ describe('BrotherByte parser', () => {
     ])
   })
 
-  it('parses a real order with a single-tab separator and an ISO delivery date', () => {
+  it('parses a real order with a single-tab separator, an ISO delivery date, and a note-less item', () => {
     const r = parser.parse(fx.SAMPLE_SINGLE_TAB_ISO_DATE, RECEIVED)
     expect(r.ok).toBe(true)
     if (!r.ok) return
@@ -81,9 +81,7 @@ describe('BrotherByte parser', () => {
       amountPaise: 22731,
       paymentMode: 'COD',
     })
-    expect(r.order.items).toEqual([
-      { name: 'Veg Deluxe Thali (veg)', qty: 1, notes: 'Rice, Dal, Roti, Salad, Pickle' },
-    ])
+    expect(r.order.items).toEqual([{ name: 'Veg Deluxe Thali (veg)', qty: 1, notes: null }])
     // 2026-09-12 17:40 IST is YYYY-MM-DD for this sample.
     expect(r.order.scheduledArrival?.toISOString()).toBe('2026-09-12T12:10:00.000Z')
   })

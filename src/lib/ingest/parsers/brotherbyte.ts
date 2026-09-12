@@ -202,12 +202,14 @@ export class BrotherByteParser implements OrderParser {
    * seen so far. A hand-typed layout instead uses an "Order Items" header
    * line followed by one or more bulleted lines — supported too, since the
    * aggregator has no contract not to send several items that way. Either
-   * shape, each item line is "<index>-<name> - <notes>"; the index is
-   * BrotherByte's own numbering, not a quantity, so every line is one unit.
+   * shape, each item line is normally "<index>-<name> - <notes>", but the
+   * " - <notes>" half is optional — a plain item like "1-Veg Deluxe Thali
+   * (veg)" carries no notes at all. The index is BrotherByte's own
+   * numbering, not a quantity, so every line is one unit.
    */
   private parseItems(text: string): { name: string; qty: number; notes: string | null }[] {
     const lines = text.split('\n').map((l) => l.trim())
-    const itemRe = /^\*?\d+-(.+?)\s-\s(.+?)\*?$/
+    const itemRe = /^\*?\d+-(.+?)(?:\s-\s(.+?))?\*?$/
 
     const items: { name: string; qty: number; notes: string | null }[] = []
 
@@ -216,7 +218,7 @@ export class BrotherByteParser implements OrderParser {
     if (inlineIdx >= 0) {
       const inline = inlineRe.exec(lines[inlineIdx])?.[1] ?? ''
       const m = itemRe.exec(inline)
-      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
+      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2]?.trim() || null })
       return items
     }
 
@@ -230,7 +232,7 @@ export class BrotherByteParser implements OrderParser {
       if (paymentMethodRe.test(line)) break
 
       const m = itemRe.exec(line)
-      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
+      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2]?.trim() || null })
     }
     return items
   }
