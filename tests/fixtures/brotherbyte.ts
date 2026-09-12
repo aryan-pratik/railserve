@@ -43,9 +43,10 @@ export const SAMPLE_1_SPACE_SEPARATED = `Dear The Cosmozin Lounge,
 Team BrotherByte`
 
 // A real order that arrived with a single tab (not a tab+space, and not a
-// multi-space gutter) between label and value, and an ISO-style
+// multi-space gutter) between label and value, an ISO-style
 // "Delivery Date & ETA" (YYYY-MM-DD) rather than BrotherByte's usual
-// MM-DD-YYYY — both formats have shown up from this vendor.
+// MM-DD-YYYY, and an item with no " - notes" suffix at all — all three
+// variations have shown up from this vendor.
 export const SAMPLE_SINGLE_TAB_ISO_DATE = `Dear The Cosmozin Lounge,
 
 A new order has been confirmed for your outlet.
@@ -56,7 +57,7 @@ Station\tKANPUR CENTRAL (CNB)
 Delivery Date & ETA\t2026-09-12 17:40 IST
 Coach & Berth\tB2/23
 Customer\tUtkarsh Yadav (6392455514)
-Items\t1-Veg Deluxe Thali (veg) - Rice, Dal, Roti, Salad, Pickle
+Items\t1-Veg Deluxe Thali (veg)
 Payment Method\tCash On Delivery
 Order Total\t₹227.31
 GST/Tax\t₹10.31
