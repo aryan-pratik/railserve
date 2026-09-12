@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState, useTransition } from 'react'
-import { Button, FormNote } from '@/components/ui'
+import { Button, ButtonLink, FormNote } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   acceptOrder, checkKotDelay, generateKot, markPrepared, type StoreActionState,
@@ -30,14 +30,57 @@ function formatDelay(minutes: number | null): string {
 }
 
 /**
- * The delay guard asks, it does not block. The manager decides whether a late
- * train means the kitchen should wait.
+ * Opens the KOT view — read-only, never triggers a print. Available from
+ * ACCEPTED onward, so a manager can see the ticket before ever generating it,
+ * not only after.
  */
-export function GenerateKotButton({ orderId, reprint }: { orderId: string; reprint?: boolean }) {
+export function PreviewKotLink({ orderId }: { orderId: string }) {
+  return (
+    <ButtonLink href={`/store/orders/${orderId}/kot`} variant="secondary">
+      Preview KOT
+    </ButtonLink>
+  )
+}
+
+/**
+ * The one button that actually prints. ACCEPTED: "Generate KOT" — runs the
+ * delay guard, transitions the order, auto-prints, stays on this page.
+ * KOT_PRINTED or later: "Reprint KOT" — same print, no transition (already
+ * done) and no delay guard (that question was already answered once), still
+ * stays on this page. Preview is a separate, always-available button — this
+ * one is only ever about sending another job to the printer.
+ */
+export function GenerateKotButton({
+  orderId,
+  isReprint = false,
+}: {
+  orderId: string
+  isReprint?: boolean
+}) {
   const [checking, startChecking] = useTransition()
   const [delay, setDelay] = useState<DelayInfo | null>(null)
+  const [reprinting, setReprinting] = useState(false)
+  const [reprintError, setReprintError] = useState<string | null>(null)
+
+  async function reprint() {
+    setReprinting(true)
+    setReprintError(null)
+    try {
+      const res = await fetch(`/api/store/orders/${orderId}/kot`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? `Reprint failed (${res.status})`)
+    } catch (err) {
+      setReprintError(err instanceof Error ? err.message : 'Reprint failed')
+    } finally {
+      setReprinting(false)
+    }
+  }
 
   function onClick() {
+    if (isReprint) {
+      void reprint()
+      return
+    }
     startChecking(async () => {
       try {
         const info = await checkKotDelay(orderId)
@@ -55,15 +98,18 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
   }
 
   return (
-    <>
+    <div className="flex flex-col items-start gap-1">
       <Button
         type="button"
         onClick={onClick}
-        pending={checking}
-        variant={reprint ? 'secondary' : 'primary'}
+        pending={checking || reprinting}
+        // Reprint is a recovery action once the flow has already moved on —
+        // ghost keeps it out of the way of whatever the order actually needs next.
+        variant={isReprint ? 'ghost' : 'primary'}
       >
-        {checking ? 'Checking the train' : reprint ? 'Reprint KOT' : 'Generate KOT'}
+        {checking ? 'Checking the train' : isReprint ? 'Reprint KOT' : 'Generate KOT'}
       </Button>
+      {reprintError ? <span className="text-xs text-red-600">{reprintError}</span> : null}
 
       {delay ? (
         <ConfirmDialog
@@ -96,7 +142,7 @@ export function GenerateKotButton({ orderId, reprint }: { orderId: string; repri
           . Print the KOT anyway?
         </ConfirmDialog>
       ) : null}
-    </>
+    </div>
   )
 }
 

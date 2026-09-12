@@ -28,7 +28,12 @@ const nextConfig: NextConfig = {
   // `net` and `timers/promises` at require time, which Turbopack cannot resolve
   // for a browser target — and a stray client import of a server module turns
   // into a confusing module-not-found rather than a clear boundary error.
-  serverExternalPackages: ['mongoose'],
+  // puppeteer and sharp are here for a different reason: both ship native
+  // binaries (a bundled Chromium, a platform sharp .node binding) that
+  // Turbopack has no business tracing into the route's module graph — left
+  // in, the KOT print route's first compile after any edit stalls for
+  // minutes trying to bundle them.
+  serverExternalPackages: ['mongoose', 'puppeteer', 'sharp'],
   basePath,
   ...(isDev
     ? {
