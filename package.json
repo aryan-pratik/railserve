@@ -20,7 +20,8 @@
     "seed:rider": "tsx --env-file=.env.local scripts/seed-rider-demo.ts",
     "gmail:setup": "tsx --env-file=.env.local scripts/gmail-setup.ts",
     "gmail:watch": "tsx --env-file=.env.local scripts/gmail-watch.ts",
-    "backfill:payments": "tsx --env-file=.env.local scripts/backfill-payments.ts"
+    "backfill:payments": "tsx --env-file=.env.local scripts/backfill-payments.ts",
+    "print-agent:token": "tsx --env-file=.env.local scripts/set-print-agent-token.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1120.0",
@@ -30,10 +31,13 @@
     "mongoose": "^9.9.4",
     "next": "16.3.3",
     "next-auth": "^5.0.0-beta.32",
+    "node-thermal-printer": "^4.6.1",
+    "puppeteer": "^25.10.0",
     "railkit": "^5.0.2",
     "react": "19.2.8",
     "react-day-picker": "^10.0.1",
     "react-dom": "19.2.8",
+    "sharp": "^0.35.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

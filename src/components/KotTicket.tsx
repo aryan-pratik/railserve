@@ -32,7 +32,7 @@ export type KotOrder = {
   handoverPoint?: Maybe<string>
   pax?: Maybe<number>
   scheduledArrival?: Maybe<Date>
-  readyBy?: Maybe<Date>
+  contactName?: Maybe<string>
   notes?: Maybe<string>
   paymentMode?: Maybe<string>
   amountPaise?: Maybe<number>
@@ -101,7 +101,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
         <Line label="Seat" value={order.rawSeat ?? '-'} />
       )}
       <Line label="Arrives" value={formatTimeIST(order.scheduledArrival)} />
-      {order.readyBy ? <Line label="READY BY" value={formatTimeIST(order.readyBy)} /> : null}
+      <Line label="Name" value={order.contactName ?? '-'} />
 
       <Rule />
 
