@@ -20,6 +20,28 @@ export const SAMPLE_1 = `Dear The Cosmozin Lounge,
   Regards,
 Team BrotherByte`
 
+// Same order as SAMPLE_1, but the label/value gap is a run of plain spaces
+// rather than a literal tab — what's left once an HTML table's cell padding
+// gets flattened to text by a converter that doesn't preserve real tabs.
+export const SAMPLE_1_SPACE_SEPARATED = `Dear The Cosmozin Lounge,
+ A new order has been confirmed for your outlet.
+   Order ID    BB00101304/2485260978
+  Train    12323/HWH BME EXP
+  Station    KANPUR CENTRAL (CNB)
+  Delivery Date & ETA    09-12-2026 09:10 IST
+  Coach & Berth    B5/66
+  Customer    ABHISHEK VAISNAV (7984434724)
+  Items    1-Amritsari Thali (veg) - Matar Paneer, Chole, Dal Tadka, Jeera Rice, Butter Tawa Roti 3pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper
+  Payment Method    Cash On Delivery
+  Order Total    ₹213.15
+  GST/Tax    ₹10.15
+  Discount    ₹0
+  Outlet Discount    ₹0
+  Amount to Collect    ₹213
+  Customer Notes    Provide Good food
+  Regards,
+Team BrotherByte`
+
 // An earlier hand-typed sample of the same vendor's mail, in a WhatsApp-style
 // "Label: *value*" layout with separate Customer/Phone fields. Not what the
 // real mail looks like, but the parser stays tolerant of it too.

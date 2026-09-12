@@ -29,8 +29,10 @@ import { looksLikePhone, normalisePaymentMode, rupeeStringToPaise } from './shar
  *
  * No colons and no bold markers — an earlier revision of this parser assumed
  * a WhatsApp-style "Label: *value*" layout from a hand-typed sample, which
- * does not match the real mail. `field()` accepts an optional colon or tab
- * as the separator so either layout still parses.
+ * does not match the real mail. `field()` accepts a colon OR a run of 2+
+ * whitespace characters as the separator (see SEP below), so either layout
+ * still parses, whether the real whitespace turns out to be a literal tab
+ * or a multi-space gutter left behind by flattening an HTML table.
  *
  * Multi-vendor aggregator — the outlet greets by name ("Dear Outlet,")
  * rather than carrying a fixed vendor, so it still resolves via matchOutlet().
@@ -42,6 +44,16 @@ import { looksLikePhone, normalisePaymentMode, rupeeStringToPaise } from './shar
  * Customer name and phone arrive as one field, "NAME (PHONE)", rather than
  * two separate fields.
  */
+// Label/value separator: a colon (with optional surrounding spaces), or two
+// or more whitespace characters run together (a real tab, or the multi-space
+// gutter an HTML table leaves behind once flattened to plain text — either
+// is fair game since the mail's actual whitespace hasn't been consistent
+// between samples). A single plain space does NOT count, on purpose: it's
+// what separates the words of a two-word label like "Customer Notes" from
+// each other, and treating it as a field separator would make field('Customer')
+// match that line instead of the real "Customer" line.
+const SEP = '(?:\\s*:\\s*|\\s{2,})'
+
 export class BrotherByteParser implements OrderParser {
   readonly source = 'BROTHERBYTE' as const
 
@@ -53,13 +65,10 @@ export class BrotherByteParser implements OrderParser {
     const text = body.replace(/\r\n/g, '\n')
     const partial: Partial<ParsedOrder> = { source: 'BROTHERBYTE' }
 
-    // The separator is mandatory (colon or tab), not just whitespace — a
-    // bare-whitespace separator would let e.g. field('Customer') match the
-    // "Customer Notes\t..." line instead of "Customer\t...". Leading
-    // whitespace before the label is allowed — the real mail indents every
-    // row of its label/value table.
+    // Leading whitespace before the label is allowed — the real mail
+    // indents every row of its label/value table.
     const field = (label: string): string | null => {
-      const re = new RegExp(`^\\s*\\*?${label}\\s*[:\\t]\\s*\\*?(.+?)\\*?$`, 'im')
+      const re = new RegExp(`^\\s*\\*?${label}${SEP}\\*?(.+?)\\*?$`, 'im')
       const m = re.exec(text)
       if (!m) return null
       const v = m[1].trim()
@@ -155,14 +164,19 @@ export class BrotherByteParser implements OrderParser {
     }
   }
 
-  /** "09-12-2026 09:10 IST" (DD-MM-YYYY, HH:MM) — carries its own year. */
+  /**
+   * "09-12-2026 09:10 IST" (MM-DD-YYYY, HH:MM) — carries its own year.
+   * Confirmed against a real order dated the same day it was received:
+   * unlike every other aggregator in this codebase, BrotherByte puts the
+   * month first.
+   */
   private parseDeliveryDate(raw: string | null): Date | null {
     if (!raw) return null
     const m = /(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})/.exec(raw)
     if (!m) return null
 
-    const day = Number(m[1])
-    const month = Number(m[2])
+    const month = Number(m[1])
+    const day = Number(m[2])
     const year = Number(m[3])
     const hour = Number(m[4])
     const minute = Number(m[5])
@@ -190,9 +204,10 @@ export class BrotherByteParser implements OrderParser {
 
     const items: { name: string; qty: number; notes: string | null }[] = []
 
-    const inlineIdx = lines.findIndex((l) => /^Items\s*[:\t]/i.test(l))
+    const inlineRe = new RegExp(`^Items${SEP}(.+)$`, 'i')
+    const inlineIdx = lines.findIndex((l) => inlineRe.test(l))
     if (inlineIdx >= 0) {
-      const inline = /^Items\s*[:\t]\s*(.+)$/i.exec(lines[inlineIdx])?.[1] ?? ''
+      const inline = inlineRe.exec(lines[inlineIdx])?.[1] ?? ''
       const m = itemRe.exec(inline)
       if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
       return items
@@ -201,10 +216,11 @@ export class BrotherByteParser implements OrderParser {
     const headerIdx = lines.findIndex((l) => /^\*?Order\s*Items\s*:?\*?$/i.test(l))
     if (headerIdx < 0) return []
 
+    const paymentMethodRe = new RegExp(`^Payment\\s*Method${SEP}`, 'i')
     for (let i = headerIdx + 1; i < lines.length; i++) {
       const line = lines[i]
       if (!line) continue
-      if (/^Payment\s*Method\s*[:\t]/i.test(line)) break
+      if (paymentMethodRe.test(line)) break
 
       const m = itemRe.exec(line)
       if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
