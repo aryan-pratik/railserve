@@ -27,7 +27,7 @@ export default async function KotPage(props: PageProps<'/store/orders/[id]/kot'>
         <BackLink href={`/store/orders/${id}`}>Back to order</BackLink>
         <div className="flex items-center gap-3">
           <span className="text-xs text-faint">80mm thermal preview</span>
-          <PrintButton />
+          <PrintButton printUrl={`/api/store/orders/${id}/kot`} />
         </div>
       </div>
 

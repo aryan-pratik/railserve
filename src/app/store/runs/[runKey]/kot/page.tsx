@@ -39,7 +39,7 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
             {run.orders.length} ticket{run.orders.length === 1 ? '' : 's'} ·{' '}
             {run.trainNo ?? 'no train no.'}
           </span>
-          <PrintButton />
+          <PrintButton printUrl={`/api/store/runs/${encodeURIComponent(runKey)}/kot`} />
         </div>
       </div>
 

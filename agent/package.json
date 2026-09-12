@@ -1,0 +1,14 @@
+{
+  "name": "railserve-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runs in a kitchen, on the printer's own Wi-Fi. Polls the RailServe server for print jobs and delivers them to the local thermal printer. See README.md.",
+  "type": "module",
+  "main": "print-agent.mjs",
+  "scripts": {
+    "start": "node print-agent.mjs"
+  },
+  "dependencies": {
+    "node-thermal-printer": "^4.6.1"
+  }
+}

@@ -5,12 +5,18 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
-import { transitionRun, handRunToRider, type RunActionResult } from '@/lib/repo/runRepo'
+import { findRun, transitionRun, handRunToRider, type RunActionResult } from '@/lib/repo/runRepo'
 import { NotFoundError } from '@/lib/authContext'
 import { timingForOrders, timingFor, forceRefreshTrainStatus } from '@/lib/train/service'
 import { env } from '@/lib/env'
 import { shouldWarnAboutDelay } from '@/lib/train/policy'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
+import {
+  enqueueOrderKotPrint,
+  enqueueRunKotPrint,
+  getAppOrigin,
+  assertPrintAgentConfigured,
+} from '@/lib/printer/queue'
 
 /**
  * Plan §9 delay guard: before printing a KOT, check live status. If the train
@@ -108,12 +114,11 @@ export async function markPrepared(
 }
 
 /**
- * Generate KOT: moves ACCEPTED -> KOT_PRINTED and opens the print view.
- *
- * Reprinting is deliberately not an error. A thermal printer jams, paper runs
- * out, a docket gets lost on the pass — the manager will hit this again, and
- * refusing on the grounds that the status already moved would be useless
- * pedantry. The transition happens once; the view is reachable forever after.
+ * Generate KOT: moves ACCEPTED -> KOT_PRINTED and auto-queues the print —
+ * no preview page, the manager stays on the order. Only called once per
+ * order (this action does nothing if it's not ACCEPTED); the KOT page
+ * itself, reached separately via ViewKotLink, is where a deliberate reprint
+ * happens — see its Print button's route for that note.
  */
 export async function generateKot(formData: FormData) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
@@ -126,9 +131,25 @@ export async function generateKot(formData: FormData) {
     await transitionOrder({ ctx, orderId, to: 'KOT_PRINTED', meta: { via: 'store-dashboard' } })
     revalidatePath('/store')
     revalidatePath(`/store/orders/${orderId}`)
+
+    // Best-effort: the status change is what matters and must not be undone
+    // by a printer problem. If this fails, the KOT page's own Print button
+    // (the same enqueue, on demand) is the fallback.
+    if (order.restaurantId) {
+      try {
+        assertPrintAgentConfigured()
+        await enqueueOrderKotPrint({
+          appOrigin: await getAppOrigin(),
+          restaurantId: order.restaurantId,
+          orderId,
+        })
+      } catch (err) {
+        console.error(`[generateKot] auto-print enqueue failed for order ${orderId}:`, err)
+      }
+    }
   }
 
-  redirect(`/store/orders/${orderId}/kot`)
+  redirect(`/store/orders/${orderId}`)
 }
 
 /* ── whole-train actions ──────────────────────────────────────────────────────
@@ -181,10 +202,31 @@ export async function generateRunKot(formData: FormData) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const runKey = String(formData.get('runKey') ?? '')
 
+  // Snapshot before transitioning: whether to auto-print at all is decided
+  // by whether this click actually moved anything, the same guard
+  // generateKot uses — a repeat click on an already-printed run must not
+  // fire another job. The ticket set printed is still the whole run,
+  // matching what the /kot page shows and what its own Print button sends.
+  const before = await findRun(ctx, runKey)
+  const hasNewlyAccepted = (before?.orders ?? []).some((o) => o.status === 'ACCEPTED')
+
   await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' })
   revalidatePath('/store')
 
-  redirect(`/store/runs/${encodeURIComponent(runKey)}/kot`)
+  if (before && hasNewlyAccepted) {
+    try {
+      assertPrintAgentConfigured()
+      await enqueueRunKotPrint({
+        appOrigin: await getAppOrigin(),
+        runKey,
+        orders: before.orders,
+      })
+    } catch (err) {
+      console.error(`[generateRunKot] auto-print enqueue failed for run ${runKey}:`, err)
+    }
+  }
+
+  redirect('/store')
 }
 
 /**

@@ -51,6 +51,15 @@ const EnvSchema = z.object({
 
   DISPATCH_BUFFER_MINUTES: z.coerce.number().int().min(0).default(5),
   KOT_DELAY_THRESHOLD_MINUTES: z.coerce.number().int().min(0).default(45),
+
+  // Shared secret the server uses to render a KOT ticket to an image for
+  // itself (headless-browser screenshot, see src/lib/printer/screenshot.ts)
+  // without a real login session — the caller is this server, not a browser.
+  // The kitchen printer's own host/port (KPC307-UEWB-AB28) is NOT server
+  // config: the server can never reach it directly (private LAN address,
+  // server runs elsewhere) — only the outlet's print agent knows it, in its
+  // own agent/.env. See agent/README.md.
+  PRINT_RENDER_TOKEN: z.string().default(''),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 })
 

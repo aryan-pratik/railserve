@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Button, FormNote, inputBase } from '@/components/ui'
+import { Button, ButtonLink, FormNote, inputBase } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { shouldWarnAboutDelay } from '@/lib/train/policy'
 import {
@@ -15,6 +15,37 @@ function formatDelay(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+/** Same fetch-and-stay-put reprint as the single-order button, for a whole train. */
+function ReprintRunKotButton({ runKey, count }: { runKey: string; count: number }) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function reprint() {
+    setPending(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/store/runs/${encodeURIComponent(runKey)}/kot`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? `Reprint failed (${res.status})`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reprint failed')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {/* Ghost, not secondary: a recovery action, not a step in the flow —
+          it shouldn't compete with "Mark ready" or "Preview" for attention. */}
+      <Button type="button" size="sm" variant="ghost" onClick={() => void reprint()} pending={pending}>
+        Reprint {count} KOT{count === 1 ? '' : 's'}
+      </Button>
+      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+    </div>
+  )
 }
 
 /**
@@ -69,26 +100,37 @@ export function StoreRunActions({
       ) : null}
 
       {toPrint > 0 ? (
-        late ? (
-          <Button type="button" size="sm" onClick={() => setConfirmingPrint(true)}>
-            {printLabel}
-          </Button>
-        ) : (
-          <form action={generateRunKot}>
-            <input type="hidden" name="runKey" value={runKey} />
-            <Button type="submit" size="sm">{printLabel}</Button>
-          </form>
-        )
+        <>
+          <ButtonLink href={`/store/runs/${encodeURIComponent(runKey)}/kot`} variant="secondary" size="sm">
+            Preview {toPrint} KOT{toPrint === 1 ? '' : 's'}
+          </ButtonLink>
+          {late ? (
+            <Button type="button" size="sm" onClick={() => setConfirmingPrint(true)}>
+              {printLabel}
+            </Button>
+          ) : (
+            <form action={generateRunKot}>
+              <input type="hidden" name="runKey" value={runKey} />
+              <Button type="submit" size="sm">{printLabel}</Button>
+            </form>
+          )}
+        </>
       ) : null}
 
       {toReady > 0 ? (
-        <form action={ready} className="flex flex-wrap items-center gap-2">
-          <input type="hidden" name="runKey" value={runKey} />
-          <Button type="submit" size="sm" variant="go" pending={readying}>
-            Mark {toReady} ready
-          </Button>
-          <FormNote state={readyState} />
-        </form>
+        <>
+          <form action={ready} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="runKey" value={runKey} />
+            <Button type="submit" size="sm" variant="go" pending={readying}>
+              Mark {toReady} ready
+            </Button>
+            <FormNote state={readyState} />
+          </form>
+          <ButtonLink href={`/store/runs/${encodeURIComponent(runKey)}/kot`} variant="secondary" size="sm">
+            Preview {toReady} KOT{toReady === 1 ? '' : 's'}
+          </ButtonLink>
+          <ReprintRunKotButton runKey={runKey} count={toReady} />
+        </>
       ) : null}
 
       {/* Food is on the shelf. Either the rider marks it themselves in the app,
