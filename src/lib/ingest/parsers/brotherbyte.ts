@@ -55,9 +55,11 @@ export class BrotherByteParser implements OrderParser {
 
     // The separator is mandatory (colon or tab), not just whitespace — a
     // bare-whitespace separator would let e.g. field('Customer') match the
-    // "Customer Notes\t..." line instead of "Customer\t...".
+    // "Customer Notes\t..." line instead of "Customer\t...". Leading
+    // whitespace before the label is allowed — the real mail indents every
+    // row of its label/value table.
     const field = (label: string): string | null => {
-      const re = new RegExp(`^\\*?${label}\\s*[:\\t]\\s*\\*?(.+?)\\*?$`, 'im')
+      const re = new RegExp(`^\\s*\\*?${label}\\s*[:\\t]\\s*\\*?(.+?)\\*?$`, 'im')
       const m = re.exec(text)
       if (!m) return null
       const v = m[1].trim()

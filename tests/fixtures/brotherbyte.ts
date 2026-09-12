@@ -1,24 +1,23 @@
 // The real order-confirmation mail: an HTML table converted to tab-separated
-// label/value lines, no colons, no bold markers.
+// label/value lines, no colons, no bold markers, and each row indented with
+// leading whitespace (an artefact of the table-to-text conversion).
 export const SAMPLE_1 = `Dear The Cosmozin Lounge,
-
-A new order has been confirmed for your outlet.
-
-Order ID\tBB00101304/2485260978
-Train\t12323/HWH BME EXP
-Station\tKANPUR CENTRAL (CNB)
-Delivery Date & ETA\t09-12-2026 09:10 IST
-Coach & Berth\tB5/66
-Customer\tABHISHEK VAISNAV (7984434724)
-Items\t1-Amritsari Thali (veg) - Matar Paneer, Chole, Dal Tadka, Jeera Rice, Butter Tawa Roti 3pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper
-Payment Method\tCash On Delivery
-Order Total\t₹213.15
-GST/Tax\t₹10.15
-Discount\t₹0
-Outlet Discount\t₹0
-Amount to Collect\t₹213
-Customer Notes\tProvide Good food
-Regards,
+ A new order has been confirmed for your outlet.
+   Order ID\t BB00101304/2485260978
+  Train\t 12323/HWH BME EXP
+  Station\t KANPUR CENTRAL (CNB)
+  Delivery Date & ETA\t 09-12-2026 09:10 IST
+  Coach & Berth\t B5/66
+  Customer\t ABHISHEK VAISNAV (7984434724)
+  Items\t 1-Amritsari Thali (veg) - Matar Paneer, Chole, Dal Tadka, Jeera Rice, Butter Tawa Roti 3pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper
+  Payment Method\t Cash On Delivery
+  Order Total\t ₹213.15
+  GST/Tax\t ₹10.15
+  Discount\t ₹0
+  Outlet Discount\t ₹0
+  Amount to Collect\t ₹213
+  Customer Notes\t Provide Good food
+  Regards,
 Team BrotherByte`
 
 // An earlier hand-typed sample of the same vendor's mail, in a WhatsApp-style
