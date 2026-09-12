@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
-import { updateOrderFields } from '@/lib/repo/orderRepo'
+import { deleteOrder, updateOrderFields } from '@/lib/repo/orderRepo'
 import { adminOverrideStatus } from '@/lib/repo/transitionOrder'
 import { normalizeCustomStatus } from '@/lib/orderStatus'
 import { rupeesToPaise } from '@/lib/format'
@@ -30,6 +30,27 @@ export async function updateOrderAmountAction(
 
   revalidatePath('/admin/orders')
   return { ok: 'Amount updated.' }
+}
+
+/** Permanent — removes the order document itself, not just its status. */
+export async function deleteOrderAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+
+  let ok: boolean
+  try {
+    ok = await deleteOrder(ctx, orderId)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not delete the order.' }
+  }
+  if (!ok) return { error: 'Order not found.' }
+
+  revalidatePath('/admin/orders')
+  revalidatePath('/store')
+  return { ok: 'Order deleted.' }
 }
 
 export async function updateOrderStatusAction(

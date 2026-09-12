@@ -1,9 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
-import { findById, updateOrderFields } from '@/lib/repo/orderRepo'
+import { deleteOrder, findById, updateOrderFields } from '@/lib/repo/orderRepo'
 import { forceRefreshTrainStatus } from '@/lib/train/service'
 import type { OrderStatus } from '@/lib/orderStatus'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
@@ -71,6 +72,27 @@ export async function adminTransitionAction(
   revalidatePath('/admin/orders')
   revalidatePath('/store')
   return { ok: `Order moved to ${to.replace('_', ' ')}.` }
+}
+
+/** Permanent. Redirects back to the list since the detail page it ran from is gone. */
+export async function deleteOrderAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+
+  let ok: boolean
+  try {
+    ok = await deleteOrder(ctx, orderId)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not delete the order.' }
+  }
+  if (!ok) return { error: 'Order not found.' }
+
+  revalidatePath('/admin/orders')
+  revalidatePath('/store')
+  redirect('/admin/orders')
 }
 
 export async function updateOrderRemarkAction(
