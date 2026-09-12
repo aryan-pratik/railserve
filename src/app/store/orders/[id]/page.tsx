@@ -7,7 +7,7 @@ import { toCardData } from '@/lib/orderView'
 import { BackLink, Card, CardHeader } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
 import { EventLog } from '@/components/EventLog'
-import { AcceptButton, GenerateKotButton, MarkPreparedButton } from '../../StoreOrderActions'
+import { AcceptButton, GenerateKotButton, MarkPreparedButton, PreviewKotLink } from '../../StoreOrderActions'
 
 export default async function StoreOrderDetail(props: PageProps<'/store/orders/[id]'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
@@ -35,16 +35,23 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
         actions={
           <>
             {order.status === 'RECEIVED' ? <AcceptButton orderId={id} /> : null}
-            {order.status === 'ACCEPTED' ? <GenerateKotButton orderId={id} /> : null}
+            {order.status === 'ACCEPTED' ? (
+              <>
+                <PreviewKotLink orderId={id} />
+                <GenerateKotButton orderId={id} />
+              </>
+            ) : null}
             {order.status === 'KOT_PRINTED' ? (
               <>
-                <GenerateKotButton orderId={id} reprint />
+                <PreviewKotLink orderId={id} />
+                <GenerateKotButton orderId={id} isReprint />
                 <MarkPreparedButton orderId={id} />
               </>
             ) : null}
             {order.status === 'PREPARED' ? (
               <>
-                <GenerateKotButton orderId={id} reprint />
+                <PreviewKotLink orderId={id} />
+                <GenerateKotButton orderId={id} isReprint />
                 <span className="text-sm font-medium text-emerald-700">On the shelf, waiting for the rider</span>
               </>
             ) : null}

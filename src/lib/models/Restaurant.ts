@@ -13,6 +13,12 @@ const RestaurantSchema = new Schema(
     walkToPlatformMinutes: { type: Number, default: 10, min: 0 },
     // Plan §2: never hard-delete. Deactivate, so orders never point at a gap.
     active: { type: Boolean, default: true },
+    // Bearer token for this outlet's local print agent (see
+    // src/lib/printer/queue.ts) — the agent runs on the outlet's own Wi-Fi,
+    // polls /api/print-agent/poll with this token, and is the only thing
+    // that ever speaks to the kitchen printer's private IP directly. Null
+    // until an outlet's agent is set up (scripts/set-print-agent-token.ts).
+    printAgentToken: { type: String, default: null },
   },
   { timestamps: true, strict: true, strictQuery: true },
 )
