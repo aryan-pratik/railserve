@@ -2,54 +2,69 @@ import type { OrderParser, ParseResult, ParsedOrder } from '../types'
 import { looksLikePhone, normalisePaymentMode, rupeeStringToPaise } from './shared'
 
 /**
- * BrotherByte parser. A WhatsApp-style message, label-and-colon fields with
- * values wrapped in `*bold*` markers:
+ * BrotherByte parser. A generated "order confirmed" mail — an HTML table
+ * (label cell, value cell) that comes through as tab-separated label/value
+ * lines once converted to plain text, e.g.:
  *
- *   Dear *The Cosmozin Lounge*,
- *   New Order No: *1*
+ *   Dear The Cosmozin Lounge,
  *
- *   Order ID: *BB00101303/2485257102*
- *   Train: *12323/HWH BME EXP*
- *   Delivery Station: *KANPUR CENTRAL (CNB)*
- *   Delivery Date & Time: *09-12-2026 09:10 IST*
- *   Coach & Berth: *B5/66*
- *   Customer: *ABHISHEK VAISNAV*
- *   Phone: *7984434724*
+ *   A new order has been confirmed for your outlet.
  *
- *   *Order Items:*
- *   *1-Chicken Biryani With Raita Combo (non-veg) - Chicken Biryani 2pcs, Raita, ...*
+ *   Order ID	BB00101304/2485260978
+ *   Train	12323/HWH BME EXP
+ *   Station	KANPUR CENTRAL (CNB)
+ *   Delivery Date & ETA	09-12-2026 09:10 IST
+ *   Coach & Berth	B5/66
+ *   Customer	ABHISHEK VAISNAV (7984434724)
+ *   Items	1-Amritsari Thali (veg) - Matar Paneer, Chole, Dal Tadka, ...
+ *   Payment Method	Cash On Delivery
+ *   Order Total	₹213.15
+ *   GST/Tax	₹10.15
+ *   Discount	₹0
+ *   Outlet Discount	₹0
+ *   Amount to Collect	₹213
+ *   Customer Notes	Provide Good food
+ *   Regards,
+ *   Team BrotherByte
  *
- *   Payment Method: *Cash On Delivery*
- *   Order Total: *243.60*
- *   Amount to Collect: *244*
+ * No colons and no bold markers — an earlier revision of this parser assumed
+ * a WhatsApp-style "Label: *value*" layout from a hand-typed sample, which
+ * does not match the real mail. `field()` accepts an optional colon or tab
+ * as the separator so either layout still parses.
  *
- * Multi-vendor aggregator — the outlet greets by name ("Dear *Outlet*,")
+ * Multi-vendor aggregator — the outlet greets by name ("Dear Outlet,")
  * rather than carrying a fixed vendor, so it still resolves via matchOutlet().
  *
  * Order ID carries two ids separated by a slash — BrotherByte's own ("BB...")
  * and, after the slash, an IRCTC-style numeric order id, same treatment as
  * RajBhog's "Invoice RBK.../ numeric" line: the numeric half is externalOrderId.
+ *
+ * Customer name and phone arrive as one field, "NAME (PHONE)", rather than
+ * two separate fields.
  */
 export class BrotherByteParser implements OrderParser {
   readonly source = 'BROTHERBYTE' as const
 
   matches(body: string): boolean {
-    return /BrotherByte/i.test(body) && /Order\s*ID\s*:/i.test(body)
+    return /BrotherByte/i.test(body) && /Order\s*ID/i.test(body)
   }
 
   parse(body: string, _receivedAt: Date): ParseResult {
     const text = body.replace(/\r\n/g, '\n')
     const partial: Partial<ParsedOrder> = { source: 'BROTHERBYTE' }
 
+    // The separator is mandatory (colon or tab), not just whitespace — a
+    // bare-whitespace separator would let e.g. field('Customer') match the
+    // "Customer Notes\t..." line instead of "Customer\t...".
     const field = (label: string): string | null => {
-      const re = new RegExp(`${label}\\s*:\\s*\\*?([^*\\n]+)\\*?`, 'i')
+      const re = new RegExp(`^\\*?${label}\\s*[:\\t]\\s*\\*?(.+?)\\*?$`, 'im')
       const m = re.exec(text)
       if (!m) return null
       const v = m[1].trim()
       return v || null
     }
 
-    const outletName = /Dear\s+\*(.+?)\*/i.exec(text)?.[1]?.trim() ?? null
+    const outletName = /Dear\s+\*?(.+?)\*?,/i.exec(text)?.[1]?.trim() ?? null
     if (!outletName) {
       return { ok: false, reason: 'MISSING_FIELD', detail: 'outlet name missing', partial }
     }
@@ -63,7 +78,7 @@ export class BrotherByteParser implements OrderParser {
     const orderId = orderIdMatch[1]
     partial.externalOrderId = orderId
 
-    const stationRaw = field('Delivery\\s*Station')
+    const stationRaw = field('(?:Delivery\\s*)?Station')
     const stationMatch = stationRaw ? /^(.+?)\s*\(([A-Za-z]{2,5})\)$/.exec(stationRaw) : null
     if (!stationMatch) {
       return {
@@ -87,12 +102,19 @@ export class BrotherByteParser implements OrderParser {
     const berth = seatMatch?.[2] ?? null
     const rawSeat = coach && berth ? `${coach}-${berth}` : null
 
-    const contactName = field('Customer')
-    const phoneRaw = field('Phone')
+    // "ABHISHEK VAISNAV (7984434724)" — name and phone in one field. Fall
+    // back to a separate "Phone" field for the hand-typed layout, which
+    // carries them apart.
+    const customerRaw = field('Customer')
+    const customerMatch = customerRaw ? /^(.+?)\s*\(([^()]+)\)$/.exec(customerRaw) : null
+    const contactName = (customerMatch ? customerMatch[1] : customerRaw)?.trim() || null
+    const phoneRaw = customerMatch ? customerMatch[2] : field('Phone')
     const contactPhone =
       phoneRaw && looksLikePhone(phoneRaw) ? phoneRaw.replace(/\D/g, '').slice(-10) : null
 
-    const scheduledArrival = this.parseDeliveryDate(field('Delivery\\s*Date\\s*&\\s*Time'))
+    const scheduledArrival = this.parseDeliveryDate(
+      field('Delivery\\s*Date\\s*&\\s*(?:ETA|Time)'),
+    )
 
     const items = this.parseItems(text)
     if (items.length === 0) {
@@ -100,7 +122,7 @@ export class BrotherByteParser implements OrderParser {
     }
 
     const totalRaw = field('Order\\s*Total')
-    const amountPaise = totalRaw ? rupeeStringToPaise(totalRaw) : null
+    const amountPaise = totalRaw ? rupeeStringToPaise(totalRaw.replace(/[^\d.,]/g, '')) : null
     if (amountPaise === null) {
       return { ok: false, reason: 'MISSING_FIELD', detail: 'order total missing or unparseable', partial }
     }
@@ -152,25 +174,38 @@ export class BrotherByteParser implements OrderParser {
   }
 
   /**
-   * Lines between "*Order Items:*" and "Payment Method:", each shaped
-   * "*<index>-<name> - <notes>*". The index is BrotherByte's own line
-   * numbering, not a quantity, so every line here is a single unit.
+   * Items normally arrive inline on the "Items" line itself
+   * ("Items<TAB>1-Name - notes"), one line per order in every real sample
+   * seen so far. A hand-typed layout instead uses an "Order Items" header
+   * line followed by one or more bulleted lines — supported too, since the
+   * aggregator has no contract not to send several items that way. Either
+   * shape, each item line is "<index>-<name> - <notes>"; the index is
+   * BrotherByte's own numbering, not a quantity, so every line is one unit.
    */
   private parseItems(text: string): { name: string; qty: number; notes: string | null }[] {
     const lines = text.split('\n').map((l) => l.trim())
-    const start = lines.findIndex((l) => /^\*Order\s*Items\s*:?\*$/i.test(l))
-    if (start < 0) return []
+    const itemRe = /^\*?\d+-(.+?)\s-\s(.+?)\*?$/
 
     const items: { name: string; qty: number; notes: string | null }[] = []
-    for (let i = start + 1; i < lines.length; i++) {
+
+    const inlineIdx = lines.findIndex((l) => /^Items\s*[:\t]/i.test(l))
+    if (inlineIdx >= 0) {
+      const inline = /^Items\s*[:\t]\s*(.+)$/i.exec(lines[inlineIdx])?.[1] ?? ''
+      const m = itemRe.exec(inline)
+      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
+      return items
+    }
+
+    const headerIdx = lines.findIndex((l) => /^\*?Order\s*Items\s*:?\*?$/i.test(l))
+    if (headerIdx < 0) return []
+
+    for (let i = headerIdx + 1; i < lines.length; i++) {
       const line = lines[i]
       if (!line) continue
-      if (/^Payment\s*Method\s*:/i.test(line)) break
+      if (/^Payment\s*Method\s*[:\t]/i.test(line)) break
 
-      const m = /^\*\d+-(.+?)\s-\s(.+)\*$/.exec(line)
-      if (m) {
-        items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
-      }
+      const m = itemRe.exec(line)
+      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2].trim() || null })
     }
     return items
   }
