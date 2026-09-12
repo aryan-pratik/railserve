@@ -35,8 +35,30 @@ describe('BrotherByte parser', () => {
         notes: 'Matar Paneer, Chole, Dal Tadka, Jeera Rice, Butter Tawa Roti 3pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
       },
     ])
-    // 09-12-2026 09:10 IST
-    expect(r.order.scheduledArrival?.toISOString()).toBe('2026-12-09T03:40:00.000Z')
+    // 09-12-2026 09:10 IST is MM-DD-YYYY for this vendor — 12 Sep 2026.
+    expect(r.order.scheduledArrival?.toISOString()).toBe('2026-09-12T03:40:00.000Z')
+  })
+
+  it('parses the same order when the separator is spaces, not a tab', () => {
+    const r = parser.parse(fx.SAMPLE_1_SPACE_SEPARATED, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order).toMatchObject({
+      externalOrderId: '2485260978',
+      outletName: 'The Cosmozin Lounge',
+      stationCode: 'CNB',
+      contactPhone: '7984434724',
+      amountPaise: 21315,
+      paymentMode: 'COD',
+    })
+    expect(r.order.items).toEqual([
+      {
+        name: 'Amritsari Thali (veg)',
+        qty: 1,
+        notes: 'Matar Paneer, Chole, Dal Tadka, Jeera Rice, Butter Tawa Roti 3pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
+      },
+    ])
   })
 
   it('parses the legacy hand-typed colon/asterisk layout too', () => {
