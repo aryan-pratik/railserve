@@ -42,6 +42,31 @@ export const SAMPLE_1_SPACE_SEPARATED = `Dear The Cosmozin Lounge,
   Regards,
 Team BrotherByte`
 
+// A real order that arrived with a single tab (not a tab+space, and not a
+// multi-space gutter) between label and value, and an ISO-style
+// "Delivery Date & ETA" (YYYY-MM-DD) rather than BrotherByte's usual
+// MM-DD-YYYY — both formats have shown up from this vendor.
+export const SAMPLE_SINGLE_TAB_ISO_DATE = `Dear The Cosmozin Lounge,
+
+A new order has been confirmed for your outlet.
+
+Order ID\tBB00101354/2485434969
+Train\t15084/FBD CPR EXPRESS
+Station\tKANPUR CENTRAL (CNB)
+Delivery Date & ETA\t2026-09-12 17:40 IST
+Coach & Berth\tB2/23
+Customer\tUtkarsh Yadav (6392455514)
+Items\t1-Veg Deluxe Thali (veg) - Rice, Dal, Roti, Salad, Pickle
+Payment Method\tCash On Delivery
+Order Total\t₹227.31
+GST/Tax\t₹10.31
+Discount\t₹0
+Outlet Discount\t₹10.85
+Amount to Collect\t₹216
+Customer Notes\tProvide Good food
+Regards,
+Team BrotherByte`
+
 // An earlier hand-typed sample of the same vendor's mail, in a WhatsApp-style
 // "Label: *value*" layout with separate Customer/Phone fields. Not what the
 // real mail looks like, but the parser stays tolerant of it too.
