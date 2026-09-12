@@ -40,6 +40,13 @@ const STALE_AFTER_MINUTES = 90
 
 const BLANK = { bg: 'bg-transparent', fg: 'text-muted' }
 
+// A separate tone from band()'s amber case, not band(20): band() is keyed to
+// time remaining before arrival and returns red for anything that close, which
+// is the wrong meaning once the train has already arrived. The first 20
+// minutes after arrival still deserve a glance (delivery is likely still in
+// progress), so they get their own orange rather than going straight to blank.
+const AGO_ORANGE = { bg: 'bg-amber-500', fg: 'text-ink' }
+
 function band(mins: number) {
   if (mins <= 20) return { bg: 'bg-red-600', fg: 'text-white' }   // 4.77:1
   if (mins <= 45) return { bg: 'bg-amber-500', fg: 'text-ink' }   // 8.61:1
@@ -75,7 +82,7 @@ export function UrgencyRail({ at, serverNow }: { at: string | null; serverNow: s
   }
 
   const mins = Math.round((new Date(at).getTime() - now) / 60_000)
-  const tone = mins < 0 ? BLANK : band(mins)
+  const tone = mins < 0 ? (mins >= -20 ? AGO_ORANGE : BLANK) : band(mins)
 
   // A screen reader would otherwise hear "23, min" as the first content of
   // every card, ahead of the train number, with nothing saying 23 until what.
