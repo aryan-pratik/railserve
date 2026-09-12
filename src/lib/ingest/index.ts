@@ -9,6 +9,7 @@ import { OlfParser } from './parsers/olf'
 import { YatribhojanParser } from './parsers/yatribhojan'
 import { RajBhogParser } from './parsers/rajbhog'
 import { ZoopParser } from './parsers/zoop'
+import { BrotherByteParser } from './parsers/brotherbyte'
 import { matchOutlet } from './outletMatch'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
 import { warmTrainStatus } from '../train/service'
@@ -22,6 +23,7 @@ export const PARSERS: OrderParser[] = [
   new YatribhojanParser(),
   new RajBhogParser(),
   new ZoopParser(),
+  new BrotherByteParser(),
 ]
 
 export type IngestSource = {
