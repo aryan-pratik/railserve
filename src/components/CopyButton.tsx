@@ -10,6 +10,8 @@ import { IconButton } from './ui'
  *
  * Hidden until the row is hovered/focused (`group-hover:opacity-100` on the
  * caller's side), so it never competes with the room a compact row needs.
+ * On touch devices there's no hover to reveal it, so the caller also sets
+ * `pointer-coarse:opacity-100` to keep it visible there.
  */
 export function CopyButton({
   text,

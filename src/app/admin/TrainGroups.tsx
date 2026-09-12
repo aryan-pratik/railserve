@@ -237,7 +237,7 @@ export function TrainGroups({
                     {/* Outside the toggle on purpose: a submit button cannot
                         nest inside another button, and a click here must not
                         also expand or collapse the row. */}
-                    <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                    <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
                       <CopyButton text={trainDetailsText(g)} label="Copy train details" />
                     </span>
                     {g.orders[0] ? (
@@ -308,7 +308,7 @@ export function TrainGroups({
                                     Handover: {o.handoverPoint}
                                   </span>
                                 ) : (
-                                  <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
+                                  <CoachChip coach={o.coach} berth={o.berth} />
                                 )}
                               </td>
 
@@ -341,7 +341,7 @@ export function TrainGroups({
                               <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums text-muted">
                                 <div className="flex items-center gap-1">
                                   {o.orderTimeLabel}
-                                  <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                                  <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
                                     <CopyButton text={orderDetailsText(o)} label="Copy order details" />
                                   </span>
                                 </div>
