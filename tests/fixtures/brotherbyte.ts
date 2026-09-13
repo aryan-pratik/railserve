@@ -68,6 +68,31 @@ Customer Notes\tProvide Good food
 Regards,
 Team BrotherByte`
 
+// A real two-item order: both dishes packed onto the single "Items" line,
+// each "<index>-<name> - <notes>" chunk joined to the next with ", # "
+// right before the next index digit. Note the indexes run 2 then 1, not
+// 1 then 2 — confirming they're not a running order or a quantity.
+export const SAMPLE_MULTI_ITEM = `Dear The Cosmozin Lounge,
+
+A new order has been confirmed for your outlet.
+
+Order ID\tBB00101417/2485656222
+Train\t12561/SWATANTRA S EXP
+Station\tKANPUR CENTRAL (CNB)
+Delivery Date & ETA\t09-13-2026 09:35 IST
+Coach & Berth\tS6/11
+Customer\tRaja kumar (8409170572)
+Items\t2-Chicken Biryani With Raita Combo (non-veg) - Chicken Biryani 2pcs, Raita, Chilli Sauce, Tomato Sauce, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper, # 1-Veg Biryani With Raita Combo (veg) - Veg Biryani, Raita, Chilli Sauce, Tomato Sauce, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper
+Payment Method\tCash On Delivery
+Order Total\t₹684.60
+GST/Tax\t₹32.60
+Discount\t₹0
+Outlet Discount\t₹0
+Amount to Collect\t₹685
+Customer Notes\tProvide Good food
+Regards,
+Team BrotherByte`
+
 // An earlier hand-typed sample of the same vendor's mail, in a WhatsApp-style
 // "Label: *value*" layout with separate Customer/Phone fields. Not what the
 // real mail looks like, but the parser stays tolerant of it too.

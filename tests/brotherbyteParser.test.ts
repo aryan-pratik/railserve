@@ -86,6 +86,31 @@ describe('BrotherByte parser', () => {
     expect(r.order.scheduledArrival?.toISOString()).toBe('2026-09-12T12:10:00.000Z')
   })
 
+  it('parses every item out of a real two-item order on one Items line', () => {
+    const r = parser.parse(fx.SAMPLE_MULTI_ITEM, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order).toMatchObject({
+      externalOrderId: '2485656222',
+      contactName: 'Raja kumar',
+      contactPhone: '8409170572',
+      amountPaise: 68460,
+    })
+    expect(r.order.items).toEqual([
+      {
+        name: 'Chicken Biryani With Raita Combo (non-veg)',
+        qty: 1,
+        notes: 'Chicken Biryani 2pcs, Raita, Chilli Sauce, Tomato Sauce, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
+      },
+      {
+        name: 'Veg Biryani With Raita Combo (veg)',
+        qty: 1,
+        notes: 'Veg Biryani, Raita, Chilli Sauce, Tomato Sauce, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
+      },
+    ])
+  })
+
   it('parses the legacy hand-typed colon/asterisk layout too', () => {
     const r = parser.parse(fx.SAMPLE_LEGACY_COLON_FORMAT, RECEIVED)
     expect(r.ok).toBe(true)
