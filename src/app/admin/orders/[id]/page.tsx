@@ -12,7 +12,7 @@ import { timingForOrders, timingFor } from '@/lib/train/service'
 import { forceRefreshOrderTrain } from './actions'
 import { EventLog } from '@/components/EventLog'
 import { DeliveryProof } from '@/components/DeliveryProof'
-import { AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, TransitionButtons } from './AdminOrderActions'
+import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, TransitionButtons } from './AdminOrderActions'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -159,6 +159,9 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                 </li>
               ) : null}
             </ul>
+            <div className="border-t border-line">
+              <AddOrderItem orderId={String(order._id)} />
+            </div>
             <div className="flex items-center justify-between border-t border-line px-4 py-3 text-sm">
               <PaymentBadge mode={order.paymentMode} />
               <span className="font-semibold tabular-nums">{formatMoney(order.amountPaise)}</span>
