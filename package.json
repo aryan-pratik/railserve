@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:orders": "tsx --env-file=.env.local scripts/demo-orders.ts",
+    "seed:samples": "tsx --env-file=.env.local scripts/seed-sample-orders.ts",
     "doctor": "tsx --env-file=.env.local scripts/doctor.ts",
     "migrate:multi-outlet": "tsx --env-file=.env.local scripts/migrate-multi-outlet.ts",
     "reset:admin": "tsx --env-file=.env.local scripts/reset-to-admin.ts",
