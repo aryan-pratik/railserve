@@ -2,9 +2,10 @@
 
 import { useActionState, useState } from 'react'
 import { Button, FormNote, IconButton, inputClass, textareaClass } from '@/components/ui'
-import { IconPencil } from '@/components/Icons'
+import { IconPencil, IconPlus } from '@/components/Icons'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
+  addOrderItemAction,
   adminTransitionAction,
   assignAgentsAction,
   deleteOrderAction,
@@ -231,6 +232,51 @@ export function EditOrderItem({
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="sm" variant="secondary" pending={pending}>Save</Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+        <FormNote state={state} />
+      </div>
+    </form>
+  )
+}
+
+/**
+ * Adds a new item to the order — same shape as EditOrderItem's form, but
+ * with nothing pre-filled and no item id: it appends rather than replaces.
+ */
+export function AddOrderItem({ orderId }: { orderId: string }) {
+  const [state, action, pending] = useActionState(addOrderItemAction, initial)
+  const [adding, setAdding] = useState(false)
+
+  if (!adding) {
+    return (
+      <div className="p-4">
+        <Button type="button" size="sm" variant="secondary" onClick={() => setAdding(true)}>
+          <IconPlus size={14} />
+          Add item
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <form
+      action={action}
+      onSubmit={() => setAdding(false)}
+      className="m-4 space-y-2 rounded-lg border border-line-strong bg-sunken p-3"
+    >
+      <input type="hidden" name="orderId" value={orderId} />
+      <div className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem]">
+        <label className="sr-only" htmlFor="new-item-name">Name</label>
+        <input id="new-item-name" name="name" autoFocus className={inputClass} placeholder="Item name" />
+        <label className="sr-only" htmlFor="new-item-qty">Quantity</label>
+        <input id="new-item-qty" name="qty" type="number" min={1} step={1} defaultValue={1} className={inputClass} placeholder="Qty" />
+        <label className="sr-only" htmlFor="new-item-price">Price (₹)</label>
+        <input id="new-item-price" name="pricePaise" type="number" min={0} step="0.01" className={inputClass} placeholder="Price ₹" />
+      </div>
+      <label className="sr-only" htmlFor="new-item-notes">Notes</label>
+      <textarea id="new-item-notes" name="notes" rows={2} placeholder="Notes" className={textareaClass} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="sm" variant="secondary" pending={pending}>Add</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
         <FormNote state={state} />
       </div>
     </form>

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
-import { deleteOrder, findById, updateOrderFields, updateOrderItem } from '@/lib/repo/orderRepo'
+import { addOrderItems, deleteOrder, findById, updateOrderFields, updateOrderItem } from '@/lib/repo/orderRepo'
 import { forceRefreshTrainStatus } from '@/lib/train/service'
 import type { OrderStatus } from '@/lib/orderStatus'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
@@ -128,6 +128,41 @@ export async function updateOrderItemAction(
   revalidatePath(`/admin/orders/${orderId}`)
   revalidatePath(`/store/orders/${orderId}`)
   return { ok: 'Item updated.' }
+}
+
+export async function addOrderItemAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const name = String(formData.get('name') ?? '').trim()
+  const qty = Number(formData.get('qty'))
+  const rawPrice = String(formData.get('pricePaise') ?? '').trim()
+  const notes = String(formData.get('notes') ?? '').trim()
+
+  if (!name) return { error: 'Item name is required.' }
+  if (!Number.isInteger(qty) || qty < 1) return { error: 'Quantity must be at least 1.' }
+  if (rawPrice && (!Number.isFinite(Number(rawPrice)) || Number(rawPrice) < 0)) {
+    return { error: 'Price must be a positive number.' }
+  }
+
+  try {
+    const ok = await addOrderItems(ctx, orderId, [{
+      name,
+      qty,
+      pricePaise: rawPrice ? Math.round(Number(rawPrice) * 100) : null,
+      notes: notes.length > 0 ? notes : null,
+      isPacking: false,
+    }])
+    if (!ok) return { error: 'Order not found.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not add the item.' }
+  }
+
+  revalidatePath(`/admin/orders/${orderId}`)
+  revalidatePath(`/store/orders/${orderId}`)
+  return { ok: 'Item added.' }
 }
 
 export async function updateOrderRemarkAction(
