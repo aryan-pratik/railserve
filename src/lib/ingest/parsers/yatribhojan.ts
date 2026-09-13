@@ -63,9 +63,15 @@ export class YatribhojanParser implements OrderParser {
     // Vendor prefixes the coach with the booking status for RAC/WL berths,
     // e.g. "RAC/B2, SEAT: 39" — the status isn't a coach code, so it's
     // captured separately and stitched back into rawSeat rather than lost.
+    // The status prefix is restricted to known booking-status words (RAC,
+    // WL) rather than any letters, because some coaches are themselves
+    // "<coach>/<sub-code>", e.g. "H1/D, SEAT: 11" (First AC coach H1,
+    // cabin D) — treating that slash as a status separator left coach/berth
+    // unparsed. Letting the coach group itself carry one optional "/xxx"
+    // suffix keeps that sub-code instead of losing the whole field.
     const coachSeatRaw = field('COACH')
     const coachSeatMatch = coachSeatRaw
-      ? /^(?:([A-Z]+)\/)?([A-Z]+\d*)\s*,\s*SEAT\s*:\s*(\d+)$/i.exec(coachSeatRaw)
+      ? /^(?:(RAC|WL)\/)?([A-Z0-9]+(?:\/[A-Z0-9]+)?)\s*,\s*SEAT\s*:\s*(\d+)$/i.exec(coachSeatRaw)
       : null
     const seatStatus = coachSeatMatch?.[1] ?? null
     const coach = coachSeatMatch?.[2] ?? null
