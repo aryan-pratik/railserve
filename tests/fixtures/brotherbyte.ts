@@ -69,9 +69,11 @@ Regards,
 Team BrotherByte`
 
 // A real two-item order: both dishes packed onto the single "Items" line,
-// each "<index>-<name> - <notes>" chunk joined to the next with ", # "
-// right before the next index digit. Note the indexes run 2 then 1, not
-// 1 then 2 — confirming they're not a running order or a quantity.
+// each "<qty>-<name> - <notes>" chunk joined to the next with ", # " right
+// before the next chunk's leading digit. The prefixes are quantities (2
+// chicken biryani combos, 1 veg biryani combo), not a running index — they
+// don't run 1, 2 in order, and their per-unit prices only reconcile
+// against the order total when read as quantities.
 export const SAMPLE_MULTI_ITEM = `Dear The Cosmozin Lounge,
 
 A new order has been confirmed for your outlet.
@@ -89,6 +91,30 @@ GST/Tax\t₹32.60
 Discount\t₹0
 Outlet Discount\t₹0
 Amount to Collect\t₹685
+Customer Notes\tProvide Good food
+Regards,
+Team BrotherByte`
+
+// A real order with a single item line whose quantity prefix is 4, not 1 —
+// confirming the leading number is a quantity and not a per-line running
+// index (there's only one line here for it to "run" against).
+export const SAMPLE_SINGLE_ITEM_QTY_4 = `Dear The Cosmozin Lounge,
+
+A new order has been confirmed for your outlet.
+
+Order ID\tBB00101413/2485566709
+Train\t12522/RAPTISAGAR EXP
+Station\tKANPUR CENTRAL (CNB)
+Delivery Date & ETA\t09-13-2026 08:00 IST
+Coach & Berth\tRAC/S2/23
+Customer\tManoj singh (8807411138)
+Items\t4-Veg Mini Thali (veg) - Seasonal Veg, Dal Fry, Jeera Rice, Tawa Roti 2pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper
+Payment Method\tCash On Delivery
+Order Total\t₹600.60
+GST/Tax\t₹28.60
+Discount\t₹0
+Outlet Discount\t₹0
+Amount to Collect\t₹601
 Customer Notes\tProvide Good food
 Regards,
 Team BrotherByte`

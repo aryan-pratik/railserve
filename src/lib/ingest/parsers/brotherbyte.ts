@@ -200,12 +200,14 @@ export class BrotherByteParser implements OrderParser {
    * Items normally arrive inline on the "Items" line itself
    * ("Items<TAB>1-Name - notes"), one line per order in every single-item
    * sample seen so far. When an order has several dishes, they're all
-   * packed onto that same line, each "<index>-<name> - <notes>" chunk
-   * joined to the next with ", # " right before the next index digit —
-   * e.g. "...Tissue Paper, # 1-Veg Biryani...". The indexes aren't a
-   * running order or a quantity (a two-item order has been seen numbered
-   * "2-" then "1-"), so they're discarded; every chunk is one unit. A
-   * hand-typed layout instead uses an "Order Items" header line followed
+   * packed onto that same line, each "<qty>-<name> - <notes>" chunk
+   * joined to the next with ", # " right before the next chunk's leading
+   * digit — e.g. "...Tissue Paper, # 1-Veg Biryani...". That leading
+   * number is the quantity, not a running index: a single-item order has
+   * been seen as "4-Veg Mini Thali (veg)" (qty 4, nothing to run against),
+   * and a two-item order's per-unit prices only reconcile against the
+   * order total when its "2-" and "1-" prefixes are read as quantities.
+   * A hand-typed layout instead uses an "Order Items" header line followed
    * by one or more bulleted lines — supported too, since the aggregator
    * has no contract not to send several items that way. Either shape, the
    * " - <notes>" half of an item is optional — a plain item like
@@ -213,7 +215,7 @@ export class BrotherByteParser implements OrderParser {
    */
   private parseItems(text: string): { name: string; qty: number; notes: string | null }[] {
     const lines = text.split('\n').map((l) => l.trim())
-    const itemRe = /^\*?\d+-(.+?)(?:\s-\s(.+?))?\*?$/
+    const itemRe = /^\*?(\d+)-(.+?)(?:\s-\s(.+?))?\*?$/
 
     const items: { name: string; qty: number; notes: string | null }[] = []
 
@@ -223,7 +225,7 @@ export class BrotherByteParser implements OrderParser {
       const inline = inlineRe.exec(lines[inlineIdx])?.[1] ?? ''
       for (const chunk of inline.split(/,\s*#\s*(?=\d+-)/)) {
         const m = itemRe.exec(chunk.trim())
-        if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2]?.trim() || null })
+        if (m) items.push({ name: m[2].trim(), qty: Number(m[1]), notes: m[3]?.trim() || null })
       }
       return items
     }
@@ -238,7 +240,7 @@ export class BrotherByteParser implements OrderParser {
       if (paymentMethodRe.test(line)) break
 
       const m = itemRe.exec(line)
-      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2]?.trim() || null })
+      if (m) items.push({ name: m[2].trim(), qty: Number(m[1]), notes: m[3]?.trim() || null })
     }
     return items
   }
