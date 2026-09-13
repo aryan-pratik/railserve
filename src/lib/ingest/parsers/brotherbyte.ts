@@ -198,14 +198,18 @@ export class BrotherByteParser implements OrderParser {
 
   /**
    * Items normally arrive inline on the "Items" line itself
-   * ("Items<TAB>1-Name - notes"), one line per order in every real sample
-   * seen so far. A hand-typed layout instead uses an "Order Items" header
-   * line followed by one or more bulleted lines — supported too, since the
-   * aggregator has no contract not to send several items that way. Either
-   * shape, each item line is normally "<index>-<name> - <notes>", but the
-   * " - <notes>" half is optional — a plain item like "1-Veg Deluxe Thali
-   * (veg)" carries no notes at all. The index is BrotherByte's own
-   * numbering, not a quantity, so every line is one unit.
+   * ("Items<TAB>1-Name - notes"), one line per order in every single-item
+   * sample seen so far. When an order has several dishes, they're all
+   * packed onto that same line, each "<index>-<name> - <notes>" chunk
+   * joined to the next with ", # " right before the next index digit —
+   * e.g. "...Tissue Paper, # 1-Veg Biryani...". The indexes aren't a
+   * running order or a quantity (a two-item order has been seen numbered
+   * "2-" then "1-"), so they're discarded; every chunk is one unit. A
+   * hand-typed layout instead uses an "Order Items" header line followed
+   * by one or more bulleted lines — supported too, since the aggregator
+   * has no contract not to send several items that way. Either shape, the
+   * " - <notes>" half of an item is optional — a plain item like
+   * "1-Veg Deluxe Thali (veg)" carries no notes at all.
    */
   private parseItems(text: string): { name: string; qty: number; notes: string | null }[] {
     const lines = text.split('\n').map((l) => l.trim())
@@ -217,8 +221,10 @@ export class BrotherByteParser implements OrderParser {
     const inlineIdx = lines.findIndex((l) => inlineRe.test(l))
     if (inlineIdx >= 0) {
       const inline = inlineRe.exec(lines[inlineIdx])?.[1] ?? ''
-      const m = itemRe.exec(inline)
-      if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2]?.trim() || null })
+      for (const chunk of inline.split(/,\s*#\s*(?=\d+-)/)) {
+        const m = itemRe.exec(chunk.trim())
+        if (m) items.push({ name: m[1].trim(), qty: 1, notes: m[2]?.trim() || null })
+      }
       return items
     }
 
