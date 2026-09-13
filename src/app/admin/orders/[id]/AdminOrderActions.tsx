@@ -1,12 +1,14 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { Button, FormNote, textareaClass } from '@/components/ui'
+import { Button, FormNote, IconButton, inputClass, textareaClass } from '@/components/ui'
+import { IconPencil } from '@/components/Icons'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   adminTransitionAction,
   assignAgentsAction,
   deleteOrderAction,
+  updateOrderItemAction,
   updateOrderRemarkAction,
   type ActionState,
 } from './actions'
@@ -160,6 +162,75 @@ export function RemarkForm({ orderId, remark }: { orderId: string; remark: strin
         <Button type="submit" size="sm" variant="secondary" pending={pending}>
           Save remark
         </Button>
+        <FormNote state={state} />
+      </div>
+    </form>
+  )
+}
+
+/**
+ * Edit-in-place for one order item. Collapsed to a pencil button by default;
+ * clicking it swaps the row for a small form so a wrong qty, price or name
+ * doesn't need a full item delete/re-add.
+ */
+export function EditOrderItem({
+  orderId, itemId, name, qty, pricePaise, notes,
+}: {
+  orderId: string
+  itemId: string
+  name: string
+  qty: number
+  pricePaise?: number | null
+  notes?: string | null
+}) {
+  const [state, action, pending] = useActionState(updateOrderItemAction, initial)
+  const [editing, setEditing] = useState(false)
+
+  if (!editing) {
+    return (
+      <IconButton aria-label={`Edit ${name}`} size="sm" onClick={() => setEditing(true)}>
+        <IconPencil size={14} />
+      </IconButton>
+    )
+  }
+
+  return (
+    <form
+      action={action}
+      onSubmit={() => setEditing(false)}
+      className="mt-2 space-y-2 rounded-lg border border-line-strong bg-sunken p-3"
+    >
+      <input type="hidden" name="orderId" value={orderId} />
+      <input type="hidden" name="itemId" value={itemId} />
+      <div className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem]">
+        <label className="sr-only" htmlFor={`item-name-${itemId}`}>Name</label>
+        <input id={`item-name-${itemId}`} name="name" defaultValue={name} className={inputClass} placeholder="Item name" />
+        <label className="sr-only" htmlFor={`item-qty-${itemId}`}>Quantity</label>
+        <input id={`item-qty-${itemId}`} name="qty" type="number" min={1} step={1} defaultValue={qty} className={inputClass} placeholder="Qty" />
+        <label className="sr-only" htmlFor={`item-price-${itemId}`}>Price (₹)</label>
+        <input
+          id={`item-price-${itemId}`}
+          name="pricePaise"
+          type="number"
+          min={0}
+          step="0.01"
+          defaultValue={pricePaise != null ? (pricePaise / 100).toFixed(2) : ''}
+          placeholder="Price ₹"
+          className={inputClass}
+        />
+      </div>
+      <label className="sr-only" htmlFor={`item-notes-${itemId}`}>Notes</label>
+      <textarea
+        id={`item-notes-${itemId}`}
+        name="notes"
+        defaultValue={notes ?? ''}
+        rows={2}
+        placeholder="Notes"
+        className={textareaClass}
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="sm" variant="secondary" pending={pending}>Save</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
         <FormNote state={state} />
       </div>
     </form>

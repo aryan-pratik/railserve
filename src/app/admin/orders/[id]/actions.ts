@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
-import { deleteOrder, findById, updateOrderFields } from '@/lib/repo/orderRepo'
+import { deleteOrder, findById, updateOrderFields, updateOrderItem } from '@/lib/repo/orderRepo'
 import { forceRefreshTrainStatus } from '@/lib/train/service'
 import type { OrderStatus } from '@/lib/orderStatus'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
@@ -93,6 +93,41 @@ export async function deleteOrderAction(
   revalidatePath('/admin/orders')
   revalidatePath('/store')
   redirect('/admin/orders')
+}
+
+export async function updateOrderItemAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const itemId = String(formData.get('itemId') ?? '')
+  const name = String(formData.get('name') ?? '').trim()
+  const qty = Number(formData.get('qty'))
+  const rawPrice = String(formData.get('pricePaise') ?? '').trim()
+  const notes = String(formData.get('notes') ?? '').trim()
+
+  if (!name) return { error: 'Item name is required.' }
+  if (!Number.isInteger(qty) || qty < 1) return { error: 'Quantity must be at least 1.' }
+  if (rawPrice && (!Number.isFinite(Number(rawPrice)) || Number(rawPrice) < 0)) {
+    return { error: 'Price must be a positive number.' }
+  }
+
+  try {
+    const ok = await updateOrderItem(ctx, orderId, itemId, {
+      name,
+      qty,
+      pricePaise: rawPrice ? Math.round(Number(rawPrice) * 100) : null,
+      notes: notes.length > 0 ? notes : null,
+    })
+    if (!ok) return { error: 'Item not found.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not save the item.' }
+  }
+
+  revalidatePath(`/admin/orders/${orderId}`)
+  revalidatePath(`/store/orders/${orderId}`)
+  return { ok: 'Item updated.' }
 }
 
 export async function updateOrderRemarkAction(

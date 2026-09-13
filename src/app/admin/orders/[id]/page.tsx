@@ -12,7 +12,7 @@ import { timingForOrders, timingFor } from '@/lib/train/service'
 import { forceRefreshOrderTrain } from './actions'
 import { EventLog } from '@/components/EventLog'
 import { DeliveryProof } from '@/components/DeliveryProof'
-import { AssignAgents, DeleteOrderButton, RemarkForm, TransitionButtons } from './AdminOrderActions'
+import { AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, TransitionButtons } from './AdminOrderActions'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -125,9 +125,17 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                 <li key={String(i._id)} className="px-4 py-3 text-sm">
                   <div className="flex justify-between gap-4">
                     <span className="font-medium text-ink">{i.name}</span>
-                    <span className="shrink-0 tabular-nums text-muted">
+                    <span className="flex shrink-0 items-center gap-2 tabular-nums text-muted">
                       ×{i.qty}
                       {i.pricePaise !== null ? ` · ${formatMoney(i.pricePaise)}` : ''}
+                      <EditOrderItem
+                        orderId={String(order._id)}
+                        itemId={String(i._id)}
+                        name={i.name}
+                        qty={i.qty}
+                        pricePaise={i.pricePaise}
+                        notes={i.notes}
+                      />
                     </span>
                   </div>
                   {i.spec ? (

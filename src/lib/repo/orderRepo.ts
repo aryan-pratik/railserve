@@ -163,6 +163,22 @@ export async function deleteOrder(ctx: AuthContext, orderId: string): Promise<bo
   return res.deletedCount > 0
 }
 
+/** Scoped update of one item embedded in an order, by that item's own _id. */
+export async function updateOrderItem(
+  ctx: AuthContext,
+  orderId: string,
+  itemId: string,
+  fields: Record<string, unknown>,
+): Promise<boolean> {
+  if (!mongoose.isValidObjectId(orderId) || !mongoose.isValidObjectId(itemId)) return false
+  const $set = Object.fromEntries(Object.entries(fields).map(([k, v]) => [`items.$.${k}`, v]))
+  const res = await Order.updateOne(
+    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId), 'items._id': new mongoose.Types.ObjectId(itemId) }),
+    { $set },
+  )
+  return res.matchedCount > 0
+}
+
 /** Scoped append of packing items to an order. */
 export async function addOrderItems(
   ctx: AuthContext,
