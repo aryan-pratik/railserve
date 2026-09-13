@@ -3,10 +3,12 @@
 import { useActionState, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST, paiseToRupees } from '@/lib/format'
-import { CoachChip, Dash, EmptyState, IconButton, StatusBadge, TypeBadge, statusLabel, thClass, focusRingInset } from '@/components/ui'
-import { Button } from '@/components/ui'
+import {
+  Button, CoachChip, Dash, EditPencil, EmptyState, IconButton, InlineEditButtons,
+  StatusBadge, TypeBadge, editInputClass, editTriggerClass, statusLabel, thClass,
+} from '@/components/ui'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { IconCheck, IconClose, IconPencil, IconTrash } from '@/components/Icons'
+import { IconTrash } from '@/components/Icons'
 import { TableFrame } from '@/components/OrdersTable'
 import { deleteOrderAction, updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
 
@@ -63,10 +65,6 @@ function AdminColGroup({ showOutlet }: { showOutlet: boolean }) {
   )
 }
 
-const EDIT_TRIGGER =
-  `group/edit inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-sunken ${focusRingInset}`
-const EDIT_INPUT =
-  'h-7 rounded border border-line-strong bg-surface px-1.5 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent'
 const INITIAL_STATE: ActionState = {}
 
 /**
@@ -117,17 +115,6 @@ export function AdminOrdersTable({
   )
 }
 
-/** A pencil that stays out of the way until the row is under the cursor or keyboard. */
-function Pencil() {
-  return (
-    <IconPencil
-      size={12}
-      aria-hidden
-      className="shrink-0 text-faint opacity-0 transition-opacity group-hover/edit:opacity-100 group-focus-visible/edit:opacity-100"
-    />
-  )
-}
-
 function AdminOrderRow({
   order,
   showOutlet,
@@ -168,9 +155,9 @@ function AdminOrderRow({
         {editing === 'amount' ? (
           <AmountEditor orderId={order.id} initial={order.amountPaise} onDone={() => setEditing(null)} />
         ) : (
-          <button type="button" onClick={() => setEditing('amount')} className={`${EDIT_TRIGGER} ml-auto`} title="Edit amount">
+          <button type="button" onClick={() => setEditing('amount')} className={`${editTriggerClass} ml-auto`} title="Edit amount">
             {formatRupees(order.amountPaise)}
-            <Pencil />
+            <EditPencil />
           </button>
         )}
       </td>
@@ -178,9 +165,9 @@ function AdminOrderRow({
         {editing === 'status' ? (
           <StatusEditor orderId={order.id} current={order.status} options={statusOptions} onDone={() => setEditing(null)} />
         ) : (
-          <button type="button" onClick={() => setEditing('status')} className={EDIT_TRIGGER} title="Edit status">
+          <button type="button" onClick={() => setEditing('status')} className={editTriggerClass} title="Edit status">
             <StatusBadge status={order.status} />
-            <Pencil />
+            <EditPencil />
           </button>
         )}
       </td>
@@ -237,19 +224,6 @@ function DeleteOrderCell({ orderId, externalOrderId }: { orderId: string; extern
   )
 }
 
-function EditorButtons({ pending, onCancel, disabled }: { pending: boolean; onCancel: () => void; disabled?: boolean }) {
-  return (
-    <>
-      <IconButton type="submit" aria-label="Save" size="sm" disabled={pending || disabled} className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
-        <IconCheck size={14} />
-      </IconButton>
-      <IconButton aria-label="Cancel" size="sm" onClick={onCancel}>
-        <IconClose size={14} />
-      </IconButton>
-    </>
-  )
-}
-
 function AmountEditor({
   orderId,
   initial,
@@ -275,11 +249,11 @@ function AmountEditor({
           defaultValue={paiseToRupees(initial)}
           inputMode="decimal"
           autoFocus
-          className={`${EDIT_INPUT} w-20 text-right`}
+          className={`${editInputClass} w-20 text-right`}
           aria-label="Amount in rupees"
           onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
         />
-        <EditorButtons pending={pending} onCancel={onDone} />
+        <InlineEditButtons pending={pending} onCancel={onDone} />
       </div>
       {state.error ? <span role="alert" className="text-[11px] font-medium text-red-600">{state.error}</span> : null}
     </form>
@@ -317,7 +291,7 @@ function StatusEditor({
         <select
           value={choice}
           onChange={(e) => setChoice(e.target.value)}
-          className={EDIT_INPUT}
+          className={editInputClass}
           aria-label="Status"
           autoFocus
           onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
@@ -327,7 +301,7 @@ function StatusEditor({
           ))}
           <option value={ADD_NEW}>Add a new status…</option>
         </select>
-        <EditorButtons pending={pending} onCancel={onDone} disabled={isCustom && !custom.trim()} />
+        <InlineEditButtons pending={pending} onCancel={onDone} disabled={isCustom && !custom.trim()} />
       </div>
       {isCustom ? (
         <input
@@ -335,7 +309,7 @@ function StatusEditor({
           onChange={(e) => setCustom(e.target.value)}
           placeholder="e.g. Refund pending"
           autoFocus
-          className={EDIT_INPUT}
+          className={editInputClass}
           aria-label="New status name"
         />
       ) : null}

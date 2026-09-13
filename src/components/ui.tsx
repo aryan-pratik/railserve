@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react'
 import Link from 'next/link'
-import { IconArrowLeft, IconChevronLeft, IconChevronRight } from './Icons'
+import { IconArrowLeft, IconCheck, IconChevronLeft, IconChevronRight, IconClose, IconPencil } from './Icons'
 import { LinkHint } from './LinkHint'
 import { Spinner } from './Spinner'
 import { EMPTY } from '@/lib/format'
@@ -295,6 +295,52 @@ export function IconButton({
     >
       {children}
     </button>
+  )
+}
+
+/* ── inline editing ───────────────────────────────────────────────────────── */
+// The board's click-a-value-to-change-it idiom: a plain value that reveals a
+// pencil on hover or keyboard focus, swapping on click for compact controls
+// with a check/cross to commit or back out. First written for the orders
+// board's Amount and Status cells; reused wherever a single field or small
+// cluster of fields deserves the same in-place edit instead of a full form.
+
+/** The clickable value that stands in for an inline field before it's opened. */
+export const editTriggerClass =
+  `group/edit inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-sunken ${focusRingInset}`
+
+/** A control sized for an open inline editor, not a full-width form. */
+export const editInputClass =
+  'h-7 rounded border border-line-strong bg-surface px-1.5 text-xs text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent'
+
+/** Sits inside an `editTriggerClass` button; invisible until that button is hovered or focused. */
+export function EditPencil() {
+  return (
+    <IconPencil
+      size={12}
+      aria-hidden
+      className="shrink-0 text-faint opacity-0 transition-opacity group-hover/edit:opacity-100 group-focus-visible/edit:opacity-100"
+    />
+  )
+}
+
+/** Commit / back-out pair for an open inline editor. */
+export function InlineEditButtons({
+  pending, onCancel, disabled,
+}: {
+  pending: boolean
+  onCancel: () => void
+  disabled?: boolean
+}) {
+  return (
+    <>
+      <IconButton type="submit" aria-label="Save" size="sm" disabled={pending || disabled} className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
+        <IconCheck size={14} />
+      </IconButton>
+      <IconButton aria-label="Cancel" size="sm" onClick={onCancel}>
+        <IconClose size={14} />
+      </IconButton>
+    </>
   )
 }
 
