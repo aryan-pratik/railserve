@@ -100,13 +100,28 @@ describe('BrotherByte parser', () => {
     expect(r.order.items).toEqual([
       {
         name: 'Chicken Biryani With Raita Combo (non-veg)',
-        qty: 1,
+        qty: 2,
         notes: 'Chicken Biryani 2pcs, Raita, Chilli Sauce, Tomato Sauce, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
       },
       {
         name: 'Veg Biryani With Raita Combo (veg)',
         qty: 1,
         notes: 'Veg Biryani, Raita, Chilli Sauce, Tomato Sauce, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
+      },
+    ])
+  })
+
+  it('reads a single item line\'s leading number as quantity, not an index', () => {
+    const r = parser.parse(fx.SAMPLE_SINGLE_ITEM_QTY_4, RECEIVED)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+
+    expect(r.order).toMatchObject({ externalOrderId: '2485566709', amountPaise: 60060 })
+    expect(r.order.items).toEqual([
+      {
+        name: 'Veg Mini Thali (veg)',
+        qty: 4,
+        notes: 'Seasonal Veg, Dal Fry, Jeera Rice, Tawa Roti 2pcs, Salad, Pickle, Gulab Jamun, Spoon, Tissue Paper',
       },
     ])
   })
