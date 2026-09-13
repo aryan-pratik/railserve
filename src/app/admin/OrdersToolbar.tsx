@@ -100,75 +100,79 @@ export function OrdersToolbar({
         }
       />
 
-      <QueryForm action="/admin" className="flex flex-wrap items-center gap-2">
+      <QueryForm action="/admin" className="flex flex-col gap-2">
         <input type="hidden" name="tab" value={current.tab} />
         <input type="hidden" name="group" value={current.group} />
         {isUpcoming ? <input type="hidden" name="upcoming" value="1" /> : null}
 
-        <div className="relative min-w-[14rem] flex-1">
-          <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-          <input
-            name="q"
-            type="search"
-            defaultValue={current.q}
-            placeholder="Order id, train, name or phone"
-            aria-label="Search orders"
-            autoComplete="off"
-            spellCheck={false}
-            className={`${inputClass} pl-9`}
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[14rem] flex-1">
+            <IconSearch size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+            <input
+              name="q"
+              type="search"
+              defaultValue={current.q}
+              placeholder="Order id, train, name or phone"
+              aria-label="Search orders"
+              autoComplete="off"
+              spellCheck={false}
+              className={`${inputClass} pl-9`}
+            />
+          </div>
+
+          <select name="outlet" defaultValue={current.outlet} aria-label="Outlet" onChange={submitOnChange} className={`${inputBase} max-w-[16rem]`}>
+            <option value="">All outlets</option>
+            {outlets.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+
+          <select name="train" defaultValue={current.train} aria-label="Train" onChange={submitOnChange} className={`${inputBase} font-mono`}>
+            <option value="">All trains</option>
+            {trains.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+
+          <select name="payment" defaultValue={current.payment} aria-label="Payment mode" onChange={submitOnChange} className={inputBase}>
+            <option value="">All payments</option>
+            <option value="COD">COD</option>
+            <option value="PREPAID">Prepaid</option>
+            <option value="INVOICE">Invoice</option>
+          </select>
+
+          <select
+            name="sort"
+            defaultValue={current.sort}
+            aria-label="Sort"
+            onChange={submitOnChange}
+            className={inputBase}
+          >
+            <option value="urgent">Arriving soonest</option>
+            <option value="newest">Newest first</option>
+          </select>
+
+          {hasActiveFilters ? (
+            <Link
+              href={href({ q: '', outlet: '', train: '', payment: '' })}
+              className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-accent hover:underline"
+            >
+              Clear filters
+              <LinkHint />
+            </Link>
+          ) : null}
         </div>
 
-        <select name="outlet" defaultValue={current.outlet} aria-label="Outlet" onChange={submitOnChange} className={`${inputBase} max-w-[16rem]`}>
-          <option value="">All outlets</option>
-          {outlets.map((o) => (
-            <option key={o.id} value={o.id}>{o.label}</option>
-          ))}
-        </select>
-
-        <select name="train" defaultValue={current.train} aria-label="Train" onChange={submitOnChange} className={`${inputBase} font-mono`}>
-          <option value="">All trains</option>
-          {trains.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-
-        <select name="payment" defaultValue={current.payment} aria-label="Payment mode" onChange={submitOnChange} className={inputBase}>
-          <option value="">All payments</option>
-          <option value="COD">COD</option>
-          <option value="PREPAID">Prepaid</option>
-          <option value="INVOICE">Invoice</option>
-        </select>
-
         {!isUpcoming ? (
-          <DateFilter
-            mode={(current.mode || 'today') as DateFilterMode}
-            month={current.month}
-            from={current.from}
-            to={current.to}
-            autoSubmit
-          />
-        ) : null}
-
-        <select
-          name="sort"
-          defaultValue={current.sort}
-          aria-label="Sort"
-          onChange={submitOnChange}
-          className={inputBase}
-        >
-          <option value="urgent">Arriving soonest</option>
-          <option value="newest">Newest first</option>
-        </select>
-
-        {hasActiveFilters ? (
-          <Link
-            href={href({ q: '', outlet: '', train: '', payment: '' })}
-            className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-accent hover:underline"
-          >
-            Clear filters
-            <LinkHint />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <DateFilter
+              mode={(current.mode || 'today') as DateFilterMode}
+              month={current.month}
+              from={current.from}
+              to={current.to}
+              autoSubmit
+            />
+          </div>
         ) : null}
       </QueryForm>
     </div>
