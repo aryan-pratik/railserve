@@ -15,7 +15,7 @@ type LeanOrder = {
   serviceDate: string
   amountPaise?: number | null
   paymentMode?: string | null
-  items: { _id: unknown; name: string; qty: number; spec?: string | null; isPacking: boolean }[]
+  items: { _id: unknown; name: string; qty: number; spec?: string | null; notes?: string | null; isPacking: boolean }[]
   createdAt: Date
 }
 
@@ -45,6 +45,7 @@ export function toCardData(o: LeanOrder): OrderCardData {
       name: i.name,
       qty: i.qty,
       spec: i.spec ?? null,
+      notes: i.notes ?? null,
       isPacking: i.isPacking,
     })),
     createdAt: o.createdAt.toISOString(),

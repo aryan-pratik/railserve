@@ -44,7 +44,7 @@ export type OrderDetail = {
   amountPaise: number | null
   paymentMode: string | null
   notes: string | null
-  items: { id: string; name: string; qty: number; pricePaise: number | null; isPacking: boolean; spec: string | null }[]
+  items: { id: string; name: string; qty: number; pricePaise: number | null; isPacking: boolean; spec: string | null; notes: string | null }[]
   events: { id: string; toStatus: string; fromStatus: string | null; actor: string; at: string; action: string | null }[]
   /** Transitions this admin may perform from here, already labelled. */
   nextStatuses: { to: string; label: string; danger: boolean }[]
@@ -114,6 +114,7 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
       pricePaise: i.pricePaise ?? null,
       isPacking: i.isPacking,
       spec: i.spec ?? null,
+      notes: i.notes ?? null,
     })),
     events: order.events.map((e) => ({
       id: String(e._id),

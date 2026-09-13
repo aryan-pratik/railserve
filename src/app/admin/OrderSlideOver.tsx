@@ -178,6 +178,9 @@ export function OrderSlideOver({
                         {i.spec ? (
                           <span className="mt-1 block whitespace-pre-wrap text-xs text-muted">{i.spec}</span>
                         ) : null}
+                        {i.notes ? (
+                          <span className="mt-1 block whitespace-pre-wrap text-xs italic text-muted">{i.notes}</span>
+                        ) : null}
                       </span>
                       {i.pricePaise != null ? (
                         <span className="shrink-0 text-sm tabular-nums text-muted">{formatMoney(i.pricePaise)}</span>

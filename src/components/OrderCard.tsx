@@ -18,7 +18,7 @@ export type OrderCardData = {
   serviceDate: string
   amountPaise: number | null
   paymentMode: string | null
-  items: { id: string; name: string; qty: number; spec: string | null; isPacking: boolean }[]
+  items: { id: string; name: string; qty: number; spec: string | null; notes: string | null; isPacking: boolean }[]
   createdAt: string
 }
 
@@ -86,6 +86,9 @@ export function OrderCard({
                   <div className="mt-1 whitespace-pre-wrap rounded bg-sunken p-2 text-xs text-muted">
                     {i.spec}
                   </div>
+                ) : null}
+                {i.notes ? (
+                  <div className="mt-1 whitespace-pre-wrap text-xs italic text-muted">{i.notes}</div>
                 ) : null}
               </li>
             ))}

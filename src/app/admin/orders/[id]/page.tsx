@@ -133,6 +133,9 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                   {i.spec ? (
                     <pre className="mt-2 whitespace-pre-wrap rounded bg-sunken p-3 font-sans text-xs text-muted">{i.spec}</pre>
                   ) : null}
+                  {i.notes ? (
+                    <p className="mt-2 whitespace-pre-wrap text-xs italic text-muted">{i.notes}</p>
+                  ) : null}
                 </li>
               ))}
               {packingItems.length > 0 ? (
