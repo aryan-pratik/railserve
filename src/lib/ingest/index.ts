@@ -10,6 +10,7 @@ import { YatribhojanParser } from './parsers/yatribhojan'
 import { RajBhogParser } from './parsers/rajbhog'
 import { ZoopParser } from './parsers/zoop'
 import { BrotherByteParser } from './parsers/brotherbyte'
+import { HomeBytesParser } from './parsers/homebytes'
 import { matchOutlet } from './outletMatch'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
 import { warmTrainStatus } from '../train/service'
@@ -24,6 +25,7 @@ export const PARSERS: OrderParser[] = [
   new RajBhogParser(),
   new ZoopParser(),
   new BrotherByteParser(),
+  new HomeBytesParser(),
 ]
 
 export type IngestSource = {
