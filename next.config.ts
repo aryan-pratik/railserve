@@ -23,6 +23,12 @@ const isDev = process.env.NODE_ENV !== 'production'
 // stays unset for local dev and for a plain `npm run build`.
 const basePath = process.env.BASE_PATH || undefined
 
+// Set only for the Docker build (see Dockerfile), which needs a self-contained
+// `.next/standalone` output to keep the runtime image small. Vercel has its
+// own optimized output and should not get this — stays unset for local dev
+// and for `vercel build`.
+const output = process.env.DOCKER_BUILD ? 'standalone' : undefined
+
 const nextConfig: NextConfig = {
   // Keep the MongoDB driver out of the bundler entirely. It reaches for `tls`,
   // `net` and `timers/promises` at require time, which Turbopack cannot resolve
@@ -35,6 +41,7 @@ const nextConfig: NextConfig = {
   // minutes trying to bundle them.
   serverExternalPackages: ['mongoose', 'puppeteer', 'sharp'],
   basePath,
+  output,
   ...(isDev
     ? {
         allowedDevOrigins: devTunnelOrigins,
