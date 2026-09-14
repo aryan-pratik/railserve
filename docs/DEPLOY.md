@@ -20,37 +20,55 @@ This doc is the map of what runs where.
 crons, rewrites, or overrides to declare. Don't add a `crons` array expecting
 it to work; Hobby allows one invocation per day.
 
-## ⚠️ `bitestation.elvo.in` serves a stale build
+## ⚠️ `bitestation.elvo.in` is a stale, self-hosted copy — not production
 
-That domain points at the cron VPS, where nginx serves a copy of the app left
-over from an **abandoned cutover** — an attempt to move production off Vercel
-that was never finished. It is still up and still answers requests, which is
-exactly what makes it dangerous.
-
-Measured 2026-09-15:
+That domain points at the cron VPS, which also runs a **full self-hosted stack**
+left over from a migration off Vercel that was started and never finished:
 
 ```
-bitestation.elvo.in  ->  the cron VPS, nginx/1.24.0 (Ubuntu)
-static assets Last-Modified: Fri, 11 Sep 2026 11:26 GMT
+bitestation.elvo.in
+  -> nginx (Certbot TLS)  ->  127.0.0.1:3000
+  -> docker container `railserve-app`   (built 2026-09-11, up since)
+  -> docker container `railserve-mongo` (mongo:7, its OWN database)
 ```
 
-Eight commits landed after that build — the HomeBytes parser, inline order-item
-editing, per-item notes, the Yatribhojan coach-code fix. **None of them are in
-the copy that domain serves.** Vercel has them; it rebuilds on every push.
+Built from `/root/railserve` on the box — an rsync'd copy of the repo with no
+`.git`. **Its `Dockerfile` and `docker-compose.prod.yml` exist only on that
+box; neither is in this repo**, so the self-hosted setup can't be rebuilt from
+git as it stands.
 
-This matters beyond curiosity, because the domain is written into the KOT print
-agent as "the production app URL" — `agent/README.md`, `agent/print-agent.mjs`
-and `docs/KOT_PRINTING.md` all use it for `SERVER_URL`. Any print agent running
-that value is talking to four-day-old server code against the live database.
-If printing misbehaves in a way the current code shouldn't produce, check this
-first. Repointing `SERVER_URL` at `railserve.vercel.app` is the fix; tearing
-down the stale nginx site so the domain stops answering is the better one.
+Two things follow, and they matter in opposite directions.
 
-Verify before assuming it's still true — a rebuild or a teardown both change
-the answer:
+**It is stale.** Static assets are dated 2026-09-11 11:26 GMT, and eight commits
+landed after that — the HomeBytes parser, inline order-item editing, per-item
+notes, the Yatribhojan coach-code fix. None are in what that domain serves.
+
+**It is isolated.** `MONGODB_URI` in the container is
+`mongodb://mongo:27017/railserve` — its own Mongo container, *not* Atlas. It
+cannot corrupt production data, and its database holds an unrelated partial
+dataset (9 restaurants, 246 train statuses, 70 unparsed inbox rows).
+
+So the risk isn't data corruption, it's **confusion and credentials**:
+
+- `bitestation.elvo.in` is the `SERVER_URL` documented for the KOT print agent
+  (`agent/README.md`, `agent/print-agent.mjs`, `docs/KOT_PRINTING.md`). An agent
+  pointed there polls a near-empty unrelated database and prints nothing, while
+  looking correctly configured.
+- The container carries **real production secrets** — `GMAIL_REFRESH_TOKEN`,
+  `GMAIL_CLIENT_SECRET`, `TRAIN_API_KEY`, `AUTH_SECRET`, `CRON_TOKEN`,
+  `GMAIL_WEBHOOK_TOKEN` — on a box exposed to the internet on 80/443, running
+  code four days behind `main`. Its 70 unparsed-inbox rows mean it has really
+  reached the live mailbox at some point.
+
+Either finish the migration or tear it down; leaving a credentialled, stale,
+publicly reachable copy running is the worst of the three. If you tear it down,
+repoint `SERVER_URL` in the print-agent docs at `railserve.vercel.app` first.
+
+Re-check rather than trusting this snapshot — a rebuild or teardown changes it:
 
 ```bash
 curl -sI https://bitestation.elvo.in/_next/static/chunks/<any-chunk>.js | grep -i last-modified
+ssh <box> 'docker ps --format "{{.Names}} {{.Status}}"'
 ```
 
 ## Cron
