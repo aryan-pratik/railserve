@@ -14,10 +14,11 @@ Production is **Vercel** — `https://railserve.vercel.app`, auto-deployed on
 every push to `main`. The database is MongoDB Atlas (`railserve`; local and
 staging use `railserve_dev`).
 
-`https://bitestation.elvo.in` is **not** production. It is a stale copy of the
-app on the cron VPS, left over from an abandoned migration, and it is several
-commits behind `main` while talking to the live database. Don't point anything
-new at it, and don't treat what it serves as current behaviour.
+`https://bitestation.elvo.in` is **not** production. It is a stale, self-hosted
+copy on the cron VPS (nginx -> Docker), left over from an unfinished migration,
+several commits behind `main` and backed by its own local Mongo rather than
+Atlas. Don't point anything new at it and don't treat what it serves as current
+behaviour — including the `SERVER_URL` in the KOT print-agent docs.
 
 Cron is not Vercel Cron — Hobby allows one invocation a day, so an external VPS
 curls `/api/cron/*` on a real schedule.
