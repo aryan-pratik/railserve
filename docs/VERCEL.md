@@ -77,7 +77,7 @@ testing (including mobile builds) without touching production data.
 `/api/cron/train-poll` refreshes live train status and fires the leave-now
 alert. **`vercel.json` does not schedule it** — Hobby allows one cron
 invocation per day, which is useless for this, so both cron endpoints are
-driven from the Azure VM's crontab instead (see `DEPLOY.md`):
+driven from an external VPS's crontab instead (see `DEPLOY.md`):
 
 ```
 */2 * * * *  ... /api/cron/train-poll     # every 2 minutes
