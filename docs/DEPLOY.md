@@ -1,134 +1,102 @@
-# Deploying to the Azure VM
+# Where RailServe is deployed
 
-RailServe runs on the same Azure VM as the `uiis` project (`172.197.160.41`),
-under the path prefix **`/railserve`**, sharing nginx's port 8080 — that's
-the only port open on the VM's NSG. This is not the only way to deploy this
-app (see `docker-compose.yml` + `README.md` for the plain local/any-host
-path); this doc is specifically about *this* VM's constraints.
+Production is **Vercel**, at `https://railserve.vercel.app`. Cron is driven
+from a small external VPS. Nothing else is live.
 
-## Why a path prefix, not its own domain
+For the Vercel specifics — env vars, Atlas setup, staging, Gmail push — see
+`VERCEL.md`. This doc is the map of *what runs where*, and the history of
+what used to.
 
-- Only port 8080 is open on the NSG. 80/443 aren't, so there's no way to get
-  a real TLS cert; nginx terminates 8080 with the `uiis` project's
-  self-signed cert.
-- `uiis` already owns the catch-all `server_name _` block on 8080 (`/` →
-  its dashboard, `/api/` → its API). Everything for railserve is a single
-  added `location /railserve/` in that same file, not a second server block
-  — a second `server_name`-based block would need a hostname pointed at
-  this VM, which nothing currently provides.
-- Consequence: Next's `basePath` is set to `/railserve` at build time (see
-  `next.config.ts` — gated on the `BASE_PATH` env var, unset everywhere
-  else). **Any change to `next.config.ts` or to the login/logout redirect
-  targets needs a rebuild on the VM to take effect** — `BASE_PATH` is
-  inlined into the client bundle and into the compiled server actions.
+## Production
 
-## What's isolated from `uiis`
+| Piece | Where | Notes |
+|---|---|---|
+| App | Vercel project `railserve` | Auto-builds and promotes on every push to `main`. `vercel --prod --yes` deploys from local disk if a push isn't possible. |
+| Database | MongoDB Atlas, db `railserve` | `railserve_dev` is local + staging; `MONGODB_URI_TEST` is a third, vitest-only database that gets truncated every run. |
+| Cron | An external VPS (**not** Vercel Cron) | See below. |
+| Staging | `https://railserve-staging.vercel.app` | Preview scope pinned to the `staging` branch. |
 
-- **Own Mongo + Redis containers** (`railserve-mongo`, `railserve-redis`),
-  bound to `127.0.0.1` only, on the *same* ports the repo's
-  `docker-compose.yml` already uses locally (27017, 6380) — just with an
-  explicit `127.0.0.1:` prefix added on the VM's copy of that file so they're
-  never reachable from outside the box even if the NSG ever changes.
-  `uiis`'s own postgres/redis containers are untouched.
-- **Own pm2 processes**: `railserve-web` (`next start -p 3001`) and
-  `railserve-worker`. Neither touches `uiis`'s pm2/docker processes.
+`vercel.json` holds nothing but a `$schema` line, and that's deliberate —
+there are no crons, rewrites, or overrides to declare. Don't add a `crons`
+array to it expecting it to work; see below.
 
-  `railserve-worker` is **stale** — it runs a `scripts/worker.ts` that was
-  deleted from the repo when BullMQ was dropped, so the copy on the VM is the
-  only one left. It polls the VM's own Mongo, not the Vercel database the
-  crontab feeds, and it spends `TRAIN_API_KEY` quota doing it. Anything
-  periodic now goes through the cron endpoints below; retire this process
-  unless the VM-hosted app at `/railserve/` is still being used.
+## Cron
 
-- **Crontab** (`crontab -l` as `azureuser`): this VM is also the scheduler for
-  the **Vercel** deployment, because Hobby allows only one cron invocation a
-  day. It drives `/api/cron/train-poll` every 2 minutes and
-  `/api/cron/gmail-sync` every minute against `railserve.vercel.app`, both
-  authenticated with `x-cron-token`. Back the crontab up before editing it —
-  there is no other copy.
+Vercel Hobby allows **one cron invocation per day**, which is useless for a
+two-minute tick, so the schedule lives on a VPS that does nothing but curl
+the already-deployed endpoints:
 
-  If Gmail push is enabled (see `VERCEL.md`), add a **daily** line for
-  `/api/cron/gmail-watch`. The Gmail watch expires after 7 days and takes
-  push ingestion with it silently; this line is the only thing preventing
-  that. Keep the one-minute `gmail-sync` line as well — ingestion is
-  idempotent, and the poll is the backstop for a dropped notification.
-- **nginx**: one added `location /railserve/` block inside the existing
-  `/etc/nginx/sites-available/uiis` file (that file is the whole site config
-  for port 8080 — there's nowhere else to put it without a second
-  `server_name`). `uiis`'s own `location /` and `location /api/` blocks are
-  untouched. Before editing, back the file up:
-  `sudo cp /etc/nginx/sites-available/uiis /etc/nginx/sites-available/uiis.bak.<date>`,
-  then always `sudo nginx -t` before `sudo systemctl reload nginx` (reload,
-  not restart — restart would drop `uiis`'s connections too).
-
-## Two things that broke on first deploy — don't reintroduce them
-
-1. **nginx's `$host` variable drops the port.** The `uiis` block's other
-   locations use `proxy_set_header Host $host;`, which is fine for them
-   (they don't compare Host against Origin). Next's Server Actions CSRF
-   check does compare them, and the browser's `Origin` always includes a
-   non-default port (`:8080`) while `$host` doesn't — so the check always
-   fails. The `/railserve/` location must use
-   `proxy_set_header Host $http_host;` instead (`$http_host` preserves the
-   port). This is scoped to just that one location block; don't "fix" the
-   other two, they don't need it and it's not our config to change.
-
-2. **Auth.js's `redirectTo` doesn't know about `basePath`.** Next's own
-   `redirect()` (from `next/navigation`) auto-prepends `basePath` — but
-   `signIn(..., { redirectTo })` and `signOut(..., { redirectTo })` are
-   Auth.js's own redirect resolution, which is basePath-blind. Left as a
-   bare `/`, the post-login redirect sent users to
-   `https://<vm-ip>:8080/`, which nginx's default `/` location routes
-   straight into `uiis`, not back into railserve. Fixed in
-   `src/app/login/actions.ts` and `src/app/actions/session.ts` by building
-   the target from `process.env.BASE_PATH` — keep that if either of those
-   `signIn`/`signOut` calls changes.
-
-   Also needed: `AUTH_TRUST_HOST=true` in `.env.local` on the VM (not
-   needed locally — dev mode trusts the host by default). Without it,
-   Auth.js's own separate host-trust check rejects the request with
-   `UntrustedHost`.
-
-## Redeploy steps
-
-From the repo root, locally:
-
-```bash
-rsync -az -e "ssh -i <key.pem>" \
-  --exclude node_modules --exclude .next --exclude /mobile --exclude .git \
-  --exclude .env.local --exclude tsconfig.tsbuildinfo \
-  ./ azureuser@172.197.160.41:~/railserve/
+```
+*/2 * * * *  -> /api/cron/train-poll     # every 2 minutes
+*   * * * *  -> /api/cron/gmail-sync     # every minute
+17  4 * * *  -> /api/cron/gmail-watch    # daily, only if Gmail push is on
 ```
 
-(`--exclude mobile` without the leading `/` also matches `src/lib/mobile/` —
-rsync excludes match at any depth. Keep the `/mobile` anchor.)
+All three hit `https://railserve.vercel.app` — the alias, not a deployment
+URL, so it follows every redeploy without needing an update — and
+authenticate with `x-cron-token`, which must match Vercel's `CRON_TOKEN`
+exactly or every tick 401s silently.
 
-On the VM:
+The box holds a URL and a token and nothing else: no database credentials,
+no app code, no node/docker/nginx. It is a clock, not a server. It writes a
+`status.json` next to its runner script — check that for last-run health
+rather than SSHing in blind.
 
-```bash
-cd ~/railserve
-npm install                                   # only if package.json changed
-NODE_OPTIONS='--max-old-space-size=3072' BASE_PATH=/railserve npx next build
-                                               # the VM has 3.8GB RAM; plain
-                                               # `npm run build` OOMs during
-                                               # typecheck without the bigger
-                                               # heap. Lint/typecheck already
-                                               # ran locally — this skips
-                                               # re-running `verify`.
-pm2 restart railserve-web
-pm2 restart railserve-worker                  # only if worker code changed
-```
+**Host, key, and paths are in `docs/INFRA.local.md`**, which is gitignored
+on purpose: this repo is public, and a live root SSH endpoint doesn't belong
+in it. If you're a new dev and don't have that file, ask for it.
 
-nginx only needs touching if the `location /railserve/` block itself
-changes (new port, new headers) — not on every code deploy.
+If the VPS stops, polling stops **silently** — nothing alerts on it. The app
+keeps working and simply reverts to refreshing train status only while
+someone has a page open, and the leave-now alert stops firing entirely.
+`/admin/inbox` will eventually show a staleness banner for ingestion, which
+in practice is the first visible symptom.
 
-## Credentials
+## Scheduler history
 
-Seeded users' shared password is in `~/railserve.credentials.txt` on the VM
-(`chmod 600`, not in the repo). Admin: phone `9000000001`.
+The scheduler has moved once, and stale copies of the old address are the
+main way to waste an afternoon here.
 
-## URLs
+- **Current: a Contabo VPS**, since the Azure subscription expired in
+  September 2026.
+- **Previous: an Azure VM** (`azureuser@172.197.160.41`). Gone — expired,
+  not stopped. It *also* hosted a second, path-prefixed copy of the whole
+  app at `:8080/railserve/` behind nginx, shared with the `uiis` project.
+  **That copy was not migrated and is not coming back**; only the crontab
+  moved to Contabo. Anything you read describing an app at `/railserve/`, a
+  `railserve-web` / `railserve-worker` pm2 process, or VM-local Mongo and
+  Redis containers is describing that dead machine.
 
-- App: `https://172.197.160.41:8080/railserve/` (self-signed cert — browsers
-  will warn; that's inherited from `uiis`'s existing cert setup, not new)
-- `uiis` (unaffected): `https://172.197.160.41:8080/`
+A third address, `azureuser@20.205.129.242`, appears in older notes. That
+one is stale too. If a doc gives you an IP, check it against
+`INFRA.local.md` before trusting it.
+
+## Legacy: the Azure sub-path deployment
+
+Kept only because these two bugs cost real time and would recur immediately
+if the sub-path deployment were ever rebuilt somewhere else. **None of this
+applies to Vercel.** `docker-compose.yml` plus `README.md` remain the
+supported path for running the app on a plain host.
+
+The deployment worked by setting Next's `basePath` to `/railserve` at build
+time via the `BASE_PATH` env var (`next.config.ts` gates on it; it is unset
+everywhere else, and `VERCEL.md` says in bold never to set it on Vercel —
+it would move the whole app under a prefix nothing links to).
+
+1. **nginx's `$host` drops the port.** Next's Server Actions CSRF check
+   compares `Host` against `Origin`, and the browser's `Origin` includes the
+   non-default port (`:8080`) while `$host` doesn't, so the check failed on
+   every action. A sub-path location block must use
+   `proxy_set_header Host $http_host;`, which preserves the port.
+
+2. **Auth.js's `redirectTo` is `basePath`-blind.** Next's own `redirect()`
+   prepends `basePath` automatically, but `signIn(..., { redirectTo })` and
+   `signOut(..., { redirectTo })` use Auth.js's own resolution, which does
+   not. A bare `/` sent users to the host root — which, on that VM, was a
+   different project entirely. `src/app/login/actions.ts` and
+   `src/app/actions/session.ts` build the target from `process.env.BASE_PATH`
+   for this reason; keep that if either call changes.
+
+   That deployment also needed `AUTH_TRUST_HOST=true`, or Auth.js's separate
+   host-trust check rejects every request with `UntrustedHost`. On Vercel
+   this is still required and is listed in `VERCEL.md`.
