@@ -10,19 +10,30 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Deployment
 
-Production is **Vercel** — `https://railserve.vercel.app`, auto-deployed on
-every push to `main`. The database is MongoDB Atlas (`railserve`; local and
-staging use `railserve_dev`).
+Production is **self-hosted on the Contabo VPS**: `https://bitestation.elvo.in`
+— nginx (Certbot TLS) -> `127.0.0.1:3000` -> Docker `railserve-app`, backed by
+a `railserve-mongo` container on the same box. Migrated off Vercel + Atlas on
+2026-09-15.
 
-`https://bitestation.elvo.in` is **not** production. It is a stale, self-hosted
-copy on the cron VPS (nginx -> Docker), left over from an unfinished migration,
-several commits behind `main` and backed by its own local Mongo rather than
-Atlas. Don't point anything new at it and don't treat what it serves as current
-behaviour — including the `SERVER_URL` in the KOT print-agent docs.
+Deploying is rsync + rebuild, **not** a git push:
 
-Cron is not Vercel Cron — Hobby allows one invocation a day, so an external VPS
-curls `/api/cron/*` on a real schedule.
+```bash
+rsync -az --exclude node_modules --exclude .next --exclude .git \
+      --exclude /mobile --exclude '.env*' ./ root@<vps>:/root/railserve/
+ssh <vps> 'cd /root/railserve && docker compose -f docker-compose.prod.yml up -d --build app'
+```
 
-Read `docs/DEPLOY.md` before answering anything about where this runs or
-changing deploy config. Hosts and keys are in `docs/INFRA.local.md`, which is
-gitignored — this repo is public.
+Code is baked into the image at build time, so a code change needs a
+**rebuild**, not a restart. The build needs `DOCKER_BUILD=1`, which switches
+`next.config.ts` to `output: 'standalone'` — without it there is no
+`.next/standalone` for the Dockerfile to copy and the build fails.
+
+`https://railserve.vercel.app` and MongoDB Atlas are **retired**. They are still
+up but nothing drives them; Atlas is frozen at its 2026-09-14 state. Don't point
+anything at them and don't treat Vercel as a fallback without re-syncing first.
+
+Cron and Gmail push both target `bitestation.elvo.in`. Nightly `mongodump`
+backups run on the box — self-hosted Mongo has no managed backup behind it.
+
+Read `docs/DEPLOY.md` before changing any deploy config. Hosts and keys are in
+`docs/INFRA.local.md`, which is gitignored — this repo is public.

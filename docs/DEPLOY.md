@@ -1,144 +1,148 @@
 # Where RailServe is deployed
 
-**Production is Vercel: `https://railserve.vercel.app`.** A separate VPS runs
-the cron scheduler. A *stale* copy of the app also answers on another domain —
-read the warning below before trusting it.
-
-For Vercel specifics — env vars, Atlas, staging, Gmail push — see `VERCEL.md`.
-This doc is the map of what runs where.
-
-## Production
-
-| Piece | Where | Notes |
-|---|---|---|
-| App | Vercel project `railserve` | Auto-builds and promotes on every push to `main`. `vercel --prod --yes` deploys from local disk if a push isn't possible. |
-| Database | MongoDB Atlas, db `railserve` | `railserve_dev` is local + staging; `MONGODB_URI_TEST` is a third, vitest-only database, truncated every run. |
-| Cron | An external VPS (**not** Vercel Cron) | See below. |
-| Staging | `https://railserve-staging.vercel.app` | Preview scope pinned to the `staging` branch. |
-
-`vercel.json` holds nothing but a `$schema` line, deliberately — there are no
-crons, rewrites, or overrides to declare. Don't add a `crons` array expecting
-it to work; Hobby allows one invocation per day.
-
-## ⚠️ `bitestation.elvo.in` is a stale, self-hosted copy — not production
-
-That domain points at the cron VPS, which also runs a **full self-hosted stack**
-left over from a migration off Vercel that was started and never finished:
+**Production is self-hosted on the Contabo VPS: `https://bitestation.elvo.in`.**
+Migrated off Vercel + MongoDB Atlas on 2026-09-15.
 
 ```
 bitestation.elvo.in
-  -> nginx (Certbot TLS)  ->  127.0.0.1:3000
-  -> docker container `railserve-app`   (built 2026-09-11, up since)
-  -> docker container `railserve-mongo` (mongo:7, its OWN database)
+  -> nginx (Certbot TLS, ports 80/443)
+  -> 127.0.0.1:3000
+  -> docker container `railserve-app`      (Next 16 standalone)
+  -> docker container `railserve-mongo`    (mongo:7, replica set rs0)
 ```
 
-Built from `/root/railserve` on the box — an rsync'd copy of the repo with no
-`.git`. **Its `Dockerfile` and `docker-compose.prod.yml` exist only on that
-box; neither is in this repo**, so the self-hosted setup can't be rebuilt from
-git as it stands.
+Everything lives on one box: the app, the database, the cron scheduler, and
+the backups. Host, key and paths are in **`docs/INFRA.local.md`**, gitignored
+because this repo is public.
 
-Two things follow, and they matter in opposite directions.
+## Deploying a change
 
-**It is stale.** Static assets are dated 2026-09-11 11:26 GMT, and eight commits
-landed after that — the HomeBytes parser, inline order-item editing, per-item
-notes, the Yatribhojan coach-code fix. None are in what that domain serves.
-
-**It is isolated.** `MONGODB_URI` in the container is
-`mongodb://mongo:27017/railserve` — its own Mongo container, *not* Atlas. It
-cannot corrupt production data, and its database holds an unrelated partial
-dataset (9 restaurants, 246 train statuses, 70 unparsed inbox rows).
-
-So the risk isn't data corruption, it's **confusion and credentials**:
-
-- `bitestation.elvo.in` is the `SERVER_URL` documented for the KOT print agent
-  (`agent/README.md`, `agent/print-agent.mjs`, `docs/KOT_PRINTING.md`). An agent
-  pointed there polls a near-empty unrelated database and prints nothing, while
-  looking correctly configured.
-- The container carries **real production secrets** — `GMAIL_REFRESH_TOKEN`,
-  `GMAIL_CLIENT_SECRET`, `TRAIN_API_KEY`, `AUTH_SECRET`, `CRON_TOKEN`,
-  `GMAIL_WEBHOOK_TOKEN` — on a box exposed to the internet on 80/443, running
-  code four days behind `main`. Its 70 unparsed-inbox rows mean it has really
-  reached the live mailbox at some point.
-
-Either finish the migration or tear it down; leaving a credentialled, stale,
-publicly reachable copy running is the worst of the three. If you tear it down,
-repoint `SERVER_URL` in the print-agent docs at `railserve.vercel.app` first.
-
-Re-check rather than trusting this snapshot — a rebuild or teardown changes it:
+Not a git push. Code is baked into the image at build time, so a code change
+is a **rebuild**, not a restart:
 
 ```bash
-curl -sI https://bitestation.elvo.in/_next/static/chunks/<any-chunk>.js | grep -i last-modified
-ssh <box> 'docker ps --format "{{.Names}} {{.Status}}"'
+# from the repo root
+rsync -az -e "ssh -i <key>" \
+  --exclude node_modules --exclude .next --exclude .git --exclude /mobile \
+  --exclude '.env*' --exclude tsconfig.tsbuildinfo --exclude captures \
+  ./ root@<vps>:/root/railserve/
+
+ssh <vps> 'cd /root/railserve && docker compose -f docker-compose.prod.yml up -d --build app'
 ```
+
+Two excludes are load-bearing. `'.env*'` protects `/root/railserve/.env.production`,
+the only copy of the production secrets — overwrite it and the container loses
+its database URI and Gmail credentials on next start. `/mobile` needs the
+leading slash: without it rsync also matches `src/lib/mobile/`.
+
+`npm run build` runs `verify` (lint + typecheck) first, so a type error fails
+the image build rather than shipping.
+
+### The `DOCKER_BUILD` gate
+
+`next.config.ts` sets `output: 'standalone'` only when `DOCKER_BUILD` is set,
+and the Dockerfile sets it. Without that, `next build` emits no
+`.next/standalone` and the Dockerfile's `COPY --from=builder /app/.next/standalone ./`
+fails. This gate lived only on the VM until 2026-09-15 and is now committed —
+don't drop it while "cleaning up" the config.
 
 ## Cron
 
-Vercel Hobby allows **one cron invocation per day**, useless for a two-minute
-tick, so the schedule lives on the VPS:
+Same box, driving the app over its public URL:
 
 ```
 */2 * * * *  -> /api/cron/train-poll     # every 2 minutes
 *   * * * *  -> /api/cron/gmail-sync     # every minute
-17  4 * * *  -> /api/cron/gmail-watch    # daily, only if Gmail push is on
+17  4 * * *  -> /api/cron/gmail-watch    # daily — renews the Gmail watch
+30  3 * * *  -> /root/railserve-backups/backup.sh
 ```
 
-They authenticate with `x-cron-token`, which must match Vercel's `CRON_TOKEN`
-exactly or every tick 401s silently. The runner writes a `status.json` next to
-itself — check that for last-run health rather than SSHing in blind.
+`/root/railserve-cron/run-cron.sh` curls `$TARGET_URL` (in its `.env`, now
+`https://bitestation.elvo.in`) with `x-cron-token`, which must match the
+container's `CRON_TOKEN` or every tick 401s silently. It logs to `cron.log`
+and writes `status.json` — read that for health rather than SSHing in blind.
 
-**Which host the cron targets is the one thing to confirm on the box**, not
-from this doc: `TARGET_URL` in the runner's `.env` decides whether the schedule
-drives Vercel or the stale local copy. It should be
-`https://railserve.vercel.app` — the alias, so it follows every redeploy.
+The daily `gmail-watch` line is **not optional**. A Gmail watch dies after
+exactly 7 days and takes push ingestion with it, raising no error anywhere.
 
-Host, key and paths live in **`docs/INFRA.local.md`**, gitignored on purpose:
-this repo is public and a live root SSH endpoint doesn't belong in it. Ask a
-maintainer if you don't have that file.
+## Backups
 
-If the VPS stops, polling stops **silently** — nothing alerts. The app keeps
-working and reverts to refreshing train status only while someone has a page
-open; the leave-now alert stops firing entirely. `/admin/inbox` eventually
-shows an ingestion staleness banner, which in practice is the first symptom
-anyone notices.
+Self-hosted Mongo has no managed backup behind it — that safety net went away
+with Atlas. `/root/railserve-backups/backup.sh` runs nightly at 03:30 UTC:
+`mongodump --gzip` of the `railserve` database, 14 days of retention, appending
+to `backup.log`. The database is ~2MB, so retention costs nothing.
 
-## Scheduler history
+Restore:
 
-The scheduler has moved once, and stale copies of the old address are the main
-way to waste an afternoon here.
+```bash
+docker cp <archive>.gz railserve-mongo:/tmp/r.gz
+docker exec railserve-mongo mongorestore --uri="mongodb://localhost:27017" \
+  --archive=/tmp/r.gz --gzip --drop
+```
 
-- **Current: a Contabo VPS**, since the Azure subscription expired September 2026.
-- **Previous: an Azure VM** (`azureuser@172.197.160.41`) — gone, expired rather
-  than stopped. It also hosted a path-prefixed copy of the app at
-  `:8080/railserve/` behind nginx, shared with the `uiis` project. That copy
-  was not migrated. Anything describing an app at `/railserve/`, a
-  `railserve-web` / `railserve-worker` pm2 process, or VM-local Mongo and Redis
-  containers is describing that dead machine.
-- A third address, `azureuser@20.205.129.242`, appears in older notes and is
-  equally stale. If a doc hands you an IP, check it against `INFRA.local.md`.
+The same directory holds the pre-migration snapshots: the VM's own stale
+database (`vm-pre-sync-*.gz`) and the final Atlas export (`atlas-*.gz`).
+
+## Gmail push
+
+Pub/Sub subscription `railserve-webhook` (GCP project `bitestation-507214`,
+owned by the `bitestation0001@gmail.com` account) pushes to
+`https://bitestation.elvo.in/api/gmail/webhook?token=<GMAIL_WEBHOOK_TOKEN>`.
+The token in that URL must match the container's env var exactly, or every
+notification 401s and ingestion silently falls back to the one-minute poll.
+
+Repointing it, if the host ever changes:
+
+```bash
+gcloud pubsub subscriptions modify-push-config railserve-webhook \
+  --project=bitestation-507214 --push-endpoint="https://<host>/api/gmail/webhook?token=<token>"
+```
+
+Keep the one-minute poll running alongside push — they are idempotent on
+`gmailMessageId`, and the poll is what catches a dropped notification.
+
+## Retired: Vercel and Atlas
+
+Both are still up and reachable, and neither is production any more.
+
+- `railserve.vercel.app` still builds on every push to `main`, but nothing
+  drives its cron endpoints and Gmail push no longer reaches it.
+- The Atlas `railserve` database is **frozen** at its 2026-09-14 state (547
+  orders, `historyId` 86144). The live data has since diverged.
+
+So Vercel is *not* a working fallback. Falling back means re-syncing the VM's
+database into Atlas first and repointing cron and Pub/Sub back — otherwise it
+silently serves stale orders. `docs/VERCEL.md` documents that setup and is now
+historical.
+
+## Single points of failure
+
+Worth naming, because everything is on one box now:
+
+- One VPS, no replication. If it goes, the app and database go together — the
+  nightly dump is the only recovery path, and it lives on the same disk.
+  Copying backups off-box is the obvious next improvement.
+- If the VPS stops, cron stops **silently**. Train status then only refreshes
+  while someone has a page open, the leave-now alert stops firing, and order
+  ingestion halts. `/admin/inbox` shows a staleness banner eventually, which
+  in practice is the first thing anyone notices.
 
 ## Legacy: the Azure sub-path deployment
 
-Kept only because these two bugs cost real time and would recur immediately if
-a sub-path deployment were rebuilt anywhere. **Neither applies to Vercel.**
-`docker-compose.yml` plus `README.md` remain the supported way to run the app
-on a plain host.
-
-It worked by setting Next's `basePath` to `/railserve` at build time via
-`BASE_PATH` (`next.config.ts` gates on it; unset everywhere else, and
-`VERCEL.md` says in bold never to set it on Vercel — it would move the whole
-app under a prefix nothing links to).
+The Azure VM (`azureuser@172.197.160.41`) expired in September 2026 and also
+hosted a path-prefixed copy at `:8080/railserve/` behind nginx, shared with the
+`uiis` project. Not migrated, not coming back. Two bugs from it are worth
+keeping, because both would recur in any sub-path deployment:
 
 1. **nginx's `$host` drops the port.** Next's Server Actions CSRF check
    compares `Host` against `Origin`; the browser's `Origin` includes the
-   non-default port (`:8080`) and `$host` doesn't, so every action failed. A
-   sub-path location block needs `proxy_set_header Host $http_host;`.
+   non-default port and `$host` doesn't, so every action failed. Use
+   `proxy_set_header Host $http_host;`.
 
 2. **Auth.js's `redirectTo` is `basePath`-blind.** Next's own `redirect()`
-   prepends `basePath`; `signIn(..., { redirectTo })` and `signOut(...)` use
-   Auth.js's own resolution, which does not. A bare `/` sent users to the host
-   root — a different project entirely on that VM. `src/app/login/actions.ts`
-   and `src/app/actions/session.ts` build the target from `process.env.BASE_PATH`
-   for this reason; keep that if either call changes.
+   prepends `basePath`; `signIn`/`signOut` use Auth.js's own resolution, which
+   does not. `src/app/login/actions.ts` and `src/app/actions/session.ts` build
+   the target from `process.env.BASE_PATH` for this reason.
 
-   That deployment also needed `AUTH_TRUST_HOST=true` or Auth.js rejects every
-   request with `UntrustedHost`. Still required on Vercel — see `VERCEL.md`.
+`BASE_PATH` stays unset on the current deployment — the app owns its own
+domain now.
