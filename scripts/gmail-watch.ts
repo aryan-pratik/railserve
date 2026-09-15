@@ -52,7 +52,7 @@ OAuth client:
      Gmail cannot publish to the topic without this, and users.watch() fails
      with a permission error that names the topic rather than the grant.
   4. Create a PUSH subscription on the topic with endpoint:
-       https://railserve.vercel.app/api/gmail/webhook?token=<GMAIL_WEBHOOK_TOKEN>
+       https://bitestation.elvo.in/api/gmail/webhook?token=<GMAIL_WEBHOOK_TOKEN>
      Set its acknowledgement deadline to 60s — the webhook runs a full
      history sync before answering, and a 10s default will retry underneath it.
   5. Set in .env.local and in Vercel:

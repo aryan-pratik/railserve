@@ -19,7 +19,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://railserve.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://bitestation.elvo.in"
       }
     },
     "production": {
@@ -28,7 +28,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://railserve.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://bitestation.elvo.in"
       }
     }
   },
