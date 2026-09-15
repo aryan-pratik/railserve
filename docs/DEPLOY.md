@@ -214,18 +214,40 @@ Keep the one-minute poll running alongside push — they are idempotent on
 
 ## Retired: Vercel and Atlas
 
-Both are still up and reachable, and neither is production any more.
+**The Vercel project was deleted on 2026-09-15.** `railserve.vercel.app` and
+`railserve-staging.vercel.app` both 404 now. There is no Vercel fallback, and
+`vercel` commands in this repo will not work — the project link under `.vercel/`
+was removed with it.
 
-- `railserve.vercel.app` still builds on every push to `main`, but nothing
-  drives its cron endpoints and Gmail push no longer reaches it.
-- The Atlas `railserve` database is **frozen** at its 2026-09-14 state (547
-  orders, `historyId` 86144). The live data has since diverged.
+Three consequences worth knowing:
 
-So Vercel is *not* a working fallback. Falling back means re-syncing the VM's
-database into Atlas first and repointing cron and Pub/Sub back — otherwise it
-silently serves stale orders. The Vercel/Atlas runbook that used to live in
-`docs/VERCEL.md` was folded into this file and deleted on 2026-09-15; recover it
-from git history if that setup ever needs reviving.
+- Its env vars are gone with it. Five existed there that the VM does not have:
+  `MONGODB_URI_TEST` and `SEED_PASSWORD` (test/seed only, irrelevant in
+  production) and `DISPATCH_BUFFER_MINUTES`, `KOT_DELAY_THRESHOLD_MINUTES`,
+  `INGEST_STALE_ALERT_HOURS`. All three of the latter were marked Sensitive, so
+  their values were unreadable even before deletion. **Production now runs on
+  the code defaults for them** (5, 45 and 6 — see `src/lib/env.ts`). If those
+  were ever deliberately tuned, set them explicitly in `.env.production`.
+- Already-installed rider apps built before 2026-09-15 point at
+  `railserve.vercel.app` and now have no backend. `mobile/eas.json` and
+  `mobile/src/config.ts` were repointed at `bitestation.elvo.in`, but
+  `EXPO_PUBLIC_API_URL` is inlined at build time — **riders need a new EAS
+  build**, not just an app restart.
+- The `staging` EAS profile still points at `railserve-staging.vercel.app`,
+  which is also gone. Point it at a real host before using that profile.
+
+**MongoDB Atlas is disconnected but intact.** Nothing in production connects to
+it. Its three databases are left untouched on purpose:
+
+| Database | State |
+|---|---|
+| `railserve` | Frozen at 2026-09-15, 548 orders — the pre-migration production copy, kept as a rollback option |
+| `railserve_dev` | **Still live** — `.env.local` points here for local development |
+| `railserve_test` | **Still live** — the vitest suite truncates this every run |
+
+So the cluster cannot be deleted without first moving local dev and the test
+suite elsewhere. A final export sits on the VPS at
+`/root/railserve-backups/atlas-FINAL-*.gz`.
 
 ## First deploy on a fresh box
 
