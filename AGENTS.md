@@ -28,9 +28,11 @@ Code is baked into the image at build time, so a code change needs a
 `next.config.ts` to `output: 'standalone'` — without it there is no
 `.next/standalone` for the Dockerfile to copy and the build fails.
 
-`https://railserve.vercel.app` and MongoDB Atlas are **retired**. They are still
-up but nothing drives them; Atlas is frozen at its 2026-09-14 state. Don't point
-anything at them and don't treat Vercel as a fallback without re-syncing first.
+The **Vercel project was deleted on 2026-09-15** — `railserve.vercel.app` 404s
+and there is no Vercel fallback. MongoDB Atlas is disconnected but intact:
+`railserve` is a frozen pre-migration copy, while `railserve_dev` and
+`railserve_test` are **still used** by local dev and the test suite, so the
+cluster stays.
 
 Cron and Gmail push both target `bitestation.elvo.in`. Nightly `mongodump`
 backups run on the box — self-hosted Mongo has no managed backup behind it.
