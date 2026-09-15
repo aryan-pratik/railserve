@@ -1,5 +1,13 @@
 # Deploying to Vercel
 
+> **Historical, as of 2026-09-15.** RailServe no longer runs on Vercel or
+> MongoDB Atlas — production is self-hosted on the Contabo VPS at
+> `https://bitestation.elvo.in`. See `DEPLOY.md`. The Vercel project still
+> builds on every push to `main`, but nothing drives it and its Atlas database
+> is frozen at 2026-09-14, so it is **not** a working fallback. This document
+> is kept for the Atlas, staging and Gmail-push detail, much of which still
+> applies to the self-hosted setup.
+
 ## Environment variables
 
 Set these in **Project → Settings → Environment Variables**. Everything except
