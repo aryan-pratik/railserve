@@ -12,7 +12,7 @@ import { env } from './env'
 export function cronAuthFailure(request: Request): string | null {
   const expected = env.CRON_TOKEN
   // Blank leaves the endpoint open, which is fine locally and is not fine on
-  // a public host — see docs/VERCEL.md.
+  // a public host — see docs/DEPLOY.md.
   if (!expected) return null
 
   const url = new URL(request.url)
