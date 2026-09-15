@@ -38,6 +38,39 @@ leading slash: without it rsync also matches `src/lib/mobile/`.
 `npm run build` runs `verify` (lint + typecheck) first, so a type error fails
 the image build rather than shipping.
 
+### Prove the deploy landed
+
+```bash
+ssh <vps> 'docker ps --format "{{.Names}} {{.Status}}"
+           docker inspect railserve-app --format "image={{.Image}} started={{.State.StartedAt}}"'
+curl -sI https://bitestation.elvo.in/login | head -1
+```
+
+The container should read `Up` for *seconds* with a `StartedAt` from just now. If
+it says hours or days, the deploy did not happen — check the four traps below.
+
+### Four ways a deploy silently does nothing
+
+1. **A failed build leaves the old container serving.** `up -d --build` exits
+   non-zero when `verify` fails inside the image, and the previous container
+   keeps running happily. Nothing looks broken; the change just isn't there.
+   Check the exit status, not the website.
+
+2. **`docker restart railserve-app` deploys nothing.** Code is baked into the
+   image, so a restart reuses the same image *and* the same env. It is never the
+   right command for a code change.
+
+3. **A new env var must be added on the box by hand.** `src/lib/env.ts` validates
+   with zod at startup, so shipping code that requires a new variable without
+   adding it to `/root/railserve/.env.production` crash-loops the container on
+   next recreate. Add it there first, then
+   `docker compose -f docker-compose.prod.yml up -d --force-recreate app` —
+   plain `up -d` may not notice an `env_file` edit.
+
+4. **Dropping the `'.env*'` exclude** overwrites production secrets with a dev
+   file; **dropping the slash on `/mobile`** also matches `src/lib/mobile/` and
+   ships a build missing those files.
+
 ### The `DOCKER_BUILD` gate
 
 `next.config.ts` sets `output: 'standalone'` only when `DOCKER_BUILD` is set,
@@ -89,7 +122,9 @@ Same box, driving the app over its public URL:
 `/root/railserve-cron/run-cron.sh` curls `$TARGET_URL` (in its `.env`, now
 `https://bitestation.elvo.in`) with `x-cron-token`, which must match the
 container's `CRON_TOKEN` or every tick 401s silently. It logs to `cron.log`
-and writes `status.json` — read that for health rather than SSHing in blind.
+and writes `status.json`. Read **`cron.log`**, not `status.json`, for health: the
+latter's `gmail-watch` entry loses updates to a race with the every-minute jobs
+and can read days stale while the job is running fine.
 
 The daily `gmail-watch` line is **not optional**. A Gmail watch dies after
 exactly 7 days and takes push ingestion with it, raising no error anywhere.
