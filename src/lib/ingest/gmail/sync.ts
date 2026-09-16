@@ -211,6 +211,24 @@ export async function checkIngestStaleness(now = new Date()): Promise<{
     : null
 
   const messages: string[] = []
+
+  // Checked first, and without the business-hours guard the other two carry,
+  // because a rejected credential is the one failure that never recovers on
+  // its own: /api/cron/gmail-sync answers 200 with the error tucked inside
+  // `errors` so the scheduler does not retry what it cannot fix, which leaves
+  // a dead token looking exactly like a quiet mailbox. Waiting
+  // INGEST_STALE_ALERT_HOURS to say so is six hours of orders nobody cooks —
+  // the outage of 2026-09-16 ran for 1h54m and was noticed only because a
+  // human counted four orders on the board.
+  if (state?.lastError) {
+    messages.push(
+      /invalid_grant|invalid_client|unauthorized_client/i.test(state.lastError)
+        ? 'Gmail rejected the credentials — GMAIL_REFRESH_TOKEN must be reissued ' +
+          '(`npm run gmail:setup`, then update .env.production and restart)'
+        : `last Gmail sync reported: ${state.lastError}`,
+    )
+  }
+
   if (watchExpiresInHours !== null && watchExpiresInHours < 24) {
     messages.push(`Gmail watch expires in ${watchExpiresInHours.toFixed(1)}h`)
   }
