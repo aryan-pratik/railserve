@@ -8,7 +8,8 @@ import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatDateRange, formatTimeIST } from '@/lib/format'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { AutoRefresh } from '@/components/AutoRefresh'
-import { ButtonLink, EmptyState, PageHeader } from '@/components/ui'
+import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
+import { ButtonLink, EmptyState, Notice, PageHeader } from '@/components/ui'
 import { IconPlus } from '@/components/Icons'
 import { OrdersTable } from '@/components/OrdersTable'
 import { TrainGroups, type TrainGroup } from './TrainGroups'
@@ -70,11 +71,16 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
-  const [outlets, dayOrders, todayCount, upcomingCount] = await Promise.all([
+  const [outlets, dayOrders, todayCount, upcomingCount, ingest] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     countOrders(ctx, { serviceDate: today, status: { $ne: 'CANCELLED' } }),
     countOrders(ctx, { serviceDate: { $gt: today }, status: { $ne: 'CANCELLED' } }),
+    // Broken ingestion is indistinguishable from a quiet morning on this
+    // board — the orders simply are not there. /admin/inbox says so, but
+    // nobody working a lunch rush navigates to the inbox to ask why it is
+    // calm. It has to be said here, where the counting happens.
+    checkIngestStaleness(),
   ])
 
   const visible = tab.statuses
@@ -170,6 +176,20 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           </>
         }
       />
+
+      {/* Deliberately not ingest.message: that text names env vars and npm
+          commands, which is right on the inbox page an admin opens to fix it
+          and noise to whoever is working the counter. Here the useful content
+          is only "what you are looking at is incomplete, and it is not your
+          fault" — the diagnosis is one click away. */}
+      {ingest.stale ? (
+        <Notice tone="danger">
+          Email ingestion has stopped — orders are likely missing from this board.{' '}
+          <Link href="/admin/inbox" className="underline underline-offset-2">
+            See why
+          </Link>
+        </Notice>
+      ) : null}
 
       <OrdersToolbar
         tabs={TABS.map((t) => ({
