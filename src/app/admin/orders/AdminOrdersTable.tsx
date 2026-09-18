@@ -1,10 +1,10 @@
 'use client'
 
-import { useActionState, useEffect, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST, paiseToRupees } from '@/lib/format'
 import {
-  Button, CoachChip, Dash, EditPencil, EmptyState, IconButton, InlineEditButtons,
+  Button, CoachChip, Dash, EmptyState, IconButton,
   StatusBadge, TypeBadge, editInputClass, editTriggerClass, statusLabel, thClass,
 } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -155,9 +155,8 @@ function AdminOrderRow({
         {editing === 'amount' ? (
           <AmountEditor orderId={order.id} initial={order.amountPaise} onDone={() => setEditing(null)} />
         ) : (
-          <button type="button" onClick={() => setEditing('amount')} className={`${editTriggerClass} ml-auto`} title="Edit amount">
+          <button type="button" onClick={() => setEditing('amount')} className={`${editTriggerClass} ml-auto`} title="Click to edit">
             {formatRupees(order.amountPaise)}
-            <EditPencil />
           </button>
         )}
       </td>
@@ -165,9 +164,8 @@ function AdminOrderRow({
         {editing === 'status' ? (
           <StatusEditor orderId={order.id} current={order.status} options={statusOptions} onDone={() => setEditing(null)} />
         ) : (
-          <button type="button" onClick={() => setEditing('status')} className={editTriggerClass} title="Edit status">
+          <button type="button" onClick={() => setEditing('status')} className={editTriggerClass} title="Click to edit">
             <StatusBadge status={order.status} />
-            <EditPencil />
           </button>
         )}
       </td>
@@ -234,6 +232,7 @@ function AmountEditor({
   onDone: () => void
 }) {
   const [state, formAction, pending] = useActionState(updateOrderAmountAction, INITIAL_STATE)
+  const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
     if (state.ok) onDone()
@@ -241,20 +240,26 @@ function AmountEditor({
   }, [state.ok])
 
   return (
-    <form action={formAction} className="flex flex-col items-end gap-1">
+    <form ref={formRef} action={formAction} className="flex flex-col items-end gap-1">
       <input type="hidden" name="orderId" value={orderId} />
-      <div className="flex items-center gap-1">
-        <input
-          name="amountRupees"
-          defaultValue={paiseToRupees(initial)}
-          inputMode="decimal"
-          autoFocus
-          className={`${editInputClass} w-20 text-right`}
-          aria-label="Amount in rupees"
-          onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
-        />
-        <InlineEditButtons pending={pending} onCancel={onDone} />
-      </div>
+      <input
+        name="amountRupees"
+        defaultValue={paiseToRupees(initial)}
+        inputMode="decimal"
+        autoFocus
+        disabled={pending}
+        className={`${editInputClass} w-20 text-right`}
+        aria-label="Amount in rupees"
+        // Blur or Enter commits, spreadsheet-style — no separate save step.
+        onBlur={() => formRef.current?.requestSubmit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onDone()
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            formRef.current?.requestSubmit()
+          }
+        }}
+      />
       {state.error ? <span role="alert" className="text-[11px] font-medium text-red-600">{state.error}</span> : null}
     </form>
   )
@@ -277,6 +282,7 @@ function StatusEditor({
   const [choice, setChoice] = useState(current)
   const [custom, setCustom] = useState('')
   const isCustom = choice === ADD_NEW
+  const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
     if (state.ok) onDone()
@@ -284,31 +290,44 @@ function StatusEditor({
   }, [state.ok])
 
   return (
-    <form action={formAction} className="flex flex-col gap-1">
+    <form ref={formRef} action={formAction} className="flex flex-col gap-1">
       <input type="hidden" name="orderId" value={orderId} />
       <input type="hidden" name="to" value={isCustom ? custom : choice} />
-      <div className="flex items-center gap-1">
-        <select
-          value={choice}
-          onChange={(e) => setChoice(e.target.value)}
-          className={editInputClass}
-          aria-label="Status"
-          autoFocus
-          onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
-        >
-          {options.map((s) => (
-            <option key={s} value={s}>{statusLabel(s)}</option>
-          ))}
-          <option value={ADD_NEW}>Add a new status…</option>
-        </select>
-        <InlineEditButtons pending={pending} onCancel={onDone} disabled={isCustom && !custom.trim()} />
-      </div>
+      <select
+        value={choice}
+        onChange={(e) => {
+          const next = e.target.value
+          setChoice(next)
+          // Picking a value commits it immediately, spreadsheet-style — no separate save step.
+          if (next !== ADD_NEW) requestAnimationFrame(() => formRef.current?.requestSubmit())
+        }}
+        onBlur={() => { if (!isCustom) onDone() }}
+        disabled={pending}
+        className={`${editInputClass} w-full`}
+        aria-label="Status"
+        autoFocus
+        onKeyDown={(e) => { if (e.key === 'Escape') onDone() }}
+      >
+        {options.map((s) => (
+          <option key={s} value={s}>{statusLabel(s)}</option>
+        ))}
+        <option value={ADD_NEW}>Add a new status…</option>
+      </select>
       {isCustom ? (
         <input
           value={custom}
           onChange={(e) => setCustom(e.target.value)}
-          placeholder="e.g. Refund pending"
+          onBlur={() => { if (!custom.trim()) onDone() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') onDone()
+            if (e.key === 'Enter' && custom.trim()) {
+              e.preventDefault()
+              formRef.current?.requestSubmit()
+            }
+          }}
+          placeholder="e.g. Refund pending — press Enter"
           autoFocus
+          disabled={pending}
           className={editInputClass}
           aria-label="New status name"
         />
