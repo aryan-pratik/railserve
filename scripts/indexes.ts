@@ -8,7 +8,17 @@
 import type { CreateIndexesOptions, IndexDescription, IndexSpecification } from 'mongodb'
 import mongoose from 'mongoose'
 import { connectDb, disconnectDb } from '../src/lib/db'
-import { Order, Restaurant, User, Counter, TrainStatus, UnparsedInbox, Payment } from '../src/lib/models'
+import {
+  Order,
+  Restaurant,
+  User,
+  Counter,
+  TrainStatus,
+  UnparsedInbox,
+  Payment,
+  PrintJob,
+  Station,
+} from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
 
@@ -56,6 +66,29 @@ const RESTAURANT_INDEXES: Spec[] = [
   { name: 'stationCode', index: { key: { stationCode: 1 } }, why: 'outlets at a station' },
   { name: 'name', index: { key: { name: 1 } }, why: 'outlet lookup by name' },
   { name: 'aliases', index: { key: { aliases: 1 } }, why: 'email outlet-name alias matching (Phase 2)' },
+]
+
+const STATION_INDEXES: Spec[] = [
+  {
+    name: 'printAgentToken_unique',
+    // Partial, not sparse — same reasoning as the order and payment indexes
+    // above: a station with no agent yet stores an explicit null, and a
+    // sparse unique index still collides on repeated nulls.
+    index: {
+      key: { printAgentToken: 1 },
+      unique: true,
+      partialFilterExpression: { printAgentToken: { $type: 'string' } },
+    },
+    why: 'the print agent authenticates on this on every poll, forever',
+  },
+]
+
+const PRINT_JOB_INDEXES: Spec[] = [
+  {
+    name: 'agent_claim',
+    index: { key: { stationCode: 1, status: 1, createdAt: 1 } },
+    why: "the claim query, run every few seconds forever: this station's oldest pending job. Unindexed before — a collection scan across documents holding PNGs",
+  },
 ]
 
 const TRAIN_STATUS_INDEXES: Spec[] = [
@@ -154,6 +187,8 @@ async function main() {
   await ensure('trainstatuses', TrainStatus, TRAIN_STATUS_INDEXES)
   await ensure('unparsedinboxes', UnparsedInbox, UNPARSED_INBOX_INDEXES)
   await ensure('payments', Payment, PAYMENT_INDEXES)
+  await ensure('printjobs', PrintJob, PRINT_JOB_INDEXES)
+  await ensure('stations', Station, STATION_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })

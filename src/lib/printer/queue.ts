@@ -3,6 +3,8 @@ import { connectDb } from '@/lib/db'
 import { PrintJob } from '@/lib/models'
 import { env } from '@/lib/env'
 import { renderKotScreenshots } from '@/lib/printer/screenshot'
+import { parseRunKey } from '@/lib/runs'
+import { normaliseStationCode } from '@/lib/stations'
 import type mongoose from 'mongoose'
 
 /**
@@ -28,16 +30,19 @@ export async function getAppOrigin(): Promise<string> {
 
 export async function enqueueOrderKotPrint(params: {
   appOrigin: string
-  restaurantId: mongoose.Types.ObjectId | string
+  stationCode: string
+  /** Provenance only — a job is routed by station. Null when outlet matching failed. */
+  restaurantId?: mongoose.Types.ObjectId | string | null
   orderId: string
 }) {
-  const { appOrigin, restaurantId, orderId } = params
+  const { appOrigin, stationCode, restaurantId = null, orderId } = params
 
   const pagePath = `/internal/print/order/${orderId}`
   const images = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
 
   await connectDb()
   await PrintJob.create({
+    stationCode: normaliseStationCode(stationCode),
     restaurantId,
     refType: 'order',
     refId: orderId,
@@ -47,44 +52,48 @@ export async function enqueueOrderKotPrint(params: {
 }
 
 /**
- * One page render, one ticket per order, split into one PrintJob per
- * outlet — a batch can span kitchens (different outlets on one train), and
- * each outlet's agent must only ever see its own tickets.
+ * One page render, one PrintJob. A run is (train, date, station) by
+ * construction — it cannot span stations, and every brand trading at a
+ * station shares one printer, so there is nothing left to fan out to.
+ *
+ * `orderIds` is the set the *caller* is entitled to print, and the render
+ * page filters to exactly it. The internal page runs under an ADMIN-shaped
+ * context that bypasses outlet scoping, so without that filter a manager
+ * holding one brand would get every brand's tickets.
  */
 export async function enqueueRunKotPrint(params: {
   appOrigin: string
   runKey: string
-  orders: { restaurantId?: mongoose.Types.ObjectId | string | null }[]
+  orderIds: string[]
 }) {
-  const { appOrigin, runKey, orders } = params
+  const { appOrigin, runKey, orderIds } = params
 
-  const pagePath = `/internal/print/run/${encodeURIComponent(runKey)}`
-  const images = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
+  const identity = parseRunKey(runKey)
+  if (!identity) throw new Error(`Malformed run key: ${runKey}`)
+  if (orderIds.length === 0) throw new Error(`Run ${runKey} has no printable orders`)
 
-  if (images.length !== orders.length) {
+  const url = new URL(`/internal/print/run/${encodeURIComponent(runKey)}`, appOrigin)
+  url.searchParams.set('orders', orderIds.join(','))
+  const images = await renderKotScreenshots(url.toString())
+
+  // Now a genuine invariant rather than a coincidence: the page was told
+  // which orders to render, so a mismatch means the two disagree.
+  if (images.length !== orderIds.length) {
     throw new Error(
-      `Rendered ${images.length} ticket(s) but the run has ${orders.length} order(s)`,
+      `Rendered ${images.length} ticket(s) but asked for ${orderIds.length} order(s)`,
     )
   }
 
-  const imagesByOutlet = new Map<string, Buffer[]>()
-  orders.forEach((order, i) => {
-    const key = String(order.restaurantId)
-    const bucket = imagesByOutlet.get(key) ?? []
-    bucket.push(images[i])
-    imagesByOutlet.set(key, bucket)
-  })
-
   await connectDb()
-  await PrintJob.insertMany(
-    [...imagesByOutlet.entries()].map(([restaurantId, outletImages]) => ({
-      restaurantId,
-      refType: 'run' as const,
-      refId: runKey,
-      images: outletImages,
-      status: 'pending' as const,
-    })),
-  )
+  await PrintJob.create({
+    stationCode: normaliseStationCode(identity.stationCode),
+    // A run spans brands; the run key is the provenance.
+    restaurantId: null,
+    refType: 'run',
+    refId: runKey,
+    images,
+    status: 'pending',
+  })
 }
 
 export class PrintAgentNotConfiguredError extends Error {

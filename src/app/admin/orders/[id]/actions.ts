@@ -6,6 +6,11 @@ import { requireRole } from '@/lib/session'
 import { assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
 import { addOrderItems, deleteOrder, findById, updateOrderFields, updateOrderItem } from '@/lib/repo/orderRepo'
 import { forceRefreshTrainStatus } from '@/lib/train/service'
+import {
+  assertPrintAgentConfigured,
+  enqueueOrderKotPrint,
+  getAppOrigin,
+} from '@/lib/printer/queue'
 import type { OrderStatus } from '@/lib/orderStatus'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
 
@@ -54,6 +59,21 @@ export async function assignAgentsAction(
   return { ok: agentIds.length ? 'Agents assigned.' : 'Agents cleared.' }
 }
 
+/**
+ * An admin moving an order along the pipeline — including, when the kitchen
+ * cannot, printing its KOT.
+ *
+ * KOT_PRINTED is the one edge in the machine that carries a side effect: the
+ * store board's generateKot() queues a print alongside the transition. This
+ * generic path had no equivalent, so "Send KOT to kitchen" marked an order
+ * printed and sent nothing — leaving no PrintJob row to notice it by, and
+ * hiding the kitchen's own print button (it only shows while an order is
+ * still ACCEPTED). Printing here is the whole point of the button's label.
+ *
+ * No delay guard, unlike the store's path: an admin reaching for this is
+ * already handling an exception — usually a manager on the phone saying the
+ * ticket never came out — and does not need to be asked whether they meant it.
+ */
 export async function adminTransitionAction(
   _prev: ActionState,
   formData: FormData,
@@ -61,6 +81,10 @@ export async function adminTransitionAction(
   const ctx = await requireRole('ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
   const to = String(formData.get('to') ?? '') as OrderStatus
+
+  // Read before the write: the print needs the outlet, and the transition
+  // itself does not hand it back in a form this needs.
+  const order = to === 'KOT_PRINTED' ? await findById(ctx, orderId) : null
 
   try {
     await transitionOrder({ ctx, orderId, to, meta: { via: 'admin-detail' } })
@@ -70,7 +94,44 @@ export async function adminTransitionAction(
 
   revalidatePath(`/admin/orders/${orderId}`)
   revalidatePath('/admin/orders')
+  revalidatePath('/admin')
   revalidatePath('/store')
+
+  if (to === 'KOT_PRINTED') {
+    // `ok` is set on every return below, including the failures: the status
+    // change has already committed, and the slide-over refreshes itself off
+    // `ok` alone. Dropping it would leave the panel showing the old status
+    // next to an error about the print. FormNote renders `error` in
+    // preference to `ok`, so what the admin reads is still the problem.
+    if (!order) {
+      return { ok: 'Moved to KOT printed.', error: 'Moved to KOT printed, but the order vanished.' }
+    }
+    try {
+      assertPrintAgentConfigured()
+      // Routed by station, and every order has one — an order whose outlet
+      // matching failed used to be unprintable and now is not.
+      await enqueueOrderKotPrint({
+        appOrigin: await getAppOrigin(),
+        stationCode: order.stationCode,
+        restaurantId: order.restaurantId,
+        orderId,
+      })
+    } catch (err) {
+      // Reported, not swallowed. The store board's equivalent logs and moves
+      // on because a printer fault must not stall a kitchen mid-service; an
+      // admin pressing this is already chasing a print that did not happen,
+      // and a second silent failure is the worst possible answer.
+      console.error(`[adminTransitionAction] KOT print enqueue failed for order ${orderId}:`, err)
+      return {
+        ok: 'Moved to KOT printed.',
+        error: `Moved to KOT printed, but the print could not be queued: ${
+          err instanceof Error ? err.message : 'unknown error'
+        }`,
+      }
+    }
+    return { ok: 'KOT sent to the kitchen printer.' }
+  }
+
   return { ok: `Order moved to ${to.replace('_', ' ')}.` }
 }
 

@@ -20,7 +20,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/runs/[run
     await enqueueRunKotPrint({
       appOrigin: await getAppOrigin(),
       runKey,
-      orders: run.orders,
+      orderIds: run.orders.map((o) => String(o._id)),
     })
   } catch (err) {
     if (err instanceof PrintAgentNotConfiguredError) {

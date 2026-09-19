@@ -69,7 +69,13 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
   return (
     <div className="kot w-[80mm] max-w-full bg-white p-3 font-mono text-[12px] leading-tight text-black shadow-sm print:shadow-none">
       <div className="text-center">
-        <div className="text-[14px] font-bold uppercase">{outlet?.name ?? 'OUTLET'}</div>
+        {/* Which brand's ticket this is. Several brands share one printer at
+            a station, so this is the routing label the kitchen reads first —
+            and the fallback is reachable now that an order with no matched
+            outlet still prints. */}
+        <div className="text-[14px] font-bold uppercase">
+          {outlet?.name ?? 'UNMATCHED — CHECK APP'}
+        </div>
         <div className="uppercase">
           {outlet?.stationName ?? ''} ({order.stationCode})
         </div>

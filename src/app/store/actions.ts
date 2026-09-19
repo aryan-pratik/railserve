@@ -135,17 +135,16 @@ export async function generateKot(formData: FormData) {
     // Best-effort: the status change is what matters and must not be undone
     // by a printer problem. If this fails, the KOT page's own Print button
     // (the same enqueue, on demand) is the fallback.
-    if (order.restaurantId) {
-      try {
-        assertPrintAgentConfigured()
-        await enqueueOrderKotPrint({
-          appOrigin: await getAppOrigin(),
-          restaurantId: order.restaurantId,
-          orderId,
-        })
-      } catch (err) {
-        console.error(`[generateKot] auto-print enqueue failed for order ${orderId}:`, err)
-      }
+    try {
+      assertPrintAgentConfigured()
+      await enqueueOrderKotPrint({
+        appOrigin: await getAppOrigin(),
+        stationCode: order.stationCode,
+        restaurantId: order.restaurantId,
+        orderId,
+      })
+    } catch (err) {
+      console.error(`[generateKot] auto-print enqueue failed for order ${orderId}:`, err)
     }
   }
 
@@ -219,7 +218,7 @@ export async function generateRunKot(formData: FormData) {
       await enqueueRunKotPrint({
         appOrigin: await getAppOrigin(),
         runKey,
-        orders: before.orders,
+        orderIds: before.orders.map((o) => String(o._id)),
       })
     } catch (err) {
       console.error(`[generateRunKot] auto-print enqueue failed for run ${runKey}:`, err)

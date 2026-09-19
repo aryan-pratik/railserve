@@ -5,6 +5,17 @@
 - App server (Contabo VM) is in a data center — cannot reach a private LAN IP directly.
 - Fix: a small **print agent** runs on a device at the outlet, bridges cloud → local printer.
 
+## One station, one printer, one agent
+- A `Restaurant` is an **aggregator brand**, not a kitchen. YATRI BHOJAN and
+  YATRI RESTRO at Kanpur Central are two sets of paperwork and one stove.
+- So the printer belongs to the **station**: `Station.printAgentToken`, one
+  agent, and every brand's tickets come off it. Each ticket prints its brand
+  name at the top so the kitchen can tell them apart.
+- Orders for other stations never reach that printer — a token only ever
+  claims jobs whose `stationCode` matches.
+- Adding a brand at a station that already prints needs **no printer setup at
+  all**: create the `Restaurant`, and its orders join the existing queue.
+
 ## Architecture
 ```
 Manager clicks "Generate KOT" (or Print)
@@ -27,12 +38,14 @@ Manager clicks "Generate KOT" (or Print)
 7. Hold printer's feed button ~3s → prints self-test page → note `STA IP` (= `PRINTER_HOST`) and MAC.
 8. On the outlet's router: set a **DHCP reservation** for that MAC so the IP never changes.
 
-## One-time app setup (per outlet)
+## One-time app setup (per station)
 ```
-npm run print-agent:token -- --restaurant <restaurantId>
+npm run print-agent:token -- --station CNB
 # --rotate to replace an existing token
 ```
-- Generates/reads `Restaurant.printAgentToken`. Copy the printed `AGENT_TOKEN`.
+- Generates/reads `Station.printAgentToken`. Copy the printed `AGENT_TOKEN`.
+- Rotating stops that kitchen printing until somebody edits `agent/.env` on the
+  device there and restarts the agent.
 
 ## One-time agent setup (per outlet, on one always-on device there)
 ```
@@ -84,7 +97,8 @@ PRINT_RENDER_TOKEN="<random secret>"   # generate: node -e "console.log(require(
 | `agent/README.md` | Agent-specific setup notes. |
 | `scripts/set-print-agent-token.ts` | Mint/rotate an outlet's agent token. |
 | `src/lib/models/PrintJob.ts` | The print queue (Mongo). |
-| `src/lib/models/Restaurant.ts` | `printAgentToken` field lives here. |
+| `src/lib/models/Station.ts` | The station: `printAgentToken`, `agentLastSeenAt`. One per printer. |
+| `scripts/migrate-station-printing.ts` | Moves the token from outlet to station. Idempotent; adopts a live token so the kitchen needs no reconfiguration. |
 | `src/lib/printer/screenshot.ts` | Headless-Chrome screenshot of the real ticket → PNG, resized to the printer's `576` dot width. |
 | `src/lib/printer/queue.ts` | Enqueue helpers (`enqueueOrderKotPrint`, `enqueueRunKotPrint`). |
 | `src/app/internal/print/order/[id]`, `.../run/[runKey]` | Token-gated, session-free render-only pages the screenshot step hits. |
@@ -99,12 +113,16 @@ PRINT_RENDER_TOKEN="<random secret>"   # generate: node -e "console.log(require(
 - **`printJobId not found or not claimed by you`** on ack: another agent instance (wrong token, or a duplicate process) already claimed it first — check for duplicate agent processes.
 - **Print looks different from the screen**: shouldn't happen — it's a screenshot of the real `KotTicket` component, not a hand-typed copy. If it does, check `PRINTER_DOT_WIDTH`/`DEVICE_SCALE_FACTOR` in `screenshot.ts` still matches the printer's actual dot width (from its self-test page).
 
-## Adding a new outlet later
-1. Create the `Restaurant` record as normal — no code changes.
+## Adding a new brand at a station that already prints
+1. Create the `Restaurant` record as normal.
+2. Nothing else. Its orders join that station's existing queue and print on the
+   existing printer, labelled with the brand name.
+
+## Adding a new station later
+1. Create the `Restaurant` record(s) — the station row is created with them.
 2. Physical printer setup (steps above).
-3. `npm run print-agent:token -- --restaurant <id>`.
+3. `npm run print-agent:token -- --station <CODE>`.
 4. Deploy `agent/` to one always-on device there, configure `.env`, run as a service.
-- Nothing else needed. The queue/poll/ack system is already outlet-agnostic.
 
 ## Ticket content
 - Layout lives entirely in `src/components/KotTicket.tsx` — what's printed is a screenshot of this component, not a separate template.

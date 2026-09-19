@@ -16,14 +16,15 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/orders/[i
 
   const order = await findById(auth, id)
   if (!order) return NextResponse.json({ ok: false, error: 'Order not found' }, { status: 404 })
-  if (!order.restaurantId) {
-    return NextResponse.json({ ok: false, error: 'Order has no outlet to print at' }, { status: 409 })
-  }
 
   try {
     assertPrintAgentConfigured()
+    // No outlet guard: printing is routed by station, and stationCode is
+    // required on every order. An order whose outlet matching failed used to
+    // be unprintable and now is not.
     await enqueueOrderKotPrint({
       appOrigin: await getAppOrigin(),
+      stationCode: order.stationCode,
       restaurantId: order.restaurantId,
       orderId: id,
     })

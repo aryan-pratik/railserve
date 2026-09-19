@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Order, Payment, Restaurant, UnparsedInbox, User } from '../src/lib/models'
+import { Counter, Order, Payment, PrintJob, Restaurant, Station, UnparsedInbox, User } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -16,6 +16,8 @@ export async function resetDb() {
     Counter.deleteMany({}),
     UnparsedInbox.deleteMany({}),
     Payment.deleteMany({}),
+    PrintJob.deleteMany({}),
+    Station.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
@@ -31,6 +33,17 @@ export async function resetDb() {
 export async function makeRestaurant(name: string, stationCode: string, aliases: string[] = []) {
   return Restaurant.create({
     name, stationCode, stationName: name, aliases, walkToPlatformMinutes: 10,
+  })
+}
+
+export async function makeStation(
+  code: string,
+  opts: { name?: string; printAgentToken?: string } = {},
+) {
+  return Station.create({
+    _id: code,
+    name: opts.name ?? `${code} Junction`,
+    printAgentToken: opts.printAgentToken ?? null,
   })
 }
 

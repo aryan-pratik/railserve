@@ -1,9 +1,15 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { config } from 'dotenv'
 
 config({ path: '.env.local', quiet: true })
 
 export default defineConfig({
+  // Next resolves `@/…` through tsconfig paths; vitest does not read those,
+  // so a test importing any src module that uses the alias fails to resolve
+  // it. Tests predating this one worked only because they mocked every
+  // aliased import they touched.
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

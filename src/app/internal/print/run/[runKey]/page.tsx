@@ -10,12 +10,22 @@ export const dynamic = 'force-dynamic'
 export default async function InternalPrintRunPage(props: PageProps<'/internal/print/run/[runKey]'>) {
   await requireInternalRenderToken()
   const { runKey } = await props.params
+  const { orders: orderFilter } = await props.searchParams
 
   const run = await findRun(INTERNAL_CTX, decodeURIComponent(runKey))
-  if (!run || run.orders.length === 0) notFound()
+  if (!run) notFound()
+
+  // INTERNAL_CTX is ADMIN-shaped and bypasses every outlet scope, so this run
+  // holds every brand trading at the station. The enqueue step passes the
+  // exact ids it is entitled to print, and one ticket per id is what makes
+  // `images.length === orderIds.length` a real invariant rather than a
+  // coincidence that held only while one brand had orders.
+  const wanted = typeof orderFilter === 'string' ? new Set(orderFilter.split(',')) : null
+  const printable = wanted ? run.orders.filter((o) => wanted.has(String(o._id))) : run.orders
+  if (printable.length === 0) notFound()
 
   await connectDb()
-  const outletIds = run.orders.map((o) => o.restaurantId).filter((id) => id != null)
+  const outletIds = printable.map((o) => o.restaurantId).filter((id) => id != null)
   const outlets = await Restaurant.find({ _id: { $in: outletIds } })
     .select('name stationName')
     .lean()
@@ -23,7 +33,7 @@ export default async function InternalPrintRunPage(props: PageProps<'/internal/p
 
   return (
     <div className="flex flex-col items-center gap-4 bg-white p-4">
-      {run.orders.map((order) => (
+      {printable.map((order) => (
         <KotTicket
           key={String(order._id)}
           order={order}
