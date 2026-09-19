@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
-import { enqueueOrderKotPrint, PrintAgentNotConfiguredError, assertPrintAgentConfigured } from '@/lib/printer/queue'
+import { enqueueOrderKotPrint, getAppOrigin, PrintAgentNotConfiguredError, assertPrintAgentConfigured } from '@/lib/printer/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +23,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/orders/[i
   try {
     assertPrintAgentConfigured()
     await enqueueOrderKotPrint({
-      appOrigin: new URL(req.url).origin,
+      appOrigin: await getAppOrigin(),
       restaurantId: order.restaurantId,
       orderId: id,
     })

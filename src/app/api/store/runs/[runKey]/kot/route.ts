@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
-import { enqueueRunKotPrint, PrintAgentNotConfiguredError, assertPrintAgentConfigured } from '@/lib/printer/queue'
+import { enqueueRunKotPrint, getAppOrigin, PrintAgentNotConfiguredError, assertPrintAgentConfigured } from '@/lib/printer/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/runs/[run
   try {
     assertPrintAgentConfigured()
     await enqueueRunKotPrint({
-      appOrigin: new URL(req.url).origin,
+      appOrigin: await getAppOrigin(),
       runKey,
       orders: run.orders,
     })
