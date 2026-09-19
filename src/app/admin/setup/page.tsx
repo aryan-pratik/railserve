@@ -2,10 +2,12 @@ import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
-import { Card, CardHeader, Dash, PageHeader, Tabs, thClass, focusRing } from '@/components/ui'
+import {
+  Card, CardHeader, Dash, PageHeader, Pagination, Tabs, PAGE_SIZE_OPTIONS, thClass, focusRing,
+} from '@/components/ui'
 import { ROLE_LABEL } from '@/lib/roles'
-import { OutletForm } from './OutletForm'
-import { StaffForm } from './StaffForm'
+import { OutletFormModal } from './OutletFormModal'
+import { StaffFormModal } from './StaffFormModal'
 import { toggleRestaurantActive } from './outletActions'
 import { toggleUserActive } from './staffActions'
 
@@ -40,20 +42,45 @@ function ActiveToggle({
   )
 }
 
+const DEFAULT_PAGE_SIZE = 20
+
 export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   await requireRole('ADMIN')
-  const { tab, edit } = await props.searchParams
-  const staff = tab === 'staff'
-  const editId = typeof edit === 'string' ? edit : undefined
+  const sp = await props.searchParams
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
+  const staff = one(sp.tab) === 'staff'
+  const editId = one(sp.edit) || undefined
+
+  const pageParam = Number.parseInt(one(sp.page), 10)
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+  const pageSizeParam = Number.parseInt(one(sp.pageSize), 10)
+  const pageSize = (PAGE_SIZE_OPTIONS as readonly number[]).includes(pageSizeParam)
+    ? pageSizeParam
+    : DEFAULT_PAGE_SIZE
 
   await connectDb()
-  const [outlets, users] = await Promise.all([
+  const [outlets, users, userCount, editingUser] = await Promise.all([
+    // Unpaginated: also feeds the outlet-name lookup and the staff form's outlet picker.
     Restaurant.find({}).sort({ active: -1, name: 1 }).lean(),
-    staff ? User.find({}).sort({ active: -1, role: 1, name: 1 }).lean() : [],
+    staff
+      ? User.find({}).sort({ active: -1, role: 1, name: 1 }).skip((page - 1) * pageSize).limit(pageSize).lean()
+      : [],
+    staff ? User.countDocuments({}) : 0,
+    // Fetched separately so an edit target still resolves even off the current page.
+    editId && staff ? User.findById(editId).lean() : undefined,
   ])
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
-  const editingUser = editId ? users.find((u) => String(u._id) === editId) : undefined
+  const outletsPage = staff ? [] : outlets.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+
+  const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
+    const u = new URLSearchParams()
+    if (staff) u.set('tab', 'staff')
+    if (p > 1) u.set('page', String(p))
+    if (ps !== DEFAULT_PAGE_SIZE) u.set('pageSize', String(ps))
+    const qs = u.toString()
+    return `/admin/setup${qs ? `?${qs}` : ''}`
+  }
 
   return (
     <div className="space-y-4">
@@ -73,7 +100,33 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
       {staff ? (
         <>
           <Card className="overflow-hidden">
-            <CardHeader title={`${users.length} user${users.length === 1 ? '' : 's'}`} />
+            <CardHeader
+              title={`${userCount} user${userCount === 1 ? '' : 's'}`}
+              action={
+                <StaffFormModal
+                  key={editId ?? 'new'}
+                  editId={editId}
+                  outlets={outlets
+                    // An outlet a manager already holds must stay selectable even if
+                    // it was deactivated after the fact.
+                    .filter((o) => o.active || editingUser?.restaurantIds.some((id) => String(id) === String(o._id)))
+                    .map((o) => ({
+                      id: String(o._id), label: `${o.name} · ${o.stationCode}`, station: o.stationCode, stationName: o.stationName ?? undefined,
+                    }))}
+                  values={
+                    editingUser
+                      ? {
+                          id: String(editingUser._id),
+                          name: editingUser.name,
+                          phone: editingUser.phone,
+                          role: editingUser.role,
+                          restaurantIds: editingUser.restaurantIds.map(String),
+                        }
+                      : undefined
+                  }
+                />
+              }
+            />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[40rem] text-sm">
                 <thead className="border-b border-line bg-sunken/60">
@@ -104,10 +157,10 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           <Link
-                            href={isEditing ? '/admin/setup?tab=staff' : `/admin/setup?tab=staff&edit=${String(u._id)}`}
+                            href={`/admin/setup?tab=staff&edit=${String(u._id)}`}
                             className="text-sm font-medium text-accent underline-offset-2 hover:underline"
                           >
-                            {isEditing ? 'Cancel' : 'Edit'}
+                            Edit
                           </Link>
                         </td>
                       </tr>
@@ -116,32 +169,18 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                 </tbody>
               </table>
             </div>
+            {userCount > 0 ? (
+              <Pagination page={page} pageSize={pageSize} total={userCount} buildHref={paginationHref} />
+            ) : null}
           </Card>
-
-          <StaffForm
-            key={editId ?? 'new'}
-            outlets={outlets
-              // An outlet a manager already holds must stay selectable even if
-              // it was deactivated after the fact.
-              .filter((o) => o.active || editingUser?.restaurantIds.some((id) => String(id) === String(o._id)))
-              .map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
-            values={
-              editingUser
-                ? {
-                    id: String(editingUser._id),
-                    name: editingUser.name,
-                    phone: editingUser.phone,
-                    role: editingUser.role,
-                    restaurantIds: editingUser.restaurantIds.map(String),
-                  }
-                : undefined
-            }
-          />
         </>
       ) : (
         <>
           <Card className="overflow-hidden">
-            <CardHeader title={`${outlets.length} outlet${outlets.length === 1 ? '' : 's'}`} />
+            <CardHeader
+              title={`${outlets.length} outlet${outlets.length === 1 ? '' : 's'}`}
+              action={<OutletFormModal />}
+            />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[40rem] text-sm">
                 <thead className="border-b border-line bg-sunken/60">
@@ -154,7 +193,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {outlets.map((o) => (
+                  {outletsPage.map((o) => (
                     <tr key={String(o._id)} className={o.active ? '' : 'bg-sunken/50 text-faint'}>
                       <td className="px-3 py-2.5 font-medium text-ink">{o.name}</td>
                       <td className="px-3 py-2.5 text-muted">
@@ -171,9 +210,10 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                 </tbody>
               </table>
             </div>
+            {outlets.length > 0 ? (
+              <Pagination page={page} pageSize={pageSize} total={outlets.length} buildHref={paginationHref} />
+            ) : null}
           </Card>
-
-          <OutletForm />
         </>
       )}
     </div>
