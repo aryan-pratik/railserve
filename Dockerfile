@@ -4,6 +4,8 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+# The runner installs Alpine's Chromium instead, so skip puppeteer's download.
+ENV PUPPETEER_SKIP_DOWNLOAD=1
 RUN npm ci
 
 FROM node:24-alpine AS builder
@@ -25,6 +27,12 @@ FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# KOT printing (src/lib/printer/screenshot.ts) screenshots the ticket with
+# headless Chrome. Puppeteer's own downloaded Chrome is a glibc build that
+# won't run on Alpine (musl), so use the distro's Chromium — puppeteer reads
+# PUPPETEER_EXECUTABLE_PATH from the environment on its own.
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
