@@ -38,7 +38,7 @@ function ReprintRunKotButton({ runKey, count }: { runKey: string; count: number 
 
   return (
     <div className="flex flex-col items-start gap-1">
-      {/* Ghost, not secondary: a recovery action, not a step in the flow —
+      {/* Ghost, not secondary: a recovery action, not a step in the flow -
           it shouldn't compete with "Mark ready" or "Preview" for attention. */}
       <Button type="button" size="sm" variant="ghost" onClick={() => void reprint()} pending={pending}>
         Reprint {count} KOT{count === 1 ? '' : 's'}

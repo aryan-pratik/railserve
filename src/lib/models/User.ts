@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 import { ROLES } from '../roles'
 
 const UserSchema = new Schema(
@@ -22,6 +23,6 @@ const UserSchema = new Schema(
 export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: mongoose.Types.ObjectId }
 
 export const User: Model<UserDoc> =
-  (models.User as Model<UserDoc>) ?? model<UserDoc>('User', UserSchema)
+  registerModel<UserDoc>('User', UserSchema)
 
 export { UserSchema }

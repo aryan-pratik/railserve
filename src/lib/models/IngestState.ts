@@ -1,4 +1,5 @@
-import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * Singleton row tracking Gmail ingestion health.
@@ -23,7 +24,6 @@ const IngestStateSchema = new Schema(
 export type IngestStateDoc = InferSchemaType<typeof IngestStateSchema> & { _id: string }
 
 export const IngestState: Model<IngestStateDoc> =
-  (models.IngestState as Model<IngestStateDoc>) ??
-  model<IngestStateDoc>('IngestState', IngestStateSchema)
+  registerModel<IngestStateDoc>('IngestState', IngestStateSchema)
 
 export const GMAIL_STATE_ID = 'gmail'

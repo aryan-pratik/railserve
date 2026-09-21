@@ -39,10 +39,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // below then refuses the login, which is the correct outcome anyway.
         const restaurantIds = (user.restaurantIds ?? []).map(String)
 
-        // A store manager with no outlet cannot be scoped to anything, so
-        // letting them in would mean deciding at read time what they can see.
-        // Refuse at the door instead.
-        if (user.role === 'STORE_MANAGER' && restaurantIds.length === 0) return null
+        // A store manager or telecaller with no outlet cannot be scoped to
+        // anything, so letting them in would mean deciding at read time what
+        // they can see. Refuse at the door instead.
+        if (
+          (user.role === 'STORE_MANAGER' || user.role === 'TELECALLER') &&
+          restaurantIds.length === 0
+        ) {
+          return null
+        }
 
         return {
           id: String(user._id),

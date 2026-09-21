@@ -1,12 +1,20 @@
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { isProofStorageConfigured } from '@/lib/storage'
-import { findById } from '@/lib/repo/orderRepo'
+import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { formatIST, formatMoney, paiseToRupees } from '@/lib/format'
 import { runKeyFor } from '@/lib/runs'
 import { BackLink, Card, CardHeader, Dash, StatusBadge, TypeBadge } from '@/components/ui'
 import { IconPhone } from '@/components/Icons'
+import { CallLog } from '@/components/CallLog'
 import { DeliverForm, FailForm, TakeOrderButton } from '../../AgentActions'
+
+/**
+ * A rider needs what the note says, not who at the desk typed it, and this
+ * page makes no user query at all. An empty map leaves every author null and
+ * CallLog renders the note without a byline.
+ */
+const EMPTY_LABELS = new Map<string, string>()
 
 export const metadata = { title: 'Deliver · RailServe' }
 
@@ -108,6 +116,17 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
           ) : null}
         </ul>
       </Card>
+
+      {/* No author, and so no user lookup: this page makes none today, and a
+          rider on a platform needs what the note says, not who at the desk
+          typed it. `?? []` because findById is .lean() and skips the schema
+          default: see the note on the store page. */}
+      {(order.callLog ?? []).length > 0 ? (
+        <Card>
+          <CardHeader title="Call log" />
+          <CallLog orderId={id} notes={viewCallNotes(ctx, order.callLog, EMPTY_LABELS)} />
+        </Card>
+      ) : null}
 
       {order.status === 'DISPATCHED' ? (
         <Card>

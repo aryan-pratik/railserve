@@ -257,14 +257,26 @@ This function is the only place `status` is ever written. Enforce with the same 
 
 ## 5. Roles and data isolation
 
-| | Admin | Store manager | Delivery agent |
-|---|---|---|---|
-| Manage restaurants, users | yes | no | no |
-| See all outlets' orders | yes | own outlet only | assigned runs only |
-| Create/quote bulk enquiries | yes | no | no |
-| Accept order, print KOT, mark prepared | yes | yes | no |
-| Dispatch and deliver | no | no | yes |
-| Unparsed inbox | yes | no | no |
+| | Admin | Store manager | Delivery agent | Telecaller |
+|---|---|---|---|---|
+| Manage restaurants, users | yes | no | no | no |
+| See all outlets' orders | yes | own outlet only | own outlets only | own outlets only |
+| See amounts and payments | yes | yes | COD to collect | no |
+| Create/quote bulk enquiries | yes | no | no | no |
+| Accept order, print KOT, mark prepared | yes | yes | no | no |
+| Dispatch and deliver | no | hand over only | yes | no |
+| Cancel an order | yes | no | no | up to PREPARED |
+| Unparsed inbox | yes | no | no | no |
+
+The telecaller was added after the fact and is deliberately the narrowest role
+in the system: they ring passengers, and the single thing they write back is
+`-> CANCELLED`, from the four states before a rider is carrying the food. The
+point is not the write — it is that a cancellation reaches the kitchen through
+the system instead of through a WhatsApp group where it was being missed, with
+food cooked and dispatched against orders that no longer existed. See
+`CancellationAlert` for the other half of that: a cancelled order leaves
+`LIVE_STATUSES` and therefore *disappears* off the board, which on its own is
+the quietest possible way to tell somebody to stop cooking.
 
 All isolation is application-level — see section 2. The `orderRepo.scoped(ctx)` pattern, the ESLint guard, and the cross-tenant integration test are the whole defence. Treat that test as a release blocker.
 

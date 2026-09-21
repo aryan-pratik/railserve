@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * Cached live status for one train at one station on one day. Plan §3.
@@ -46,7 +47,6 @@ export type TrainStatusDoc = InferSchemaType<typeof TrainStatusSchema> & {
 }
 
 export const TrainStatus: Model<TrainStatusDoc> =
-  (models.TrainStatus as Model<TrainStatusDoc>) ??
-  model<TrainStatusDoc>('TrainStatus', TrainStatusSchema)
+  registerModel<TrainStatusDoc>('TrainStatus', TrainStatusSchema)
 
 export { TrainStatusSchema }

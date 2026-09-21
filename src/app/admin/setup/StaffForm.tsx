@@ -52,6 +52,7 @@ export function StaffForm({
               className={inputClass}>
               <option value="STORE_MANAGER">Store manager</option>
               <option value="DELIVERY_AGENT">Delivery agent</option>
+              <option value="TELECALLER">Telecaller</option>
               <option value="ADMIN">Admin</option>
             </select>
           </Field>
@@ -72,7 +73,9 @@ export function StaffForm({
               ? 'Admins see every outlet, so they hold none explicitly.'
               : role === 'STORE_MANAGER'
                 ? 'Every outlet this manager runs. They all share one board.'
-                : 'Riders see the live runs of the outlets they are attached to. Without one, their app is empty.'
+                : role === 'TELECALLER'
+                  ? 'The outlets whose orders this telecaller may call about and cancel. Nothing outside them is visible to them at all.'
+                  : 'Riders see the live runs of the outlets they are attached to. Without one, their app is empty.'
           }
         />
       </div>

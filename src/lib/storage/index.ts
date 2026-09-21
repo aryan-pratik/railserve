@@ -19,7 +19,7 @@ class UnconfiguredProofStore implements ProofStore {
 
   async presignUpload(): Promise<PresignedUpload> {
     throw new ProofStoreUnavailable(
-      'Photo proof storage is not configured — set the R2_* variables to enable it.',
+      'Photo proof storage is not configured: set the R2_* variables to enable it.',
     )
   }
 

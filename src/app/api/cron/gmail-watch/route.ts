@@ -31,7 +31,7 @@ async function handle(request: Request) {
   }
   if (!env.GMAIL_TOPIC_NAME) {
     return NextResponse.json(
-      { ok: false, reason: 'GMAIL_TOPIC_NAME unset — still on the polling transport' },
+      { ok: false, reason: 'GMAIL_TOPIC_NAME unset: still on the polling transport' },
       { status: 200 },
     )
   }

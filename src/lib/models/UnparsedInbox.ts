@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * Payloads that could not become an order. Plan §3 and §6.
@@ -36,7 +37,6 @@ export type UnparsedInboxDoc = InferSchemaType<typeof UnparsedInboxSchema> & {
 }
 
 export const UnparsedInbox: Model<UnparsedInboxDoc> =
-  (models.UnparsedInbox as Model<UnparsedInboxDoc>) ??
-  model<UnparsedInboxDoc>('UnparsedInbox', UnparsedInboxSchema)
+  registerModel<UnparsedInboxDoc>('UnparsedInbox', UnparsedInboxSchema)
 
 export { UnparsedInboxSchema }

@@ -13,7 +13,7 @@ export function isGmailConfigured(): boolean {
 
 export function gmailClient(): gmail_v1.Gmail {
   if (!isGmailConfigured()) {
-    throw new Error('Gmail is not configured — set GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN')
+    throw new Error('Gmail is not configured: set GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN')
   }
   const auth = new google.auth.OAuth2(env.GMAIL_CLIENT_ID, env.GMAIL_CLIENT_SECRET)
   auth.setCredentials({ refresh_token: env.GMAIL_REFRESH_TOKEN })

@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { useNowMs } from '@/components/useNow'
 import { formatRupees } from '@/lib/format'
 import { Card, CoachChip, Dash, PaymentBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from '@/components/ui'
+import { CallNoteHint } from '@/components/CallNoteHint'
 import { IconChevronDown } from '@/components/Icons'
 import { CopyButton } from '@/components/CopyButton'
-import { OrderSlideOver, type OrderPreview } from './OrderSlideOver'
+import { OrderModal, type OrderPreview } from './OrderModal'
 import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
 import { UrgencyRail } from '@/components/UrgencyRail'
 
@@ -29,6 +30,9 @@ export type GroupOrder = {
   outletName: string | null
   orderTimeLabel: string
   isNew: boolean
+  /** Call-note count and prebuilt tooltip text. See callNoteSummary. */
+  callNoteCount?: number | null
+  callNoteHint?: string | null
 }
 
 export type TrainGroup = {
@@ -284,6 +288,11 @@ export function TrainGroups({
                                   >
                                     {o.externalOrderId}
                                   </button>
+                                  <CallNoteHint
+                                    orderId={o.id}
+                                    count={o.callNoteCount}
+                                    hint={o.callNoteHint}
+                                  />
                                   <TypeBadge type={o.orderType} />
                                   {o.isNew ? (
                                     <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
@@ -359,7 +368,7 @@ export function TrainGroups({
         })}
       </div>
 
-      <OrderSlideOver preview={selected} onClose={() => setSelected(null)} />
+      <OrderModal preview={selected} onClose={() => setSelected(null)} />
     </>
   )
 }

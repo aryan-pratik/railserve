@@ -5,6 +5,7 @@ import type { TimingView } from '@/lib/train/policy'
 import { CheckCycle, DelayPill, FeedUpdated, PlatformBadge, StaleFlag } from './TrainTiming'
 import { UrgencyRail } from './UrgencyRail'
 import { Card, CoachChip, StatusBadge, TypeBadge } from './ui'
+import { CallNoteHint } from './CallNoteHint'
 
 /** Lean Mongoose documents type optional fields as `T | null | undefined`. */
 type Maybe<T> = T | null | undefined
@@ -25,6 +26,9 @@ export type RunOrderRow = {
   paymentMode?: Maybe<string>
   /** Only set, and only rendered, when the viewer holds more than one outlet. */
   outletName?: Maybe<string>
+  /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
+  callNoteCount?: Maybe<number>
+  callNoteHint?: Maybe<string>
 }
 
 export type RunCardData = {
@@ -137,6 +141,7 @@ export function TrainRunCard({
                         {o.contactName ?? o.externalOrderId}
                       </span>
                       <TypeBadge type={o.orderType} />
+                      <CallNoteHint orderId={o.id} count={o.callNoteCount} hint={o.callNoteHint} />
                     </div>
                     <div className="truncate text-xs text-muted">
                       {o.outletName ? `${o.outletName} · ` : ''}

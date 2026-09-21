@@ -1,4 +1,5 @@
 import { AppShell } from '@/components/AppShell'
+import { CancellationAlert } from '@/components/CancellationAlert'
 import { requireRole } from '@/lib/session'
 
 export default async function StoreLayout({ children }: LayoutProps<'/store'>) {
@@ -13,6 +14,13 @@ export default async function StoreLayout({ children }: LayoutProps<'/store'>) {
       ]}
     >
       {children}
+      {/*
+        In the layout, not on the board: a cancellation has to reach the
+        manager wherever they are in this section: including the order page
+        for the very order being cancelled, which otherwise just sits there
+        showing a status that stopped being true.
+      */}
+      <CancellationAlert />
     </AppShell>
   )
 }

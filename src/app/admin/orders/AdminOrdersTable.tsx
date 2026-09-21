@@ -10,6 +10,7 @@ import {
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { IconTrash } from '@/components/Icons'
 import { TableFrame } from '@/components/OrdersTable'
+import { CallNoteHint } from '@/components/CallNoteHint'
 import { deleteOrderAction, updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
 
 type Maybe<T> = T | null | undefined
@@ -29,6 +30,9 @@ export type AdminOrderRow = {
   amountPaise?: Maybe<number>
   outletName?: Maybe<string>
   remark?: Maybe<string>
+  /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
+  callNoteCount?: Maybe<number>
+  callNoteHint?: Maybe<string>
 }
 
 /**
@@ -130,7 +134,12 @@ function AdminOrderRow({
     <tr className="transition-colors hover:bg-sunken/60">
       <td className="px-3 py-2.5">
         <Link href={`/admin/orders/${order.id}`} className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium text-accent hover:underline">
-          <span className="min-w-0 break-words font-mono text-xs">{order.externalOrderId}</span>
+          {/* Grouped with the id, so on this wrapping row the hint can never
+              be the item that drops to a second line by itself. */}
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="min-w-0 break-words font-mono text-xs">{order.externalOrderId}</span>
+            <CallNoteHint orderId={order.id} count={order.callNoteCount} hint={order.callNoteHint} />
+          </span>
           <TypeBadge type={order.orderType} />
         </Link>
       </td>
@@ -325,7 +334,7 @@ function StatusEditor({
               formRef.current?.requestSubmit()
             }
           }}
-          placeholder="e.g. Refund pending — press Enter"
+          placeholder="e.g. Refund pending: press Enter"
           autoFocus
           disabled={pending}
           className={editInputClass}

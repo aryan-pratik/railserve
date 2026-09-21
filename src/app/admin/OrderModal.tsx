@@ -1,13 +1,17 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState } from 'react'
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, ButtonLink, Dash, FormNote, IconButton, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
-import { IconClose, IconPhone } from '@/components/Icons'
+import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
+import { IconPhone } from '@/components/Icons'
 import { formatIST, formatMoney, formatTimeIST } from '@/lib/format'
 import { adminTransitionAction, forceRefreshOrderTrain, type ActionState } from './orders/[id]/actions'
 import { fetchOrderDetail, type OrderDetail } from './orderDetail'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
+import { Modal } from '@/components/Modal'
+import { CallLog } from '@/components/CallLog'
+import { CallNoteForm } from '@/components/CallNoteForm'
+import type { CallNoteView } from '@/lib/callNotes'
 
 const initial: ActionState = {}
 
@@ -20,19 +24,25 @@ export type OrderPreview = {
 }
 
 /**
- * Order detail, slid in from the right.
+ * Order detail, in a dialog over the board.
  *
- * A panel rather than a page because the board is the workspace: an admin
- * checks an order, acts on it, and carries on down the list.
+ * A dialog rather than a page because the board is the workspace: an admin
+ * checks an order, acts on it, and carries on down the list. It was a
+ * right-hand slide-over first, which gave a tall narrow column that forced
+ * every row of the Journey and Items sections to wrap.
  *
- * The header paints from the row that was clicked, so the panel is never
- * blank: the id, status and outlet are on screen the same frame it opens,
- * and the fetch fills in the rest underneath a skeleton.
+ * Built on the shared Modal rather than its own shell, so the escape key,
+ * focus handling and scroll lock behave the way every other dialog here
+ * behaves. The hand-rolled copy had already drifted from it.
+ *
+ * The header paints from the row that was clicked, so it is never blank: the
+ * id, status and outlet are on screen the same frame it opens, and the fetch
+ * fills in the rest underneath a skeleton.
  *
  * After a transition the board is refreshed too, or the row's status badge
- * quietly disagrees with the panel on top of it.
+ * quietly disagrees with the dialog on top of it.
  */
-export function OrderSlideOver({
+export function OrderModal({
   preview,
   onClose,
 }: {
@@ -47,8 +57,26 @@ export function OrderSlideOver({
   const detail = loaded && loaded.id === orderId ? loaded.detail : null
   const loading = Boolean(orderId) && (!loaded || loaded.id !== orderId)
   const [state, transition, pending] = useActionState(adminTransitionAction, initial)
-  const panelRef = useRef<HTMLDivElement>(null)
   const lastOk = useRef<string | undefined>(undefined)
+
+  /**
+   * Paint the log the action just handed back.
+   *
+   * Not a refetch: this panel holds its own copy of the order, and going back
+   * for it races the revalidation the same action triggers. It lost often
+   * enough that a new note only appeared after closing and reopening. The
+   * action already knows the answer, so it returns it.
+   */
+  const applyNotes = useCallback(
+    (notes: CallNoteView[]) => {
+      setLoaded((prev) =>
+        prev && prev.id === orderId && prev.detail
+          ? { id: prev.id, detail: { ...prev.detail, callLog: notes } }
+          : prev,
+      )
+    },
+    [orderId],
+  )
 
   useEffect(() => {
     if (!orderId) return
@@ -68,22 +96,6 @@ export function OrderSlideOver({
     }
   }, [state.ok, orderId, router])
 
-  // Escape closes; focus moves in on open and back to the row on close.
-  useEffect(() => {
-    if (!orderId) return
-    const opener = document.activeElement as HTMLElement | null
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    panelRef.current?.focus()
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previous
-      opener?.focus?.()
-    }
-  }, [orderId, onClose])
-
   if (!preview || !orderId) return null
 
   const status = detail?.status ?? preview.status
@@ -92,32 +104,23 @@ export function OrderSlideOver({
     : preview.outletName ?? 'No outlet'
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-ink/25" onClick={onClose} aria-hidden />
-      <div
-        ref={panelRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Order ${preview.externalOrderId}`}
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-line bg-canvas shadow-2xl outline-none"
-      >
-        <header className="flex items-start justify-between gap-3 border-b border-line bg-surface px-4 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-base font-semibold text-ink">{preview.externalOrderId}</span>
-              <StatusBadge status={status} />
-            </div>
-            <p className="mt-0.5 truncate text-xs text-muted">{outlet}</p>
-          </div>
-          <IconButton aria-label="Close" size="sm" onClick={onClose}>
-            <IconClose size={18} />
-          </IconButton>
-        </header>
-
-        <div className="flex-1 space-y-3 overflow-y-auto p-4 [overscroll-behavior:contain]">
+    <Modal
+      titleId="admin-order-modal"
+      onClose={onClose}
+      maxWidthClassName="max-w-2xl"
+      title={
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-mono text-base font-semibold text-ink">
+            {preview.externalOrderId}
+          </span>
+          <StatusBadge status={status} />
+          <span className="w-full truncate text-xs font-normal text-muted sm:w-auto">{outlet}</span>
+        </span>
+      }
+    >
+      <div className="space-y-3 bg-canvas p-4">
           {loading ? (
-            <PanelSkeleton />
+            <DetailSkeleton />
           ) : !detail ? (
             <p className="text-sm text-muted">This order could not be loaded. It may have been deleted.</p>
           ) : (
@@ -238,6 +241,15 @@ export function OrderSlideOver({
                 </p>
               )}
 
+              <Section title="Call log">
+                <div className="-mx-4">
+                  <CallLog orderId={detail.id} notes={detail.callLog} onChanged={applyNotes} />
+                  <div className="border-t border-line">
+                    <CallNoteForm orderId={detail.id} onSaved={applyNotes} />
+                  </div>
+                </div>
+              </Section>
+
               <Section title="Event log">
                 <ol className="space-y-2.5">
                   {[...detail.events].reverse().map((e) => (
@@ -261,13 +273,12 @@ export function OrderSlideOver({
               </ButtonLink>
             </>
           )}
-        </div>
       </div>
-    </>
+    </Modal>
   )
 }
 
-function PanelSkeleton() {
+function DetailSkeleton() {
   const bar = 'rounded bg-sunken motion-safe:animate-pulse'
   return (
     <div aria-busy="true" className="space-y-3">

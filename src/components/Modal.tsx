@@ -23,20 +23,31 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // Focus and scroll-lock belong to the modal's lifetime, so they run once and
+  // undo once. They used to share an effect with the Escape handler below,
+  // which made them depend on the identity of `onClose` — and a caller that
+  // declares `onClose` inline re-creates it on every render, so every
+  // keystroke in a controlled field re-ran this and pulled focus out of the
+  // field and back onto the panel. One character, then a dead keyboard.
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     panelRef.current?.focus()
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+      opener?.focus?.()
+    }
+  }, [])
+
+  // Only the Escape handler cares which `onClose` is current, and re-binding a
+  // listener is free.
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKey)
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previous
-      opener?.focus?.()
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
   return (

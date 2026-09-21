@@ -40,7 +40,7 @@ import {
  */
 
 type RailKitTimes = {
-  scheduled?: string // "09:35 02-Sep" — note: no year
+  scheduled?: string // "09:35 02-Sep", with no year
   actual?: string // same, with a trailing "*" when projected; "--" when unknown
   delay?: string // "On Time" | "22 Min" | "01:20 Hr" | ""
 }
@@ -60,7 +60,7 @@ type RailKitResponse = {
   success?: boolean
   error?: string
   data?: {
-    date?: string // "01-Sep-2026" — the only field carrying a year
+    date?: string // "01-Sep-2026", the only field carrying a year
     trainName?: string
     statusNote?: string
     lastUpdate?: string // "02-Sep-2026 00:11", or "" before the run starts
@@ -332,12 +332,12 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       // fallback to scheduled times looks identical to a train with no data.
       if (/quota|rate ?limit|429/i.test(message)) {
         throw new TrainStatusUnavailable(
-          'train API quota exhausted — the RailKit plan is out of requests for this period',
+          'train API quota exhausted: the RailKit plan is out of requests for this period',
         )
       }
       if (/api key|unauthor|forbidden|401|403/i.test(message)) {
         throw new TrainStatusUnavailable(
-          'train API rejected the key — check TRAIN_API_KEY and that the plan covers this endpoint',
+          'train API rejected the key: check TRAIN_API_KEY and that the plan covers this endpoint',
         )
       }
       throw new TrainStatusUnavailable(`train API unreachable: ${message}`)

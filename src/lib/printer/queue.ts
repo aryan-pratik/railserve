@@ -98,7 +98,7 @@ export async function enqueueRunKotPrint(params: {
 
 export class PrintAgentNotConfiguredError extends Error {
   constructor() {
-    super('PRINT_RENDER_TOKEN is not set — see .env.example')
+    super('PRINT_RENDER_TOKEN is not set: see .env.example')
     this.name = 'PrintAgentNotConfiguredError'
   }
 }

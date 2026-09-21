@@ -23,7 +23,7 @@ export type OrderCardData = {
 }
 
 export function OrderCard({
-  order, href, actions, timing, showServiceDate = false,
+  order, href, actions, timing, showServiceDate = false, showMoney = true,
 }: {
   order: OrderCardData
   href: string
@@ -31,6 +31,12 @@ export function OrderCard({
   /** Live arrival/delay/platform, rendered by the caller so this stays presentational. */
   timing?: React.ReactNode
   showServiceDate?: boolean
+  /**
+   * Off for the telecaller, who has no business with the amount or how it is
+   * being paid — see /calls. The footer keeps its actions either way, so an
+   * order card without money is still an order card and not a different one.
+   */
+  showMoney?: boolean
 }) {
   const kitchen = order.items.filter((i) => !i.isPacking)
   const packing = order.items.filter((i) => i.isPacking)
@@ -106,7 +112,7 @@ export function OrderCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
-        {cod ? (
+        {!showMoney ? null : cod ? (
           <span className="rounded px-2 py-1 text-sm font-bold tabular-nums bg-amber-100 text-amber-900">
             COLLECT {formatMoney(order.amountPaise)}
           </span>

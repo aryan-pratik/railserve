@@ -1,6 +1,8 @@
 import mongoose, { type QueryFilter } from 'mongoose'
-import { Order, Counter, type OrderDoc } from '../models'
-import { type AuthContext, NotFoundError } from '../authContext'
+import { Order, Counter, User, type OrderDoc } from '../models'
+import { type AuthContext, ForbiddenError, NotFoundError } from '../authContext'
+import { ROLE_LABEL } from '../roles'
+import type { CallNoteView } from '../callNotes'
 
 /**
  * THE ONLY PLACE Order.find / findOne / aggregate MAY BE CALLED.
@@ -20,6 +22,7 @@ import { type AuthContext, NotFoundError } from '../authContext'
  * - ADMIN sees everything.
  * - STORE_MANAGER sees every outlet they hold, and nothing else.
  * - DELIVERY_AGENT sees every outlet they are attached to, and nothing else.
+ * - TELECALLER sees every outlet they are attached to, and nothing else.
  *
  * Riders used to be scoped by assignment — `delivery.agentIds` contained who
  * was *going* to deliver. Nothing assigns that any more: a rider picks up
@@ -29,7 +32,7 @@ import { type AuthContext, NotFoundError } from '../authContext'
  * is preserved by the same mechanism rather than by a second one.
  *
  * Holding no outlets is a data error, not an admin — returning an impossible
- * filter is the safe reading for both roles.
+ * filter is the safe reading for all three scoped roles.
  */
 function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
   switch (ctx.role) {
@@ -37,6 +40,7 @@ function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
       return {}
     case 'STORE_MANAGER':
     case 'DELIVERY_AGENT':
+    case 'TELECALLER':
       return ctx.restaurantIds.length > 0
         ? { restaurantId: { $in: ctx.restaurantIds } }
         : { _id: { $exists: false } }
@@ -95,6 +99,117 @@ export async function countByStatus(ctx: AuthContext, filter: QueryFilter<OrderD
 }
 
 /**
+ * Orders cancelled recently, for the live cancellation alert (see
+ * /api/store/cancellations).
+ *
+ * A cancellation is the one status change that nobody downstream goes looking
+ * for: the order simply drops out of LIVE_STATUSES and vanishes off the
+ * kitchen board, so a manager mid-cook sees a card disappear at best and
+ * nothing at all at worst. This feeds a banner that says it out loud instead.
+ *
+ * The moment of cancellation is read off the event log, not `updatedAt` —
+ * updatedAt moves on any later edit, which would keep re-raising an alert
+ * that was already dealt with. Scoped like every other read, so a manager is
+ * only ever told about their own outlets' orders.
+ */
+export type CancellationAlert = {
+  id: string
+  externalOrderId: string
+  trainNo: string | null
+  coach: string | null
+  berth: string | null
+  rawSeat: string | null
+  contactName: string | null
+  stationCode: string
+  /** ISO — when the cancelling event was recorded. */
+  cancelledAt: string
+  /** Who cancelled it, resolved to a name. 'System' when there was no actor. */
+  by: string
+  reason: string | null
+}
+
+export async function recentCancellations(
+  ctx: AuthContext,
+  opts: { serviceDate: string; since: Date; limit?: number },
+): Promise<CancellationAlert[]> {
+  const rows = await Order.aggregate<{
+    _id: mongoose.Types.ObjectId
+    externalOrderId: string
+    trainNo: string | null
+    coach: string | null
+    berth: string | null
+    rawSeat: string | null
+    contactName: string | null
+    stationCode: string
+    cancelEvent: {
+      createdAt: Date
+      userId: mongoose.Types.ObjectId | null
+      meta: Record<string, unknown> | null
+    } | null
+  }>([
+    // Hits the store_dashboard index (restaurantId, serviceDate, status).
+    { $match: scoped(ctx, { status: 'CANCELLED', serviceDate: opts.serviceDate }) },
+    {
+      $addFields: {
+        // $arrayElemAt with -1 rather than $last: same result, and it does not
+        // require a Mongo new enough to have $last.
+        cancelEvent: {
+          $arrayElemAt: [
+            {
+              $filter: {
+                input: '$events',
+                as: 'e',
+                cond: { $eq: ['$$e.toStatus', 'CANCELLED'] },
+              },
+            },
+            -1,
+          ],
+        },
+      },
+    },
+    { $match: { 'cancelEvent.createdAt': { $gte: opts.since } } },
+    { $sort: { 'cancelEvent.createdAt': -1 } },
+    { $limit: opts.limit ?? 20 },
+    {
+      $project: {
+        externalOrderId: 1, trainNo: 1, coach: 1, berth: 1, rawSeat: 1,
+        contactName: 1, stationCode: 1, cancelEvent: 1,
+      },
+    },
+  ])
+
+  if (rows.length === 0) return []
+
+  // Only reached when something actually was cancelled, so the common case
+  // costs one aggregation and no user lookup at all.
+  const actorIds = rows
+    .map((r) => r.cancelEvent?.userId)
+    .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
+  const actors = actorIds.length
+    ? await User.find({ _id: { $in: actorIds } }).select('name').lean()
+    : []
+  const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
+
+  return rows.map((r) => {
+    const meta = (r.cancelEvent?.meta ?? {}) as Record<string, unknown>
+    const reason = typeof meta.reason === 'string' && meta.reason.trim() ? meta.reason.trim() : null
+    return {
+      id: String(r._id),
+      externalOrderId: r.externalOrderId,
+      trainNo: r.trainNo ?? null,
+      coach: r.coach ?? null,
+      berth: r.berth ?? null,
+      rawSeat: r.rawSeat ?? null,
+      contactName: r.contactName ?? null,
+      stationCode: r.stationCode,
+      cancelledAt: (r.cancelEvent?.createdAt ?? new Date()).toISOString(),
+      by: r.cancelEvent?.userId ? (actorName.get(String(r.cancelEvent.userId)) ?? 'Unknown user') : 'System',
+      reason,
+    }
+  })
+}
+
+/**
  * Order counts per payment mode, for the filter tabs on /admin/orders.
  *
  * Aggregated rather than counted four times so the tab row costs one round
@@ -140,8 +255,11 @@ export async function updateOrderFields(
   fields: Record<string, unknown>,
 ): Promise<boolean> {
   if (!mongoose.isValidObjectId(orderId)) return false
-  if ('status' in fields || 'events' in fields) {
-    throw new Error('status and events are written only by transitionOrder')
+  if ('status' in fields || 'events' in fields || 'callLog' in fields) {
+    // callLog joins the list so "append-only" is true at the boundary rather
+    // than by convention — without it, { callLog: [] } here is a one-line log
+    // wipe available to any admin action.
+    throw new Error('status and events are written only by transitionOrder; callLog only by appendCallNote')
   }
   const res = await Order.updateOne(
     scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
@@ -191,6 +309,214 @@ export async function addOrderItems(
     { $push: { items: { $each: items } } },
   )
   return res.matchedCount > 0
+}
+
+/** Longest one call note may be. The same number as the admin remark. */
+export const CALL_NOTE_MAX = 500
+
+/**
+ * How many notes one order keeps.
+ *
+ * Fifty calls about a single thali is already a pathological order; this is
+ * here so a runaway client cannot grow one document without bound, not because
+ * anyone is expected to reach it.
+ */
+export const CALL_LOG_LIMIT = 50
+
+export type CallNote = {
+  text: string
+  userId: mongoose.Types.ObjectId
+  createdAt: Date
+}
+
+/**
+ * Appends one note to an order's call log.
+ *
+ * The role check lives here rather than at the call site, for the same reason
+ * setPaymentRemark's does: this is the door, and a door that trusts every
+ * caller to have checked is one new caller away from not being a door. A store
+ * manager and a rider read this log; neither writes to it.
+ *
+ * Append, not read-modify-write. $push is atomic, so two telecallers finishing
+ * calls on the same order at the same moment both land, where `remark`'s $set
+ * would silently lose one of them. $slice trims in the same operation, so the
+ * bound is enforced by the database rather than by whoever calls this next; it
+ * drops the oldest note rather than refusing the write, because telling a
+ * telecaller mid-call that an order has too many notes is the worse failure.
+ *
+ * No status gate. A passenger ringing back about an order that was already
+ * cancelled or delivered is exactly the call worth writing down.
+ */
+export async function appendCallNote(
+  ctx: AuthContext,
+  orderId: string,
+  text: string,
+): Promise<CallNote> {
+  if (ctx.role !== 'TELECALLER' && ctx.role !== 'ADMIN') {
+    throw new ForbiddenError('Only a telecaller or an admin may add a call note.')
+  }
+
+  // updateOne runs no subdocument validators, so CallNoteSchema's maxlength is
+  // documentation on this path and these two checks are what actually hold.
+  const body = text.trim()
+  if (body.length === 0) throw new Error('A call note cannot be empty.')
+  if (body.length > CALL_NOTE_MAX) {
+    throw new Error(`Keep a call note under ${CALL_NOTE_MAX} characters.`)
+  }
+
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
+
+  const note: CallNote = { text: body, userId: ctx.userId, createdAt: new Date() }
+
+  const res = await Order.updateOne(
+    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
+    { $push: { callLog: { $each: [note], $slice: -CALL_LOG_LIMIT } } },
+  )
+  // Scoped, so another outlet's order is a miss rather than a refusal — a 403
+  // here would itself confirm the order exists.
+  if (res.matchedCount === 0) throw new NotFoundError('Order not found')
+
+  return note
+}
+
+/**
+ * May this caller change this note?
+ *
+ * Its author, or an admin. A store manager and a rider read the log and write
+ * nothing to it, so neither reaches here at all; between a telecaller and the
+ * admin who oversees the desk, the question is only ever whose note it is.
+ */
+function ownsNote(ctx: AuthContext, note: { userId?: mongoose.Types.ObjectId | null }): boolean {
+  if (ctx.role === 'ADMIN') return true
+  return Boolean(note.userId && ctx.userId.equals(note.userId))
+}
+
+/** Locates one note on a scoped order, or throws the reason it cannot. */
+async function findNote(ctx: AuthContext, orderId: string, noteId: string) {
+  if (ctx.role !== 'TELECALLER' && ctx.role !== 'ADMIN') {
+    throw new ForbiddenError('Only a telecaller or an admin may change a call note.')
+  }
+  if (!mongoose.isValidObjectId(orderId) || !mongoose.isValidObjectId(noteId)) {
+    throw new NotFoundError('Note not found')
+  }
+
+  const order = await findById(ctx, orderId)
+  if (!order) throw new NotFoundError('Order not found')
+
+  const note = (order.callLog ?? []).find((n) => String(n._id) === noteId)
+  if (!note) throw new NotFoundError('Note not found')
+
+  if (!ownsNote(ctx, note)) {
+    // Not a NotFoundError: the caller can already see this note in the log, so
+    // there is nothing to conceal and every reason to say why the pencil did
+    // not work.
+    throw new ForbiddenError('You can only change a note you wrote yourself.')
+  }
+  return note
+}
+
+/**
+ * Corrects one note in place, stamping `editedAt`.
+ *
+ * The positional `$` operator matches the same note the filter found, so this
+ * cannot write over a neighbour if the array shifted between the read above
+ * and this write.
+ */
+export async function editCallNote(
+  ctx: AuthContext,
+  orderId: string,
+  noteId: string,
+  text: string,
+): Promise<void> {
+  await findNote(ctx, orderId, noteId)
+
+  const body = text.trim()
+  if (body.length === 0) throw new Error('A call note cannot be empty.')
+  if (body.length > CALL_NOTE_MAX) {
+    throw new Error(`Keep a call note under ${CALL_NOTE_MAX} characters.`)
+  }
+
+  const res = await Order.updateOne(
+    scoped(ctx, {
+      _id: new mongoose.Types.ObjectId(orderId),
+      'callLog._id': new mongoose.Types.ObjectId(noteId),
+    }),
+    { $set: { 'callLog.$.text': body, 'callLog.$.editedAt': new Date() } },
+  )
+  if (res.matchedCount === 0) throw new NotFoundError('Note not found')
+}
+
+/**
+ * Removes one note outright.
+ *
+ * A real delete, with no tombstone: this log is a working record of what was
+ * said on the phone, and a mistyped note nobody can clear is worse than one
+ * that can be. The event log beside it is the part that cannot be rewritten.
+ */
+export async function deleteCallNote(
+  ctx: AuthContext,
+  orderId: string,
+  noteId: string,
+): Promise<void> {
+  await findNote(ctx, orderId, noteId)
+
+  const res = await Order.updateOne(
+    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
+    { $pull: { callLog: { _id: new mongoose.Types.ObjectId(noteId) } } },
+  )
+  if (res.matchedCount === 0) throw new NotFoundError('Order not found')
+}
+
+/**
+ * The whole log for one order, resolved and flattened for a screen.
+ *
+ * Returned by every write so a caller holding its own copy of the order (the
+ * admin slide-over) can paint the result without a second round trip, and
+ * without racing a refetch against the revalidation the same action triggers.
+ */
+type LeanCallNote = OrderDoc['callLog'][number]
+
+/**
+ * Flattens a log for a screen. Pure, because every order page has already
+ * fetched the order and resolved its actors for the event log beside it, and
+ * a second round trip to say the same thing again would be waste.
+ */
+export function viewCallNotes(
+  ctx: AuthContext,
+  callLog: LeanCallNote[] | undefined | null,
+  authorLabel: Map<string, string>,
+): CallNoteView[] {
+  return (callLog ?? []).map((n) => ({
+    id: String(n._id),
+    text: n.text,
+    author: n.userId ? (authorLabel.get(String(n.userId)) ?? 'Unknown user') : null,
+    at: n.createdAt.toISOString(),
+    editedAt: n.editedAt ? n.editedAt.toISOString() : null,
+    canManage: ownsNote(ctx, n),
+  }))
+}
+
+export async function listCallNotes(
+  ctx: AuthContext,
+  orderId: string,
+): Promise<CallNoteView[]> {
+  const order = await findById(ctx, orderId)
+  if (!order) throw new NotFoundError('Order not found')
+
+  const notes = order.callLog ?? []
+  if (notes.length === 0) return []
+
+  const authorIds = notes
+    .map((n) => n.userId)
+    .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
+  const authors = authorIds.length
+    ? await User.find({ _id: { $in: authorIds } }).select('name role').lean()
+    : []
+  const label = new Map(
+    authors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
+  )
+
+  return viewCallNotes(ctx, notes, label)
 }
 
 /**

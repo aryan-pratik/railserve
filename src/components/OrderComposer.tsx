@@ -188,7 +188,7 @@ export function OrderComposer({
               </>
             ) : (
               <>
-                {/* Parallel getAll() arrays on the action side — no index encoding
+                {/* Parallel getAll() arrays on the action side: no index encoding
                     in the field names, so a row can be added or dropped freely. */}
                 <div className="space-y-2">
                   {Array.from({ length: rows }, (_, i) => (

@@ -24,6 +24,10 @@ export function EventLog({ events }: { events: EventRow[] }) {
       {events.map((e, i) => {
         const action = typeof e.meta?.action === 'string' ? e.meta.action : null
         const isSideEffect = e.fromStatus === e.toStatus
+        // A telecaller has to give a reason to cancel (see /calls/actions).
+        // It is recorded so somebody can read it back, which means showing it.
+        const reason =
+          typeof e.meta?.reason === 'string' && e.meta.reason.trim() ? e.meta.reason.trim() : null
         return (
           <li key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
             <span className="w-32 shrink-0 text-xs tabular-nums text-faint">{formatIST(e.createdAt)}</span>
@@ -47,6 +51,10 @@ export function EventLog({ events }: { events: EventRow[] }) {
             )}
 
             <span className="ml-auto text-xs text-faint">{e.actor}</span>
+
+            {reason ? (
+              <p className="w-full pl-32 text-xs text-muted text-pretty">&ldquo;{reason}&rdquo;</p>
+            ) : null}
           </li>
         )
       })}

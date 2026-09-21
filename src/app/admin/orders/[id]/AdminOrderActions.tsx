@@ -66,6 +66,43 @@ export function AssignAgents({
   )
 }
 
+/**
+ * Sends the KOT again for an order the kitchen has already moved past.
+ *
+ * The transition button only prints on the ACCEPTED -> KOT_PRINTED edge, which
+ * is gone the moment the order advances. This is the "the ticket never came
+ * out" call: the print route already accepts an admin, so this is the missing
+ * control, not a new permission.
+ */
+export function ReprintKotButton({ orderId }: { orderId: string }) {
+  const [pending, setPending] = useState(false)
+  const [state, setState] = useState<ActionState>(initial)
+
+  async function reprint() {
+    setPending(true)
+    setState(initial)
+    try {
+      const res = await fetch(`/api/store/orders/${orderId}/kot`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? `Reprint failed (${res.status})`)
+      setState({ ok: 'KOT sent to the kitchen printer.' })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : 'Reprint failed' })
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t border-line p-4">
+      <Button type="button" size="sm" variant="secondary" pending={pending} onClick={() => void reprint()}>
+        Reprint KOT
+      </Button>
+      <FormNote state={state} />
+    </div>
+  )
+}
+
 export function TransitionButtons({
   orderId, options,
 }: {

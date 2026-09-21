@@ -1,4 +1,5 @@
-import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * Sequence source for human-readable manual order IDs (MAN-20260827-001).
@@ -19,6 +20,6 @@ const CounterSchema = new Schema(
 export type CounterDoc = InferSchemaType<typeof CounterSchema>
 
 export const Counter: Model<CounterDoc> =
-  (models.Counter as Model<CounterDoc>) ?? model<CounterDoc>('Counter', CounterSchema)
+  registerModel<CounterDoc>('Counter', CounterSchema)
 
 export { CounterSchema }

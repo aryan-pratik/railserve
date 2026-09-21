@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * A money-in alert from the bank, turned into a row.
@@ -72,6 +73,6 @@ export type PaymentDoc = InferSchemaType<typeof PaymentSchema> & {
 }
 
 export const Payment: Model<PaymentDoc> =
-  (models.Payment as Model<PaymentDoc>) ?? model<PaymentDoc>('Payment', PaymentSchema)
+  registerModel<PaymentDoc>('Payment', PaymentSchema)
 
 export { PaymentSchema }

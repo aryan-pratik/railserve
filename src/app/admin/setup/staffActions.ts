@@ -18,15 +18,17 @@ const UserInput = z
     password: z.string().optional(),
   })
   .superRefine((v, ctx) => {
-    // Both scoped roles need at least one outlet: a manager cannot log in
-    // without one, and a rider would see an empty board forever.
+    // Every scoped role needs at least one outlet: a manager or telecaller
+    // cannot log in without one, and a rider would see an empty board forever.
     if (v.role !== 'ADMIN' && v.restaurantIds.length === 0) {
       ctx.addIssue({
         code: 'custom', path: ['restaurantIds'],
         message:
           v.role === 'STORE_MANAGER'
             ? 'A store manager must hold at least one outlet'
-            : 'A rider must be attached to at least one outlet, or their app will be empty',
+            : v.role === 'TELECALLER'
+              ? 'A telecaller must be attached to at least one outlet, or their call list will be empty'
+              : 'A rider must be attached to at least one outlet, or their app will be empty',
       })
     }
     if (!v.id && !v.password) {

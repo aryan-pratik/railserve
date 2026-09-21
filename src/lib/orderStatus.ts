@@ -25,6 +25,13 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
  * apart, which they would if they lived in separate files.
  *
  * Retail enters at RECEIVED; bulk enters at ENQUIRY and merges at RECEIVED.
+ *
+ * A TELECALLER appears on exactly one kind of edge: `-> CANCELLED`, and only
+ * from the four states before a rider is carrying the food. That is the whole
+ * job — they ring the passenger, the passenger cancels, and the cancellation
+ * has to reach the kitchen before the food is cooked rather than via a
+ * WhatsApp message somebody has to notice. Once an order is DISPATCHED the
+ * rider owns the outcome, so no CANCELLED edge is added there.
  */
 export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readonly Role[]>>> = {
   // --- bulk-only head of the pipeline ---
@@ -41,15 +48,15 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
   // --- shared pipeline ---
   RECEIVED: {
     ACCEPTED: ['ADMIN', 'STORE_MANAGER'],
-    CANCELLED: ['ADMIN'],
+    CANCELLED: ['ADMIN', 'TELECALLER'],
   },
   ACCEPTED: {
     KOT_PRINTED: ['ADMIN', 'STORE_MANAGER'],
-    CANCELLED: ['ADMIN'],
+    CANCELLED: ['ADMIN', 'TELECALLER'],
   },
   KOT_PRINTED: {
     PREPARED: ['ADMIN', 'STORE_MANAGER'],
-    CANCELLED: ['ADMIN'],
+    CANCELLED: ['ADMIN', 'TELECALLER'],
   },
   PREPARED: {
     // A store manager can hand food over on the rider's behalf: the rider is
@@ -58,7 +65,7 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     // halt. The manager must name who took it — see `handedTo` in
     // transitionOrder — so the record still says which rider has the food.
     DISPATCHED: ['DELIVERY_AGENT', 'STORE_MANAGER'],
-    CANCELLED: ['ADMIN'],
+    CANCELLED: ['ADMIN', 'TELECALLER'],
   },
   DISPATCHED: {
     DELIVERED: ['DELIVERY_AGENT'],

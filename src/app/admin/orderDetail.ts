@@ -1,11 +1,13 @@
 'use server'
 
 import { requireRole } from '@/lib/session'
-import { findById } from '@/lib/repo/orderRepo'
+import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
+import { ROLE_LABEL } from '@/lib/roles'
+import type { CallNoteView } from '@/lib/callNotes'
 
 /**
  * Everything the slide-over shows, in one round trip.
@@ -46,6 +48,8 @@ export type OrderDetail = {
   notes: string | null
   items: { id: string; name: string; qty: number; pricePaise: number | null; isPacking: boolean; spec: string | null; notes: string | null }[]
   events: { id: string; toStatus: string; fromStatus: string | null; actor: string; at: string; action: string | null }[]
+  /** The call log, flattened the same way. See CallLog. */
+  callLog: CallNoteView[]
   /** Transitions this admin may perform from here, already labelled. */
   nextStatuses: { to: string; label: string; danger: boolean }[]
 }
@@ -70,17 +74,28 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
   if (!order) return null
 
   await connectDb()
-  const actorIds = order.events.map((e) => e.userId).filter((v) => v != null)
+  // `?? []` because findById is .lean(), which skips the schema's `default: []`
+  // and leaves callLog undefined on every order written before the field
+  // existed. Both logs then resolve their authors from the one query below.
+  const callLog = order.callLog ?? []
+  const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
+    (v) => v != null,
+  )
   const [outlet, actors, timings] = await Promise.all([
     order.restaurantId
       ? Restaurant.findById(order.restaurantId).select('name stationCode').lean()
       : null,
-    User.find({ _id: { $in: actorIds } }).select('name').lean(),
+    User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     // Cache-only: opening a panel must not block on an 8s provider call.
     timingForOrders([order], { allowFetch: false }),
   ])
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
+  // The call log names the role too: both a telecaller and an admin write
+  // there, and a reader cares which.
+  const actorLabel = new Map(
+    actors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
+  )
   const t = timingFor(order, timings)
 
   return {
@@ -124,6 +139,7 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
       at: e.createdAt.toISOString(),
       action: (e.meta as { action?: string } | undefined)?.action ?? null,
     })),
+    callLog: viewCallNotes(ctx, callLog, actorLabel),
     nextStatuses: allowedNextStatuses(order.status as OrderStatus, 'ADMIN').map((to) => ({
       to,
       label: LABEL[to] ?? to,

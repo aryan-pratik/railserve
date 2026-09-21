@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'Privacy Policy — RailServe',
+  title: 'Privacy Policy: RailServe',
 }
 
 /** Required by Google Cloud's OAuth consent screen Branding page to publish

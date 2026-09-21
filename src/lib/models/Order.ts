@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 import {
   ORDER_SOURCES,
   ORDER_TYPES,
@@ -32,6 +33,34 @@ const OrderEventSchema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     meta: { type: Schema.Types.Mixed, default: {} },
     createdAt: { type: Date, required: true, default: () => new Date() },
+  },
+  { _id: true },
+)
+
+/**
+ * One thing a telecaller (or an admin) wrote down after a call.
+ *
+ * Carries the same who/when/what as OrderEventSchema, because it is nearly the
+ * same kind of record: only ever read alongside the order it sits on, and not
+ * a status change, so it does not belong in `events`, which transitionOrder
+ * owns exclusively.
+ *
+ * Unlike an event it can be corrected or withdrawn by whoever wrote it, or by
+ * an admin. An edit stamps `editedAt`; a delete is a real delete and leaves
+ * nothing behind, so this is a working record rather than an audit trail. The
+ * event log next to it remains the thing that cannot be rewritten.
+ *
+ * `createdAt` is hand-rolled for the same reason it is there: the value comes
+ * from the $push in the repository, and updateOne runs no document middleware.
+ */
+const CallNoteSchema = new Schema(
+  {
+    text: { type: String, required: true, trim: true, maxlength: 500 },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    createdAt: { type: Date, required: true, default: () => new Date() },
+    // Set when a note is corrected in place, so a reader can see that the
+    // sentence in front of them is not the one that was written on the call.
+    editedAt: { type: Date, default: null },
   },
   { _id: true },
 )
@@ -98,6 +127,24 @@ const OrderSchema = new Schema(
     // on the KOT — this is not.
     remark: { type: String, default: null, trim: true },
 
+    // What the passenger said on the phone, one entry per call.
+    //
+    // Free text is scattered across five fields now, which is four more than
+    // anyone holds in their head. Two sit on individual items, up in
+    // OrderItemSchema:
+    //   items[].spec   — the composite breakdown of a combo or thali,
+    //                    PRINTED ON THE KOT as a block under the item
+    //   items[].notes  — a note about that one item, admin-editable inline,
+    //                    PRINTED ON THE KOT as "note:" under the item
+    // and three describe the whole order, here:
+    //   notes    — set once at creation, PRINTED ON THE KOT, never edited
+    //   remark   — one admin instruction to the kitchen, overwritten on save,
+    //              not printed
+    //   callLog  — this. Written by telecallers and admins, never printed,
+    //              read by everyone, and editable or deletable by its author
+    //              or an admin.
+    callLog: { type: [CallNoteSchema], default: [] },
+
     items: { type: [OrderItemSchema], default: [] },
     events: { type: [OrderEventSchema], default: [] },
     delivery: { type: DeliverySchema, default: () => ({}) },
@@ -117,6 +164,6 @@ const OrderSchema = new Schema(
 export type OrderDoc = InferSchemaType<typeof OrderSchema> & { _id: mongoose.Types.ObjectId }
 
 export const Order: Model<OrderDoc> =
-  (models.Order as Model<OrderDoc>) ?? model<OrderDoc>('Order', OrderSchema)
+  registerModel<OrderDoc>('Order', OrderSchema)
 
 export { OrderSchema }

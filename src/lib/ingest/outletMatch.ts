@@ -56,7 +56,7 @@ export async function matchOutlet(
       ok: false,
       detail:
         `${hits.length} outlets match ${JSON.stringify(outletName)} ` +
-        `(${hits.map((h) => `${h.name}/${h.stationCode}`).join(', ')}) — refusing to guess`,
+        `(${hits.map((h) => `${h.name}/${h.stationCode}`).join(', ')}): refusing to guess`,
     }
   }
 
@@ -68,7 +68,7 @@ export async function matchOutlet(
       ok: false,
       detail:
         `outlet ${r.name} is registered at ${r.stationCode} but the order says ` +
-        `${stationCode} — refusing to guess`,
+        `${stationCode}: refusing to guess`,
     }
   }
 

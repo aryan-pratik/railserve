@@ -75,12 +75,12 @@ export class RapidApiTrainStatusProvider implements TrainStatusProvider {
       // to scheduled times that looks like the train simply has no live data.
       if (res.status === 429) {
         throw new TrainStatusUnavailable(
-          'train API quota exhausted — the RapidAPI plan is out of requests for this period',
+          'train API quota exhausted: the RapidAPI plan is out of requests for this period',
         )
       }
       if (res.status === 401 || res.status === 403) {
         throw new TrainStatusUnavailable(
-          'train API rejected the key — check TRAIN_API_KEY and that the plan covers this host',
+          'train API rejected the key: check TRAIN_API_KEY and that the plan covers this host',
         )
       }
       throw new TrainStatusUnavailable(`train API returned ${res.status}`)

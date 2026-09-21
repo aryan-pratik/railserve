@@ -153,7 +153,7 @@ export async function confirmEnquiryAction(
 
   revalidatePath(`/admin/enquiries/${orderId}`)
   revalidatePath('/store')
-  return { ok: 'Confirmed — it is now on the outlet dashboard.' }
+  return { ok: 'Confirmed: it is now on the outlet dashboard.' }
 }
 
 export async function markLostAction(formData: FormData) {

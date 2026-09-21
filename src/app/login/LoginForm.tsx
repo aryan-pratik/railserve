@@ -14,7 +14,7 @@ export function LoginForm() {
       action={formAction}
       className="space-y-4 rounded-xl border border-line bg-surface p-6 shadow-sm"
     >
-      {/* Phone, not email — there is no email field anywhere in the data model. */}
+      {/* Phone, not email: there is no email field anywhere in the data model. */}
       <Field label="Phone number" htmlFor="phone">
         <input
           id="phone"

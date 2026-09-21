@@ -1,12 +1,14 @@
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
-import { findById } from '@/lib/repo/orderRepo'
+import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
+import { ROLE_LABEL } from '@/lib/roles'
 import { BackLink, Card, CardHeader } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
 import { EventLog } from '@/components/EventLog'
+import { CallLog } from '@/components/CallLog'
 import { AcceptButton, GenerateKotButton, MarkPreparedButton, PreviewKotLink } from '../../StoreOrderActions'
 
 export default async function StoreOrderDetail(props: PageProps<'/store/orders/[id]'>) {
@@ -18,11 +20,21 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
   if (!order) notFound()
 
   await connectDb()
-  const actorIds = order.events
-    .map((e) => e.userId)
-    .filter((v): v is NonNullable<typeof v> => Boolean(v))
-  const actors = await User.find({ _id: { $in: actorIds } }).select('name').lean()
+  // Both logs draw their authors from one query. `?? []` because findById is
+  // .lean(), which skips the schema's `default: []` — callLog is genuinely
+  // undefined on orders written before the field existed, and the type says
+  // otherwise.
+  const callLog = order.callLog ?? []
+  const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
+    (v): v is NonNullable<typeof v> => Boolean(v),
+  )
+  const actors = await User.find({ _id: { $in: actorIds } }).select('name role').lean()
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
+  // The call log names the role too: a manager reading a note cares whether it
+  // came from the call desk or from an admin.
+  const actorLabel = new Map(
+    actors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
+  )
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -84,6 +96,16 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
         <Card>
           <CardHeader title="Notes" />
           <p className="whitespace-pre-wrap px-4 py-3 text-sm text-muted">{order.notes}</p>
+        </Card>
+      ) : null}
+
+      {/* Read-only here: the composer lives on the telecaller's and admin's
+          own pages. An admin viewing this console gets the same read-only
+          rendering, which is correct: they have the box on /admin. */}
+      {callLog.length > 0 ? (
+        <Card>
+          <CardHeader title="Call log" />
+          <CallLog orderId={id} notes={viewCallNotes(ctx, callLog, actorLabel)} />
         </Card>
       ) : null}
 

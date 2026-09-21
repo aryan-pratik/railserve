@@ -1,4 +1,57 @@
 import type { OrderCardData } from '@/components/OrderCard'
+import { formatTimeIST } from './format'
+
+type LeanCallNote = { text: string; createdAt: Date }
+
+/**
+ * The hover text for an order's passenger notes, built here on the server.
+ *
+ * A finished string rather than the notes themselves, for two reasons. The
+ * tables that carry this are client components, and a Date crossing that
+ * boundary is the silent-corruption case React warns about. And the hint is
+ * rendered by the browser's own tooltip, which takes text and nothing else.
+ *
+ * Why the browser's tooltip and not a styled popover: every table showing this
+ * sits inside TableFrame's `overflow-x-auto`, and CSS computes `visible` on
+ * one axis to `auto` when the other is not visible — so an absolutely
+ * positioned popover would be clipped by its own row, on the one screen where
+ * being readable is the entire point. A title attribute is drawn by the
+ * browser outside the document and cannot be clipped. The remark column on
+ * these same tables already works this way.
+ */
+export type CallNoteSummary = { count: number; hint: string | null }
+
+export function callNoteSummary(callLog: LeanCallNote[] | undefined | null): CallNoteSummary {
+  const notes = callLog ?? []
+  if (notes.length === 0) return { count: 0, hint: null }
+
+  // Newest first: on a board being scanned, the latest thing the passenger
+  // said is the one that changes what you do next.
+  const recent = notes.slice(-3).reverse()
+  const hidden = notes.length - recent.length
+
+  const hint = [
+    `${notes.length} call note${notes.length === 1 ? '' : 's'}`,
+    ...recent.map((n) => `${formatTimeIST(n.createdAt)}: ${n.text}`),
+    hidden > 0 ? `…and ${hidden} earlier` : null,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n')
+
+  return { count: notes.length, hint }
+}
+
+/**
+ * The same thing, shaped for spreading into a table row.
+ *
+ * `?? []` is load bearing: findMany is .lean(), which skips the schema's
+ * `default: []`, so callLog is undefined on every order written before the
+ * field existed and InferSchemaType types it non-optional.
+ */
+export function callNoteRow(order: { callLog?: LeanCallNote[] | null }) {
+  const { count, hint } = callNoteSummary(order.callLog ?? [])
+  return { callNoteCount: count, callNoteHint: hint }
+}
 
 type LeanOrder = {
   _id: unknown

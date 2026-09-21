@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * One kitchen-printer job, queued for a station's local print agent to pick
@@ -36,4 +37,4 @@ const PrintJobSchema = new Schema(
 export type PrintJobDoc = InferSchemaType<typeof PrintJobSchema> & { _id: mongoose.Types.ObjectId }
 
 export const PrintJob: Model<PrintJobDoc> =
-  (models.PrintJob as Model<PrintJobDoc>) ?? model<PrintJobDoc>('PrintJob', PrintJobSchema)
+  registerModel<PrintJobDoc>('PrintJob', PrintJobSchema)

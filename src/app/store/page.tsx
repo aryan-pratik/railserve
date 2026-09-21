@@ -6,6 +6,7 @@ import { Restaurant, User } from '@/lib/models'
 import { timingForOrders, timingFor, trainFeedHealth } from '@/lib/train/service'
 import { sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate } from '@/lib/format'
+import { callNoteRow } from '@/lib/orderView'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
 import { TrainRunCard, type RunCardData } from '@/components/TrainRunCard'
@@ -90,6 +91,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       amountPaise: o.amountPaise,
       paymentMode: o.paymentMode,
       outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,
+            ...callNoteRow(o),
     })),
   }))
 
@@ -189,6 +191,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
             amountPaise: o.amountPaise,
             outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,
             remark: o.remark,
+            ...callNoteRow(o),
           }))}
           hrefFor={(id) => `/store/orders/${id}`}
           showOutlet={multiOutlet}

@@ -105,7 +105,7 @@ export async function transitionOrder(params: {
       // what it is — somebody else got there first.
       if (from === to) {
         throw new ConflictError(
-          `Order is already ${to}. Someone else may have just done this — reload.`,
+          `Order is already ${to}. Someone else may have just done this: reload.`,
         )
       }
 
@@ -189,7 +189,7 @@ export async function transitionOrder(params: {
 
       if (res.matchedCount === 0) {
         throw new ConflictError(
-          `Order changed underneath you — it is no longer ${from}. Reload and retry.`,
+          `Order changed underneath you: it is no longer ${from}. Reload and retry.`,
         )
       }
 
@@ -247,7 +247,7 @@ export async function adminOverrideStatus(params: {
 
       if (from === to) {
         throw new ConflictError(
-          `Order is already ${to}. Someone else may have just done this — reload.`,
+          `Order is already ${to}. Someone else may have just done this: reload.`,
         )
       }
 
@@ -270,7 +270,7 @@ export async function adminOverrideStatus(params: {
 
       if (res.matchedCount === 0) {
         throw new ConflictError(
-          `Order changed underneath you — it is no longer ${from}. Reload and retry.`,
+          `Order changed underneath you: it is no longer ${from}. Reload and retry.`,
         )
       }
 

@@ -1,4 +1,5 @@
-import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 /**
  * A station we operate at. One station is one physical kitchen, one thermal
@@ -39,6 +40,6 @@ const StationSchema = new Schema(
 export type StationDoc = InferSchemaType<typeof StationSchema>
 
 export const Station: Model<StationDoc> =
-  (models.Station as Model<StationDoc>) ?? model<StationDoc>('Station', StationSchema)
+  registerModel<StationDoc>('Station', StationSchema)
 
 export { StationSchema }

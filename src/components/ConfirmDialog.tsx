@@ -26,20 +26,26 @@ export function ConfirmDialog({
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // Split for the same reason as Modal's — see the note there. This one holds
+  // only buttons today, so the focus-stealing version never visibly broke
+  // anything; leaving the loaded gun in the twin is how it recurs.
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     panelRef.current?.focus()
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+      opener?.focus?.()
+    }
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
     }
     document.addEventListener('keydown', onKey)
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previous
-      opener?.focus?.()
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [onCancel])
 
   return (

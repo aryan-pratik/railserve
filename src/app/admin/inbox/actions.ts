@@ -34,10 +34,10 @@ export async function ingestPastedEmail(
     revalidatePath('/store/payments')
 
     if (r.status === 'CREATED') return { ok: `Created order ${r.externalOrderId}.` }
-    if (r.status === 'DUPLICATE') return { ok: `Order ${r.externalOrderId} already exists — ignored.` }
-    if (r.status === 'PAYMENT') return { ok: `Recorded payment ${r.rrn} — see Payments.` }
+    if (r.status === 'DUPLICATE') return { ok: `Order ${r.externalOrderId} already exists: ignored.` }
+    if (r.status === 'PAYMENT') return { ok: `Recorded payment ${r.rrn}: see Payments.` }
     if (r.status === 'PAYMENT_DUPLICATE') {
-      return { ok: `Payment ${r.rrn} is already recorded — ignored.` }
+      return { ok: `Payment ${r.rrn} is already recorded: ignored.` }
     }
     return { error: `Could not parse: ${r.detail}. Filed in the unparsed inbox.` }
   } catch (err) {
@@ -115,8 +115,8 @@ export async function resolveUnparsed(
   return {
     ok:
       created.status === 'CREATED'
-        ? `Resolved — created order ${created.externalOrderId}.`
-        : `Resolved — order ${created.externalOrderId} already existed.`,
+        ? `Resolved: created order ${created.externalOrderId}.`
+        : `Resolved: order ${created.externalOrderId} already existed.`,
   }
 }
 
@@ -155,8 +155,8 @@ async function resolveAsPayment(
   return {
     ok:
       recorded.status === 'CREATED'
-        ? `Resolved — recorded payment ${recorded.rrn}.`
-        : `Resolved — payment ${recorded.rrn} already existed.`,
+        ? `Resolved: recorded payment ${recorded.rrn}.`
+        : `Resolved: payment ${recorded.rrn} already existed.`,
   }
 }
 

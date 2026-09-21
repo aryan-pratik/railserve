@@ -3,6 +3,7 @@ import { countByPaymentMode, countOrders, distinctStatuses, findMany } from '@/l
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
+import { callNoteRow } from '@/lib/orderView'
 import { AdminOrdersTable } from './AdminOrdersTable'
 import { IconDownload, IconPlus } from '@/components/Icons'
 import {
@@ -213,6 +214,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
           remark: o.remark,
+            ...callNoteRow(o),
         }))}
         showOutlet
         statusOptions={statusOptions}

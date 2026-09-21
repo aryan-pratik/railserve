@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST } from '@/lib/format'
 import { CoachChip, Dash, EmptyState, StatusBadge, TypeBadge, thClass } from './ui'
+import { CallNoteHint } from './CallNoteHint'
 
 type Maybe<T> = T | null | undefined
 
@@ -19,6 +20,9 @@ export type OrderRow = {
   amountPaise?: Maybe<number>
   outletName?: Maybe<string>
   remark?: Maybe<string>
+  /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
+  callNoteCount?: Maybe<number>
+  callNoteHint?: Maybe<string>
 }
 
 /**
@@ -104,7 +108,14 @@ export function OrdersTable({
             <tr key={o.id} className="transition-colors hover:bg-sunken/60">
               <td className="px-3 py-2.5">
                 <Link href={hrefFor(o.id)} className="flex min-w-0 items-center gap-1.5 font-medium text-accent hover:underline">
-                  <span className="truncate font-mono text-xs">{o.externalOrderId}</span>
+                  {/* The hint rides inside the id's own flex item so it can
+                      never be the thing that wraps to a second line, and needs
+                      no column of its own: the colgroup percentages above are
+                      tuned to sum to 100. */}
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="truncate font-mono text-xs">{o.externalOrderId}</span>
+                    <CallNoteHint orderId={o.id} count={o.callNoteCount} hint={o.callNoteHint} />
+                  </span>
                   <TypeBadge type={o.orderType} />
                 </Link>
               </td>

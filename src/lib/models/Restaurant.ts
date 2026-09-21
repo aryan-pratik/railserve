@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, type InferSchemaType, type Model } from 'mongoose'
+import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
+import { registerModel } from './registerModel'
 
 const RestaurantSchema = new Schema(
   {
@@ -25,6 +26,6 @@ const RestaurantSchema = new Schema(
 export type RestaurantDoc = InferSchemaType<typeof RestaurantSchema> & { _id: mongoose.Types.ObjectId }
 
 export const Restaurant: Model<RestaurantDoc> =
-  (models.Restaurant as Model<RestaurantDoc>) ?? model<RestaurantDoc>('Restaurant', RestaurantSchema)
+  registerModel<RestaurantDoc>('Restaurant', RestaurantSchema)
 
 export { RestaurantSchema }

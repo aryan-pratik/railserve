@@ -72,7 +72,7 @@ export class OlfParser implements OrderParser {
     if (!stationRaw || !stationCode) {
       return {
         ok: false, reason: 'MISSING_FIELD',
-        detail: `station ${JSON.stringify(stationRaw)} has no known code — add it to STATION_CODES`,
+        detail: `station ${JSON.stringify(stationRaw)} has no known code: add it to STATION_CODES`,
         partial,
       }
     }

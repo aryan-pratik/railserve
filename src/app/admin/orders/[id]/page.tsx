@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
-import { findById } from '@/lib/repo/orderRepo'
+import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
+import { ROLE_LABEL } from '@/lib/roles'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
 import { Card, CardHeader, Dash, PageHeader, PaymentBadge, StatusBadge, TypeBadge, statusLabel } from '@/components/ui'
 import { TrainTiming } from '@/components/TrainTiming'
@@ -11,8 +12,13 @@ import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { forceRefreshOrderTrain } from './actions'
 import { EventLog } from '@/components/EventLog'
+import { CallLog } from '@/components/CallLog'
+import { CallNoteForm } from '@/components/CallNoteForm'
 import { DeliveryProof } from '@/components/DeliveryProof'
-import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, TransitionButtons } from './AdminOrderActions'
+import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
+
+/** Statuses an order can only be in if its KOT has already been sent once. */
+const PRINTED_STATUSES = ['KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'FAILED']
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -32,9 +38,14 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
 
   await connectDb()
 
-  const actorIds = order.events
-    .map((e) => e.userId)
-    .filter((v): v is NonNullable<typeof v> => Boolean(v))
+  // `?? []` because findById is .lean(), which skips the schema's `default: []`
+  // — callLog is genuinely undefined on orders written before the field
+  // existed, and InferSchemaType types it non-optional, so nothing else catches
+  // it. Both logs then resolve their authors from the one existing query.
+  const callLog = order.callLog ?? []
+  const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
+    (v): v is NonNullable<typeof v> => Boolean(v),
+  )
 
   const [outlet, agents, actors, timings] = await Promise.all([
     order.restaurantId
@@ -46,6 +57,11 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   ])
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
+  // Only the call log names the role: both a telecaller and an admin write
+  // there, and it matters which.
+  const actorLabel = new Map(
+    actors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
+  )
   const timing = timingFor(order, timings)
   const assigned = order.delivery.agentIds.map(String)
   const riderName = new Map(agents.map((a) => [String(a._id), a.name]))
@@ -175,6 +191,18 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             </Card>
           ) : null}
 
+          {/* Left column, not right: the right-hand track is narrow controls,
+              and a list that grows would shove Danger zone an unpredictable
+              distance down it. Unconditional: the box must be here when the
+              log is empty. */}
+          <Card>
+            <CardHeader title="Call log" />
+            <CallLog orderId={String(order._id)} notes={viewCallNotes(ctx, callLog, actorLabel)} />
+            <div className="border-t border-line">
+              <CallNoteForm orderId={String(order._id)} />
+            </div>
+          </Card>
+
           <Card>
             <CardHeader title="Event log" />
             <EventLog
@@ -193,6 +221,11 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           <Card>
             <CardHeader title="Actions" />
             <TransitionButtons orderId={String(order._id)} options={options} />
+            {/* Only once the order is past the printing step: before it, the
+                transition button itself is what prints. */}
+            {order.restaurantId && PRINTED_STATUSES.includes(order.status) ? (
+              <ReprintKotButton orderId={String(order._id)} />
+            ) : null}
           </Card>
 
           <Card>

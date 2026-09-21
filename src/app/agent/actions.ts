@@ -55,7 +55,7 @@ export async function dispatchRunAction(
 
     if (r.errors.length) return { error: r.errors.join('; ') }
     if (r.moved === 0) {
-      return { error: 'Nothing on this run is prepared yet — check with the kitchen.' }
+      return { error: 'Nothing on this run is prepared yet: check with the kitchen.' }
     }
     return {
       ok:

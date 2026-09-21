@@ -3,6 +3,7 @@ import { findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { formatDateRange, shiftServiceDate, todayIST } from '@/lib/format'
+import { callNoteRow } from '@/lib/orderView'
 import { OrdersTable } from '@/components/OrdersTable'
 import { QueryForm } from '@/components/QueryForm'
 import { Button, Card, Field, PageHeader, inputClass } from '@/components/ui'
@@ -88,6 +89,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
           remark: o.remark,
+            ...callNoteRow(o),
         }))}
         hrefFor={(id) => `/store/orders/${id}`}
         showOutlet={multiOutlet}

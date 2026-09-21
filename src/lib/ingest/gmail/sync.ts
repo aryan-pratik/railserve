@@ -223,7 +223,7 @@ export async function checkIngestStaleness(now = new Date()): Promise<{
   if (state?.lastError) {
     messages.push(
       /invalid_grant|invalid_client|unauthorized_client/i.test(state.lastError)
-        ? 'Gmail rejected the credentials — GMAIL_REFRESH_TOKEN must be reissued ' +
+        ? 'Gmail rejected the credentials: GMAIL_REFRESH_TOKEN must be reissued ' +
           '(`npm run gmail:setup`, then update .env.production and restart)'
         : `last Gmail sync reported: ${state.lastError}`,
     )

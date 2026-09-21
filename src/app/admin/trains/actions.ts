@@ -57,7 +57,7 @@ export async function lookupTrain(
   const serviceDate = String(formData.get('serviceDate') ?? '').trim() || todayIST()
 
   if (!/^\d{4,5}$/.test(trainNo)) {
-    return { error: 'Enter a train number — 4 or 5 digits, e.g. 12561.' }
+    return { error: 'Enter a train number: 4 or 5 digits, e.g. 12561.' }
   }
   if (!/^[A-Z]{2,5}$/.test(stationCode)) {
     return { error: 'Enter a station code, e.g. CNB for Kanpur Central.' }

@@ -6,6 +6,7 @@ import { Restaurant } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatDateRange, formatTimeIST } from '@/lib/format'
+import { callNoteRow } from '@/lib/orderView'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { AutoRefresh } from '@/components/AutoRefresh'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
@@ -150,6 +151,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         outletName: outletName.get(String(o.restaurantId)) ?? null,
         orderTimeLabel: formatTimeIST(o.createdAt),
         isNew: o.status === 'RECEIVED',
+        ...callNoteRow(o),
       })),
     }
   })
@@ -181,10 +183,10 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           commands, which is right on the inbox page an admin opens to fix it
           and noise to whoever is working the counter. Here the useful content
           is only "what you are looking at is incomplete, and it is not your
-          fault" — the diagnosis is one click away. */}
+          fault": the diagnosis is one click away. */}
       {ingest.stale ? (
         <Notice tone="danger">
-          Email ingestion has stopped — orders are likely missing from this board.{' '}
+          Email ingestion has stopped: orders are likely missing from this board.{' '}
           <Link href="/admin/inbox" className="underline underline-offset-2">
             See why
           </Link>
@@ -241,6 +243,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
             amountPaise: o.amountPaise,
             outletName: outletName.get(String(o.restaurantId)) ?? null,
             remark: o.remark,
+            ...callNoteRow(o),
           }))}
           hrefFor={(id) => `/admin/orders/${id}`}
           showOutlet

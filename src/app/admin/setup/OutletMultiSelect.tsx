@@ -120,7 +120,7 @@ export function OutletMultiSelect({
 
   return (
     <div className="overflow-hidden rounded-xl border border-line-strong bg-surface">
-      {/* Real, form-submitted checkboxes — kept outside the visual tree since the
+      {/* Real, form-submitted checkboxes: kept outside the visual tree since the
           same outlet appears in both tabs; this is the single source of truth. */}
       {options.map((o) => (
         <input key={o.id} type="checkbox" name={name} value={o.id} checked={selected.has(o.id)} onChange={() => {}} hidden />
@@ -164,7 +164,7 @@ export function OutletMultiSelect({
         </div>
 
         {/* Fixed height, not max-height: switching tabs or typing a search query
-            must never resize this box or the modal around it — only this list
+            must never resize this box or the modal around it: only this list
             scrolls internally, regardless of how many rows it holds. */}
         <div className="mt-2 h-55 space-y-2 overflow-y-auto">
           {tab === 'byStation' ? (
