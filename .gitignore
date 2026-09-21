@@ -35,6 +35,19 @@ yarn-error.log*
 .env*
 !.env.example
 
+# The print agent, zipped to hand to a station. The archive carries the
+# agent's own .env, and AGENT_TOKEN with it — the .env* rule above cannot see
+# inside a zip, and this repo is public. Build it when you need it; never
+# commit it.
+/agent.zip
+/agent*.zip
+
+# Finder duplicates of the agent directory ("agent 2", "agent copy"). Only
+# their .env is caught by the rule above; the rest would land in the repo as a
+# second, silently diverging copy of the print agent.
+/agent [0-9]*/
+/agent copy*/
+
 # vercel
 .vercel
 
@@ -59,3 +72,6 @@ next-env.d.ts
 # Session/machine-specific runbooks — not project documentation.
 *.local.md
 captures/
+
+# Local-only test data script (creates dummy Gaya orders in the dev DB)
+/scripts/seed-gaya-test-orders.ts
