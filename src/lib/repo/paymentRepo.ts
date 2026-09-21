@@ -48,12 +48,13 @@ function buildFilter({ from, to, q }: PaymentQuery): QueryFilter<PaymentDoc> {
   return filter
 }
 
-export async function findPayments(query: PaymentQuery = {}, limit = 500) {
+export async function findPayments(query: PaymentQuery = {}, limit = 500, skip = 0) {
   await connectDb()
   return Payment.find(buildFilter(query))
     // Newest first, and `receivedAt` breaks the tie — several credits share a
     // transactionDate, and the alert's own date carries no time of day.
     .sort({ transactionDate: -1, receivedAt: -1 })
+    .skip(skip)
     .limit(limit)
     .lean()
 }

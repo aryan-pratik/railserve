@@ -3,7 +3,10 @@ import type { QueryFilter } from 'mongoose'
 import { requireRole } from '@/lib/session'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { LIVE_STATUSES } from '@/lib/repo/runRepo'
-import { formatServiceDate, formatShortDate, formatTimeIST, todayIST } from '@/lib/format'
+import { formatServiceDate, formatShortDate, shiftServiceDate, todayIST } from '@/lib/format'
+import { timingFor, timingForOrders } from '@/lib/train/service'
+import { ArrivalTime } from '@/components/ArrivalTime'
+import { arrivalRecord } from '@/lib/arrival'
 import { callNoteSummary } from '@/lib/orderView'
 import { TableFrame } from '@/components/OrdersTable'
 import { CallNoteHint } from '@/components/CallNoteHint'
@@ -11,8 +14,9 @@ import { QueryForm } from '@/components/QueryForm'
 import { IconPhone, IconSearch } from '@/components/Icons'
 import {
   Button, Card, CoachChip, Dash, EmptyState, Field, PageHeader, StatusBadge, Tabs,
-  inputClass, thClass,
+  Pagination, inputClass, thClass,
 } from '@/components/ui'
+import { readPage, withPage } from '@/lib/pagination'
 
 export const metadata = { title: 'Call list · RailServe' }
 
@@ -20,8 +24,6 @@ export const metadata = { title: 'Call list · RailServe' }
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
-
-const ROW_LIMIT = 200
 
 /**
  * The telecaller's call list.
@@ -44,8 +46,13 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
   const tab = one(sp.tab)
   const q = one(sp.q).trim()
+  const { page, pageSize, skip } = readPage(sp)
 
   const today = todayIST()
+  // The service day before today, in IST. Past midnight, last night's orders
+  // that are still open leave the Today tab; this is where they can be found.
+  const yesterday = shiftServiceDate(today, -1)
+  const showYesterday = tab === 'yesterday'
   const showUpcoming = tab === 'upcoming'
   const showCancelled = tab === 'cancelled'
   const showAll = tab === 'all'
@@ -55,7 +62,11 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   // holds, not every order in the system.
   const base: QueryFilter<Record<string, unknown>> = showAll
     ? {}
-    : showCancelled
+    : showYesterday
+      ? // Every status: this tab is for looking back at the whole of last
+        // night as well as finishing what is left of it.
+        { serviceDate: yesterday }
+      : showCancelled
       ? { serviceDate: today, status: 'CANCELLED' }
       : showUpcoming
         ? { serviceDate: { $gt: today }, status: { $in: LIVE_STATUSES } }
@@ -75,29 +86,62 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
 
   const counts: QueryFilter<Record<string, unknown>>[] = [
     { serviceDate: today, status: { $in: LIVE_STATUSES } },
+    // Yesterday's badge counts only what is still open, though the tab lists
+    // everything, so leftover work stands out.
+    { serviceDate: yesterday, status: { $in: LIVE_STATUSES } },
     { serviceDate: { $gt: today }, status: { $in: LIVE_STATUSES } },
     { serviceDate: today, status: 'CANCELLED' },
   ]
 
-  const [orders, todayCount, upcomingCount, cancelledCount] = await Promise.all([
+  const [orders, total, todayCount, yesterdayCount, upcomingCount, cancelledCount] = await Promise.all([
     findMany(ctx, base, {
-      sort: showAll
-        ? { serviceDate: -1, createdAt: -1 }
-        : showCancelled
-          ? { updatedAt: -1 }
-          : { serviceDate: 1, scheduledArrival: 1, createdAt: 1 },
-      limit: ROW_LIMIT,
+      // Newest order on top, by the time it was placed, on every tab. A
+      // telecaller works from the order that just came in, not from the train
+      // that arrives soonest: that is the kitchen's ordering, and here it left
+      // the newest orders at the bottom. Cancelled puts the latest
+      // cancellation on top instead. _id breaks ties between orders that
+      // arrived in the same instant, so paging never repeats or skips a row.
+      sort: showCancelled ? { updatedAt: -1, _id: -1 } : { createdAt: -1, _id: -1 },
+      limit: pageSize,
+      skip,
     }),
+    // The total behind the pager: this tab with the search applied, not the
+    // tab's badge, which counts open orders only.
+    countOrders(ctx, base),
     countOrders(ctx, counts[0]),
     countOrders(ctx, counts[1]),
     countOrders(ctx, counts[2]),
+    countOrders(ctx, counts[3]),
   ])
 
+  // The train's live expected arrival, the same one the kitchen board shows,
+  // instead of the timetable time stamped on the order at booking. Cache-only:
+  // /api/cron/train-poll refreshes today's trains every two minutes, and
+  // letting this page call the provider would put up to one 8-second request
+  // per distinct train in front of a telecaller, against a metered quota.
+  // Only this page's orders are looked up, one read per distinct train.
+  // Only open orders: arrivalRecord never uses a live reading for a closed
+  // one, so on Yesterday and All orders most rows need no read at all.
+  // One clock for the whole page, so every row agrees on what "past" means.
+  const renderedAt = new Date()
+  const timings = await timingForOrders(
+    orders.filter((o) => (LIVE_STATUSES as readonly string[]).includes(o.status)),
+    { allowFetch: false },
+  )
+
+  // Changing tab or search starts again at page one, keeping the page size.
   const href = (t: string) => {
-    const u = new URLSearchParams()
+    const u = withPage(new URLSearchParams(), { page: 1, pageSize })
     if (t) u.set('tab', t)
     if (q) u.set('q', q)
     const s = u.toString()
+    return s ? `/calls?${s}` : '/calls'
+  }
+  const pageHref = (target: { page: number; pageSize: number }) => {
+    const u = new URLSearchParams()
+    if (tab) u.set('tab', tab)
+    if (q) u.set('q', q)
+    const s = withPage(u, target).toString()
     return s ? `/calls?${s}` : '/calls'
   }
 
@@ -108,7 +152,9 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
         note={
           showUpcoming
             ? 'Orders booked for a later date.'
-            : showCancelled
+            : showYesterday
+              ? `Yesterday · ${formatServiceDate(yesterday)}`
+              : showCancelled
               ? `Cancelled today · ${formatServiceDate(today)}`
               : showAll
                 ? 'Every order at your outlets, whatever the date.'
@@ -119,7 +165,8 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
       <Tabs
         label="Call list"
         tabs={[
-          { href: href(''), label: 'Today', count: todayCount, active: !showUpcoming && !showCancelled && !showAll },
+          { href: href(''), label: 'Today', count: todayCount, active: !showUpcoming && !showYesterday && !showCancelled && !showAll },
+          { href: href('yesterday'), label: 'Yesterday', count: yesterdayCount, active: showYesterday },
           { href: href('upcoming'), label: 'Upcoming', count: upcomingCount, active: showUpcoming },
           { href: href('cancelled'), label: 'Cancelled today', count: cancelledCount, active: showCancelled },
           { href: href('all'), label: 'All orders', active: showAll },
@@ -160,7 +207,9 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
           title={
             q
               ? 'Nothing matches that'
-              : showCancelled
+              : showYesterday
+                ? 'Nothing from yesterday'
+                : showCancelled
                 ? 'Nothing cancelled today'
                 : showAll
                   ? 'No orders yet'
@@ -169,7 +218,9 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
           note={
             q
               ? 'Try the order id on its own, or just the last few digits of the phone number.'
-              : showCancelled
+              : showYesterday
+                ? 'Orders from the previous service day show here, including any still open after midnight.'
+                : showCancelled
                 ? 'Orders you cancel today appear here, so you can check what you have already done.'
                 : showAll
                   ? 'Search by order id, phone or name to find one from any date.'
@@ -236,8 +287,8 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
                         <span className="text-xs text-faint">No number</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 tabular-nums text-muted">
-                      {o.scheduledArrival ? formatTimeIST(o.scheduledArrival) : <Dash />}
+                    <td className="px-3 py-2.5">
+                      <ArrivalTime record={arrivalRecord(o, timingFor(o, timings), renderedAt)} />
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusBadge status={o.status} />
@@ -247,14 +298,11 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
               })}
             </tbody>
           </table>
+          <div className="border-t border-line">
+            <Pagination page={page} pageSize={pageSize} total={total} buildHref={pageHref} />
+          </div>
         </TableFrame>
       )}
-
-      {orders.length === ROW_LIMIT ? (
-        <p className="text-xs text-faint">
-          Showing the first {ROW_LIMIT}. Narrow it with the search box above.
-        </p>
-      ) : null}
     </div>
   )
 }

@@ -3,7 +3,8 @@ import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
 import { formatIST } from '@/lib/format'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
-import { Button, ButtonLink, Card, EmptyState, Notice, PageHeader, Tabs } from '@/components/ui'
+import { Button, ButtonLink, Card, EmptyState, Notice, PageHeader, Tabs, Pagination } from '@/components/ui'
+import { readPage, withPage } from '@/lib/pagination'
 import { IconChevronRight } from '@/components/Icons'
 import { PasteEmailForm, ResolveForm } from './InboxForms'
 import { dismissUnparsed } from './actions'
@@ -33,10 +34,14 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
   await requireRole('ADMIN')
   const sp = await props.searchParams
   const showResolved = (Array.isArray(sp.show) ? sp.show[0] : sp.show) === 'resolved'
+  const { page, pageSize, skip } = readPage(sp)
 
   await connectDb()
-  const [rows, openCount, ingest] = await Promise.all([
-    UnparsedInbox.find({ resolved: showResolved }).sort({ createdAt: -1 }).limit(100).lean(),
+  // Paged, not capped: this stopped at 100 silently, which on a bad day is
+  // exactly when an admin needs to see the 101st broken email.
+  const [rows, total, openCount, ingest] = await Promise.all([
+    UnparsedInbox.find({ resolved: showResolved }).sort({ createdAt: -1 }).skip(skip).limit(pageSize).lean(),
+    UnparsedInbox.countDocuments({ resolved: showResolved }),
     UnparsedInbox.countDocuments({ resolved: false }),
     // A lapsed Gmail watch stops ingestion outright and raises no error
     // anywhere; this page is where ingestion health belongs.
@@ -135,6 +140,19 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
               </Card>
             )
           })}
+          <div className="rounded-xl border border-line bg-surface">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              buildHref={(target) => {
+                const u = new URLSearchParams()
+                if (showResolved) u.set('show', 'resolved')
+                const s = withPage(u, target).toString()
+                return s ? `/admin/inbox?${s}` : '/admin/inbox'
+              }}
+            />
+          </div>
         </div>
       )}
 

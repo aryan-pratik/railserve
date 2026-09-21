@@ -1,16 +1,23 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/session'
-import { findMany } from '@/lib/repo/orderRepo'
+import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { formatRupees, formatServiceDate, formatShortDate } from '@/lib/format'
-import { ButtonLink, Dash, EmptyState, PageHeader, StatusBadge, thClass } from '@/components/ui'
+import { ButtonLink, Dash, EmptyState, PageHeader, Pagination, StatusBadge, thClass } from '@/components/ui'
+import { readPage, withPage } from '@/lib/pagination'
 import { TableFrame } from '@/components/OrdersTable'
 import { IconPlus } from '@/components/Icons'
 
 export const metadata = { title: 'Enquiries · RailServe' }
 
-export default async function EnquiriesPage() {
+export default async function EnquiriesPage(props: PageProps<'/admin/enquiries'>) {
   const ctx = await requireRole('ADMIN')
-  const rows = await findMany(ctx, { status: { $in: ['ENQUIRY', 'QUOTED', 'LOST'] } })
+  const { page, pageSize, skip } = readPage(await props.searchParams)
+  // Paged, not capped: findMany used to stop at its default 200 without a word.
+  const filter = { status: { $in: ['ENQUIRY', 'QUOTED', 'LOST'] } }
+  const [rows, total] = await Promise.all([
+    findMany(ctx, filter, { limit: pageSize, skip }),
+    countOrders(ctx, filter),
+  ])
 
   const newButton = (
     <ButtonLink href="/admin/enquiries/new" variant="primary">
@@ -75,6 +82,17 @@ export default async function EnquiriesPage() {
               })}
             </tbody>
           </table>
+          <div className="border-t border-line">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              buildHref={(target) => {
+                const s = withPage(new URLSearchParams(), target).toString()
+                return s ? `/admin/enquiries?${s}` : '/admin/enquiries'
+              }}
+            />
+          </div>
         </TableFrame>
       )}
     </div>

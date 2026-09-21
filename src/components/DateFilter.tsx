@@ -44,7 +44,7 @@ const CALENDAR_VARS = {
 } as CSSProperties
 
 /**
- * Today / This month / a chosen month / a chosen range.
+ * Today / Yesterday / This month / a chosen month / a chosen range.
  *
  * The last two open a popover on click. Hover used to open them too, which
  * meant the calendar sprang out whenever the pointer crossed the toolbar on
@@ -130,6 +130,7 @@ export function DateFilter({
   const plainOptions: { value: DateFilterMode; label: string }[] = [
     ...(allowAll ? [{ value: 'all' as const, label: 'All time' }] : []),
     { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
     { value: 'month', label: 'This month' },
   ]
 

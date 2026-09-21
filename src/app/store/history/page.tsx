@@ -1,12 +1,13 @@
 import { requireRole } from '@/lib/session'
-import { findMany } from '@/lib/repo/orderRepo'
+import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { formatDateRange, shiftServiceDate, todayIST } from '@/lib/format'
 import { callNoteRow } from '@/lib/orderView'
 import { OrdersTable } from '@/components/OrdersTable'
 import { QueryForm } from '@/components/QueryForm'
-import { Button, Card, Field, PageHeader, inputClass } from '@/components/ui'
+import { Button, Card, Field, PageHeader, Pagination, inputClass } from '@/components/ui'
+import { readPage, withPage } from '@/lib/pagination'
 
 export const metadata = { title: 'Order history · RailServe' }
 
@@ -23,21 +24,24 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
   const to = typeof sp.to === 'string' && sp.to ? sp.to : todayIST()
   const from = typeof sp.from === 'string' && sp.from ? sp.from : shiftServiceDate(to, -7)
   const q = typeof sp.q === 'string' ? sp.q.trim() : ''
+  const { page, pageSize, skip } = readPage(sp)
 
   const filter: Record<string, unknown> = { serviceDate: { $gte: from, $lte: to } }
   if (q) {
     // Order id, train number or phone: the things anyone actually has to hand.
-    filter.$or = [
-      { externalOrderId: { $regex: q, $options: 'i' } },
-      { trainNo: { $regex: q, $options: 'i' } },
-      { contactPhone: { $regex: q, $options: 'i' } },
-    ]
+    // Escaped, so a typed "(" or "+" is matched literally rather than failing
+    // the whole page as an invalid regex.
+    const rx = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
+    filter.$or = [{ externalOrderId: rx }, { trainNo: rx }, { contactPhone: rx }]
   }
 
   await connectDb()
   const multiOutlet = ctx.restaurantIds.length > 1 || ctx.role === 'ADMIN'
-  const [orders, outlets] = await Promise.all([
-    findMany(ctx, filter, { sort: { serviceDate: -1, createdAt: -1 } }),
+  // Paged, not capped: findMany used to stop at its default 200 silently, and
+  // the header then reported 200 as if it were the whole range.
+  const [orders, total, outlets] = await Promise.all([
+    findMany(ctx, filter, { sort: { serviceDate: -1, createdAt: -1 }, limit: pageSize, skip }),
+    countOrders(ctx, filter),
     multiOutlet ? Restaurant.find({}).select('name').lean() : Promise.resolve([]),
   ])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
@@ -46,7 +50,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
     <div className="space-y-4">
       <PageHeader
         title="Order history"
-        note={`${orders.length} order${orders.length === 1 ? '' : 's'}, ${formatDateRange(from, to)}`}
+        note={`${total} order${total === 1 ? '' : 's'}, ${formatDateRange(from, to)}`}
       />
 
       <Card>
@@ -89,12 +93,30 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
           remark: o.remark,
-            ...callNoteRow(o),
+          ...callNoteRow(o),
         }))}
         hrefFor={(id) => `/store/orders/${id}`}
         showOutlet={multiOutlet}
         emptyNote="Nothing in this date range. Widen the dates or clear the search."
       />
+
+      {total > 0 ? (
+        <div className="rounded-xl border border-line bg-surface">
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            buildHref={(target) => {
+              const u = new URLSearchParams()
+              if (sp.from) u.set('from', from)
+              if (sp.to) u.set('to', to)
+              if (q) u.set('q', q)
+              const s = withPage(u, target).toString()
+              return s ? `/store/history?${s}` : '/store/history'
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

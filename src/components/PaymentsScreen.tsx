@@ -3,14 +3,14 @@ import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { formatIST, formatMoney } from '@/lib/format'
 import type { AuthContext } from '@/lib/authContext'
 import { DateFilter } from './DateFilter'
+import { readPage, withPage } from '@/lib/pagination'
 import { IconDownload, IconSearch } from './Icons'
 import { PaymentsLive } from './PaymentsLive'
 import { PaymentsTable } from './PaymentsTable'
 import { QueryForm } from './QueryForm'
-import { ButtonAnchor, ButtonLink, EmptyState, PageHeader, Stat, StatStrip, inputClass } from './ui'
+import { ButtonAnchor, ButtonLink, EmptyState, PageHeader, Stat, StatStrip, inputClass, Pagination } from './ui'
 
 /** How many rows a single view will render before the filters have to narrow it. */
-const ROW_LIMIT = 500
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -41,11 +41,14 @@ export async function PaymentsScreen({
   const rawFrom = one(searchParams.from)
   const rawTo = one(searchParams.to)
   const q = one(searchParams.q).trim()
+  const { page, pageSize, skip } = readPage(searchParams)
   const { from, to } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
 
   const query = { from, to, q }
   const [payments, totals, balance] = await Promise.all([
-    findPayments(query, ROW_LIMIT),
+    // Paged, not capped at 500. The totals below count the whole range and
+    // double as the pager's total, so paging costs no extra query.
+    findPayments(query, pageSize, skip),
     paymentTotals(query),
     // Never even fetched for a store manager: the repository refuses the call.
     privileged ? latestBalance(ctx) : Promise.resolve(null),
@@ -143,10 +146,18 @@ export async function PaymentsScreen({
         />
       )}
 
-      {payments.length === ROW_LIMIT ? (
-        <p className="text-xs text-muted">
-          Showing the {ROW_LIMIT} most recent payments. Narrow the dates to reach older ones.
-        </p>
+      {totals.count > 0 ? (
+        <div className="rounded-xl border border-line bg-surface">
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={totals.count}
+            buildHref={(target) => {
+              const s = withPage(params, target).toString()
+              return s ? `${basePath}?${s}` : basePath
+            }}
+          />
+        </div>
       ) : null}
     </div>
   )

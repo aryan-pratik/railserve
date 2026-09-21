@@ -1,18 +1,19 @@
 /**
  * Shared "date filter" semantics for admin screens that scope orders by
- * `serviceDate`: Today, This month, a chosen month, or an explicit range.
+ * `serviceDate`: Today, Yesterday, This month, a chosen month, or an explicit range.
  *
  * A screen that also needs "no filter at all" (the /admin/orders lookup)
  * adds its own 'all' mode on top — resolveDateRange returns blank bounds for
  * it, which every caller here already treats as unbounded.
  */
 
-import { todayIST } from './format'
+import { shiftServiceDate, todayIST } from './format'
 
-export type DateFilterMode = 'all' | 'today' | 'month' | 'custom-month' | 'range'
+export type DateFilterMode = 'all' | 'today' | 'yesterday' | 'month' | 'custom-month' | 'range'
 
 export const DATE_FILTER_OPTIONS: { value: DateFilterMode; label: string }[] = [
   { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
   { value: 'month', label: 'This month' },
   { value: 'custom-month', label: 'Custom month' },
   { value: 'range', label: 'Custom range' },
@@ -41,6 +42,13 @@ export function resolveDateRange(
   switch (mode) {
     case 'today':
       return { from: today, to: today, month: currentMonth }
+    case 'yesterday': {
+      // The IST calendar day before, via shiftServiceDate rather than
+      // subtracting 24h from now: that lands on the wrong day in the first
+      // hours after midnight IST, which is when yesterday is most looked at.
+      const day = shiftServiceDate(today, -1)
+      return { from: day, to: day, month: day.slice(0, 7) }
+    }
     case 'month':
       return { ...monthBounds(currentMonth), month: currentMonth }
     case 'custom-month': {

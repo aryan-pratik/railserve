@@ -4,6 +4,8 @@ import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
+import { timingFor, timingForOrders } from '@/lib/train/service'
+import { TrainTiming } from '@/components/TrainTiming'
 import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import { BackLink, Card, CardHeader, Notice } from '@/components/ui'
@@ -31,6 +33,8 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   if (!order) notFound()
 
   await connectDb()
+  // Live arrival, cache-only, for the same reasons as the call list.
+  const timings = await timingForOrders([order], { allowFetch: false })
   // Both logs draw their authors from one query — $in dedupes server-side, so
   // widening the id list costs no extra round trip.
   //
@@ -66,6 +70,7 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
         href={`/calls/orders/${id}`}
         showServiceDate
         showMoney={false}
+        timing={<TrainTiming timing={timingFor(order, timings)} />}
         actions={
           canCancel ? (
             <CancelOrderButton orderId={id} externalOrderId={order.externalOrderId} />
