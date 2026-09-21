@@ -311,6 +311,37 @@ export async function addOrderItems(
   return res.matchedCount > 0
 }
 
+/**
+ * How many orders belong to an outlet, and how many record a given user.
+ *
+ * Used only to decide whether a setup row may be deleted. The rule this backs
+ * is plan §2's: an order pointing at a record that no longer exists vanishes
+ * from every dashboard with no error anywhere, so a row anything still points
+ * at is deactivated rather than deleted. Admin only, since only an admin can
+ * see across every outlet to answer the question honestly.
+ */
+export async function countOrdersForOutlet(ctx: AuthContext, outletId: string): Promise<number> {
+  if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin may check this.')
+  if (!mongoose.isValidObjectId(outletId)) return 0
+  return Order.countDocuments(scoped(ctx, { restaurantId: new mongoose.Types.ObjectId(outletId) }))
+}
+
+export async function countOrdersRecordingUser(ctx: AuthContext, userId: string): Promise<number> {
+  if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin may check this.')
+  if (!mongoose.isValidObjectId(userId)) return 0
+  const id = new mongoose.Types.ObjectId(userId)
+  return Order.countDocuments(
+    scoped(ctx, {
+      $or: [
+        { 'events.userId': id },
+        { 'callLog.userId': id },
+        { 'delivery.agentIds': id },
+        { createdById: id },
+      ],
+    }),
+  )
+}
+
 /** Longest one call note may be. The same number as the admin remark. */
 export const CALL_NOTE_MAX = 500
 

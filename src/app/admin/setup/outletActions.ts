@@ -4,7 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { Restaurant } from '@/lib/models'
+import mongoose from 'mongoose'
+import { PrintJob, Restaurant, User } from '@/lib/models'
+import { countOrdersForOutlet } from '@/lib/repo/orderRepo'
 
 const RestaurantInput = z.object({
   id: z.string().optional(),
@@ -64,4 +66,43 @@ export async function toggleRestaurantActive(formData: FormData) {
   await connectDb()
   await Restaurant.updateOne({ _id: id }, { $set: { active } })
   revalidatePath('/admin/setup')
+}
+
+export type DeleteState = { error?: string }
+
+/**
+ * Deletes an outlet, but only one nothing points at.
+ *
+ * The rule above still holds: an order pointing at a deleted outlet vanishes
+ * from every dashboard. So this refuses whenever an order, a print job or a
+ * staff member still references the outlet, and says which, pointing at
+ * deactivation instead. What it is for is the outlet created by mistake or for
+ * testing, which nothing ever came to depend on.
+ */
+export async function deleteRestaurant(_prev: DeleteState, formData: FormData): Promise<DeleteState> {
+  const ctx = await requireRole('ADMIN')
+  const id = String(formData.get('id') ?? '')
+  if (!mongoose.isValidObjectId(id)) return { error: 'That outlet no longer exists.' }
+
+  await connectDb()
+  const [orders, printJobs, staff] = await Promise.all([
+    countOrdersForOutlet(ctx, id),
+    PrintJob.countDocuments({ restaurantId: id }),
+    User.countDocuments({ restaurantIds: id }),
+  ])
+
+  const reasons = [
+    orders ? `${orders} order${orders === 1 ? '' : 's'}` : null,
+    printJobs ? `${printJobs} print job${printJobs === 1 ? '' : 's'}` : null,
+    staff ? `${staff} staff member${staff === 1 ? '' : 's'}` : null,
+  ].filter(Boolean)
+  if (reasons.length > 0) {
+    return {
+      error: `Still used by ${reasons.join(', ')}. Deactivate it instead, so those records stay readable.`,
+    }
+  }
+
+  await Restaurant.deleteOne({ _id: id })
+  revalidatePath('/admin/setup')
+  return {}
 }

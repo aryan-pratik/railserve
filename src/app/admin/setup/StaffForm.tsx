@@ -70,7 +70,7 @@ export function StaffForm({
           disabled={role === 'ADMIN'}
           subtitle={
             role === 'ADMIN'
-              ? 'Admins see every outlet, so they hold none explicitly.'
+              ? 'Not needed for an admin.'
               : role === 'STORE_MANAGER'
                 ? 'Every outlet this manager runs. They all share one board.'
                 : role === 'TELECALLER'

@@ -5,7 +5,9 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { User } from '@/lib/models'
+import mongoose from 'mongoose'
+import { Payment, UnparsedInbox, User } from '@/lib/models'
+import { countOrdersRecordingUser } from '@/lib/repo/orderRepo'
 import { ROLES } from '@/lib/roles'
 
 const UserInput = z
@@ -87,4 +89,52 @@ export async function toggleUserActive(formData: FormData) {
   await connectDb()
   await User.updateOne({ _id: id }, { $set: { active } })
   revalidatePath('/admin/setup')
+}
+
+export type DeleteState = { error?: string }
+
+/**
+ * Deletes a staff member, but only one nothing records.
+ *
+ * Their id is written into order events, call notes, deliveries, order
+ * creation, payment remarks and inbox resolutions. Deleting someone any of
+ * those point at turns them into "Unknown user" in every log they appear in,
+ * so this refuses and points at deactivation, which blocks the login and keeps
+ * the name. It also refuses to delete yourself, or the last active admin,
+ * either of which can lock everybody out of this page.
+ */
+export async function deleteUser(_prev: DeleteState, formData: FormData): Promise<DeleteState> {
+  const ctx = await requireRole('ADMIN')
+  const id = String(formData.get('id') ?? '')
+  if (!mongoose.isValidObjectId(id)) return { error: 'That staff member no longer exists.' }
+  if (ctx.userId.equals(id)) return { error: "You can't delete your own account." }
+
+  await connectDb()
+  const target = await User.findById(id).select('role active').lean()
+  if (!target) return { error: 'That staff member no longer exists.' }
+
+  if (target.role === 'ADMIN' && target.active) {
+    const admins = await User.countDocuments({ role: 'ADMIN', active: true })
+    if (admins <= 1) return { error: 'This is the last active admin. Deleting them would lock everyone out.' }
+  }
+
+  const [orders, remarks, resolved] = await Promise.all([
+    countOrdersRecordingUser(ctx, id),
+    Payment.countDocuments({ remarkById: id }),
+    UnparsedInbox.countDocuments({ resolvedById: id }),
+  ])
+  const reasons = [
+    orders ? `${orders} order${orders === 1 ? '' : 's'}` : null,
+    remarks ? `${remarks} payment remark${remarks === 1 ? '' : 's'}` : null,
+    resolved ? `${resolved} inbox item${resolved === 1 ? '' : 's'}` : null,
+  ].filter(Boolean)
+  if (reasons.length > 0) {
+    return {
+      error: `Their name is on ${reasons.join(', ')}. Deactivate them instead, which blocks the login and keeps those records readable.`,
+    }
+  }
+
+  await User.deleteOne({ _id: id })
+  revalidatePath('/admin/setup')
+  return {}
 }

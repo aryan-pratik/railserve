@@ -110,25 +110,36 @@ export function OutletMultiSelect({
     })
   }
 
-  if (disabled) {
-    return (
-      <div className="rounded-xl border border-line-strong bg-sunken/50 px-4 py-3 text-sm text-faint">
-        Admins see every outlet, so they hold none explicitly.
-      </div>
-    )
-  }
+  // One shape for every role. This used to return a small grey box for an
+  // admin and the full panel for everyone else, so the modal was simply the
+  // height of whichever one was showing and jumped on every role change. The
+  // frame now stays put and only the contents of the fixed-height list area
+  // change. A fieldset disables every control inside it in one place.
+  const text = subtitle ?? 'Select stations and outlets this staff member can access.'
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line-strong bg-surface">
+    <fieldset
+      disabled={disabled}
+      className={`min-w-0 overflow-hidden rounded-xl border border-line-strong ${disabled ? 'bg-sunken/40' : 'bg-surface'}`}
+    >
       {/* Real, form-submitted checkboxes: kept outside the visual tree since the
-          same outlet appears in both tabs; this is the single source of truth. */}
-      {options.map((o) => (
-        <input key={o.id} type="checkbox" name={name} value={o.id} checked={selected.has(o.id)} onChange={() => {}} hidden />
-      ))}
+          same outlet appears in both tabs; this is the single source of truth.
+          Not rendered for an admin, who holds no outlets. The selection itself
+          survives in state, so switching the role back restores it. */}
+      {disabled
+        ? null
+        : options.map((o) => (
+            <input key={o.id} type="checkbox" name={name} value={o.id} checked={selected.has(o.id)} onChange={() => {}} hidden />
+          ))}
 
       <div className="border-b border-line px-4 py-3">
         <h3 className="text-sm font-semibold text-ink">Assign outlets</h3>
-        <p className="mt-0.5 text-xs text-muted">{subtitle ?? 'Select stations and outlets this staff member can access.'}</p>
+        {/* Two lines reserved whatever the role: the subtitle is a different
+            sentence for each one, and letting it wrap to one line or three
+            was the other half of the resize. */}
+        <p className="mt-0.5 line-clamp-2 min-h-[2lh] text-xs text-muted" title={text}>
+          {text}
+        </p>
       </div>
 
       <div className="flex border-b border-line px-4">
@@ -142,8 +153,8 @@ export function OutletMultiSelect({
             key={value}
             type="button"
             onClick={() => setTab(value)}
-            className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              tab === value ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'
+            className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              tab === value ? 'border-accent text-accent' : 'border-transparent text-muted enabled:hover:text-ink'
             }`}
           >
             {tabLabel}
@@ -163,11 +174,15 @@ export function OutletMultiSelect({
           />
         </div>
 
-        {/* Fixed height, not max-height: switching tabs or typing a search query
-            must never resize this box or the modal around it: only this list
-            scrolls internally, regardless of how many rows it holds. */}
+        {/* Fixed height, not max-height: switching tabs, typing a search query
+            or changing the role must never resize this box or the modal around
+            it. Only this list scrolls internally, whatever it holds. */}
         <div className="mt-2 h-55 space-y-2 overflow-y-auto">
-          {tab === 'byStation' ? (
+          {disabled ? (
+            <p className="flex h-full items-center justify-center px-6 text-center text-sm text-faint text-balance">
+              Admins see every outlet, so they hold none explicitly.
+            </p>
+          ) : tab === 'byStation' ? (
             visibleStations.map((station) => {
               const group = byStation.get(station) ?? []
               const groupSelected = group.filter((o) => selected.has(o.id)).length
@@ -228,11 +243,11 @@ export function OutletMultiSelect({
               </label>
             ))
           )}
-          {(tab === 'byStation' ? visibleStations.length === 0 : visibleCount === 0) ? (
+          {!disabled && (tab === 'byStation' ? visibleStations.length === 0 : visibleCount === 0) ? (
             <p className="px-2 py-3 text-center text-sm text-faint">No outlets match &ldquo;{trimmedQuery}&rdquo;.</p>
           ) : null}
         </div>
       </div>
-    </div>
+    </fieldset>
   )
 }
