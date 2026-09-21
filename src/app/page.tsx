@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { getSessionUser } from '@/lib/session'
+import { getSessionUser, redirectToLogin } from '@/lib/session'
 import { ROLE_HOME } from '@/lib/roles'
 
 /**
@@ -8,6 +8,6 @@ import { ROLE_HOME } from '@/lib/roles'
  */
 export default async function Home() {
   const user = await getSessionUser()
-  if (!user) redirect('/login')
+  if (!user) return redirectToLogin()
   redirect(ROLE_HOME[user.role])
 }

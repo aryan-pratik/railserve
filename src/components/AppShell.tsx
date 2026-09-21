@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation'
-import { getSessionUser } from '@/lib/session'
+import { getSessionUser, redirectToLogin } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { logout } from '@/app/actions/session'
@@ -18,7 +17,7 @@ export async function AppShell({
   children: React.ReactNode
 }) {
   const user = await getSessionUser()
-  if (!user) redirect('/login')
+  if (!user) return redirectToLogin()
 
   // A manager may hold several outlets; the sidebar says which.
   let outlets: string[] = []
