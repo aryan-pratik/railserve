@@ -2,7 +2,7 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
+import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, focusRing, statusLabel } from '@/components/ui'
 import { IconPhone } from '@/components/Icons'
 import { formatIST, formatMoney, formatTimeIST } from '@/lib/format'
 import { adminTransitionAction, forceRefreshOrderTrain, type ActionState } from './orders/[id]/actions'
@@ -107,7 +107,7 @@ export function OrderModal({
     <Modal
       titleId="admin-order-modal"
       onClose={onClose}
-      maxWidthClassName="max-w-2xl"
+      maxWidthClassName="max-w-xl"
       title={
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-mono text-base font-semibold text-ink">
@@ -118,7 +118,7 @@ export function OrderModal({
         </span>
       }
     >
-      <div className="space-y-3 bg-canvas p-4">
+      <div className="space-y-3 px-5 py-4">
           {loading ? (
             <DetailSkeleton />
           ) : !detail ? (
@@ -126,6 +126,9 @@ export function OrderModal({
           ) : (
             <>
               <Section title="Journey">
+                {/* Two columns on anything but a phone: this is the tallest
+                    block in the dialog and a modal has the width to halve it. */}
+                <div className="grid gap-x-6 sm:grid-cols-2">
                 <Row label="Train" value={
                   detail.trainNo
                     ? `${detail.trainNo}${detail.trainName ? ` ${detail.trainName}` : ''}`
@@ -133,8 +136,8 @@ export function OrderModal({
                 } mono />
                 <Row label="Station" value={detail.outlet?.stationCode ?? null} mono />
                 <Row label="Scheduled" value={formatTimeIST(detail.scheduledArrival)} />
-                <div className="flex items-baseline justify-between gap-3 py-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted">Expected</span>
+                <div className="flex items-baseline justify-between gap-3 py-1 sm:col-span-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Expected</span>
                   <span className="flex flex-wrap items-center justify-end gap-1.5">
                     <span className="text-sm font-semibold tabular-nums text-ink">
                       {formatTimeIST(detail.expectedArrival)}
@@ -158,7 +161,7 @@ export function OrderModal({
                   </span>
                 </div>
                 {detail.arrived ? (
-                  <p className="text-xs text-faint" title="This train has left the station, so live tracking has stopped.">
+                  <p className="text-xs text-faint sm:col-span-2" title="This train has left the station, so live tracking has stopped.">
                     Train arrived · tracking stopped
                   </p>
                 ) : null}
@@ -168,6 +171,7 @@ export function OrderModal({
                   mono={!detail.handoverPoint}
                 />
                 {detail.pax ? <Row label="Pax" value={String(detail.pax)} /> : null}
+                </div>
               </Section>
 
               <Section title="Items">
@@ -193,7 +197,7 @@ export function OrderModal({
                 </ul>
                 <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
                   <PaymentBadge mode={detail.paymentMode} />
-                  <span className="text-base font-semibold tabular-nums text-ink">{formatMoney(detail.amountPaise)}</span>
+                  <span className="text-sm font-semibold tabular-nums text-ink">{formatMoney(detail.amountPaise)}</span>
                 </div>
               </Section>
 
@@ -223,16 +227,42 @@ export function OrderModal({
               ) : null}
 
               {detail.nextStatuses.length > 0 ? (
+                /* The routine move is the loud one. These used to be two
+                   full-width h-12 slabs, so cancelling an order shouted exactly
+                   as loudly as accepting it, and a destructive action that
+                   competes with the ordinary one for the eye is how it gets
+                   clicked by mistake. */
                 <div className="space-y-2">
-                  {detail.nextStatuses.map((n) => (
-                    <form key={n.to} action={transition}>
-                      <input type="hidden" name="orderId" value={detail.id} />
-                      <input type="hidden" name="to" value={n.to} />
-                      <Button type="submit" size="lg" variant={n.danger ? 'danger' : 'primary'} pending={pending} className="w-full">
-                        {n.label}
-                      </Button>
-                    </form>
-                  ))}
+                  {detail.nextStatuses
+                    .filter((n) => !n.danger)
+                    .map((n) => (
+                      <form key={n.to} action={transition}>
+                        <input type="hidden" name="orderId" value={detail.id} />
+                        <input type="hidden" name="to" value={n.to} />
+                        <Button type="submit" variant="primary" pending={pending} className="w-full">
+                          {n.label}
+                        </Button>
+                      </form>
+                    ))}
+                  {detail.nextStatuses.some((n) => n.danger) ? (
+                    <div className="flex flex-wrap justify-center gap-x-4">
+                      {detail.nextStatuses
+                        .filter((n) => n.danger)
+                        .map((n) => (
+                          <form key={n.to} action={transition}>
+                            <input type="hidden" name="orderId" value={detail.id} />
+                            <input type="hidden" name="to" value={n.to} />
+                            <button
+                              type="submit"
+                              disabled={pending}
+                              className={`rounded px-2 py-1 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 ${focusRing}`}
+                            >
+                              {n.label}
+                            </button>
+                          </form>
+                        ))}
+                    </div>
+                  ) : null}
                   <FormNote state={state} />
                 </div>
               ) : (
@@ -242,7 +272,7 @@ export function OrderModal({
               )}
 
               <Section title="Call log">
-                <div className="-mx-4">
+                <div className="-mx-5">
                   <CallLog orderId={detail.id} notes={detail.callLog} onChanged={applyNotes} />
                   <div className="border-t border-line">
                     <CallNoteForm orderId={detail.id} onSaved={applyNotes} />
@@ -284,8 +314,8 @@ function DetailSkeleton() {
     <div aria-busy="true" className="space-y-3">
       <span className="sr-only">Loading order</span>
       {[5, 3, 2].map((rows, i) => (
-        <div key={i} className="rounded-xl border border-line bg-surface p-4">
-          <div className={`${bar} mb-3 h-3 w-16`} />
+        <div key={i} className="border-t border-line pt-3 first:border-0 first:pt-0">
+          <div className={`${bar} mb-2 h-3 w-16`} />
           <div className="space-y-2.5">
             {Array.from({ length: rows }).map((_, j) => (
               <div key={j} className="flex justify-between gap-4">
@@ -296,15 +326,26 @@ function DetailSkeleton() {
           </div>
         </div>
       ))}
-      <div className={`${bar} h-12 w-full`} />
+      <div className={`${bar} h-9 w-full`} />
     </div>
   )
 }
 
+/**
+ * A labelled band, not a box.
+ *
+ * This was a card, inside a canvas strip, inside Modal's own card: three
+ * container levels, about 300px of padding and borders before a single row of
+ * content, and a dialog that ran past the bottom of a laptop screen. Cards are
+ * the lazy container and nested cards are always wrong; grouping here is done
+ * with a hairline rule and spacing instead.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-surface p-4">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">{title}</h3>
+    <section className="border-t border-line pt-3 first:border-0 first:pt-0">
+      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        {title}
+      </h3>
       {children}
     </section>
   )
@@ -312,8 +353,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Row({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted">{label}</span>
+    <div className="flex items-baseline justify-between gap-3 py-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
       <span className={`text-right text-sm text-ink ${mono ? 'font-mono' : ''}`}>{value ?? <Dash />}</span>
     </div>
   )
