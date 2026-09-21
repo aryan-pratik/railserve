@@ -1,11 +1,13 @@
 import { requireRole } from '@/lib/session'
-import { findRuns, findUpcomingRuns, LIVE_STATUSES } from '@/lib/repo/runRepo'
+import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { countOrders } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
-import { Restaurant, User } from '@/lib/models'
-import { timingForOrders, timingFor, trainFeedHealth } from '@/lib/train/service'
+import { User } from '@/lib/models'
+import { timingFor } from '@/lib/train/service'
 import { sortRunsByUrgency } from '@/lib/runs'
-import { todayIST, formatServiceDate } from '@/lib/format'
+import { todayIST, formatServiceDate, shiftServiceDate } from '@/lib/format'
+import { countLive, loadRunBoard, type BoardMode } from '@/lib/board'
+import { inRollover } from '@/lib/liveDay'
 import { callNoteRow } from '@/lib/orderView'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
@@ -13,9 +15,10 @@ import { TrainRunCard, type RunCardData } from '@/components/TrainRunCard'
 import { OrdersTable } from '@/components/OrdersTable'
 import { GroupByTrainToggle } from '@/components/GroupByTrainToggle'
 import { OrderFeed } from '@/components/OrderFeed'
-import { AutoRefresh } from '@/components/AutoRefresh'
+import { AutoRefresh, StaleNotice } from '@/components/AutoRefresh'
 import { env } from '@/lib/env'
-import { ButtonLink, EmptyState, PageHeader, Tabs } from '@/components/ui'
+import { ButtonLink, EmptyState, PageHeader, Pagination, Tabs } from '@/components/ui'
+import { readPage, withPage } from '@/lib/pagination'
 import { IconPlus } from '@/components/Icons'
 import { StoreRunActions } from './StoreRunActions'
 import { forceRefreshOrderTrain } from './actions'
@@ -33,23 +36,38 @@ export const metadata = { title: 'Kitchen board · RailServe' }
  */
 export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
-  const { upcoming, group } = await props.searchParams
+  const sp = await props.searchParams
+  const { upcoming, yesterday: yesterdayParam, group } = sp
+  const { page, pageSize, skip } = readPage(sp)
 
   const today = todayIST()
-  const showUpcoming = upcoming === '1'
+  // The service day before today, in IST. Past midnight, last night's orders
+  // that are still open leave the Today tab; this is where they can be found.
+  const yesterday = shiftServiceDate(today, -1)
+  const showYesterday = yesterdayParam === '1'
+  const showUpcoming = !showYesterday && upcoming === '1'
   const groupParam = typeof group === 'string' ? group : ''
   const isGrouped = groupParam !== '0'
   const multiOutlet = ctx.restaurantIds.length > 1
 
-  // The inactive tab needs a number, not its rows: a count, not a second
-  // full load of up to 500 documents.
-  const otherDay = showUpcoming ? { serviceDate: today } : { serviceDate: { $gt: today } }
+  // Every tab's badge is a count of work still open, so each is its own
+  // cheap count rather than the length of whichever tab's rows are loaded.
+  // Yesterday in particular lists finished orders too, and its badge must
+  // still say how many are left to do.
+  const live = { status: { $in: LIVE_STATUSES } }
+  const mode: BoardMode = showUpcoming ? 'upcoming' : showYesterday ? 'yesterday' : 'today'
 
   await connectDb()
   // Everything that does not depend on the runs goes out in the same round trip.
-  const [runs, otherCount, riderDocs, feedHealth, outlets] = await Promise.all([
-    showUpcoming ? findUpcomingRuns(ctx, today) : findRuns(ctx, today),
-    countOrders(ctx, { ...otherDay, status: { $in: LIVE_STATUSES } }),
+  const [board, todayCount, yesterdayCount, upcomingCount, riderDocs] = await Promise.all([
+    loadRunBoard(ctx, mode),
+    // The same count the call board and admin show: today, plus last night's
+    // open orders until the past-midnight window closes.
+    countLive(ctx),
+    // While last night's open orders are inside Today, counting them here too
+    // would show the same orders on two tabs.
+    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday, ...live }),
+    countOrders(ctx, { serviceDate: { $gt: today }, ...live }),
     User.find({
       role: 'DELIVERY_AGENT',
       active: true,
@@ -58,24 +76,19 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       .select('name')
       .sort({ name: 1 })
       .lean(),
-    trainFeedHealth(),
-    // Outlet names only matter to a manager who holds more than one.
-    multiOutlet
-      ? Restaurant.find({ _id: { $in: ctx.restaurantIds } }).select('name').lean()
-      : Promise.resolve([]),
   ])
+  const { runs, timings, outletName } = board
+  const renderedAt = board.loadedAt.toISOString()
 
   const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
   const allOrders = runs.flatMap((r) => r.orders)
-  const timings = await timingForOrders(allOrders)
-  const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
   const cards: RunCardData[] = runs.map((run) => ({
     key: run.key,
     trainNo: run.trainNo,
     trainName: run.trainName,
     stationCode: run.stationCode,
-    timing: timingFor(run.orders[0], timings),
+    timing: board.timingOf(run),
     orders: run.orders.map((o) => ({
       id: String(o._id),
       externalOrderId: o.externalOrderId,
@@ -95,29 +108,52 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     })),
   }))
 
-  const sorted = sortRunsByUrgency(cards, (c) => c.timing.effectiveArrival)
+  // `runs` is already in urgency order, and `cards` follows it.
+  const sorted = cards
   const statusCounts = new Map(runs.map((r) => [r.key, r.statusCounts]))
-  const orderCount = allOrders.length
 
   // Same orders as the grouped cards, one row per order, sorted the same way.
   const flatOrders = sortRunsByUrgency(allOrders, (o) => timingFor(o, timings).effectiveArrival)
 
-  const groupHref = (g: string) => {
+  // A page of the board is a page of whole trains in the grouped view, never
+  // half a train: the run actions (accept all, hand over) act on the whole
+  // run, and a run split across pages would act on orders out of sight. The
+  // flat view pages by order. Both slice after the urgency sort, which needs
+  // every run's live timing to put the right train first.
+  const pageCards = sorted.slice(skip, skip + pageSize)
+  const pageOrders = flatOrders.slice(skip, skip + pageSize)
+  const total = isGrouped ? sorted.length : flatOrders.length
+
+  const boardParams = (g: string) => {
     const u = new URLSearchParams()
     if (showUpcoming) u.set('upcoming', '1')
+    if (showYesterday) u.set('yesterday', '1')
     if (g) u.set('group', g)
+    return u
+  }
+  const toHref = (u: URLSearchParams) => {
     const s = u.toString()
     return s ? `/store?${s}` : '/store'
   }
+  // Switching view starts at page one; the unit being counted has changed.
+  const groupHref = (g: string) => toHref(withPage(boardParams(g), { page: 1, pageSize }))
+  const pageHref = (target: { page: number; pageSize: number }) =>
+    toHref(withPage(boardParams(isGrouped ? '' : '0'), target))
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Kitchen board"
-        note={showUpcoming ? 'Orders booked for a later date.' : formatServiceDate(today)}
+        note={
+          showUpcoming
+            ? 'Orders booked for a later date.'
+            : showYesterday
+              ? `Yesterday · ${formatServiceDate(yesterday)}`
+              : formatServiceDate(today)
+        }
         action={
           <>
-            <AutoRefresh seconds={30} />
+            <AutoRefresh renderedAt={renderedAt} />
             <OrderFeed />
             <ButtonLink href="/store/orders/new" variant="primary">
               <IconPlus size={15} />
@@ -130,27 +166,31 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       <Tabs
         label="Service day"
         tabs={[
-          { href: '/store', label: 'Today', count: showUpcoming ? otherCount : orderCount, active: !showUpcoming },
-          { href: '/store?upcoming=1', label: 'Upcoming', count: showUpcoming ? orderCount : otherCount, active: showUpcoming },
+          { href: '/store', label: 'Today', count: todayCount, active: !showUpcoming && !showYesterday },
+          { href: '/store?yesterday=1', label: 'Yesterday', count: yesterdayCount, active: showYesterday },
+          { href: '/store?upcoming=1', label: 'Upcoming', count: upcomingCount, active: showUpcoming },
         ]}
         action={<GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />}
       />
 
-      <TrainFeedNotice simulated={isSimulatedProvider()} health={feedHealth} />
+      <StaleNotice renderedAt={renderedAt} />
+      <TrainFeedNotice simulated={isSimulatedProvider()} health={board.feedHealth} />
 
       {sorted.length === 0 ? (
         <EmptyState
-          title={showUpcoming ? 'Nothing booked ahead' : 'No orders yet today'}
+          title={showUpcoming ? 'Nothing booked ahead' : showYesterday ? 'Nothing from yesterday' : 'No orders yet today'}
           note={
             showUpcoming
               ? 'Bulk orders booked for a later date appear here.'
-              : 'New orders appear here the moment they arrive, grouped by train.'
+              : showYesterday
+                ? 'Orders from the previous service day show here, including any still open after midnight.'
+                : 'New orders appear here the moment they arrive, grouped by train.'
           }
           action={<ButtonLink href="/store/orders/new" variant="primary">Add one by hand</ButtonLink>}
         />
       ) : isGrouped ? (
         <div className="space-y-3">
-          {sorted.map((card) => (
+          {pageCards.map((card) => (
             <TrainRunCard
               key={card.key}
               run={card}
@@ -176,7 +216,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
         </div>
       ) : (
         <OrdersTable
-          orders={flatOrders.map((o) => ({
+          orders={pageOrders.map((o) => ({
             id: String(o._id),
             externalOrderId: o.externalOrderId,
             orderType: o.orderType,
@@ -197,6 +237,12 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
           showOutlet={multiOutlet}
         />
       )}
+
+      {total > 0 ? (
+        <div className="rounded-xl border border-line bg-surface">
+          <Pagination page={page} pageSize={pageSize} total={total} buildHref={pageHref} />
+        </div>
+      ) : null}
     </div>
   )
 }

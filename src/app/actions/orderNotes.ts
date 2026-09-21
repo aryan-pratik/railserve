@@ -38,6 +38,7 @@ function revalidateAll(orderId: string) {
   revalidatePath(`/store/orders/${orderId}`)
   revalidatePath(`/agent/orders/${orderId}`)
   revalidatePath('/calls')
+  revalidatePath('/calls/live')
   revalidatePath('/store')
   revalidatePath('/admin')
 }

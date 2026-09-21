@@ -5,10 +5,13 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
-import { todayIST, formatDateRange, formatTimeIST } from '@/lib/format'
+import { todayIST, formatDateRange, formatTimeIST, shiftServiceDate } from '@/lib/format'
 import { callNoteRow } from '@/lib/orderView'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
-import { AutoRefresh } from '@/components/AutoRefresh'
+import { AutoRefresh, StaleNotice } from '@/components/AutoRefresh'
+import { countLive } from '@/lib/board'
+import { inRollover } from '@/lib/liveDay'
+import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { ButtonLink, EmptyState, Notice, PageHeader } from '@/components/ui'
 import { IconPlus } from '@/components/Icons'
@@ -58,6 +61,23 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     ? { serviceDate: { $gt: today } }
     : { serviceDate: { $gte: activeFrom, $lte: activeTo } }
 
+  // Past midnight, last night's still-open orders belong to "today" on the
+  // kitchen and call boards, so they do here too: an admin looking at the same
+  // moment must not be told there are fewer orders than the kitchen is cooking.
+  // Once that window closes they are reached through the date filter as usual.
+  // Under $and, not $or, because a search below already owns the top-level $or.
+  if (mode === 'today' && !isUpcoming && inRollover()) {
+    delete dayFilter.serviceDate
+    dayFilter.$and = [
+      {
+        $or: [
+          { serviceDate: today },
+          { serviceDate: shiftServiceDate(today, -1), status: { $in: LIVE_STATUSES } },
+        ],
+      },
+    ]
+  }
+
   if (outlet) dayFilter.restaurantId = outlet
   if (train) dayFilter.trainNo = train
   if (payment) dayFilter.paymentMode = payment
@@ -75,7 +95,10 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   const [outlets, dayOrders, todayCount, upcomingCount, ingest] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
-    countOrders(ctx, { serviceDate: today, status: { $ne: 'CANCELLED' } }),
+    // Open orders today: the same number the kitchen and call boards badge as
+    // Today, not a count of everything not cancelled, which read as "how many
+    // orders" on a screen where the others said "how many are still open".
+    countLive(ctx),
     countOrders(ctx, { serviceDate: { $gt: today }, status: { $ne: 'CANCELLED' } }),
     // Broken ingestion is indistinguishable from a quiet morning on this
     // board — the orders simply are not there. /admin/inbox says so, but
@@ -95,6 +118,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   ].sort()
 
   const serverNow = new Date().toISOString()
+  const renderedAt = serverNow
 
   const runs = groupIntoRuns(visible)
   const ordered =
@@ -170,7 +194,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         note={isUpcoming ? 'Booked for a later date.' : activeDateLabel}
         action={
           <>
-            <AutoRefresh seconds={30} />
+            <AutoRefresh renderedAt={renderedAt} />
             <ButtonLink href="/admin/orders/new" variant="primary">
               <IconPlus size={15} />
               New order
@@ -178,6 +202,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           </>
         }
       />
+
+      <StaleNotice renderedAt={renderedAt} />
 
       {/* Deliberately not ingest.message: that text names env vars and npm
           commands, which is right on the inbox page an admin opens to fix it

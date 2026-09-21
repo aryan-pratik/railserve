@@ -1,5 +1,6 @@
 import type { OrderCardData } from '@/components/OrderCard'
 import { formatTimeIST } from './format'
+import { allowedNextStatuses, type OrderStatus } from './orderStatus'
 
 type LeanCallNote = { text: string; createdAt: Date }
 
@@ -102,5 +103,92 @@ export function toCardData(o: LeanOrder): OrderCardData {
       isPacking: i.isPacking,
     })),
     createdAt: o.createdAt.toISOString(),
+  }
+}
+
+/**
+ * One order as the call board shows it.
+ *
+ * An explicit projection, not a spread of the order: the telecaller must never
+ * be sent money, and a field that was never copied cannot leak through a
+ * component that later starts rendering "everything on the row". The payment
+ * *mode* (COD, prepaid) is here because it is what the passenger will ask
+ * about; no amount, balance or remark is, and tests pin that the key set stays
+ * this way. See also the repository guards on latestBalance/setPaymentRemark.
+ */
+export type CallBoardRowData = {
+  id: string
+  externalOrderId: string
+  orderType: string
+  status: string
+  coach: string | null
+  berth: string | null
+  rawSeat: string | null
+  handoverPoint: string | null
+  contactName: string | null
+  contactPhone: string | null
+  itemCount: number
+  /** "Thali ×2, Lassi": what to confirm with the passenger on the call. */
+  itemSummary: string | null
+  /** COD, prepaid and the like. Never an amount. */
+  paymentMode: string | null
+  /** Only set when the viewer holds more than one outlet. */
+  outletName: string | null
+  canCancel: boolean
+  callNoteCount: number
+  callNoteHint: string | null
+  /** The most recent call, or null when nobody has rung yet. */
+  lastCall: { text: string; by: string | null; atLabel: string } | null
+}
+
+type LeanCallBoardOrder = {
+  _id: unknown
+  externalOrderId: string
+  orderType: string
+  status: string
+  coach?: string | null
+  berth?: string | null
+  rawSeat?: string | null
+  handoverPoint?: string | null
+  contactName?: string | null
+  contactPhone?: string | null
+  paymentMode?: string | null
+  items: { name: string; qty: number; isPacking: boolean }[]
+  callLog?: { text: string; userId?: unknown; createdAt: Date }[] | null
+}
+
+export function callBoardRow(
+  order: LeanCallBoardOrder,
+  opts: { outletName: string | null; actorName: Map<string, string> },
+): CallBoardRowData {
+  const { count, hint } = callNoteSummary(order.callLog ?? [])
+  const last = order.callLog?.at(-1)
+  const food = order.items.filter((i) => !i.isPacking)
+
+  return {
+    id: String(order._id),
+    externalOrderId: order.externalOrderId,
+    orderType: order.orderType,
+    status: order.status,
+    coach: order.coach ?? null,
+    berth: order.berth ?? null,
+    rawSeat: order.rawSeat ?? null,
+    handoverPoint: order.handoverPoint ?? null,
+    contactName: order.contactName ?? null,
+    contactPhone: order.contactPhone ?? null,
+    itemCount: food.length,
+    itemSummary: food.length ? food.map((i) => (i.qty > 1 ? `${i.name} ×${i.qty}` : i.name)).join(', ') : null,
+    paymentMode: order.paymentMode ?? null,
+    outletName: opts.outletName,
+    canCancel: allowedNextStatuses(order.status as OrderStatus, 'TELECALLER').includes('CANCELLED'),
+    callNoteCount: count,
+    callNoteHint: hint,
+    lastCall: last
+      ? {
+          text: last.text,
+          by: last.userId ? (opts.actorName.get(String(last.userId)) ?? null) : null,
+          atLabel: formatTimeIST(last.createdAt),
+        }
+      : null,
   }
 }

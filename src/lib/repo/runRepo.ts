@@ -14,15 +14,24 @@ export const LIVE_STATUSES: OrderStatus[] = [
 
 type RunOrderDoc = Awaited<ReturnType<typeof findMany>>[number]
 
-/** Runs for a service date, within the caller's scope. */
+/**
+ * Runs for a service date, within the caller's scope.
+ *
+ * Several dates load in one query: the live board spans two during the
+ * past-midnight window (see liveServiceDates). A train running on both dates
+ * is still two runs, because the run key includes the service date.
+ */
 export async function findRuns(
   ctx: AuthContext,
-  serviceDate: string,
+  serviceDate: string | string[],
   opts: { statuses?: OrderStatus[] } = {},
 ): Promise<Run<RunOrderDoc>[]> {
   const orders = await findMany(
     ctx,
-    { serviceDate, status: { $in: opts.statuses ?? LIVE_STATUSES } },
+    {
+      serviceDate: Array.isArray(serviceDate) ? { $in: serviceDate } : serviceDate,
+      status: { $in: opts.statuses ?? LIVE_STATUSES },
+    },
     { sort: { createdAt: 1 }, limit: 500 },
   )
   return groupIntoRuns(orders)

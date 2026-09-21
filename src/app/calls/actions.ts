@@ -55,6 +55,7 @@ export async function cancelOrder(
   }
 
   revalidatePath('/calls')
+  revalidatePath('/calls/live')
   revalidatePath(`/calls/orders/${orderId}`)
   // The kitchen board and the rider's runs both drop the order the moment it
   // leaves LIVE_STATUSES; revalidating here means a manager who navigates
@@ -62,6 +63,8 @@ export async function cancelOrder(
   revalidatePath('/store')
   revalidatePath(`/store/orders/${orderId}`)
   revalidatePath('/agent')
+  revalidatePath('/admin')
+  revalidatePath(`/admin/orders/${orderId}`)
 
   return { ok: 'Order cancelled. The kitchen has been told.' }
 }

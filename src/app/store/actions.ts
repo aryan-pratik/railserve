@@ -69,6 +69,8 @@ export async function forceRefreshOrderTrain(
 
   const row = await forceRefreshTrainStatus(order)
   revalidatePath('/store')
+  revalidatePath('/calls')
+  revalidatePath('/admin')
   if (!row) return { error: 'This order has no train.' }
   if (row.lastError) return { error: row.lastError }
   return { ok: 'Refreshed' }
@@ -90,6 +92,10 @@ export async function acceptOrder(
   }
 
   revalidatePath('/store')
+
+  revalidatePath('/calls')
+
+  revalidatePath('/admin')
   revalidatePath(`/store/orders/${orderId}`)
   return { ok: 'Accepted.' }
 }
@@ -108,6 +114,10 @@ export async function markPrepared(
   }
 
   revalidatePath('/store')
+
+  revalidatePath('/calls')
+
+  revalidatePath('/admin')
   revalidatePath(`/store/orders/${orderId}`)
   revalidatePath('/agent')
   return { ok: 'Marked prepared.' }
@@ -130,6 +140,8 @@ export async function generateKot(formData: FormData) {
   if (order.status === 'ACCEPTED') {
     await transitionOrder({ ctx, orderId, to: 'KOT_PRINTED', meta: { via: 'store-dashboard' } })
     revalidatePath('/store')
+    revalidatePath('/calls')
+    revalidatePath('/admin')
     revalidatePath(`/store/orders/${orderId}`)
 
     // Best-effort: the status change is what matters and must not be undone
@@ -173,6 +185,8 @@ export async function acceptRun(
 
   const result = await transitionRun(ctx, runKey, 'RECEIVED', 'ACCEPTED', { via: 'store-board' })
   revalidatePath('/store')
+  revalidatePath('/calls')
+  revalidatePath('/admin')
   return summarise(result, 'accepted')
 }
 
@@ -185,6 +199,8 @@ export async function markRunPrepared(
 
   const result = await transitionRun(ctx, runKey, 'KOT_PRINTED', 'PREPARED', { via: 'store-board' })
   revalidatePath('/store')
+  revalidatePath('/calls')
+  revalidatePath('/admin')
   revalidatePath('/agent')
   return summarise(result, 'ready')
 }
@@ -211,6 +227,8 @@ export async function generateRunKot(formData: FormData) {
 
   await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' })
   revalidatePath('/store')
+  revalidatePath('/calls')
+  revalidatePath('/admin')
 
   if (before && hasNewlyAccepted) {
     try {
@@ -245,6 +263,8 @@ export async function handRunToRiderAction(
 
   const result = await handRunToRider(ctx, runKey, riderId)
   revalidatePath('/store')
+  revalidatePath('/calls')
+  revalidatePath('/admin')
   revalidatePath('/agent')
   return summarise(result, 'on the way')
 }

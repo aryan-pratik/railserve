@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useId } from 'react'
 import { Button, FormNote, textareaClass } from '@/components/ui'
 import { addCallNoteAction, type CallNoteState } from '@/app/actions/orderNotes'
 import type { CallNoteView } from '@/lib/callNotes'
@@ -33,6 +33,9 @@ export function CallNoteForm({
   onSaved?: (notes: CallNoteView[]) => void
 }) {
   const [state, action, pending] = useActionState(addCallNoteAction, initial)
+  // Several of these can be open at once on the call board, so a fixed id
+  // would point every label at the first box.
+  const fieldId = useId()
 
   useEffect(() => {
     if (state.savedAt && state.notes) onSaved?.(state.notes)
@@ -44,7 +47,7 @@ export function CallNoteForm({
   return (
     <form action={action} className="p-4">
       <input type="hidden" name="orderId" value={orderId} />
-      <label htmlFor="call-note" className="sr-only">
+      <label htmlFor={fieldId} className="sr-only">
         Add a call note
       </label>
       {/* Capped to the same measure as the notes above, so the box you type
@@ -56,7 +59,7 @@ export function CallNoteForm({
             rather than reaching for an effect after the fact. */}
         <textarea
           key={state.savedAt ?? 'new'}
-          id="call-note"
+          id={fieldId}
           name="text"
           rows={2}
           maxLength={500}

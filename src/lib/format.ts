@@ -12,8 +12,8 @@
 const IST_OFFSET = '+05:30'
 
 /** Today in IST as 'YYYY-MM-DD'. en-CA formats as ISO, which is why it's used here. */
-export function todayIST(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+export function todayIST(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now)
 }
 
 /** Shifts an IST service date by n days, staying in 'YYYY-MM-DD'. */

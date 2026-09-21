@@ -1,6 +1,7 @@
 'use client'
 
 import { useNowMs } from './useNow'
+import { SOON_MINUTES, URGENT_MINUTES } from '@/lib/urgency'
 
 /**
  * How long until this train arrives, as the largest thing on the card.
@@ -48,8 +49,8 @@ const BLANK = { bg: 'bg-transparent', fg: 'text-muted' }
 const AGO_ORANGE = { bg: 'bg-amber-500', fg: 'text-ink' }
 
 function band(mins: number) {
-  if (mins <= 20) return { bg: 'bg-red-600', fg: 'text-white' }   // 4.77:1
-  if (mins <= 45) return { bg: 'bg-amber-500', fg: 'text-ink' }   // 8.61:1
+  if (mins <= URGENT_MINUTES) return { bg: 'bg-red-600', fg: 'text-white' }   // 4.77:1
+  if (mins <= SOON_MINUTES) return { bg: 'bg-amber-500', fg: 'text-ink' }   // 8.61:1
   return { bg: 'bg-emerald-700', fg: 'text-white' }               // 5.36:1
 }
 
