@@ -6,6 +6,7 @@ import { CheckCycle, DelayPill, FeedUpdated, PlatformBadge, StaleFlag } from './
 import { UrgencyRail } from './UrgencyRail'
 import { Card, CoachChip, StatusBadge, TypeBadge, focusRingInset } from './ui'
 import { IconChevronDown } from './Icons'
+import { CopyButton } from './CopyButton'
 import { urgencyBand, type UrgencyBand } from '@/lib/urgency'
 
 /** A header band tinted by urgency, so a board can be scanned by colour before it is read. */
@@ -83,6 +84,7 @@ export function TrainRunFrame({
   headerNote,
   refreshAction,
   collapsible,
+  copyText,
 }: {
   run: RunHeaderData
   orderCount: number
@@ -98,6 +100,8 @@ export function TrainRunFrame({
   refreshAction?: ReactNode
   /** Render as a foldable section. `open` is only the starting state. */
   collapsible?: { open: boolean }
+  /** Plain text for the header's "Copy train details" button. Omit to hide it. */
+  copyText?: string
 }) {
   const arrivalIso = run.timing.effectiveArrival?.toISOString() ?? null
   // Seeds the rail's first paint; it ticks on its own clock after hydration.
@@ -152,6 +156,7 @@ export function TrainRunFrame({
             arrived={run.timing.arrived}
           />
           {refreshAction}
+          {copyText ? <CopyButton text={copyText} label="Copy train details" /> : null}
         </div>
       </div>
     </div>
@@ -199,6 +204,30 @@ export function TrainRunFrame({
 }
 
 /**
+ * Everything shown in an order row, as plain text for pasting elsewhere —
+ * the kitchen board's equivalent of TrainGroups' `orderDetailsText`.
+ */
+function orderDetailsText(o: RunOrderRow, run: RunHeaderData): string {
+  const seat = o.handoverPoint
+    ? `Handover: ${o.handoverPoint}`
+    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
+  const lines = [
+    `Order ${o.externalOrderId} (${o.orderType})`,
+    `Passenger: ${o.contactName ?? '-'}`,
+    `Seat: ${seat}`,
+    o.pax ? `Pax: ${o.pax}` : `Items: ${o.itemCount}`,
+    o.amountPaise != null
+      ? `Amount: ${formatRupees(o.amountPaise)}${o.paymentMode ? ` (${o.paymentMode})` : ''}`
+      : o.paymentMode
+        ? `Payment: ${o.paymentMode}`
+        : null,
+    `Status: ${o.status}`,
+    `Train: ${run.trainNo ?? 'No train no.'} ${run.trainName ?? ''} · ${run.stationCode}`.trim(),
+  ]
+  return lines.filter((l): l is string => Boolean(l)).join('\n')
+}
+
+/**
  * One train, every order on it.
  *
  * The train is the unit of work: one rider takes the whole run to the platform
@@ -231,12 +260,13 @@ export function TrainRunCard({
       codTotal={codTotal}
       footer={footer}
       refreshAction={refreshAction}
+      copyText={`${run.trainNo ?? 'No train no.'} ${run.trainName ?? ''} · ${run.stationCode}`.trim()}
     >
       {run.orders.map((o) => {
         // The name block keeps a minimum width, so on a phone the
         // badges wrap under it rather than squeezing it to "Khil…".
         const row = (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+          <div className="group flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
             <div className="w-20 shrink-0">
               {o.handoverPoint ? (
                 <span className="text-xs font-semibold text-fuchsia-700">Handover</span>
@@ -278,6 +308,9 @@ export function TrainRunCard({
                 <span className="text-xs font-medium text-muted">prepaid</span>
               )}
               <StatusBadge status={o.status} />
+              <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+                <CopyButton text={orderDetailsText(o, run)} label="Copy order details" />
+              </span>
             </div>
           </div>
         )

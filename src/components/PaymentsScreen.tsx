@@ -133,6 +133,11 @@ export async function PaymentsScreen({
         />
       ) : (
         <PaymentsTable
+          // A telecaller can see the ledger but not reconcile it — the
+          // manager is the one who knows which order a name on a UPI credit
+          // belongs to. Without this the remark cell would still render its
+          // edit affordance for a telecaller and fail silently on submit.
+          canEditRemarks={ctx.role !== 'TELECALLER'}
           payments={payments.map((p) => ({
             id: String(p._id),
             payerName: p.payerName,

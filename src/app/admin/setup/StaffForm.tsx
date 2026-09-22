@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from 'react'
 import { Button, Field, FormNote, inputClass } from '@/components/ui'
 import { saveUser, type UserState } from './staffActions'
 import { OutletMultiSelect, type OutletOption } from './OutletMultiSelect'
+import { ROLE_LABEL, type Role } from '@/lib/roles'
 
 const initial: UserState = {}
 
@@ -16,14 +17,21 @@ export type StaffValues = {
 }
 
 export function StaffForm({
-  outlets, values = {}, onSaved,
+  outlets, values = {}, onSaved, lockedRole,
 }: {
   outlets: OutletOption[]
   values?: StaffValues
   onSaved?: () => void
+  /**
+   * Locks the role field to one value and hides the picker — used by the
+   * store manager's Riders page, which may only ever create DELIVERY_AGENT
+   * staff. Seeded into local `role` state (still needed by the outlet
+   * picker's subtitle/disabled logic below) but never changed by the user.
+   */
+  lockedRole?: Role
 }) {
   const [state, action, pending] = useActionState(saveUser, initial)
-  const [role, setRole] = useState(values.role ?? 'STORE_MANAGER')
+  const [role, setRole] = useState(lockedRole ?? values.role ?? 'STORE_MANAGER')
 
   useEffect(() => {
     if (state.ok) onSaved?.()
@@ -47,15 +55,22 @@ export function StaffForm({
             </Field>
           </div>
 
-          <Field label="Role" htmlFor="role">
-            <select id="role" name="role" value={role} onChange={(e) => setRole(e.target.value)}
-              className={inputClass}>
-              <option value="STORE_MANAGER">Store manager</option>
-              <option value="DELIVERY_AGENT">Delivery agent</option>
-              <option value="TELECALLER">Telecaller</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-          </Field>
+          {lockedRole ? (
+            <Field label="Role" htmlFor="role">
+              <input type="hidden" name="role" value={lockedRole} />
+              <div className={`${inputClass} bg-sunken text-muted`}>{ROLE_LABEL[lockedRole]}</div>
+            </Field>
+          ) : (
+            <Field label="Role" htmlFor="role">
+              <select id="role" name="role" value={role} onChange={(e) => setRole(e.target.value)}
+                className={inputClass}>
+                <option value="STORE_MANAGER">Store manager</option>
+                <option value="DELIVERY_AGENT">Delivery agent</option>
+                <option value="TELECALLER">Telecaller</option>
+                <option value="ADMIN">Admin</option>
+              </select>
+            </Field>
+          )}
 
           <Field label={values.id ? 'New password' : 'Initial password'} htmlFor="password"
             hint={values.id ? 'Leave blank to keep their current password.' : undefined}>

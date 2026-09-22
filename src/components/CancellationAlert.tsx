@@ -15,9 +15,20 @@ export type Cancellation = {
   rawSeat: string | null
   contactName: string | null
   stationCode: string
+  /** Which alert-worthy status this order was moved to. */
+  status: string
   cancelledAt: string
   by: string
   reason: string | null
+}
+
+/** The headline per status this alert can fire for. */
+const HEADLINE: Record<string, string> = {
+  CANCELLED: 'Cancelled: do not cook or dispatch',
+  MISDELIVERY: 'Misdelivery: reached the wrong seat or passenger',
+  MISSED_DELIVERY: 'Missed delivery: never reached the passenger',
+  REFUNDED: 'Refunded',
+  RATING_ORDER: 'Flagged as a rating order, not a real order',
 }
 
 /** Dismissals survive a reload; a banner that comes back after "Got it" is noise. */
@@ -55,13 +66,16 @@ function writeAcked(ids: string[]) {
 }
 
 /**
- * Says out loud that an order has been cancelled.
+ * Says out loud that an order's status just changed to one a manager needs
+ * to react to: cancelled, misdelivered, missed, refunded, or flagged as a
+ * decoy rating order.
  *
  * The problem this solves is a specific one. A telecaller rings a passenger,
- * the passenger cancels, and until now that news travelled by WhatsApp — where
+ * something goes wrong, and until now that news travelled by WhatsApp — where
  * it gets missed, the kitchen cooks the food anyway and a rider carries it to
- * a train nobody is waiting on it from. Marking the order CANCELLED in the
- * system is only half a fix, because a cancelled order drops out of
+ * a train nobody is waiting on it from. Or, on the other three statuses,
+ * nobody but the telecaller who made the change ever finds out at all. Moving
+ * the order off the live pipeline is only half a fix, because it drops out of
  * LIVE_STATUSES and therefore *disappears* from the board: the one signal a
  * busy manager gets is a card quietly ceasing to exist.
  *
@@ -263,7 +277,7 @@ export function CancellationAlert() {
           <IconAlert size={16} className="mt-0.5 shrink-0 text-red-600" aria-hidden />
 
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-red-900">Cancelled: do not cook or dispatch</p>
+            <p className="text-xs font-bold text-red-900">{HEADLINE[c.status] ?? 'Status changed'}</p>
             <p className="truncate text-xs text-red-900">
               <span className="font-mono font-semibold">{c.externalOrderId}</span>
               {c.trainNo ? ` · ${c.trainNo}` : ''}
@@ -284,7 +298,7 @@ export function CancellationAlert() {
           <button
             type="button"
             onClick={() => dismiss(c.id)}
-            aria-label={`Dismiss the cancellation of ${c.externalOrderId}`}
+            aria-label={`Dismiss the alert for ${c.externalOrderId}`}
             title="Got it"
             className={`-mr-1 -mt-0.5 shrink-0 rounded p-2 text-red-700 transition-colors hover:bg-red-100 sm:p-1 ${focusRing}`}
           >
@@ -295,7 +309,7 @@ export function CancellationAlert() {
 
       {hidden > 0 ? (
         <p className="rounded-lg border border-red-200 bg-red-50/90 px-3 py-1.5 text-center text-[11px] font-medium text-red-800 shadow-sm">
-          and {hidden} more cancelled: check the board
+          and {hidden} more changed: check the board
         </p>
       ) : null}
     </div>

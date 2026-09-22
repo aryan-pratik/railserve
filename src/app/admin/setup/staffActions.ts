@@ -40,8 +40,43 @@ const UserInput = z
 
 export type UserState = { error?: string; ok?: string }
 
+/**
+ * A store manager may only touch their own riders. Both directions matter:
+ * refusing to CREATE anything but a DELIVERY_AGENT at their own outlet(s)
+ * stops them minting themselves a telecaller or another manager, and
+ * refusing to EDIT any user that is not already a rider at one of their
+ * outlets stops "editing" from being a way to quietly take over someone
+ * else's account. Returns an error string, or null when the action may
+ * proceed.
+ */
+async function storeManagerGuard(
+  ctx: Awaited<ReturnType<typeof requireRole>>,
+  target: { id?: string; role: string; restaurantIds: string[] },
+): Promise<string | null> {
+  if (ctx.role !== 'STORE_MANAGER') return null
+
+  if (target.role !== 'DELIVERY_AGENT') {
+    return 'A store manager may only add or edit riders.'
+  }
+  const myOutlets = new Set(ctx.restaurantIds.map(String))
+  if (!target.restaurantIds.every((id) => myOutlets.has(id))) {
+    return 'You may only assign outlets you hold yourself.'
+  }
+  if (target.id) {
+    const existing = await User.findById(target.id).select('role restaurantIds').lean()
+    if (
+      !existing ||
+      existing.role !== 'DELIVERY_AGENT' ||
+      !existing.restaurantIds.some((id) => myOutlets.has(String(id)))
+    ) {
+      return 'That staff member is not a rider at one of your outlets.'
+    }
+  }
+  return null
+}
+
 export async function saveUser(_prev: UserState, formData: FormData): Promise<UserState> {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
 
   // getAll, not Object.fromEntries — a multi-select posts one entry per outlet
   // and fromEntries would silently keep only the last.
@@ -55,6 +90,9 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
   const { id, password, restaurantIds, ...rest } = parsed.data
 
   await connectDb()
+
+  const guardError = await storeManagerGuard(ctx, { id, role: rest.role, restaurantIds })
+  if (guardError) return { error: guardError }
 
   // Phone is uniquely indexed and is the login identifier.
   const clash = await User.findOne({
@@ -78,17 +116,40 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
   }
 
   revalidatePath('/admin/setup')
+  revalidatePath('/store/staff')
   return { ok: id ? 'Staff member updated.' : 'Staff member created.' }
 }
 
-export async function toggleUserActive(formData: FormData) {
-  await requireRole('ADMIN')
+/**
+ * Kept `Promise<void>` — the same shape it always had — because it is bound
+ * straight to a plain `<form action>`, whose intrinsic type does not accept
+ * a function returning anything else. A store manager only ever sees this
+ * button next to their own riders (the page's query already scopes the
+ * list), so the refusal below is defence in depth against a forged request,
+ * not something the UI needs to surface: it just quietly does nothing.
+ */
+export async function toggleUserActive(formData: FormData): Promise<void> {
+  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
   const id = String(formData.get('id') ?? '')
   const active = String(formData.get('active') ?? '') === 'true'
 
   await connectDb()
+
+  if (ctx.role === 'STORE_MANAGER') {
+    const target = await User.findById(id).select('role restaurantIds').lean()
+    const myOutlets = new Set(ctx.restaurantIds.map(String))
+    if (
+      !target ||
+      target.role !== 'DELIVERY_AGENT' ||
+      !target.restaurantIds.some((rid) => myOutlets.has(String(rid)))
+    ) {
+      return
+    }
+  }
+
   await User.updateOne({ _id: id }, { $set: { active } })
   revalidatePath('/admin/setup')
+  revalidatePath('/store/staff')
 }
 
 export type DeleteState = { error?: string }
@@ -104,13 +165,16 @@ export type DeleteState = { error?: string }
  * either of which can lock everybody out of this page.
  */
 export async function deleteUser(_prev: DeleteState, formData: FormData): Promise<DeleteState> {
+  // Admin-only, on purpose: the store manager's Riders page has no delete
+  // control at all — only deactivate — so this stays out of reach of
+  // STORE_MANAGER entirely rather than being merely unreachable through the UI.
   const ctx = await requireRole('ADMIN')
   const id = String(formData.get('id') ?? '')
   if (!mongoose.isValidObjectId(id)) return { error: 'That staff member no longer exists.' }
   if (ctx.userId.equals(id)) return { error: "You can't delete your own account." }
 
   await connectDb()
-  const target = await User.findById(id).select('role active').lean()
+  const target = await User.findById(id).select('role active restaurantIds').lean()
   if (!target) return { error: 'That staff member no longer exists.' }
 
   if (target.role === 'ADMIN' && target.active) {
@@ -136,5 +200,6 @@ export async function deleteUser(_prev: DeleteState, formData: FormData): Promis
 
   await User.deleteOne({ _id: id })
   revalidatePath('/admin/setup')
+  revalidatePath('/store/staff')
   return {}
 }

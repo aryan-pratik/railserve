@@ -14,12 +14,22 @@ export function Modal({
   children,
   onClose,
   maxWidthClassName = 'max-w-lg',
+  maxHeightClassName = 'max-h-[calc(100vh-2rem)]',
+  footer,
 }: {
   title: ReactNode
   titleId: string
   children: ReactNode
   onClose: () => void
   maxWidthClassName?: string
+  /** Caps how tall the panel can grow before its own body scrolls. */
+  maxHeightClassName?: string
+  /**
+   * A bar pinned below the scrollable body, outside it rather than inside —
+   * so the primary action stays reachable on a long form without hunting for
+   * it after a scroll. Omit for a dialog with no action that needs that.
+   */
+  footer?: ReactNode
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -62,9 +72,9 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
-        className={`w-full ${maxWidthClassName} max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-line bg-surface shadow-xl outline-none [overscroll-behavior:contain]`}
+        className={`flex w-full ${maxWidthClassName} ${maxHeightClassName} flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xl outline-none`}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <h2 id={titleId} className="text-sm font-semibold text-ink text-balance">
             {title}
           </h2>
@@ -77,7 +87,10 @@ export function Modal({
             <IconClose size={16} />
           </button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto [overscroll-behavior:contain]">{children}</div>
+        {footer ? (
+          <div className="shrink-0 border-t border-line bg-surface px-5 py-3">{footer}</div>
+        ) : null}
       </div>
     </div>
   )

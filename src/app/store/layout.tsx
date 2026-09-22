@@ -11,6 +11,7 @@ export default async function StoreLayout({ children }: LayoutProps<'/store'>) {
         { href: '/store', label: 'Kitchen board', icon: 'board' },
         { href: '/store/history', label: 'Order history', icon: 'history' },
         { href: '/store/payments', label: 'Payments', icon: 'payments' },
+        { href: '/store/staff', label: 'Riders', icon: 'setup' },
       ]}
     >
       {children}

@@ -18,6 +18,7 @@
     "doctor": "tsx --env-file=.env.local scripts/doctor.ts",
     "migrate:multi-outlet": "tsx --env-file=.env.local scripts/migrate-multi-outlet.ts",
     "migrate:station-printing": "tsx --env-file=.env.local scripts/migrate-station-printing.ts",
+    "migrate:legacy-statuses": "tsx --env-file=.env.local scripts/migrate-legacy-statuses.ts",
     "reset:admin": "tsx --env-file=.env.local scripts/reset-to-admin.ts",
     "seed:rider": "tsx --env-file=.env.local scripts/seed-rider-demo.ts",
     "gmail:setup": "tsx --env-file=.env.local scripts/gmail-setup.ts",

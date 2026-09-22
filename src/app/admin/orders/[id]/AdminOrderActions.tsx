@@ -103,6 +103,36 @@ export function ReprintKotButton({ orderId }: { orderId: string }) {
   )
 }
 
+function TransitionButtonRow({
+  orderId, action, pending, options,
+}: {
+  orderId: string
+  action: (formData: FormData) => void
+  pending: boolean
+  options: { to: string; label: string; tone: 'primary' | 'danger' }[]
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => (
+        <form key={o.to} action={action}>
+          <input type="hidden" name="orderId" value={orderId} />
+          <input type="hidden" name="to" value={o.to} />
+          <Button type="submit" size="sm" variant={o.tone} pending={pending}>
+            {o.label}
+          </Button>
+        </form>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * The order's next moves, in two rows rather than one flat, arbitrarily
+ * ordered list: moving it forward through the kitchen (primary) on top, and
+ * an outcome that ends it early — cancel, misdelivery, refund, lost — below.
+ * Keeping them apart means "what happens next in the normal case" and "what
+ * went wrong" never compete for the same glance.
+ */
 export function TransitionButtons({
   orderId, options,
 }: {
@@ -115,19 +145,24 @@ export function TransitionButtons({
     return <p className="px-4 py-4 text-sm text-muted">Nothing further to do on this order.</p>
   }
 
+  const forward = options.filter((o) => o.tone === 'primary')
+  const outcomes = options.filter((o) => o.tone === 'danger')
+
   return (
-    <div className="space-y-2 p-4">
-      <div className="flex flex-wrap gap-2">
-        {options.map((o) => (
-          <form key={o.to} action={action}>
-            <input type="hidden" name="orderId" value={orderId} />
-            <input type="hidden" name="to" value={o.to} />
-            <Button type="submit" size="sm" variant={o.tone} pending={pending}>
-              {o.label}
-            </Button>
-          </form>
-        ))}
-      </div>
+    <div className="space-y-3 p-4">
+      {forward.length > 0 ? (
+        <TransitionButtonRow orderId={orderId} action={action} pending={pending} options={forward} />
+      ) : null}
+      {outcomes.length > 0 ? (
+        <div className="space-y-1.5">
+          {forward.length > 0 ? (
+            <p className="text-xs font-medium uppercase tracking-wide text-faint">
+              If something went wrong
+            </p>
+          ) : null}
+          <TransitionButtonRow orderId={orderId} action={action} pending={pending} options={outcomes} />
+        </div>
+      ) : null}
       <FormNote state={state} />
     </div>
   )

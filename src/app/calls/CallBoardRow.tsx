@@ -7,7 +7,29 @@ import { CallNoteHint } from '@/components/CallNoteHint'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { IconChevronDown, IconPhone } from '@/components/Icons'
 import { Button, CoachChip, PaymentBadge, StatusBadge, TypeBadge, focusRing } from '@/components/ui'
+import { CopyButton } from '@/components/CopyButton'
 import { CancelOrderButton } from './CancelOrderButton'
+
+/**
+ * Everything shown in a call-board row, as plain text for pasting elsewhere
+ * — the same idea as admin's `orderDetailsText`, minus every field this
+ * board never carries (money, item price): a telecaller pastes this into a
+ * message when they need someone else to look at an order without sending
+ * them a link.
+ */
+function orderDetailsText(o: CallBoardRowData): string {
+  const seat = o.handoverPoint
+    ? `Handover: ${o.handoverPoint}`
+    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
+  const lines = [
+    `Order ${o.externalOrderId} (${o.orderType})`,
+    `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,
+    `Seat: ${seat}`,
+    `Items: ${o.itemSummary ?? `${o.itemCount} item${o.itemCount === 1 ? '' : 's'}`}`,
+    `Status: ${o.status}`,
+  ]
+  return lines.join('\n')
+}
 
 /**
  * One passenger on the call board, at kitchen-board density.
@@ -28,14 +50,42 @@ import { CancelOrderButton } from './CancelOrderButton'
 
 /** Left edge under the name column: seat chip (5rem) plus its gap (0.75rem). */
 const INDENT = 'sm:pl-20'
+/** Same, widened for the train block a flat (ungrouped) board adds. */
+const INDENT_WITH_TRAIN = 'sm:pl-32'
 
-export function CallBoardRow({ order: o }: { order: CallBoardRowData }) {
+export function CallBoardRow({
+  order: o,
+  trainNo,
+  trainName,
+}: {
+  order: CallBoardRowData
+  /**
+   * Only passed in the flat (ungrouped) view, where there is no train
+   * header above the row to say which train this is — see the group-by-train
+   * toggle on /calls/live.
+   */
+  trainNo?: string | null
+  trainName?: string | null
+}) {
   const [noteOpen, setNoteOpen] = useState(false)
   const called = o.lastCall !== null
 
   return (
     <li className={called ? '' : 'bg-amber-50/30'}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
+        {trainNo !== undefined ? (
+          <div className="w-16 shrink-0">
+            {trainNo ? (
+              <>
+                <div className="font-mono text-xs font-semibold tabular-nums text-ink">{trainNo}</div>
+                <div className="truncate text-[10px] text-faint">{trainName}</div>
+              </>
+            ) : (
+              <span className="text-xs text-faint">No train</span>
+            )}
+          </div>
+        ) : null}
+
         <div className="w-20 shrink-0">
           {o.handoverPoint ? (
             <span className="text-xs font-semibold text-fuchsia-700">Handover</span>
@@ -87,6 +137,9 @@ export function CallBoardRow({ order: o }: { order: CallBoardRowData }) {
         <div className="ml-auto flex items-center gap-1.5">
           <PaymentBadge mode={o.paymentMode} />
           <StatusBadge status={o.status} />
+          <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+            <CopyButton text={orderDetailsText(o)} label="Copy order details" />
+          </span>
           <Button
             type="button"
             variant="secondary"
@@ -107,7 +160,7 @@ export function CallBoardRow({ order: o }: { order: CallBoardRowData }) {
       </div>
 
       {noteOpen ? (
-        <div id={`call-note-${o.id}`} className={`border-t border-line bg-sunken/40 ${INDENT}`}>
+        <div id={`call-note-${o.id}`} className={`border-t border-line bg-sunken/40 ${trainNo !== undefined ? INDENT_WITH_TRAIN : INDENT}`}>
           <CallNoteForm orderId={o.id} onSaved={() => setNoteOpen(false)} />
         </div>
       ) : null}

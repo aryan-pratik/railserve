@@ -23,6 +23,7 @@ import { isSimulatedProvider } from '@/lib/train'
 import { AutoRefresh, StaleNotice } from '@/components/AutoRefresh'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
 import { TrainRunFrame } from '@/components/TrainRunCard'
+import { GroupByTrainToggle } from '@/components/GroupByTrainToggle'
 import { ButtonLink, Card, EmptyState, PageHeader, Pagination, Tabs, statusLabel } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
 import { CallBoardRow } from '../CallBoardRow'
@@ -59,6 +60,8 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
   const { page, pageSize, skip } = readPage(sp)
   const filter = readCallFilter(sp)
   const filtered = isFiltered(filter)
+  const groupParam = typeof sp.group === 'string' ? sp.group : ''
+  const isGrouped = groupParam !== '0'
 
   const today = todayIST()
   // The service day before today, in IST. Past midnight, last night's orders
@@ -143,13 +146,22 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
   const shownOrders = visible.reduce((n, v) => n + v.rows.length, 0)
   const renderedAt = board.loadedAt.toISOString()
 
+  // Same rows, un-grouped: each still carries which train it's on, since
+  // there is no train header above it here to say so — see the toggle.
+  const flatRows = visible.flatMap(({ run, rows }) =>
+    rows.map((row) => ({ ...row, trainNo: run.trainNo, trainName: run.trainName })),
+  )
+  const pageFlatRows = flatRows.slice(skip, skip + pageSize)
+  const total = isGrouped ? visible.length : flatRows.length
+
   const outlets = board.multiOutlet
     ? [...board.outletName.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
     : []
 
-  // Switching the date tab carries the search/call/status/outlet filters
-  // along, and always starts back at page one — the set of trains has changed.
-  const dateParams = (over: { yesterday?: boolean; upcoming?: boolean } = {}) => {
+  // Switching the date tab or the group toggle carries the search/call/
+  // status/outlet filters along, and always starts back at page one — the
+  // set of rows being paged has changed either way.
+  const dateParams = (over: { yesterday?: boolean; upcoming?: boolean; group?: string } = {}) => {
     const u = new URLSearchParams()
     if (filter.q) u.set('q', filter.q)
     if (filter.call !== 'all') u.set('call', filter.call)
@@ -157,10 +169,16 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
     if (filter.outlet) u.set('outlet', filter.outlet)
     if (over.yesterday ?? showYesterday) u.set('yesterday', '1')
     if (!over.yesterday && (over.upcoming ?? showUpcoming)) u.set('upcoming', '1')
+    const group = over.group ?? groupParam
+    if (group) u.set('group', group)
     return u
   }
   const dateHref = (over: { yesterday?: boolean; upcoming?: boolean }) => {
     const s = withPage(dateParams(over), { page: 1, pageSize }).toString()
+    return s ? `/calls/live?${s}` : '/calls/live'
+  }
+  const groupHref = (group: string) => {
+    const s = withPage(dateParams({ group }), { page: 1, pageSize }).toString()
     return s ? `/calls/live?${s}` : '/calls/live'
   }
   const pageHref = (target: { page: number; pageSize: number }) => {
@@ -196,6 +214,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
           { href: dateHref({ yesterday: true }), label: 'Yesterday', count: yesterdayCount, active: showYesterday },
           { href: dateHref({ yesterday: false, upcoming: true }), label: 'Upcoming', count: upcomingCount, active: showUpcoming },
         ]}
+        action={<GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />}
       />
 
       <StaleNotice renderedAt={renderedAt} />
@@ -209,7 +228,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
         dateQuery={showYesterday ? 'yesterday=1' : showUpcoming ? 'upcoming=1' : ''}
       />
 
-      {pageRuns.length === 0 ? (
+      {(isGrouped ? pageRuns.length : pageFlatRows.length) === 0 ? (
         filtered ? (
           <EmptyState
             title="Nothing matches"
@@ -228,7 +247,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
             }
           />
         )
-      ) : (
+      ) : isGrouped ? (
         <div id={BOARD_ID} className="space-y-3">
           {pageRuns.map(({ run, rows }, i) => {
             const bucket = buckets[i]
@@ -266,6 +285,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
                   // Open while there is someone left to ring, or while the
                   // person is searching and needs to see what matched.
                   collapsible={{ open: filtered || called < rows.length }}
+                  copyText={`${run.trainNo ?? 'No train no.'} ${run.trainName ?? ''} · ${run.stationCode}`.trim()}
                   headerNote={<RunSummary counts={counts} called={called} total={rows.length} />}
                 >
                   {rows.map((row) => (
@@ -276,11 +296,22 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
             )
           })}
         </div>
+      ) : (
+        // Flat: one row per order, newest-arriving train first (same order
+        // the grouped view already sorts trains in), each row carrying its
+        // own train number since there is no train header above it here.
+        <Card className="overflow-hidden">
+          <ul id={BOARD_ID} className="divide-y divide-line">
+            {pageFlatRows.map((row) => (
+              <CallBoardRow key={row.id} order={row} trainNo={row.trainNo} trainName={row.trainName} />
+            ))}
+          </ul>
+        </Card>
       )}
 
-      {visible.length > 0 ? (
+      {total > 0 ? (
         <Card>
-          <Pagination page={page} pageSize={pageSize} total={visible.length} buildHref={pageHref} />
+          <Pagination page={page} pageSize={pageSize} total={total} buildHref={pageHref} />
         </Card>
       ) : null}
     </div>

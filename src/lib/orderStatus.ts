@@ -12,6 +12,10 @@ export const ORDER_STATUSES = [
   'FAILED',
   'CANCELLED',
   'LOST',
+  'MISDELIVERY',
+  'MISSED_DELIVERY',
+  'REFUNDED',
+  'RATING_ORDER',
 ] as const
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
@@ -26,37 +30,66 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
  *
  * Retail enters at RECEIVED; bulk enters at ENQUIRY and merges at RECEIVED.
  *
- * A TELECALLER appears on exactly one kind of edge: `-> CANCELLED`, and only
- * from the four states before a rider is carrying the food. That is the whole
- * job — they ring the passenger, the passenger cancels, and the cancellation
- * has to reach the kitchen before the food is cooked rather than via a
- * WhatsApp message somebody has to notice. Once an order is DISPATCHED the
- * rider owns the outcome, so no CANCELLED edge is added there.
+ * A TELECALLER appears on two kinds of edge. `-> CANCELLED`, only from the
+ * four states before a rider is carrying the food — they ring the passenger,
+ * the passenger cancels, and the cancellation has to reach the kitchen before
+ * the food is cooked rather than via a WhatsApp message somebody has to
+ * notice. Once an order is DISPATCHED the rider owns the outcome, so no
+ * CANCELLED edge is added there. And `-> MISDELIVERY` / `-> MISSED_DELIVERY`
+ * / `-> REFUNDED`, from every non-terminal state — these are support-call
+ * outcomes a telecaller records from whatever a passenger tells them on the
+ * phone, not a pipeline step reached from one particular place, so unlike
+ * CANCELLED they are open from ENQUIRY all the way through DISPATCHED.
+ *
+ * ADMIN deliberately does NOT hold these three edges: the admin order screen
+ * offers only Accept-the-next-step and Cancel, same as before this feature
+ * existed. An admin who genuinely needs to set one of these three can still
+ * reach it through the free-text override below — it is a telecaller's call
+ * to make from the phone, not a button on the admin's normal order view.
+ *
+ * RATING_ORDER (decoy orders run purely to prompt an app-store rating) is
+ * deliberately absent from this table — see the comment on
+ * `canFlagRatingOrder` below.
  */
 export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readonly Role[]>>> = {
   // --- bulk-only head of the pipeline ---
   ENQUIRY: {
     QUOTED: ['ADMIN'],
     LOST: ['ADMIN'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
   QUOTED: {
     // Guarded additionally by the completeness check below.
     RECEIVED: ['ADMIN'],
     LOST: ['ADMIN'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
 
   // --- shared pipeline ---
   RECEIVED: {
     ACCEPTED: ['ADMIN', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
   ACCEPTED: {
     KOT_PRINTED: ['ADMIN', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
   KOT_PRINTED: {
     PREPARED: ['ADMIN', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
   PREPARED: {
     // A store manager can hand food over on the rider's behalf: the rider is
@@ -66,6 +99,9 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     // transitionOrder — so the record still says which rider has the food.
     DISPATCHED: ['DELIVERY_AGENT', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
   DISPATCHED: {
     DELIVERED: ['DELIVERY_AGENT'],
@@ -76,6 +112,9 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     // — releasing a claim is theirs to make — and the event log records both
     // the take and the return, so a returned order is never silently un-taken.
     PREPARED: ['DELIVERY_AGENT'],
+    MISDELIVERY: ['TELECALLER'],
+    MISSED_DELIVERY: ['TELECALLER'],
+    REFUNDED: ['TELECALLER'],
   },
 
   // --- terminal ---
@@ -83,6 +122,10 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
   FAILED: {},
   CANCELLED: {},
   LOST: {},
+  MISDELIVERY: {},
+  MISSED_DELIVERY: {},
+  REFUNDED: {},
+  RATING_ORDER: {},
 }
 
 export const TERMINAL_STATUSES: readonly OrderStatus[] = [
@@ -90,10 +133,29 @@ export const TERMINAL_STATUSES: readonly OrderStatus[] = [
   'FAILED',
   'CANCELLED',
   'LOST',
+  'MISDELIVERY',
+  'MISSED_DELIVERY',
+  'REFUNDED',
+  'RATING_ORDER',
 ]
 
 export function isTerminal(status: OrderStatus): boolean {
   return TERMINAL_STATUSES.includes(status)
+}
+
+/**
+ * RATING_ORDER flags a decoy order run purely to prompt an app-store rating —
+ * it isn't a pipeline step reached from one particular status, it's a
+ * reclassification a telecaller can apply to an order in *any* state,
+ * including terminal ones (a DELIVERED or CANCELLED order can equally turn
+ * out to have been a decoy). That doesn't fit `TRANSITIONS[from][to]`'s
+ * per-source-edge shape, so — like the admin-only free-text override in
+ * transitionOrder.ts — it deliberately lives outside this table. UI code
+ * must ask this function rather than `allowedNextStatuses`, which will never
+ * report RATING_ORDER as reachable from anywhere.
+ */
+export function canFlagRatingOrder(role: Role): boolean {
+  return role === 'TELECALLER'
 }
 
 export function allowedNextStatuses(from: OrderStatus, role: Role): OrderStatus[] {

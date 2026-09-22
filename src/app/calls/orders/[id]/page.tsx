@@ -6,7 +6,7 @@ import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
 import { timingFor, timingForOrders } from '@/lib/train/service'
 import { TrainTiming } from '@/components/TrainTiming'
-import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
+import { allowedNextStatuses, canFlagRatingOrder, type OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import { BackLink, Card, CardHeader, Notice } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
@@ -15,6 +15,9 @@ import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { IconPhone } from '@/components/Icons'
 import { CancelOrderButton } from '../../CancelOrderButton'
+import { OutcomeActionButton } from '../../OutcomeActionButton'
+import { RatingOrderButton } from '../../RatingOrderButton'
+import { markMisdelivery, markMissedDelivery, markRefunded } from '../../actions'
 
 /**
  * One order, as the person on the phone needs it: what was ordered, which
@@ -56,10 +59,20 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   )
 
   // The allow-list decides, not this page. If TRANSITIONS ever changes, the
-  // button follows it rather than drifting from it.
-  const canCancel = allowedNextStatuses(order.status as OrderStatus, 'TELECALLER').includes(
-    'CANCELLED',
-  )
+  // buttons follow it rather than drifting from it.
+  const nextStatuses = allowedNextStatuses(order.status as OrderStatus, 'TELECALLER')
+  const canCancel = nextStatuses.includes('CANCELLED')
+  const canMisdeliver = nextStatuses.includes('MISDELIVERY')
+  const canMissDeliver = nextStatuses.includes('MISSED_DELIVERY')
+  const canRefund = nextStatuses.includes('REFUNDED')
+  // RATING_ORDER sits outside TRANSITIONS on purpose — see canFlagRatingOrder
+  // in orderStatus.ts — so it is offered independent of the other four: an
+  // order can be both e.g. CANCELLED and later flagged as a decoy. It is
+  // only hidden once an order is already RATING_ORDER, since flagging it
+  // twice is a no-op transitionOrder would just reject.
+  const canFlagRating = canFlagRatingOrder('TELECALLER') && order.status !== 'RATING_ORDER'
+  const noOutcomeAvailable =
+    !canCancel && !canMisdeliver && !canMissDeliver && !canRefund && !canFlagRating
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -72,17 +85,72 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
         showMoney={false}
         timing={<TrainTiming timing={timingFor(order, timings)} />}
         actions={
-          canCancel ? (
-            <CancelOrderButton orderId={id} externalOrderId={order.externalOrderId} />
-          ) : (
-            <span className="text-sm text-muted">
-              {order.status === 'CANCELLED'
-                ? 'Already cancelled.'
-                : order.status === 'DISPATCHED'
-                  ? 'A rider is already carrying this: call the outlet instead.'
-                  : 'This order can no longer be cancelled from here.'}
-            </span>
-          )
+          <div className="space-y-2">
+            {canCancel || canMisdeliver || canMissDeliver || canRefund ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {canCancel ? (
+                  <CancelOrderButton orderId={id} externalOrderId={order.externalOrderId} />
+                ) : null}
+                {canMisdeliver ? (
+                  <OutcomeActionButton
+                    orderId={id}
+                    action={markMisdelivery}
+                    buttonLabel="Misdelivery"
+                    modalTitle="Mark as misdelivered?"
+                    description="The food reached the wrong seat or passenger. This is recorded against the order for the outlet and admin."
+                    quickReasons={[
+                      'Delivered to the wrong seat',
+                      'Delivered to the wrong passenger',
+                      'Wrong order handed to this passenger',
+                    ]}
+                  />
+                ) : null}
+                {canMissDeliver ? (
+                  <OutcomeActionButton
+                    orderId={id}
+                    action={markMissedDelivery}
+                    buttonLabel="Missed delivery"
+                    modalTitle="Mark as a missed delivery?"
+                    description="The rider could not reach the passenger or seat in time. This is recorded against the order for the outlet and admin."
+                    quickReasons={[
+                      'Passenger not at seat, unreachable',
+                      'Train left before delivery',
+                      'Rider could not locate the seat',
+                    ]}
+                  />
+                ) : null}
+                {canRefund ? (
+                  <OutcomeActionButton
+                    orderId={id}
+                    action={markRefunded}
+                    buttonLabel="Refunded"
+                    modalTitle="Mark as refunded?"
+                    description="The passenger is being refunded for this order. This is recorded against the order for the outlet and admin."
+                    quickReasons={[
+                      'Passenger requested a refund on the call',
+                      'Order was refunded after a complaint',
+                    ]}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            {canFlagRating ? (
+              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2 first:border-t-0 first:pt-0">
+                <RatingOrderButton orderId={id} />
+              </div>
+            ) : null}
+            {noOutcomeAvailable ? (
+              <span className="text-sm text-muted">
+                {order.status === 'CANCELLED'
+                  ? 'Already cancelled.'
+                  : order.status === 'RATING_ORDER'
+                    ? 'Already marked as a rating order.'
+                    : order.status === 'DISPATCHED'
+                      ? 'A rider is already carrying this: call the outlet instead.'
+                      : 'This order can no longer be updated from here.'}
+              </span>
+            ) : null}
+          </div>
         }
       />
 

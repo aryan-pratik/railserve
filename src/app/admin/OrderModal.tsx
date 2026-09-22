@@ -2,18 +2,23 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, focusRing, statusLabel } from '@/components/ui'
-import { IconPhone } from '@/components/Icons'
+import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
+import { IconChevronDown, IconPhone } from '@/components/Icons'
 import { formatIST, formatMoney, formatTimeIST } from '@/lib/format'
 import { adminTransitionAction, forceRefreshOrderTrain, type ActionState } from './orders/[id]/actions'
 import { fetchOrderDetail, type OrderDetail } from './orderDetail'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { Modal } from '@/components/Modal'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import type { CallNoteView } from '@/lib/callNotes'
 
 const initial: ActionState = {}
+
+function lateLabel(mins: number): string {
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m late` : `${mins}m late`
+}
 
 /** What the board already knows about a row, painted before the fetch lands. */
 export type OrderPreview = {
@@ -58,6 +63,10 @@ export function OrderModal({
   const loading = Boolean(orderId) && (!loaded || loaded.id !== orderId)
   const [state, transition, pending] = useActionState(adminTransitionAction, initial)
   const lastOk = useRef<string | undefined>(undefined)
+  // Which danger action (e.g. "CANCELLED") is waiting on a yes/no before it
+  // submits. A single click used to fire the transition immediately, which is
+  // how a mis-tap cancelled a live, paid order with no undo.
+  const [confirming, setConfirming] = useState<string | null>(null)
 
   /**
    * Paint the log the action just handed back.
@@ -91,6 +100,7 @@ export function OrderModal({
   useEffect(() => {
     if (state.ok && state.ok !== lastOk.current && orderId) {
       lastOk.current = state.ok
+      setConfirming(null)
       router.refresh()
       fetchOrderDetail(orderId).then((d) => setLoaded({ id: orderId, detail: d }))
     }
@@ -103,11 +113,58 @@ export function OrderModal({
     ? `${detail.outlet.name} · ${detail.outlet.stationCode}`
     : preview.outletName ?? 'No outlet'
 
+  const primaryOptions = detail?.nextStatuses.filter((n) => !n.danger) ?? []
+  const dangerOptions = detail?.nextStatuses.filter((n) => n.danger) ?? []
+
+  // Pinned below the scrollable body rather than inside it, so the primary
+  // action is never lost behind a long note or a big item list. Danger on
+  // the left, the routine move on the right: two clearly separate targets
+  // instead of one full-width slab stacked over a second one.
+  const footer = detail ? (
+    <div className="space-y-2">
+      <div className="flex items-stretch gap-2">
+        {dangerOptions.map((n) => (
+          <Button
+            key={n.to}
+            type="button"
+            variant="danger"
+            className="flex-1"
+            onClick={() => setConfirming(n.to)}
+          >
+            {n.label}
+          </Button>
+        ))}
+        {primaryOptions.map((n) => (
+          <form key={n.to} action={transition} className="flex-1">
+            <input type="hidden" name="orderId" value={detail.id} />
+            <input type="hidden" name="to" value={n.to} />
+            <Button type="submit" variant="primary" pending={pending} className="w-full">
+              {n.label}
+            </Button>
+          </form>
+        ))}
+        {primaryOptions.length === 0 && dangerOptions.length === 0 ? (
+          <p className="flex-1 self-center text-center text-sm text-muted">
+            {statusLabel(detail.status)}. Nothing further for an admin to do here.
+          </p>
+        ) : null}
+      </div>
+      {/* Sits under the whole row rather than beside just one side, so it
+          reads as the outcome of either button, not just the one on the right. */}
+      <FormNote state={state} />
+    </div>
+  ) : null
+
+  const confirmingOption = detail?.nextStatuses.find((n) => n.to === confirming) ?? null
+
   return (
+    <>
     <Modal
       titleId="admin-order-modal"
       onClose={onClose}
       maxWidthClassName="max-w-xl"
+      maxHeightClassName="max-h-[85vh]"
+      footer={footer}
       title={
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-mono text-base font-semibold text-ink">
@@ -125,6 +182,33 @@ export function OrderModal({
             <p className="text-sm text-muted">This order could not be loaded. It may have been deleted.</p>
           ) : (
             <>
+              {/* The overview a decision actually needs, in one line, before
+                  four sections of raw facts the admin would otherwise have to
+                  assemble by hand to answer "is this order fine to accept". */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg bg-sunken px-3 py-2 text-sm">
+                <span className="font-semibold text-ink">
+                  {detail.pax
+                    ? `${detail.pax} pax`
+                    : `${detail.items.filter((i) => !i.isPacking).length} item${
+                        detail.items.filter((i) => !i.isPacking).length === 1 ? '' : 's'
+                      }`}
+                </span>
+                <span className="font-semibold tabular-nums text-ink">{formatMoney(detail.amountPaise)}</span>
+                <PaymentBadge mode={detail.paymentMode} />
+                {detail.platform ? (
+                  <span className="rounded bg-ink px-1.5 py-0.5 text-[11px] font-bold text-white">PF {detail.platform}</span>
+                ) : null}
+                {detail.delayMinutes !== null ? (
+                  detail.delayMinutes > 5 ? (
+                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
+                      {lateLabel(detail.delayMinutes)}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-medium text-emerald-700">on time</span>
+                  )
+                ) : null}
+              </div>
+
               <Section title="Journey">
                 {/* Two columns on anything but a phone: this is the tallest
                     block in the dialog and a modal has the width to halve it. */}
@@ -147,9 +231,7 @@ export function OrderModal({
                     ) : null}
                     {detail.delayMinutes !== null && detail.delayMinutes > 5 ? (
                       <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
-                        {detail.delayMinutes >= 60
-                          ? `${Math.floor(detail.delayMinutes / 60)}h ${detail.delayMinutes % 60}m late`
-                          : `${detail.delayMinutes}m late`}
+                        {lateLabel(detail.delayMinutes)}
                       </span>
                     ) : null}
                     {detail.platform ? (
@@ -226,77 +308,46 @@ export function OrderModal({
                 </Section>
               ) : null}
 
-              {detail.nextStatuses.length > 0 ? (
-                /* The routine move is the loud one. These used to be two
-                   full-width h-12 slabs, so cancelling an order shouted exactly
-                   as loudly as accepting it, and a destructive action that
-                   competes with the ordinary one for the eye is how it gets
-                   clicked by mistake. */
-                <div className="space-y-2">
-                  {detail.nextStatuses
-                    .filter((n) => !n.danger)
-                    .map((n) => (
-                      <form key={n.to} action={transition}>
-                        <input type="hidden" name="orderId" value={detail.id} />
-                        <input type="hidden" name="to" value={n.to} />
-                        <Button type="submit" variant="primary" pending={pending} className="w-full">
-                          {n.label}
-                        </Button>
-                      </form>
-                    ))}
-                  {detail.nextStatuses.some((n) => n.danger) ? (
-                    <div className="flex flex-wrap justify-center gap-x-4">
-                      {detail.nextStatuses
-                        .filter((n) => n.danger)
-                        .map((n) => (
-                          <form key={n.to} action={transition}>
-                            <input type="hidden" name="orderId" value={detail.id} />
-                            <input type="hidden" name="to" value={n.to} />
-                            <button
-                              type="submit"
-                              disabled={pending}
-                              className={`rounded px-2 py-1 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 ${focusRing}`}
-                            >
-                              {n.label}
-                            </button>
-                          </form>
-                        ))}
+              {/* Call log and the full event history are the right thing to
+                  have, but not before the accept decision — closed by
+                  default on a fresh order so they add no scroll weight,
+                  open by default once there is already something recorded
+                  worth seeing at a glance. */}
+              <details open={detail.callLog.length > 0} className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between border-t border-line py-3 first:border-0 [&::-webkit-details-marker]:hidden">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    History
+                  </span>
+                  <IconChevronDown size={14} className="text-faint transition-transform group-open:rotate-180" aria-hidden />
+                </summary>
+
+                <Section title="Call log">
+                  <div className="-mx-5">
+                    <CallLog orderId={detail.id} notes={detail.callLog} onChanged={applyNotes} />
+                    <div className="border-t border-line">
+                      <CallNoteForm orderId={detail.id} onSaved={applyNotes} />
                     </div>
-                  ) : null}
-                  <FormNote state={state} />
-                </div>
-              ) : (
-                <p className="text-sm text-muted">
-                  {statusLabel(detail.status)}. Nothing further for an admin to do here.
-                </p>
-              )}
-
-              <Section title="Call log">
-                <div className="-mx-5">
-                  <CallLog orderId={detail.id} notes={detail.callLog} onChanged={applyNotes} />
-                  <div className="border-t border-line">
-                    <CallNoteForm orderId={detail.id} onSaved={applyNotes} />
                   </div>
-                </div>
-              </Section>
+                </Section>
 
-              <Section title="Event log">
-                <ol className="space-y-2.5">
-                  {[...detail.events].reverse().map((e) => (
-                    <li key={e.id} className="flex gap-3 text-sm">
-                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-line-strong" />
-                      <span className="min-w-0 flex-1">
-                        <span className="text-ink">
-                          {e.fromStatus === e.toStatus && e.action
-                            ? e.action.toLowerCase().replace(/_/g, ' ')
-                            : statusLabel(e.toStatus)}
+                <Section title="Event log">
+                  <ol className="space-y-2.5">
+                    {[...detail.events].reverse().map((e) => (
+                      <li key={e.id} className="flex gap-3 text-sm">
+                        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-line-strong" />
+                        <span className="min-w-0 flex-1">
+                          <span className="text-ink">
+                            {e.fromStatus === e.toStatus && e.action
+                              ? e.action.toLowerCase().replace(/_/g, ' ')
+                              : statusLabel(e.toStatus)}
+                          </span>
+                          <span className="block text-xs text-muted">{formatIST(e.at)} · {e.actor}</span>
                         </span>
-                        <span className="block text-xs text-muted">{formatIST(e.at)} · {e.actor}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              </Section>
+                      </li>
+                    ))}
+                  </ol>
+                </Section>
+              </details>
 
               <ButtonLink href={`/admin/orders/${detail.id}`} className="w-full">
                 Open the full order page
@@ -305,6 +356,31 @@ export function OrderModal({
           )}
       </div>
     </Modal>
+
+    {confirmingOption && detail ? (
+      <ConfirmDialog
+        titleId="admin-order-modal-confirm"
+        title={`${confirmingOption.label} this order?`}
+        onCancel={() => setConfirming(null)}
+        actions={
+          <>
+            <form action={transition}>
+              <input type="hidden" name="orderId" value={detail.id} />
+              <input type="hidden" name="to" value={confirmingOption.to} />
+              <Button type="submit" variant="danger" pending={pending}>
+                {confirmingOption.label}
+              </Button>
+            </form>
+            <Button type="button" variant="secondary" onClick={() => setConfirming(null)}>
+              Keep it
+            </Button>
+          </>
+        }
+      >
+        This cannot be undone from here. The kitchen is told immediately once you confirm.
+      </ConfirmDialog>
+    ) : null}
+    </>
   )
 }
 

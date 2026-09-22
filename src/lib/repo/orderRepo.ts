@@ -99,15 +99,24 @@ export async function countByStatus(ctx: AuthContext, filter: QueryFilter<OrderD
 }
 
 /**
- * Orders cancelled recently, for the live cancellation alert (see
- * /api/store/cancellations).
+ * Statuses a telecaller (or admin) can move an order to that take it off
+ * LIVE_STATUSES without it going through DELIVERED/FAILED first — see
+ * `recentCancellations` below for why that matters.
+ */
+const ALERT_STATUSES = ['CANCELLED', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED', 'RATING_ORDER']
+
+/**
+ * Orders recently moved to one of `ALERT_STATUSES`, for the live alert (see
+ * /api/store/cancellations, `CancellationAlert`).
  *
- * A cancellation is the one status change that nobody downstream goes looking
- * for: the order simply drops out of LIVE_STATUSES and vanishes off the
- * kitchen board, so a manager mid-cook sees a card disappear at best and
- * nothing at all at worst. This feeds a banner that says it out loud instead.
+ * These are the status changes nobody downstream goes looking for: the order
+ * simply drops out of LIVE_STATUSES and vanishes off the kitchen board, so a
+ * manager mid-cook sees a card disappear at best and nothing at all at worst
+ * — and until this fed a live banner, finding out what changed and why meant
+ * asking the telecaller directly. This says it out loud instead, for every
+ * one of these statuses, not just CANCELLED.
  *
- * The moment of cancellation is read off the event log, not `updatedAt` —
+ * The moment of the change is read off the event log, not `updatedAt` —
  * updatedAt moves on any later edit, which would keep re-raising an alert
  * that was already dealt with. Scoped like every other read, so a manager is
  * only ever told about their own outlets' orders.
@@ -121,9 +130,11 @@ export type CancellationAlert = {
   rawSeat: string | null
   contactName: string | null
   stationCode: string
-  /** ISO — when the cancelling event was recorded. */
+  /** Which of ALERT_STATUSES this order was moved to. */
+  status: string
+  /** ISO — when the status-change event was recorded. */
   cancelledAt: string
-  /** Who cancelled it, resolved to a name. 'System' when there was no actor. */
+  /** Who made the change, resolved to a name. 'System' when there was no actor. */
   by: string
   reason: string | null
 }
@@ -141,25 +152,26 @@ export async function recentCancellations(
     rawSeat: string | null
     contactName: string | null
     stationCode: string
-    cancelEvent: {
+    status: string
+    alertEvent: {
       createdAt: Date
       userId: mongoose.Types.ObjectId | null
       meta: Record<string, unknown> | null
     } | null
   }>([
     // Hits the store_dashboard index (restaurantId, serviceDate, status).
-    { $match: scoped(ctx, { status: 'CANCELLED', serviceDate: opts.serviceDate }) },
+    { $match: scoped(ctx, { status: { $in: ALERT_STATUSES }, serviceDate: opts.serviceDate }) },
     {
       $addFields: {
         // $arrayElemAt with -1 rather than $last: same result, and it does not
         // require a Mongo new enough to have $last.
-        cancelEvent: {
+        alertEvent: {
           $arrayElemAt: [
             {
               $filter: {
                 input: '$events',
                 as: 'e',
-                cond: { $eq: ['$$e.toStatus', 'CANCELLED'] },
+                cond: { $in: ['$$e.toStatus', ALERT_STATUSES] },
               },
             },
             -1,
@@ -167,23 +179,23 @@ export async function recentCancellations(
         },
       },
     },
-    { $match: { 'cancelEvent.createdAt': { $gte: opts.since } } },
-    { $sort: { 'cancelEvent.createdAt': -1 } },
+    { $match: { 'alertEvent.createdAt': { $gte: opts.since } } },
+    { $sort: { 'alertEvent.createdAt': -1 } },
     { $limit: opts.limit ?? 20 },
     {
       $project: {
         externalOrderId: 1, trainNo: 1, coach: 1, berth: 1, rawSeat: 1,
-        contactName: 1, stationCode: 1, cancelEvent: 1,
+        contactName: 1, stationCode: 1, status: 1, alertEvent: 1,
       },
     },
   ])
 
   if (rows.length === 0) return []
 
-  // Only reached when something actually was cancelled, so the common case
-  // costs one aggregation and no user lookup at all.
+  // Only reached when something actually changed, so the common case costs
+  // one aggregation and no user lookup at all.
   const actorIds = rows
-    .map((r) => r.cancelEvent?.userId)
+    .map((r) => r.alertEvent?.userId)
     .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const actors = actorIds.length
     ? await User.find({ _id: { $in: actorIds } }).select('name').lean()
@@ -191,7 +203,7 @@ export async function recentCancellations(
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
 
   return rows.map((r) => {
-    const meta = (r.cancelEvent?.meta ?? {}) as Record<string, unknown>
+    const meta = (r.alertEvent?.meta ?? {}) as Record<string, unknown>
     const reason = typeof meta.reason === 'string' && meta.reason.trim() ? meta.reason.trim() : null
     return {
       id: String(r._id),
@@ -202,8 +214,9 @@ export async function recentCancellations(
       rawSeat: r.rawSeat ?? null,
       contactName: r.contactName ?? null,
       stationCode: r.stationCode,
-      cancelledAt: (r.cancelEvent?.createdAt ?? new Date()).toISOString(),
-      by: r.cancelEvent?.userId ? (actorName.get(String(r.cancelEvent.userId)) ?? 'Unknown user') : 'System',
+      status: r.status,
+      cancelledAt: (r.alertEvent?.createdAt ?? new Date()).toISOString(),
+      by: r.alertEvent?.userId ? (actorName.get(String(r.alertEvent.userId)) ?? 'Unknown user') : 'System',
       reason,
     }
   })
@@ -603,7 +616,16 @@ export async function outletAnalytics(
   range: { from: string; to: string },
 ): Promise<OutletStats[]> {
   return Order.aggregate<OutletStats>([
-    { $match: scoped(ctx, { serviceDate: { $gte: range.from, $lte: range.to } }) },
+    // RATING_ORDER orders are decoys run purely to prompt an app-store
+    // rating, not real business — excluded from the denominator here, not
+    // just skipped in the per-status sums below, or a day with one fewer
+    // real order would misread as a day with one fewer *successful* order.
+    {
+      $match: scoped(ctx, {
+        serviceDate: { $gte: range.from, $lte: range.to },
+        status: { $ne: 'RATING_ORDER' },
+      }),
+    },
     {
       $addFields: {
         // Received-to-delivered is measured from the event log rather than
@@ -693,7 +715,14 @@ export async function dailyCounts(
   range: { from: string; to: string },
 ): Promise<{ serviceDate: string; orders: number; delivered: number }[]> {
   return Order.aggregate([
-    { $match: scoped(ctx, { serviceDate: { $gte: range.from, $lte: range.to } }) },
+    // See outletAnalytics above: RATING_ORDER decoys are excluded from the
+    // denominator, not just from the delivered count.
+    {
+      $match: scoped(ctx, {
+        serviceDate: { $gte: range.from, $lte: range.to },
+        status: { $ne: 'RATING_ORDER' },
+      }),
+    },
     {
       $group: {
         _id: '$serviceDate',

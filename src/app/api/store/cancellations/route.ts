@@ -25,13 +25,14 @@ const TICK_MS = 3_000
 const WINDOW_MINUTES = 120
 
 /**
- * The cancellation feed behind CancellationAlert.
+ * The status-change alert feed behind CancellationAlert.
  *
- * Why this exists at all: a cancelled order drops out of LIVE_STATUSES, which
- * means it silently disappears from the kitchen board and the rider's runs.
- * Nothing about that disappearance says "stop cooking" — so when a telecaller
- * cancels an order mid-service, the kitchen carries on and a rider picks up
- * food nobody is going to take delivery of. This says it out loud instead.
+ * Why this exists at all: cancelling, misdelivering, missing, refunding, or
+ * flagging an order as a decoy all take it off LIVE_STATUSES, which means it
+ * silently disappears from the kitchen board and the rider's runs. Nothing
+ * about that disappearance says "stop cooking" — so when a telecaller changes
+ * an order mid-service, the kitchen carries on and a rider picks up food
+ * nobody is going to take delivery of. This says it out loud instead.
  *
  * Two modes on one route, deliberately:
  *   - default: SSE, the same shape as /api/store/stream and /api/payments/stream.

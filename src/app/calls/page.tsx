@@ -12,13 +12,26 @@ import { TableFrame } from '@/components/OrdersTable'
 import { CallNoteHint } from '@/components/CallNoteHint'
 import { QueryForm } from '@/components/QueryForm'
 import { IconPhone, IconSearch } from '@/components/Icons'
+import { ORDER_STATUSES } from '@/lib/orderStatus'
 import {
   Button, Card, CoachChip, Dash, EmptyState, Field, PageHeader, StatusBadge, Tabs,
-  Pagination, inputClass, thClass,
+  Pagination, inputClass, statusLabel, thClass,
 } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
 
 export const metadata = { title: 'Call list · RailServe' }
+
+/**
+ * What "Today"/"Upcoming" show here, beyond LIVE_STATUSES, when nobody has
+ * picked a status from the filter below.
+ *
+ * A rating order is a real row a telecaller flagged, not one that finished
+ * or vanished — it must stay visible on the tab it was already sitting in
+ * rather than disappear the instant it's marked, or nobody could tell it
+ * apart from an order that was simply deleted. It still drops off the
+ * kitchen/live *board*, which is a working queue for food to actually cook.
+ */
+const CALL_LIST_STATUSES = [...LIVE_STATUSES, 'RATING_ORDER']
 
 /** Escapes regex metacharacters so a typed order id is matched literally. */
 function escapeRegExp(value: string): string {
@@ -46,6 +59,11 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
   const tab = one(sp.tab)
   const q = one(sp.q).trim()
+  // Any single status, picked from the filter — independent of the tab, so
+  // "find every REFUNDED order" doesn't need a tab of its own for every
+  // status this app has. Ignored on the Cancelled tab, which is already
+  // exactly one status.
+  const statusFilter = one(sp.status)
   const { page, pageSize, skip } = readPage(sp)
 
   const today = todayIST()
@@ -58,19 +76,32 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   const showAll = tab === 'all'
 
   // Filters are additive on top of the caller's scope, never instead of it —
-  // "all" means every date and every status within the outlets this telecaller
-  // holds, not every order in the system.
+  // "all" means every date within the outlets this telecaller holds, not
+  // every order in the system.
   const base: QueryFilter<Record<string, unknown>> = showAll
     ? {}
     : showYesterday
-      ? // Every status: this tab is for looking back at the whole of last
-        // night as well as finishing what is left of it.
-        { serviceDate: yesterday }
+      ? { serviceDate: yesterday }
       : showCancelled
-      ? { serviceDate: today, status: 'CANCELLED' }
-      : showUpcoming
-        ? { serviceDate: { $gt: today }, status: { $in: LIVE_STATUSES } }
-        : { serviceDate: today, status: { $in: LIVE_STATUSES } }
+        ? // Every cancelled order this telecaller's outlets have ever had, not
+          // just today's — cancelling is rare enough that a date window would
+          // just be one more click to widen.
+          { status: 'CANCELLED' }
+        : showUpcoming
+          ? { serviceDate: { $gt: today } }
+          : { serviceDate: today }
+
+  // The status filter applies to every tab but Cancelled, which is already
+  // exactly one status. Left unset on Today/Upcoming, it falls back to
+  // CALL_LIST_STATUSES so those two stay "what's still open" by default;
+  // Yesterday/All already show every status by default.
+  if (!showCancelled) {
+    if (statusFilter) {
+      base.status = statusFilter
+    } else if (!showYesterday && !showAll) {
+      base.status = { $in: CALL_LIST_STATUSES }
+    }
+  }
 
   // One box, four fields: a telecaller has whatever the passenger just read
   // out to them, and should not have to know which column it lives in.
@@ -85,12 +116,12 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   }
 
   const counts: QueryFilter<Record<string, unknown>>[] = [
-    { serviceDate: today, status: { $in: LIVE_STATUSES } },
+    { serviceDate: today, status: { $in: CALL_LIST_STATUSES } },
     // Every order from yesterday, open or finished, matching what the tab
     // itself lists — not just what is still outstanding.
     { serviceDate: yesterday },
-    { serviceDate: { $gt: today }, status: { $in: LIVE_STATUSES } },
-    { serviceDate: today, status: 'CANCELLED' },
+    { serviceDate: { $gt: today }, status: { $in: CALL_LIST_STATUSES } },
+    { status: 'CANCELLED' },
   ]
 
   const [orders, total, todayCount, yesterdayCount, upcomingCount, cancelledCount] = await Promise.all([
@@ -105,8 +136,8 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
       limit: pageSize,
       skip,
     }),
-    // The total behind the pager: this tab with the search applied, not the
-    // tab's badge, which counts open orders only.
+    // The total behind the pager: this tab with the search/status filter
+    // applied, not the tab's badge, which counts open orders only.
     countOrders(ctx, base),
     countOrders(ctx, counts[0]),
     countOrders(ctx, counts[1]),
@@ -130,10 +161,12 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   )
 
   // Changing tab or search starts again at page one, keeping the page size.
+  // The status filter carries across tabs, same as the search box does.
   const href = (t: string) => {
     const u = withPage(new URLSearchParams(), { page: 1, pageSize })
     if (t) u.set('tab', t)
     if (q) u.set('q', q)
+    if (statusFilter) u.set('status', statusFilter)
     const s = u.toString()
     return s ? `/calls?${s}` : '/calls'
   }
@@ -141,6 +174,7 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
     const u = new URLSearchParams()
     if (tab) u.set('tab', tab)
     if (q) u.set('q', q)
+    if (statusFilter) u.set('status', statusFilter)
     const s = withPage(u, target).toString()
     return s ? `/calls?${s}` : '/calls'
   }
@@ -155,10 +189,10 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
             : showYesterday
               ? `Yesterday · ${formatServiceDate(yesterday)}`
               : showCancelled
-              ? `Cancelled today · ${formatServiceDate(today)}`
-              : showAll
-                ? 'Every order at your outlets, whatever the date.'
-                : formatServiceDate(today)
+                ? 'Every cancelled order at your outlets, whatever the date.'
+                : showAll
+                  ? 'Every order at your outlets, whatever the date.'
+                  : formatServiceDate(today)
         }
       />
 
@@ -168,7 +202,7 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
           { href: href(''), label: 'Today', count: todayCount, active: !showUpcoming && !showYesterday && !showCancelled && !showAll },
           { href: href('yesterday'), label: 'Yesterday', count: yesterdayCount, active: showYesterday },
           { href: href('upcoming'), label: 'Upcoming', count: upcomingCount, active: showUpcoming },
-          { href: href('cancelled'), label: 'Cancelled today', count: cancelledCount, active: showCancelled },
+          { href: href('cancelled'), label: 'Cancelled', count: cancelledCount, active: showCancelled },
           { href: href('all'), label: 'All orders', active: showAll },
         ]}
       />
@@ -187,11 +221,32 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
               />
             </Field>
           </div>
+          {/* Ignored on the Cancelled tab, which is already exactly one
+              status — disabling it there rather than hiding it keeps the
+              control in the same place on every tab. */}
+          <div className="w-44 shrink-0">
+            <Field label="Status" htmlFor="status">
+              <select
+                id="status"
+                name="status"
+                defaultValue={statusFilter}
+                disabled={showCancelled}
+                className={inputClass}
+              >
+                <option value="">Any status</option>
+                {ORDER_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {statusLabel(s)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <Button type="submit" variant="secondary">
             <IconSearch size={15} />
             Search
           </Button>
-          {q ? (
+          {q || statusFilter ? (
             <Link
               href={tab ? `/calls?tab=${tab}` : '/calls'}
               className="pb-2 text-sm font-medium text-muted underline-offset-2 hover:underline"
@@ -205,23 +260,23 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
       {orders.length === 0 ? (
         <EmptyState
           title={
-            q
+            q || statusFilter
               ? 'Nothing matches that'
               : showYesterday
                 ? 'Nothing from yesterday'
                 : showCancelled
-                ? 'Nothing cancelled today'
+                ? 'Nothing cancelled'
                 : showAll
                   ? 'No orders yet'
                   : 'No orders to call'
           }
           note={
-            q
-              ? 'Try the order id on its own, or just the last few digits of the phone number.'
+            q || statusFilter
+              ? 'Try clearing the status filter, or just the order id on its own.'
               : showYesterday
                 ? 'Orders from the previous service day show here, including any still open after midnight.'
                 : showCancelled
-                ? 'Orders you cancel today appear here, so you can check what you have already done.'
+                ? 'Orders you cancel appear here, so you can check what has already been done.'
                 : showAll
                   ? 'Search by order id, phone or name to find one from any date.'
                   : 'Orders appear here as they arrive at the outlets you cover.'

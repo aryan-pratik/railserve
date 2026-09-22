@@ -420,6 +420,13 @@ const STATUS_STYLES: Record<string, string> = {
   FAILED: 'bg-red-100 text-red-800 ring-red-200',
   CANCELLED: 'bg-slate-200 text-slate-600 ring-slate-300',
   LOST: 'bg-slate-200 text-slate-600 ring-slate-300',
+  MISDELIVERY: 'bg-rose-100 text-rose-800 ring-rose-200',
+  MISSED_DELIVERY: 'bg-rose-100 text-rose-800 ring-rose-200',
+  REFUNDED: 'bg-red-100 text-red-800 ring-red-200',
+  // Deliberately an unusual colour: this is not a real order outcome, it's a
+  // decoy flagged for app-store ratings, and it should read as "not really
+  // an order" at a glance rather than blend in with the pipeline colours.
+  RATING_ORDER: 'bg-purple-100 text-purple-800 ring-purple-200',
 }
 
 /** Short labels: the board shows these hundreds of times a day. */

@@ -160,9 +160,20 @@ describe('transitionOrder', () => {
 
   it('exposes role-correct next actions for the UI', () => {
     expect(allowedNextStatuses('RECEIVED', 'STORE_MANAGER')).toEqual(['ACCEPTED'])
+    // ADMIN's order screen deliberately stays Accept-and-Cancel: the three
+    // support outcomes are a telecaller's call, not a button here.
     expect(allowedNextStatuses('RECEIVED', 'ADMIN')).toEqual(['ACCEPTED', 'CANCELLED'])
     expect(allowedNextStatuses('PREPARED', 'DELIVERY_AGENT')).toEqual(['DISPATCHED'])
     expect(allowedNextStatuses('DELIVERED', 'ADMIN')).toEqual([])
+  })
+
+  it('the support-outcome edges (misdelivery/missed delivery/refunded) are telecaller only', () => {
+    for (const to of ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const) {
+      expect(allowedNextStatuses('RECEIVED', 'STORE_MANAGER')).not.toContain(to)
+      expect(allowedNextStatuses('RECEIVED', 'DELIVERY_AGENT')).not.toContain(to)
+      expect(allowedNextStatuses('RECEIVED', 'ADMIN')).not.toContain(to)
+      expect(allowedNextStatuses('RECEIVED', 'TELECALLER')).toContain(to)
+    }
   })
 
   describe('adminOverrideStatus', () => {

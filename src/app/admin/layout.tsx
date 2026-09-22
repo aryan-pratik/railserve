@@ -1,4 +1,5 @@
 import { AppShell } from '@/components/AppShell'
+import { AdminOrderToaster } from '@/components/AdminOrderToaster'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
@@ -26,6 +27,10 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
       ]}
     >
       {children}
+      {/* A quiet toast, not the store/agent screens' loud stays-until-
+          dismissed banner: an admin isn't standing over a stove when a
+          telecaller changes a status, so a self-clearing notice is enough. */}
+      <AdminOrderToaster />
     </AppShell>
   )
 }

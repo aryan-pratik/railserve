@@ -5,9 +5,10 @@ import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
-import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
+import type { OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import type { CallNoteView } from '@/lib/callNotes'
+import { adminNextStatusOptions } from './statusOptions'
 
 /**
  * Everything the slide-over shows, in one round trip.
@@ -52,19 +53,6 @@ export type OrderDetail = {
   callLog: CallNoteView[]
   /** Transitions this admin may perform from here, already labelled. */
   nextStatuses: { to: string; label: string; danger: boolean }[]
-}
-
-const LABEL: Record<string, string> = {
-  ACCEPTED: 'Mark as accepted',
-  KOT_PRINTED: 'Send KOT to kitchen',
-  PREPARED: 'Mark ready',
-  DISPATCHED: 'Mark on platform',
-  DELIVERED: 'Mark delivered',
-  FAILED: 'Mark failed',
-  CANCELLED: 'Cancel order',
-  QUOTED: 'Send quote',
-  RECEIVED: 'Confirm order',
-  LOST: 'Mark lost',
 }
 
 export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | null> {
@@ -140,10 +128,6 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
       action: (e.meta as { action?: string } | undefined)?.action ?? null,
     })),
     callLog: viewCallNotes(ctx, callLog, actorLabel),
-    nextStatuses: allowedNextStatuses(order.status as OrderStatus, 'ADMIN').map((to) => ({
-      to,
-      label: LABEL[to] ?? to,
-      danger: to === 'CANCELLED' || to === 'FAILED' || to === 'LOST',
-    })),
+    nextStatuses: adminNextStatusOptions(order.status as OrderStatus),
   }
 }

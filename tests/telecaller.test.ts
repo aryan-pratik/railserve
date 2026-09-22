@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { findById, recentCancellations } from '../src/lib/repo/orderRepo'
-import { transitionOrder } from '../src/lib/repo/transitionOrder'
+import { flagRatingOrder, transitionOrder } from '../src/lib/repo/transitionOrder'
 import { createManualOrder } from '../src/lib/repo/createOrder'
-import { latestBalance } from '../src/lib/repo/paymentRepo'
+import { latestBalance, setPaymentRemark } from '../src/lib/repo/paymentRepo'
 import { dispatchRun } from '../src/lib/repo/runRepo'
 import { ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
-import { allowedNextStatuses } from '../src/lib/orderStatus'
+import { allowedNextStatuses, canFlagRatingOrder } from '../src/lib/orderStatus'
 import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
@@ -104,14 +104,89 @@ describe('telecaller', () => {
       expect((await findById(agent, id))!.status).toBe('DISPATCHED')
     })
 
-    it('is the only status a telecaller may reach, from every live state', () => {
+    it('CANCELLED plus the three support outcomes are all a telecaller may reach, from every non-terminal state', () => {
+      const outcomes = ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED']
       for (const from of ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
-        expect(allowedNextStatuses(from, 'TELECALLER')).toEqual(['CANCELLED'])
+        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(
+          [...outcomes, 'CANCELLED'].sort(),
+        )
       }
-      expect(allowedNextStatuses('DISPATCHED', 'TELECALLER')).toEqual([])
-      // The bulk head of the pipeline stays an admin's business.
-      expect(allowedNextStatuses('ENQUIRY', 'TELECALLER')).toEqual([])
-      expect(allowedNextStatuses('QUOTED', 'TELECALLER')).toEqual([])
+      // DISPATCHED and the bulk head of the pipeline never had a CANCELLED
+      // edge — a rider already owns the outcome, or an admin does — but the
+      // three support outcomes are open everywhere non-terminal, since a
+      // telecaller can be told any of these happened whatever stage an order
+      // is stuck at.
+      for (const from of ['DISPATCHED', 'ENQUIRY', 'QUOTED'] as const) {
+        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(outcomes.sort())
+      }
+    })
+
+    it('the support outcomes refuse once an order is terminal', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
+
+      for (const to of ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const) {
+        await expect(transitionOrder({ ctx: telecaller, orderId: id, to })).rejects.toThrow(
+          ForbiddenError,
+        )
+      }
+    })
+  })
+
+  describe('support outcomes', () => {
+    it.each(['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const)(
+      'records %s from a non-terminal state, with the reason',
+      async (to) => {
+        const id = await newOrder()
+        await advanceTo(id, 'PREPARED')
+        await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+
+        const out = await transitionOrder({
+          ctx: telecaller,
+          orderId: id,
+          to,
+          meta: { via: 'telecaller-call', reason: 'Passenger says it never arrived' },
+        })
+        expect(out.status).toBe(to)
+        const last = out.events.at(-1)!
+        expect(last.fromStatus).toBe('DISPATCHED')
+        expect(last.meta).toMatchObject({ reason: 'Passenger says it never arrived' })
+      },
+    )
+  })
+
+  describe('rating order', () => {
+    it('is offered to a telecaller and nobody else', () => {
+      expect(canFlagRatingOrder('TELECALLER')).toBe(true)
+      expect(canFlagRatingOrder('STORE_MANAGER')).toBe(false)
+      expect(canFlagRatingOrder('DELIVERY_AGENT')).toBe(false)
+      expect(canFlagRatingOrder('ADMIN')).toBe(false)
+    })
+
+    it('flags an order from any status, including a terminal one', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
+
+      const out = await flagRatingOrder({ ctx: telecaller, orderId: id })
+      expect(out.status).toBe('RATING_ORDER')
+      expect(out.events.at(-1)!.meta).toMatchObject({ via: 'telecaller-rating-flag' })
+    })
+
+    it('refuses for any role but telecaller', async () => {
+      const id = await newOrder()
+      await expect(flagRatingOrder({ ctx: manager, orderId: id })).rejects.toThrow(ForbiddenError)
+      await expect(flagRatingOrder({ ctx: agent, orderId: id })).rejects.toThrow(ForbiddenError)
+    })
+
+    it('is outlet-scoped like every other telecaller action', async () => {
+      const id = await newOrder()
+      await expect(flagRatingOrder({ ctx: otherTelecaller, orderId: id })).rejects.toThrow(
+        NotFoundError,
+      )
     })
   })
 
@@ -141,6 +216,12 @@ describe('telecaller', () => {
 
     it('cannot see the bank balance', async () => {
       await expect(latestBalance(telecaller)).rejects.toThrow(ForbiddenError)
+    })
+
+    it('cannot edit a payment remark', async () => {
+      await expect(setPaymentRemark(telecaller, 'anything', 'a remark')).rejects.toThrow(
+        ForbiddenError,
+      )
     })
 
     it('cannot dispatch a run', async () => {

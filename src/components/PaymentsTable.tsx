@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from 'react'
 import { formatMoney, formatServiceDate, formatShortDate, formatTimeIST } from '@/lib/format'
 import { IconCheck, IconClose, IconPencil } from './Icons'
-import { IconButton, thClass, focusRingInset } from './ui'
+import { Dash, IconButton, thClass, focusRingInset } from './ui'
 import { TableFrame } from './OrdersTable'
 import { updatePaymentRemarkAction, type PaymentActionState } from '@/app/actions/payments'
 
@@ -35,7 +35,14 @@ const INITIAL_STATE: PaymentActionState = {}
  * Amount is what anyone scans for, so it is right-aligned and tabular; the
  * RRN is monospaced because it gets read out digit by digit over the phone.
  */
-export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
+export function PaymentsTable({
+  payments,
+  canEditRemarks = true,
+}: {
+  payments: PaymentRow[]
+  /** False for a telecaller: they can see the ledger, not reconcile it. */
+  canEditRemarks?: boolean
+}) {
   return (
     <TableFrame>
       <table className="w-full min-w-[46rem] table-fixed text-sm">
@@ -60,7 +67,7 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
         </thead>
         <tbody className="divide-y divide-line">
           {payments.map((p) => (
-            <PaymentTableRow key={p.id} payment={p} />
+            <PaymentTableRow key={p.id} payment={p} canEditRemarks={canEditRemarks} />
           ))}
         </tbody>
       </table>
@@ -68,7 +75,13 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
   )
 }
 
-function PaymentTableRow({ payment }: { payment: PaymentRow }) {
+function PaymentTableRow({
+  payment,
+  canEditRemarks,
+}: {
+  payment: PaymentRow
+  canEditRemarks: boolean
+}) {
   const [editing, setEditing] = useState(false)
 
   return (
@@ -97,7 +110,7 @@ function PaymentTableRow({ payment }: { payment: PaymentRow }) {
       <td className={TD}>
         {editing ? (
           <RemarkEditor paymentId={payment.id} initial={payment.remark} onDone={() => setEditing(false)} />
-        ) : (
+        ) : canEditRemarks ? (
           <button
             type="button"
             onClick={() => setEditing(true)}
@@ -116,6 +129,8 @@ function PaymentTableRow({ payment }: { payment: PaymentRow }) {
               className="mt-0.5 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             />
           </button>
+        ) : (
+          <span className="block break-words text-faint">{payment.remark ?? <Dash />}</span>
         )}
       </td>
     </tr>

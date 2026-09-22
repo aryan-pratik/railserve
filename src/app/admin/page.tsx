@@ -26,9 +26,16 @@ export const metadata = { title: 'Orders · RailServe' }
 const TABS = [
   { key: '', label: 'All', statuses: null as string[] | null },
   { key: 'kitchen', label: 'Preparing', statuses: ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
-  { key: 'platform', label: 'On the way', statuses: ['DISPATCHED'] },
   { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
-  { key: 'issues', label: 'Cancelled', statuses: ['FAILED', 'CANCELLED', 'LOST'] },
+  {
+    key: 'issues',
+    label: 'Cancelled',
+    statuses: ['FAILED', 'CANCELLED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'],
+  },
+  // Decoy orders run purely to prompt an app-store rating — kept out of every
+  // other tab (and out of analytics, see orderRepo's outletAnalytics) so they
+  // never get mistaken for real business, but still reachable for an audit.
+  { key: 'rating', label: 'Rating orders', statuses: ['RATING_ORDER'] },
 ]
 
 export default async function AdminOrdersPage(props: PageProps<'/admin'>) {

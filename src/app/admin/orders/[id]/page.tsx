@@ -3,10 +3,10 @@ import { requireRole } from '@/lib/session'
 import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
-import { allowedNextStatuses, type OrderStatus } from '@/lib/orderStatus'
+import type { OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
-import { Card, CardHeader, Dash, PageHeader, PaymentBadge, StatusBadge, TypeBadge, statusLabel } from '@/components/ui'
+import { Card, CardHeader, Dash, PageHeader, PaymentBadge, StatusBadge, TypeBadge } from '@/components/ui'
 import { TrainTiming } from '@/components/TrainTiming'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { timingForOrders, timingFor } from '@/lib/train/service'
@@ -16,6 +16,7 @@ import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { DeliveryProof } from '@/components/DeliveryProof'
 import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
+import { adminNextStatusOptions } from '../../statusOptions'
 
 /** Statuses an order can only be in if its KOT has already been sent once. */
 const PRINTED_STATUSES = ['KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'FAILED']
@@ -66,14 +67,12 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   const assigned = order.delivery.agentIds.map(String)
   const riderName = new Map(agents.map((a) => [String(a._id), a.name]))
 
-  const nextStatuses = allowedNextStatuses(order.status as OrderStatus, 'ADMIN')
-  const options = nextStatuses.map((to) => ({
-    to,
-    label:
-      to === 'CANCELLED' ? 'Cancel order'
-      : to === 'LOST' ? 'Mark lost'
-      : `Mark ${statusLabel(to).toLowerCase()}`,
-    tone: (to === 'CANCELLED' || to === 'LOST' ? 'danger' : 'primary') as 'primary' | 'danger',
+  // Shared with the board's OrderModal (orderDetail.ts) so the same order
+  // shows the same button text and colour wherever it's opened from.
+  const options = adminNextStatusOptions(order.status as OrderStatus).map((o) => ({
+    to: o.to,
+    label: o.label,
+    tone: (o.danger ? 'danger' : 'primary') as 'primary' | 'danger',
   }))
 
   const kitchenItems = order.items.filter((i) => !i.isPacking)

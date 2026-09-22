@@ -284,6 +284,82 @@ export async function adminOverrideStatus(params: {
 }
 
 /**
+ * A telecaller flagging an order as a decoy run purely to prompt an app-store
+ * rating. Like `adminOverrideStatus` this bypasses TRANSITIONS — RATING_ORDER
+ * is not a pipeline step reachable from a fixed set of source statuses, see
+ * `canFlagRatingOrder` in orderStatus.ts — as well as the rider-naming check
+ * and the quote guard. Unlike `adminOverrideStatus` the target is fixed and
+ * the role is fixed, so there is no free-text risk to police. The audit event
+ * is tagged `via: 'telecaller-rating-flag'`.
+ *
+ * Only an admin can move an order back out of RATING_ORDER if one is flagged
+ * by mistake, via the existing free-text `adminOverrideStatus` tool.
+ */
+export async function flagRatingOrder(params: {
+  ctx: AuthContext
+  orderId: string
+  meta?: Record<string, unknown>
+}): Promise<OrderDoc> {
+  const { ctx, orderId, meta = {} } = params
+  const to = 'RATING_ORDER'
+
+  if (ctx.role !== 'TELECALLER') {
+    throw new ForbiddenError('Only a telecaller may flag a rating order')
+  }
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new NotFoundError('Order not found')
+  }
+  const _id = new mongoose.Types.ObjectId(orderId)
+
+  const session = await mongoose.startSession()
+  try {
+    let updated: OrderDoc | null = null
+
+    await session.withTransaction(async () => {
+      const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
+      if (!current) throw new NotFoundError('Order not found')
+
+      const from = current.status
+
+      if (from === to) {
+        throw new ConflictError(
+          `Order is already ${to}. Someone else may have just done this: reload.`,
+        )
+      }
+
+      const res = await Order.updateOne(
+        scoped(ctx, { _id, status: from }),
+        {
+          $set: { status: to },
+          $push: {
+            events: {
+              fromStatus: from,
+              toStatus: to,
+              userId: ctx.userId,
+              meta: { ...meta, via: 'telecaller-rating-flag' },
+              createdAt: new Date(),
+            },
+          },
+        },
+        { session },
+      )
+
+      if (res.matchedCount === 0) {
+        throw new ConflictError(
+          `Order changed underneath you: it is no longer ${from}. Reload and retry.`,
+        )
+      }
+
+      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+    })
+
+    return updated!
+  } finally {
+    await session.endSession()
+  }
+}
+
+/**
  * Assigns delivery agents. Not a status change, so it does not belong in the
  * transition allow-list — but it is still audited onto the event log because
  * "who was this handed to, and when" is a question that gets asked after a

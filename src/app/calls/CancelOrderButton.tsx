@@ -56,7 +56,7 @@ export function CancelOrderButton({
   return (
     <>
       <Button type="button" variant="danger" onClick={() => setRequested(true)}>
-        Mark cancelled
+        Cancel
       </Button>
 
       {/* Reported on the page too, so a failure is not lost with the modal. */}

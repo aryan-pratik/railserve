@@ -27,7 +27,7 @@ const TICK_MS = 3_000
  * belongs to — so the fingerprint is global and identical for every viewer.
  */
 export async function GET() {
-  await requireRole('ADMIN', 'STORE_MANAGER')
+  await requireRole('ADMIN', 'STORE_MANAGER', 'TELECALLER')
 
   const encoder = new TextEncoder()
   let closed = false
