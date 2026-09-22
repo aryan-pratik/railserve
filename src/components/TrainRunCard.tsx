@@ -102,7 +102,6 @@ export function TrainRunFrame({
   const arrivalIso = run.timing.effectiveArrival?.toISOString() ?? null
   // Seeds the rail's first paint; it ticks on its own clock after hydration.
   const serverNow = new Date().toISOString()
-  const roomy = Boolean(collapsible)
   const band = urgencyBand(
     run.timing.effectiveArrival
       ? (run.timing.effectiveArrival.getTime() - new Date(serverNow).getTime()) / 60_000
@@ -110,23 +109,17 @@ export function TrainRunFrame({
   )
 
   const headerBody = (
-    <div
-      className={`flex flex-wrap items-start justify-between gap-x-6 gap-y-2 px-4 ${
-        roomy ? 'py-4 sm:px-5' : 'py-3'
-      }`}
-    >
+    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 px-4 py-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="font-mono text-lg font-bold tabular-nums tracking-tight text-ink">
             {run.trainNo ?? 'No train no.'}
           </span>
-          <span className={`truncate font-medium text-muted ${roomy ? 'text-base' : 'text-sm'}`}>
-            {run.trainName}
-          </span>
+          <span className="truncate text-sm font-medium text-muted">{run.trainName}</span>
         </div>
-        <div className={`flex flex-wrap items-center gap-y-1 ${roomy ? 'mt-1.5 gap-x-2' : 'mt-1 gap-x-1.5'}`}>
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
           <PlatformBadge platform={run.timing.platform} />
-          <span className={`text-muted ${roomy ? 'text-sm' : 'text-xs'}`}>
+          <span className="text-xs text-muted">
             {run.stationCode} · {orderCount} order{orderCount === 1 ? '' : 's'}
             {itemCount > 0 ? ` · ${itemCount} item${itemCount === 1 ? '' : 's'}` : ''}
           </span>
@@ -143,10 +136,10 @@ export function TrainRunFrame({
       {/* The rail already carries "how long until"; this is the wall-clock
           time the kitchen writes on a docket, so both earn their place. */}
       <div className="sm:text-right">
-        <div className={`font-bold leading-none tabular-nums text-ink ${roomy ? 'text-3xl' : 'text-2xl'}`}>
+        <div className="text-2xl font-bold leading-none tabular-nums text-ink">
           {formatTimeIST(run.timing.effectiveArrival)}
         </div>
-        <div className={`flex flex-wrap gap-1.5 sm:justify-end ${roomy ? 'mt-2' : 'mt-1.5'}`}>
+        <div className="mt-1.5 flex flex-wrap gap-1.5 sm:justify-end">
           <DelayPill delayMinutes={run.timing.delayMinutes} />
           <StaleFlag timing={run.timing} />
           <FeedUpdated at={run.timing.providerUpdatedAt} />

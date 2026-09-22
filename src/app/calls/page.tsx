@@ -86,9 +86,9 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
 
   const counts: QueryFilter<Record<string, unknown>>[] = [
     { serviceDate: today, status: { $in: LIVE_STATUSES } },
-    // Yesterday's badge counts only what is still open, though the tab lists
-    // everything, so leftover work stands out.
-    { serviceDate: yesterday, status: { $in: LIVE_STATUSES } },
+    // Every order from yesterday, open or finished, matching what the tab
+    // itself lists — not just what is still outstanding.
+    { serviceDate: yesterday },
     { serviceDate: { $gt: today }, status: { $in: LIVE_STATUSES } },
     { serviceDate: today, status: 'CANCELLED' },
   ]

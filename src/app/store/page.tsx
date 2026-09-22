@@ -50,10 +50,11 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const isGrouped = groupParam !== '0'
   const multiOutlet = ctx.restaurantIds.length > 1
 
-  // Every tab's badge is a count of work still open, so each is its own
-  // cheap count rather than the length of whichever tab's rows are loaded.
-  // Yesterday in particular lists finished orders too, and its badge must
-  // still say how many are left to do.
+  // Today and Upcoming badge what is still open, so each is its own cheap
+  // count rather than the length of whichever tab's rows are loaded. Yesterday
+  // badges every order from that day, open or finished, matching what its tab
+  // actually lists — a manager checking back on last night wants the whole
+  // count, not just what is still outstanding.
   const live = { status: { $in: LIVE_STATUSES } }
   const mode: BoardMode = showUpcoming ? 'upcoming' : showYesterday ? 'yesterday' : 'today'
 
@@ -66,7 +67,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     countLive(ctx),
     // While last night's open orders are inside Today, counting them here too
     // would show the same orders on two tabs.
-    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday, ...live }),
+    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday }),
     countOrders(ctx, { serviceDate: { $gt: today }, ...live }),
     User.find({
       role: 'DELIVERY_AGENT',

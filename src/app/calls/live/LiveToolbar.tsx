@@ -37,16 +37,19 @@ export function LiveToolbar({
   outlets,
   counts,
   targetId,
+  dateQuery,
 }: {
   filter: CallFilter
   /** Only passed when the viewer holds more than one outlet. */
   outlets: { id: string; name: string }[]
   counts: { call: Record<CallState, number>; status: Record<StatusGroup, number> }
   targetId: string
+  /** 'yesterday=1' or 'upcoming=1' from the page's date tab, carried through every link and the form here. */
+  dateQuery: string
 }) {
   const href = (over: Partial<CallFilter>) => {
     const next = { ...filter, ...over }
-    const u = new URLSearchParams()
+    const u = new URLSearchParams(dateQuery)
     if (next.q) u.set('q', next.q)
     if (next.call !== 'all') u.set('call', next.call)
     if (next.status !== 'all') u.set('status', next.status)
@@ -54,6 +57,7 @@ export function LiveToolbar({
     const s = u.toString()
     return s ? `/calls/live?${s}` : '/calls/live'
   }
+  const clearHref = dateQuery ? `/calls/live?${dateQuery}` : '/calls/live'
 
   const statuses = (Object.keys(STATUS_GROUP_LABEL) as Exclude<StatusGroup, 'all'>[]).filter(
     (k) => counts.status[k] > 0 || filter.status === k,
@@ -66,6 +70,9 @@ export function LiveToolbar({
             search does not throw the current filters away. */}
         {filter.call !== 'all' ? <input type="hidden" name="call" value={filter.call} /> : null}
         {filter.status !== 'all' ? <input type="hidden" name="status" value={filter.status} /> : null}
+        {[...new URLSearchParams(dateQuery).entries()].map(([k, v]) => (
+          <input key={k} type="hidden" name={k} value={v} />
+        ))}
 
         <div className="min-w-[14rem] flex-1">
           <Field label="Search passengers" htmlFor="live-q">
@@ -106,7 +113,7 @@ export function LiveToolbar({
         </Button>
         {isFiltered(filter) ? (
           <Link
-            href="/calls/live"
+            href={clearHref}
             className={`rounded pb-2.5 text-sm font-medium text-accent underline-offset-2 hover:underline ${focusRing}`}
           >
             Clear all
