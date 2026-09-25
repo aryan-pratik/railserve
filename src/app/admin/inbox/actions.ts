@@ -91,7 +91,7 @@ export async function resolveUnparsed(
 
   const created = await createOrderFromParsed(
     parsed.order,
-    outlet.restaurantId,
+    outlet,
     { body: correctedBody, resolvedFromInbox: id, receivedAt },
     null,
   )

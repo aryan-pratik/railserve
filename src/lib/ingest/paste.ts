@@ -61,7 +61,7 @@ export async function createOrderFromPaste(
 
   const outcome = await createOrderFromParsed(
     parsed,
-    outlet.restaurantId,
+    outlet,
     { pastedText: text, pastedAt: new Date(), pastedById: String(ctx.userId) },
     null,
   )

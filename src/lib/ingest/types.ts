@@ -10,7 +10,13 @@ export type ParsedOrder = {
   externalOrderId: string
   outletName: string
   stationName: string | null
-  stationCode: string
+  /**
+   * Null when the aggregator simply does not send one — RailRestro's order
+   * mail names the outlet but never the station. The station is then taken
+   * from the matched Restaurant, which carries a required stationCode of its
+   * own, rather than guessed from the train or the customer's seat.
+   */
+  stationCode: string | null
   contactName: string | null
   contactPhone: string | null
   trainNo: string | null

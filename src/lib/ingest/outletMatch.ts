@@ -12,6 +12,13 @@ import { Restaurant } from '../models'
  * fuzzy distance, no partial containment, no "closest match". An ambiguous
  * result — two outlets claiming the same alias — is also a refusal, because
  * picking one of them is precisely the guess this must not make.
+ *
+ * `stationCode` is null when the aggregator does not send one (RailRestro).
+ * The name then has to carry the whole match on its own: the station cannot
+ * cross-check it, and cannot break a tie between two outlets sharing a name.
+ * Both of those degrade into a refusal rather than a guess, so a missing
+ * station makes this stricter, never looser — and the matched outlet's own
+ * required stationCode is what the order ends up filed under either way.
  */
 export type OutletMatch =
   | { ok: true; restaurantId: string; name: string; stationCode: string }
@@ -23,7 +30,7 @@ function normalise(s: string): string {
 
 export async function matchOutlet(
   outletName: string,
-  stationCode: string,
+  stationCode: string | null,
 ): Promise<OutletMatch> {
   const wanted = normalise(outletName)
 
@@ -44,10 +51,12 @@ export async function matchOutlet(
 
   if (hits.length > 1) {
     // Narrow by station before giving up — the same brand at two stations is
-    // a legitimate reason for a shared alias.
-    const atStation = hits.filter(
-      (r) => r.stationCode.toUpperCase() === stationCode.toUpperCase(),
-    )
+    // a legitimate reason for a shared alias. With no station to narrow by,
+    // there is nothing to prefer one over the other, so this falls straight
+    // through to the refusal below.
+    const atStation = stationCode
+      ? hits.filter((r) => r.stationCode.toUpperCase() === stationCode.toUpperCase())
+      : []
     if (atStation.length === 1) {
       const r = atStation[0]
       return { ok: true, restaurantId: String(r._id), name: r.name, stationCode: r.stationCode }
@@ -63,7 +72,8 @@ export async function matchOutlet(
   const r = hits[0]
 
   // A name match at the wrong station is still suspicious enough to stop for.
-  if (r.stationCode.toUpperCase() !== stationCode.toUpperCase()) {
+  // Nothing to disagree with when the order carries no station of its own.
+  if (stationCode && r.stationCode.toUpperCase() !== stationCode.toUpperCase()) {
     return {
       ok: false,
       detail:

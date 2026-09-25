@@ -11,6 +11,7 @@ import { RajBhogParser } from './parsers/rajbhog'
 import { ZoopParser } from './parsers/zoop'
 import { BrotherByteParser } from './parsers/brotherbyte'
 import { HomeBytesParser } from './parsers/homebytes'
+import { RailRestroParser } from './parsers/railrestro'
 import { matchOutlet } from './outletMatch'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
 import { warmTrainStatus } from '../train/service'
@@ -26,6 +27,7 @@ export const PARSERS: OrderParser[] = [
   new ZoopParser(),
   new BrotherByteParser(),
   new HomeBytesParser(),
+  new RailRestroParser(),
 ]
 
 export type IngestSource = {
@@ -121,7 +123,7 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
     })
   }
 
-  return createOrderFromParsed(parsed, outlet.restaurantId, rawPayload, input.gmailMessageId ?? null)
+  return createOrderFromParsed(parsed, outlet, rawPayload, input.gmailMessageId ?? null)
 }
 
 /**
@@ -164,10 +166,19 @@ async function tryIngestPayment(
     : { status: 'PAYMENT_DUPLICATE', rrn: recorded.rrn }
 }
 
-/** Shared by ingestion and by resolving an unparsed row. */
+/**
+ * Shared by ingestion and by resolving an unparsed row.
+ *
+ * Takes the resolved outlet rather than a bare restaurantId, because the
+ * outlet is also where the order's station comes from. A parser's own
+ * stationCode is a claim about the email; the outlet's is a fact about the
+ * kitchen, and RailRestro sends no station at all — so the outlet is the only
+ * answer that exists for every source. The two agree wherever both are
+ * present, since matchOutlet refuses the match outright when they disagree.
+ */
 export async function createOrderFromParsed(
   parsed: ParsedOrder,
-  restaurantId: string,
+  outlet: { restaurantId: string; stationCode: string },
   rawPayload: unknown,
   gmailMessageId: string | null,
 ): Promise<OrderIngestOutcome> {
@@ -180,8 +191,8 @@ export async function createOrderFromParsed(
       externalOrderId: parsed.externalOrderId,
       status: 'RECEIVED',
 
-      restaurantId,
-      stationCode: parsed.stationCode,
+      restaurantId: outlet.restaurantId,
+      stationCode: outlet.stationCode,
 
       trainNo: parsed.trainNo,
       trainName: parsed.trainName,
@@ -231,7 +242,7 @@ export async function createOrderFromParsed(
     await warmTrainStatus({
       trainNo: parsed.trainNo,
       serviceDate,
-      stationCode: parsed.stationCode,
+      stationCode: outlet.stationCode,
       scheduledArrival: parsed.scheduledArrival,
     })
 

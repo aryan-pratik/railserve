@@ -191,4 +191,32 @@ describe('outlet matching (plan §6: never guess)', () => {
     const m = await matchOutlet('HOTEL GANGA GALAXY', 'CNB')
     expect(m.ok).toBe(false)
   })
+
+  // RailRestro's order mail names the outlet but never the station, so the
+  // name has to carry the match alone and the outlet's own station is what
+  // the order gets filed under.
+  it('matches on the name alone when the order carries no station', async () => {
+    await makeRestaurant('KHANA KHAZANA', 'GAYA')
+    const m = await matchOutlet('KHANA KHAZANA', null)
+    expect(m.ok).toBe(true)
+    if (!m.ok) return
+    expect(m.stationCode).toBe('GAYA')
+  })
+
+  it('still refuses a near-miss when there is no station to fall back on', async () => {
+    await makeRestaurant('KHANA KHAZANA', 'GAYA')
+    const m = await matchOutlet('KHANA KHAJANA', null)
+    expect(m.ok).toBe(false)
+  })
+
+  it('refuses a shared name outright when there is no station to disambiguate by', async () => {
+    // With a station this resolves; without one there is nothing to prefer,
+    // so a missing station makes matching stricter rather than looser.
+    await makeRestaurant('GANGA CNB', 'CNB', ['GANGA'])
+    await makeRestaurant('GANGA PRYJ', 'PRYJ', ['GANGA'])
+    const m = await matchOutlet('GANGA', null)
+    expect(m.ok).toBe(false)
+    if (m.ok) return
+    expect(m.detail).toMatch(/refusing to guess/)
+  })
 })
