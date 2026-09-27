@@ -18,6 +18,7 @@ import {
   Payment,
   PrintJob,
   Station,
+  RiderLocation,
 } from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
@@ -156,6 +157,17 @@ const USER_INDEXES: Spec[] = [
   { name: 'role_restaurants', index: { key: { role: 1, restaurantIds: 1 } }, why: 'staff listing per outlet' },
 ]
 
+const RIDER_LOCATION_INDEXES: Spec[] = [
+  {
+    name: 'userId_unique',
+    // Unique, not merely indexed. This collection holds one row per rider that
+    // is upserted forever; a duplicate would split a rider in two and put the
+    // same person on the map twice, in two different places.
+    index: { key: { userId: 1 }, unique: true },
+    why: 'one live position per rider — the upsert target, and the board\'s lookup',
+  },
+]
+
 type IndexCreator = {
   collection: {
     createIndex(key: IndexSpecification, options?: CreateIndexesOptions): Promise<string>
@@ -189,6 +201,7 @@ async function main() {
   await ensure('payments', Payment, PAYMENT_INDEXES)
   await ensure('printjobs', PrintJob, PRINT_JOB_INDEXES)
   await ensure('stations', Station, STATION_INDEXES)
+  await ensure('riderlocations', RiderLocation, RIDER_LOCATION_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })

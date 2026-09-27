@@ -21,6 +21,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/enquiries', label: 'Enquiries', icon: 'enquiries' },
         { href: '/admin/payments', label: 'Payments', icon: 'payments' },
         { href: '/admin/inbox', label: 'Inbox', icon: 'inbox', count: unparsed },
+        { href: '/admin/riders', label: 'Riders', icon: 'riders' },
         { href: '/admin/trains', label: 'Train status', icon: 'runs' },
         { href: '/admin/analytics', label: 'Analytics', icon: 'analytics' },
         { href: '/admin/setup', label: 'Setup', icon: 'setup' },

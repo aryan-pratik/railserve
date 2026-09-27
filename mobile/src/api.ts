@@ -1,6 +1,6 @@
 import { API_URL } from './config'
 import { enqueue, loadQueue, removeFromQueue } from './storage'
-import type { HistoryResponse, QueuedMutation, RunsResponse } from './types'
+import type { HistoryResponse, LocationPing, QueuedMutation, RunsResponse } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -58,6 +58,23 @@ export async function fetchRuns(token: string): Promise<RunsResponse> {
  */
 export async function fetchHistory(token: string): Promise<HistoryResponse> {
   return request<HistoryResponse>('/api/mobile/history', token)
+}
+
+
+/**
+ * Hand a batch of positions to the server.
+ *
+ * Throws on anything that is not a clean accept, and the caller treats that as
+ * "try again on the next tick" — there is no retry here on purpose. The server
+ * takes the batch in any order and drops anything older than what it already
+ * holds, so sending the same fix twice is harmless and losing one is cheap.
+ */
+export async function sendLocations(token: string, pings: LocationPing[]) {
+  return request<{ ok: boolean; accepted: number; storedAt: string | null }>(
+    '/api/mobile/location',
+    token,
+    { method: 'POST', body: JSON.stringify({ pings }) },
+  )
 }
 
 

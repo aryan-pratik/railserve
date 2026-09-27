@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Order, Payment, PrintJob, Restaurant, Station, UnparsedInbox, User } from '../src/lib/models'
+import { Counter, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -18,6 +18,7 @@ export async function resetDb() {
     Payment.deleteMany({}),
     PrintJob.deleteMany({}),
     Station.deleteMany({}),
+    RiderLocation.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
@@ -28,6 +29,8 @@ export async function resetDb() {
   // Payment ingestion is idempotent on the RRN, so the tests that assert that
   // need the index that enforces it.
   await Payment.collection.createIndex({ rrn: 1 }, { unique: true, name: 'rrn_unique' })
+  // One live position per rider; the ingest path upserts against this.
+  await RiderLocation.collection.createIndex({ userId: 1 }, { unique: true, name: 'userId_unique' })
 }
 
 export async function makeRestaurant(name: string, stationCode: string, aliases: string[] = []) {

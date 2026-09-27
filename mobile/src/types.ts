@@ -104,3 +104,17 @@ export type QueuedMutation =
       at: string
     }
   | { kind: 'FAIL_ORDER'; clientId: string; orderId: string; failureReason: string; at: string }
+
+/**
+ * One position, as the phone hands it to the server. Not a QueuedMutation:
+ * location is fire-and-forget and must never join the retry-forever queue —
+ * see src/location.ts.
+ */
+export type LocationPing = {
+  lat: number
+  lng: number
+  accuracyMetres: number | null
+  speedMetresPerSecond: number | null
+  headingDegrees: number | null
+  recordedAt: string
+}

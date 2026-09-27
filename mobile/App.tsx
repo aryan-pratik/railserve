@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AppState, BackHandler, Pressable, StatusBar, Text, View } from 'react-native'
+import { Alert, AppState, BackHandler, Linking, Pressable, StatusBar, Text, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { LogOut } from 'lucide-react-native'
 import * as Notifications from 'expo-notifications'
@@ -15,8 +15,12 @@ import { DeliveryScreen } from './src/screens/Delivery'
 import { DeliveryTabScreen } from './src/screens/DeliveryTab'
 import { HistoryScreen } from './src/screens/History'
 import { ProfileModal } from './src/screens/ProfileModal'
-import { C, EnvBanner, TabBar } from './src/ui'
+import { C, EnvBanner, SharingIndicator, TabBar } from './src/ui'
 import { IS_NOT_PRODUCTION } from './src/config'
+import {
+  flushNow, getSharingState, onSharingChange, startSharing, stopSharing,
+  type SharingState,
+} from './src/location'
 
 type Screen = { name: 'home' } | { name: 'delivery'; runKey: string; orderId: string }
 
@@ -43,6 +47,7 @@ function AppShell() {
   const [history, setHistory] = useState<HistoryOrder[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [profileVisible, setProfileVisible] = useState(false)
+  const [sharing, setSharing] = useState<SharingState>(getSharingState)
 
   // --- boot ---------------------------------------------------------------
   useEffect(() => {
@@ -134,6 +139,31 @@ function AppShell() {
       sub.remove()
     }
   }, [token, refresh, sync])
+
+  // --- location sharing ---------------------------------------------------
+  // Runs for as long as there is a session, and stops the moment there isn't.
+  // Not tied to a screen: the rider is on a platform with the delivery screen
+  // open exactly when the office most wants to know where they are.
+  useEffect(() => {
+    if (!token) {
+      void stopSharing()
+      return
+    }
+    const unsubscribe = onSharingChange(setSharing)
+    void startSharing(token)
+
+    // Coming back to the foreground is when a phone that was inside a station
+    // gets signal again — send what buffered rather than waiting a tick.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') flushNow(token)
+    })
+
+    return () => {
+      unsubscribe()
+      sub.remove()
+      void stopSharing()
+    }
+  }, [token])
 
   // --- push registration --------------------------------------------------
   useEffect(() => {
@@ -341,6 +371,24 @@ function AppShell() {
             </Text>
           </View>
         </Pressable>
+
+        <SharingIndicator
+          state={sharing}
+          onPress={
+            sharing.status === 'denied'
+              ? () => {
+                Alert.alert(
+                  'Location sharing is off',
+                  `${'reason' in sharing ? sharing.reason : ''}\n\nThe office uses this to see which riders are near a platform. Open Settings to turn it on.`,
+                  [
+                    { text: 'Not now', style: 'cancel' },
+                    { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+                  ],
+                )
+              }
+              : undefined
+          }
+        />
 
         <Pressable
           onPress={async () => {

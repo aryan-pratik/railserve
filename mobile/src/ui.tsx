@@ -406,3 +406,56 @@ export const s = StyleSheet.create({
   tab: { flex: 1, alignItems: 'center', minHeight: 48 },
   tabMark: { height: 2, width: 40, backgroundColor: 'transparent' },
 })
+
+/**
+ * Whether this phone is sharing its location, said plainly on the rider's own
+ * screen.
+ *
+ * Not decoration and not optional. The office can see where this rider is, and
+ * the person being tracked is entitled to know that without opening settings
+ * to find out — so it sits in the header, visible the whole time the app is
+ * open, and turns amber the moment sharing stops working. It doubles as the
+ * only way a rider can tell that a denied permission is why the office keeps
+ * ringing to ask where they are.
+ */
+export function SharingIndicator({
+  state,
+  onPress,
+}: {
+  state:
+    | { status: 'off' | 'denied' | 'pending' }
+    | { status: 'sharing'; background: boolean }
+  onPress?: () => void
+}) {
+  const sharing = state.status === 'sharing'
+  const warn = state.status === 'denied' || state.status === 'pending'
+  if (state.status === 'off') return null
+
+  const label =
+    // "While app is open" is worth spelling out: a rider who declined the
+    // always-allow prompt should know their position stops at the lock screen
+    // rather than discovering it when the office rings to ask where they are.
+    state.status === 'sharing'
+      ? state.background ? 'Sharing location' : 'Sharing while app is open'
+    : state.status === 'pending' ? 'Location waiting for signal'
+    : 'Location off'
+
+  const fg = sharing ? C.green : warn ? C.amber : C.muted
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={label}
+      style={({ pressed }) => [{
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        paddingHorizontal: 10, paddingVertical: 5,
+        opacity: pressed && onPress ? 0.6 : 1,
+      }]}
+    >
+      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: fg }} />
+      <Text style={{ fontSize: 12, fontWeight: '600', color: fg }}>{label}</Text>
+    </Pressable>
+  )
+}
