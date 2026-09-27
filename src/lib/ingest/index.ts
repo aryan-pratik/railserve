@@ -110,7 +110,7 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   const parsed = result.order
 
   // Never fuzzy-match an outlet into a live order (§6, §13.11).
-  const outlet = await matchOutlet(parsed.outletName, parsed.stationCode)
+  const outlet = await matchOutlet(parsed.outletName, parsed.stationCode, parsed.source)
   if (!outlet.ok) {
     return recordUnparsed({
       source: parser.source,

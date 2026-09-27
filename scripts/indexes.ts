@@ -19,6 +19,7 @@ import {
   PrintJob,
   Station,
   RiderLocation,
+  Listing,
 } from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
@@ -157,6 +158,24 @@ const USER_INDEXES: Spec[] = [
   { name: 'role_restaurants', index: { key: { role: 1, restaurantIds: 1 } }, why: 'staff listing per outlet' },
 ]
 
+const LISTING_INDEXES: Spec[] = [
+  {
+    name: 'name_station',
+    index: { key: { name: 1, stationCode: 1 } },
+    why: 'every ingested mail resolves its storefront name through this',
+  },
+  {
+    name: 'aliases',
+    index: { key: { aliases: 1 } },
+    why: 'an aggregator renaming a storefront becomes an alias, matched the same way',
+  },
+  {
+    name: 'outlet',
+    index: { key: { restaurantId: 1 } },
+    why: 'the Setup screen lists the storefronts feeding each outlet',
+  },
+]
+
 const RIDER_LOCATION_INDEXES: Spec[] = [
   {
     name: 'userId_unique',
@@ -202,6 +221,7 @@ async function main() {
   await ensure('printjobs', PrintJob, PRINT_JOB_INDEXES)
   await ensure('stations', Station, STATION_INDEXES)
   await ensure('riderlocations', RiderLocation, RIDER_LOCATION_INDEXES)
+  await ensure('listings', Listing, LISTING_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })

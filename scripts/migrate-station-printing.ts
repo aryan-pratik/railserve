@@ -60,13 +60,17 @@ export async function migrateStationPrinting(): Promise<StationMigrationReport> 
     warnings: [],
   }
 
-  const outlets = await Restaurant.find({}).select('_id name stationCode stationName printAgentToken').lean()
+  const outlets = await Restaurant.find({}).select('_id name stationCode stationName printAgentToken active').lean()
   const codes = [...new Set(outlets.map((o) => normaliseStationCode(o.stationCode ?? '')).filter(Boolean))]
 
   for (const code of codes) {
     const atStation = outlets.filter((o) => normaliseStationCode(o.stationCode ?? '') === code)
     const names = atStation.map((o) => o.stationName).filter((n): n is string => Boolean(n))
-    const withTokens = atStation.filter((o) => o.printAgentToken)
+    // Active outlets only. A retired outlet keeps its old token in the row
+    // (nothing clears it on deactivation), and counting those made this
+    // refuse to adopt at a station whose live agent was never ambiguous —
+    // GAYA had one active token and one on a deactivated duplicate.
+    const withTokens = atStation.filter((o) => o.printAgentToken && o.active !== false)
 
     // More than one outlet at a station holding a token means two agents were
     // configured for one kitchen. Picking one silently would 401 the other

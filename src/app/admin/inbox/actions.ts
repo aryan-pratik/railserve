@@ -84,7 +84,7 @@ export async function resolveUnparsed(
   const parsed = parser.parse(correctedBody, receivedAt)
   if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
 
-  const outlet = await matchOutlet(parsed.order.outletName, parsed.order.stationCode)
+  const outlet = await matchOutlet(parsed.order.outletName, parsed.order.stationCode, parsed.order.source)
   if (!outlet.ok) {
     return { error: `Outlet still unresolved: ${outlet.detail}. Add it, or add an alias, under Outlets.` }
   }

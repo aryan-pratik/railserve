@@ -24,7 +24,8 @@
     "gmail:setup": "tsx --env-file=.env.local scripts/gmail-setup.ts",
     "gmail:watch": "tsx --env-file=.env.local scripts/gmail-watch.ts",
     "backfill:payments": "tsx --env-file=.env.local scripts/backfill-payments.ts",
-    "print-agent:token": "tsx --env-file=.env.local scripts/set-print-agent-token.ts"
+    "print-agent:token": "tsx --env-file=.env.local scripts/set-print-agent-token.ts",
+    "migrate:listings": "tsx --env-file=.env.local scripts/migrate-aggregator-listings.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1120.0",

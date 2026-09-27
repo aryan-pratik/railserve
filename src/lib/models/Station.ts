@@ -33,6 +33,21 @@ const StationSchema = new Schema(
     agentLastPrintedAt: { type: Date, default: null },
     // Deactivating a station revokes its agent without rotating the token.
     active: { type: Boolean, default: true },
+    // Where an order lands when its storefront name maps to no outlet yet.
+    //
+    // Deliberately a named default rather than "any outlet here". Both put the
+    // order in the right kitchen — one station is one stove — but staff are
+    // scoped per outlet, so "any" would scatter one aggregator's orders across
+    // brands and show each manager a random half of the work. A fixed default
+    // is just as forgiving and stays put.
+    defaultRestaurantId: { type: Schema.Types.ObjectId, ref: 'Restaurant', default: null },
+    // Set only for a station whose router port-forwards its printer to a
+    // public IP. When present, the server prints directly over the internet
+    // instead of waiting for this station's agent to poll — see
+    // src/lib/printer/directPrint.ts. Null for every other station, which
+    // keeps using the poll/agent path.
+    directPrinterHost: { type: String, default: null, trim: true },
+    directPrinterPort: { type: Number, default: 9100 },
   },
   { timestamps: true, strict: true, strictQuery: true, versionKey: false },
 )

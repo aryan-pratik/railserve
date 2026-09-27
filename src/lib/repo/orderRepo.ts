@@ -3,6 +3,7 @@ import { Order, Counter, User, type OrderDoc } from '../models'
 import { type AuthContext, ForbiddenError, NotFoundError } from '../authContext'
 import { ROLE_LABEL } from '../roles'
 import type { CallNoteView } from '../callNotes'
+import type { OrderSource } from '../orderEnums'
 
 /**
  * THE ONLY PLACE Order.find / findOne / aggregate MAY BE CALLED.
@@ -814,4 +815,43 @@ export async function systemRecordLeaveNow(
     },
   )
   return res.modifiedCount
+}
+
+/**
+ * Moves orders from one outlet to another.
+ *
+ * Exists for Setup → Aggregators: an aggregator storefront was pointed at the
+ * wrong kitchen and the books should follow the correction. Narrowed to one
+ * aggregator, because an outlet cooks for several and only the mis-routed
+ * one should move — re-pointing "YATRI BHOJAN" must not drag along the orders
+ * that outlet received directly.
+ *
+ * ADMIN-only rather than scoped: this rewrites which outlet an order belongs
+ * to, so a caller who could only see one side of the move would silently
+ * relocate work they cannot see. Scoping would hide the damage, not prevent it.
+ */
+export async function repointOrdersBetweenOutlets(
+  ctx: AuthContext,
+  params: {
+    from: mongoose.Types.ObjectId
+    to: mongoose.Types.ObjectId
+    /**
+     * The aggregator whose orders should move. REQUIRED, and deliberately so:
+     * an outlet cooks for several storefronts, so a move with no aggregator to
+     * narrow it would sweep up every order the outlet ever took — including
+     * the ones that arrived under a different name entirely.
+     */
+    source: OrderSource
+  },
+): Promise<number> {
+  if (ctx.role !== 'ADMIN') {
+    throw new ForbiddenError(`${ROLE_LABEL[ctx.role]} cannot move orders between outlets`)
+  }
+  if (String(params.from) === String(params.to)) return 0
+
+  const res = await Order.updateMany(
+    { restaurantId: params.from, source: params.source },
+    { $set: { restaurantId: params.to } },
+  )
+  return res.modifiedCount ?? 0
 }

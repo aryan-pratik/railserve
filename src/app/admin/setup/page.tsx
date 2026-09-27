@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { Restaurant, User } from '@/lib/models'
+import { Listing, Restaurant, Station, User } from '@/lib/models'
+import { countOrders } from '@/lib/repo/orderRepo'
+import { getAuthContext } from '@/lib/session'
 import {
   Card, CardHeader, Dash, PageHeader, Pagination, Tabs, PAGE_SIZE_OPTIONS, thClass, focusRing,
 } from '@/components/ui'
@@ -12,6 +14,8 @@ import { StaffFormModal } from './StaffFormModal'
 import { deleteRestaurant, toggleRestaurantActive } from './outletActions'
 import { deleteUser, toggleUserActive } from './staffActions'
 import { DeleteRowButton } from './DeleteRowButton'
+import { AggregatorRow } from './AggregatorRow'
+import { StationDefaultForm } from './StationDefaultForm'
 
 export const metadata = { title: 'Setup · RailServe' }
 
@@ -53,7 +57,9 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   await requireRole('ADMIN')
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
-  const staff = one(sp.tab) === 'staff'
+  const tab = one(sp.tab)
+  const staff = tab === 'staff'
+  const aggregators = tab === 'aggregators'
   const editId = one(sp.edit) || undefined
 
   const pageParam = Number.parseInt(one(sp.page), 10)
@@ -75,6 +81,31 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     editId && staff ? User.findById(editId).lean() : undefined,
   ])
 
+  // Aggregator storefronts, the orders behind each, and each station's
+  // fallback kitchen. Only fetched for the tab that shows them.
+  const ctx = await getAuthContext()
+  const listings = aggregators
+    ? await Listing.find({}).sort({ stationCode: 1, name: 1 }).lean()
+    : []
+  const stations = aggregators ? await Station.find({}).lean() : []
+  const listingOrderCounts = new Map<string, number>()
+  if (aggregators && ctx) {
+    for (const l of listings) {
+      // What this storefront actually brought in: its aggregator's orders at
+      // the outlet it points to. Approximate by design — the order itself
+      // records the aggregator, not the storefront name it arrived under.
+      listingOrderCounts.set(
+        String(l._id),
+        l.restaurantId && l.source
+          ? await countOrders(ctx, { restaurantId: l.restaurantId, source: l.source })
+          : 0,
+      )
+    }
+  }
+  const defaultByStation = new Map(
+    stations.map((st) => [String(st._id), st.defaultRestaurantId ? String(st.defaultRestaurantId) : null]),
+  )
+
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
 
   const stationTone = stationToneMap(outlets.map((o) => o.stationCode))
@@ -93,18 +124,91 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     <div className="space-y-4">
       <PageHeader
         title="Setup"
-        note="Outlets and the people who work them. Deactivate anything that has been used; delete only works on rows nothing points at, so existing orders always point at something real."
+        note={
+          aggregators
+            ? 'The names our kitchens trade under on each ordering platform, and which kitchen cooks for each. These are not outlets of ours — they are how an outlet appears to Zoop, Yatri Bhojan and the rest.'
+            : 'Outlets are our own kitchens, one per station per brand. The platforms that send us orders live under Aggregators. Deactivate anything that has been used; delete only works on rows nothing points at.'
+        }
       />
 
       <Tabs
         label="Setup"
         tabs={[
-          { href: '/admin/setup', label: 'Outlets', count: outlets.length, active: !staff },
+          { href: '/admin/setup', label: 'Outlets', count: outlets.filter((o) => o.active).length, active: !staff && !aggregators },
+          { href: '/admin/setup?tab=aggregators', label: 'Aggregators', active: aggregators },
           { href: '/admin/setup?tab=staff', label: 'Staff', active: staff },
         ]}
       />
 
-      {staff ? (
+      {aggregators ? (
+        <div className="space-y-4">
+          {/* One card per station: the storefronts there, then the fallback
+              underneath them, because the fallback only makes sense once you
+              can see what it is a fallback for. */}
+          {[...new Set(listings.map((l) => l.stationCode))].sort().map((code) => {
+            const here = listings.filter((l) => l.stationCode === code)
+            const kitchens = outlets
+              .filter((o) => o.active && o.stationCode === code)
+              .map((o) => ({ id: String(o._id), name: o.name }))
+            const defaultId = defaultByStation.get(code) ?? null
+            const defaultName = defaultId ? (outletById.get(defaultId)?.name ?? null) : null
+
+            return (
+              <Card key={code} className="overflow-hidden">
+                <CardHeader
+                  title={
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono">{code}</span>
+                      <span className="text-muted">
+                        {here.length} storefront{here.length === 1 ? '' : 's'} · {kitchens.length} kitchen
+                        {kitchens.length === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                  }
+                />
+                <table className="w-full text-sm">
+                  <thead className="border-b border-line bg-sunken/60">
+                    <tr>
+                      <th className={thClass}>Storefront name in the mail</th>
+                      <th className={`${thClass} hidden sm:table-cell`}>Orders</th>
+                      <th className={thClass}>Cooked by</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {here.map((l) => (
+                      <AggregatorRow
+                        key={String(l._id)}
+                        listing={{
+                          id: String(l._id),
+                          name: l.name,
+                          source: l.source ?? null,
+                          stationCode: l.stationCode,
+                          restaurantId: l.restaurantId ? String(l.restaurantId) : null,
+                          orderCount: listingOrderCounts.get(String(l._id)) ?? 0,
+                        }}
+                        outlets={kitchens}
+                        stationDefaultName={defaultName}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+                <div className="border-t border-line bg-sunken/40 px-3 py-2.5">
+                  <StationDefaultForm stationCode={code} current={defaultId} outlets={kitchens} />
+                </div>
+              </Card>
+            )
+          })}
+
+          {listings.length === 0 ? (
+            <Card>
+              <p className="px-3 py-6 text-center text-sm text-muted">
+                No aggregator storefronts recorded yet. They appear here as orders arrive, or after
+                running the listings migration.
+              </p>
+            </Card>
+          ) : null}
+        </div>
+      ) : staff ? (
         <>
           <Card className="overflow-hidden">
             <CardHeader
