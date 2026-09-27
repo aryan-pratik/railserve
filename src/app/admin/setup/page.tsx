@@ -15,6 +15,7 @@ import { deleteRestaurant, toggleRestaurantActive } from './outletActions'
 import { deleteUser, toggleUserActive } from './staffActions'
 import { DeleteRowButton } from './DeleteRowButton'
 import { AggregatorRow } from './AggregatorRow'
+import { AggregatorsCell } from './AggregatorsCell'
 import { StationDefaultForm } from './StationDefaultForm'
 
 export const metadata = { title: 'Setup · RailServe' }
@@ -84,10 +85,10 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   // Aggregator storefronts, the orders behind each, and each station's
   // fallback kitchen. Only fetched for the tab that shows them.
   const ctx = await getAuthContext()
-  const listings = aggregators
-    ? await Listing.find({}).sort({ stationCode: 1, name: 1 }).lean()
-    : []
-  const stations = aggregators ? await Station.find({}).lean() : []
+  // Loaded for both tabs: Aggregators edits them, and Outlets needs them to
+  // know which rows are storefronts and what feeds each kitchen.
+  const listings = staff ? [] : await Listing.find({}).sort({ stationCode: 1, name: 1 }).lean()
+  const stations = staff ? [] : await Station.find({}).lean()
   const listingOrderCounts = new Map<string, number>()
   if (aggregators && ctx) {
     for (const l of listings) {
@@ -109,7 +110,39 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
 
   const stationTone = stationToneMap(outlets.map((o) => o.stationCode))
-  const outletsPage = staff ? [] : outlets.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+  /**
+   * The Outlets tab lists kitchens, and nothing else.
+   *
+   * A storefront retired by the listings migration is still a `restaurants`
+   * row — history points at it and it is the print-token rollback path — but
+   * showing it here invites exactly one mistake: pressing its Active toggle
+   * brings an aggregator name back as an outlet, and `matchOutlet` then routes
+   * that aggregator's orders to it instead of to the kitchen. So a row whose
+   * (name, station) is a known storefront is filtered out.
+   */
+  const storefrontKey = new Set(
+    listings.map((l) => `${l.name.trim().toUpperCase()}@${l.stationCode.toUpperCase()}`),
+  )
+  const kitchens = outlets.filter(
+    (o) => !storefrontKey.has(`${o.name.trim().toUpperCase()}@${o.stationCode.toUpperCase()}`),
+  )
+
+  // What feeds each kitchen: storefronts pointed straight at it, plus the
+  // unmapped ones its station sends here by default.
+  const feedsByOutlet = new Map<string, { name: string; source: string | null; viaDefault: boolean }[]>()
+  for (const l of listings) {
+    if (!l.active) continue
+    const target = l.restaurantId
+      ? String(l.restaurantId)
+      : (stations.find((st) => String(st._id) === l.stationCode)?.defaultRestaurantId ?? null)
+    if (!target) continue
+    const key = String(target)
+    const list = feedsByOutlet.get(key) ?? []
+    list.push({ name: l.name, source: l.source ?? null, viaDefault: !l.restaurantId })
+    feedsByOutlet.set(key, list)
+  }
+
+  const outletsPage = staff ? [] : kitchens.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
 
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
@@ -134,7 +167,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
       <Tabs
         label="Setup"
         tabs={[
-          { href: '/admin/setup', label: 'Outlets', count: outlets.filter((o) => o.active).length, active: !staff && !aggregators },
+          { href: '/admin/setup', label: 'Outlets', count: kitchens.filter((o) => o.active).length, active: !staff && !aggregators },
           { href: '/admin/setup?tab=aggregators', label: 'Aggregators', active: aggregators },
           { href: '/admin/setup?tab=staff', label: 'Staff', active: staff },
         ]}
@@ -306,17 +339,21 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
         <>
           <Card className="overflow-hidden">
             <CardHeader
-              title={`${outlets.length} outlet${outlets.length === 1 ? '' : 's'}`}
+              title={`${kitchens.length} outlet${kitchens.length === 1 ? '' : 's'}`}
               action={<OutletFormModal />}
             />
             {/* No horizontal scroll: Station folds into the Outlet cell below
-                md, Aliases disappear below lg, Walk below sm. */}
+                md, Aliases disappear below xl, Aggregators below md, Walk
+                below sm. Aggregators outranks Aliases for width — which
+                platforms feed a kitchen is looked at far more often than the
+                alternate spellings of its own name. */}
             <table className="w-full text-sm">
               <thead className="border-b border-line bg-sunken/60">
                 <tr>
                   <th className={thClass}>Outlet</th>
                   <th className={`${thClass} hidden md:table-cell`}>Station</th>
-                  <th className={`${thClass} hidden lg:table-cell`}>Aliases</th>
+                  <th className={`${thClass} hidden md:table-cell`}>Aggregators</th>
+                  <th className={`${thClass} hidden xl:table-cell`}>Aliases</th>
                   <th className={`${thClass} hidden w-px sm:table-cell`}>Walk</th>
                   <th className={`${thClass} w-px`}>Status</th>
                   <th className={`${thClass} w-px`}><span className="sr-only">Actions</span></th>
@@ -330,11 +367,17 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                       <div className="mt-1 md:hidden">
                         <StationPill code={o.stationCode} name={o.stationName} tone={stationTone.get(o.stationCode)} />
                       </div>
+                      <div className="mt-1.5 md:hidden">
+                        <AggregatorsCell listings={feedsByOutlet.get(String(o._id)) ?? []} />
+                      </div>
                     </td>
                     <td className="hidden px-3 py-2.5 align-top md:table-cell">
                       <StationPill code={o.stationCode} name={o.stationName} tone={stationTone.get(o.stationCode)} />
                     </td>
-                    <td className="hidden px-3 py-2.5 align-top text-xs text-faint [overflow-wrap:anywhere] lg:table-cell">
+                    <td className="hidden px-3 py-2.5 align-top md:table-cell">
+                      <AggregatorsCell listings={feedsByOutlet.get(String(o._id)) ?? []} />
+                    </td>
+                    <td className="hidden px-3 py-2.5 align-top text-xs text-faint [overflow-wrap:anywhere] xl:table-cell">
                       {o.aliases.length ? o.aliases.join(', ') : <Dash />}
                     </td>
                     <td className="hidden px-3 py-2.5 align-top whitespace-nowrap tabular-nums text-muted sm:table-cell">{o.walkToPlatformMinutes} min</td>
@@ -348,8 +391,8 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                 ))}
               </tbody>
             </table>
-            {outlets.length > 0 ? (
-              <Pagination page={page} pageSize={pageSize} total={outlets.length} buildHref={paginationHref} />
+            {kitchens.length > 0 ? (
+              <Pagination page={page} pageSize={pageSize} total={kitchens.length} buildHref={paginationHref} />
             ) : null}
           </Card>
         </>
