@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST, paiseToRupees } from '@/lib/format'
 import {
-  Button, CoachChip, Dash, EmptyState, IconButton,
+  Button, CoachChip, Dash, EmptyState, IconButton, SourceBadge,
   StatusBadge, TypeBadge, editInputClass, editTriggerClass, statusLabel, thClass,
 } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -29,6 +29,8 @@ export type AdminOrderRow = {
   scheduledArrival?: Maybe<string>
   amountPaise?: Maybe<number>
   outletName?: Maybe<string>
+  /** The aggregator the order arrived from — Order.source. */
+  source?: Maybe<string>
   remark?: Maybe<string>
   /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
   callNoteCount?: Maybe<number>
@@ -40,31 +42,32 @@ export type AdminOrderRow = {
  * for the delete action — kept local rather than widening the shared one,
  * since store history and the board's flat view must not gain this column.
  */
-function AdminColGroup({ showOutlet }: { showOutlet: boolean }) {
-  return showOutlet ? (
+function AdminColGroup({
+  showOutlet,
+  showSource = false,
+}: {
+  showOutlet: boolean
+  showSource?: boolean
+}) {
+  const weights = [
+    17, // order id
+    10, // date
+    10, // train
+    11, // seat
+    10, // passenger
+    ...(showSource ? [11] : []), // aggregator
+    ...(showOutlet ? [11] : []), // outlet
+    14, // remark
+    8, // amount
+    13, // status
+    9, // delete
+  ]
+  const total = weights.reduce((a, b) => a + b, 0)
+  return (
     <colgroup>
-      <col style={{ width: '15%' }} />
-      <col style={{ width: '9%' }} />
-      <col style={{ width: '10%' }} />
-      <col style={{ width: '9%' }} />
-      <col style={{ width: '12%' }} />
-      <col style={{ width: '10%' }} />
-      <col style={{ width: '6%' }} />
-      <col style={{ width: '7%' }} />
-      <col style={{ width: '13%' }} />
-      <col style={{ width: '9%' }} />
-    </colgroup>
-  ) : (
-    <colgroup>
-      <col style={{ width: '17%' }} />
-      <col style={{ width: '10%' }} />
-      <col style={{ width: '11%' }} />
-      <col style={{ width: '10%' }} />
-      <col style={{ width: '14%' }} />
-      <col style={{ width: '8%' }} />
-      <col style={{ width: '8%' }} />
-      <col style={{ width: '13%' }} />
-      <col style={{ width: '9%' }} />
+      {weights.map((w, i) => (
+        <col key={i} style={{ width: `${((w / total) * 100).toFixed(3)}%` }} />
+      ))}
     </colgroup>
   )
 }
@@ -79,11 +82,14 @@ const INITIAL_STATE: ActionState = {}
 export function AdminOrdersTable({
   orders,
   showOutlet = false,
+  showSource = false,
   statusOptions,
   emptyNote = 'Nothing matches these filters.',
 }: {
   orders: AdminOrderRow[]
   showOutlet?: boolean
+  /** Which aggregator each order came from. */
+  showSource?: boolean
   statusOptions: string[]
   emptyNote?: string
 }) {
@@ -94,7 +100,7 @@ export function AdminOrdersTable({
   return (
     <TableFrame>
       <table className="w-full min-w-[60rem] table-fixed text-sm">
-        <AdminColGroup showOutlet={showOutlet} />
+        <AdminColGroup showOutlet={showOutlet} showSource={showSource} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={thClass}>Order</th>
@@ -102,6 +108,7 @@ export function AdminOrdersTable({
             <th className={thClass}>Train</th>
             <th className={thClass}>Seat</th>
             <th className={thClass}>Passenger</th>
+            {showSource ? <th className={thClass}>Aggregator</th> : null}
             {showOutlet ? <th className={thClass}>Outlet</th> : null}
             <th className={thClass}>Remark</th>
             <th className={`${thClass} text-right`}>Amount</th>
@@ -111,7 +118,7 @@ export function AdminOrdersTable({
         </thead>
         <tbody className="divide-y divide-line">
           {orders.map((o) => (
-            <AdminOrderRow key={o.id} order={o} showOutlet={showOutlet} statusOptions={statusOptions} />
+            <AdminOrderRow key={o.id} order={o} showOutlet={showOutlet} showSource={showSource} statusOptions={statusOptions} />
           ))}
         </tbody>
       </table>
@@ -122,10 +129,12 @@ export function AdminOrdersTable({
 function AdminOrderRow({
   order,
   showOutlet,
+  showSource,
   statusOptions,
 }: {
   order: AdminOrderRow
   showOutlet: boolean
+  showSource: boolean
   statusOptions: string[]
 }) {
   const [editing, setEditing] = useState<'amount' | 'status' | null>(null)
@@ -156,6 +165,7 @@ function AdminOrderRow({
         <CoachChip coach={order.coach} berth={order.berth} rawSeat={order.rawSeat} />
       </td>
       <td className="truncate px-3 py-2.5 text-ink" title={order.contactName ?? undefined}>{order.contactName ?? <Dash />}</td>
+      {showSource ? <td className="px-3 py-2.5"><SourceBadge source={order.source} /></td> : null}
       {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={order.outletName ?? undefined}>{order.outletName ?? <Dash />}</td> : null}
       <td className="truncate px-3 py-2.5 text-amber-800" title={order.remark ?? undefined}>
         {order.remark ?? <Dash />}

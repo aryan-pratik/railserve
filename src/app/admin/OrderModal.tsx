@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
 import { IconChevronDown, IconPhone } from '@/components/Icons'
 import { formatIST, formatMoney, formatTimeIST } from '@/lib/format'
+import { sourceLabel } from '@/lib/orderEnums'
 import { adminTransitionAction, forceRefreshOrderTrain, type ActionState } from './orders/[id]/actions'
 import { fetchOrderDetail, type OrderDetail } from './orderDetail'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
@@ -219,6 +220,7 @@ export function OrderModal({
                     : 'Not specified'
                 } mono />
                 <Row label="Station" value={detail.outlet?.stationCode ?? null} mono />
+                <Row label="Came from" value={sourceLabel(detail.source)} />
                 <Row label="Scheduled" value={formatTimeIST(detail.scheduledArrival)} />
                 <div className="flex items-baseline justify-between gap-3 py-1 sm:col-span-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Expected</span>

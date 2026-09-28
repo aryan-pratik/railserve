@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
-import { Card, Dash, PaymentBadge, StatusBadge, TypeBadge } from '@/components/ui'
+import { Card, Dash, PaymentBadge, SourceBadge, StatusBadge, TypeBadge } from '@/components/ui'
 import { ReadyByCountdown } from '@/components/ReadyByCountdown'
 
 export type OrderCardData = {
   id: string
   externalOrderId: string
   orderType: string
+  /** The aggregator the order arrived from. */
+  source?: string | null
   status: string
   trainNo: string | null
   trainName: string | null
@@ -50,6 +52,10 @@ export function OrderCard({
         </Link>
         <TypeBadge type={order.orderType} />
         <StatusBadge status={order.status} />
+        {/* Which platform sold it. A kitchen packs a Zoop order differently
+            from a Yatri Bhojan one, so it belongs on the ticket-level header
+            rather than buried in the detail below. */}
+        <SourceBadge source={order.source} />
         {order.readyBy ? <ReadyByCountdown readyBy={order.readyBy} /> : null}
         <span className="ml-auto text-xs tabular-nums text-faint">
           {showServiceDate ? formatServiceDate(order.serviceDate) : formatIST(order.createdAt)}

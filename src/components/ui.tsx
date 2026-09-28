@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { IconArrowLeft, IconChevronLeft, IconChevronRight } from './Icons'
 import { LinkHint } from './LinkHint'
 import { Spinner } from './Spinner'
+import { sourceLabel } from '@/lib/orderEnums'
 import { EMPTY } from '@/lib/format'
 
 export { Spinner }
@@ -458,6 +459,30 @@ export function TypeBadge({ type }: { type: string }) {
   return (
     <span className="inline-flex rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide ring-1 ring-inset bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200">
       BULK
+    </span>
+  )
+}
+
+/**
+ * Which aggregator an order came from.
+ *
+ * Quiet on purpose. It answers "whose app did this come through", which
+ * matters for packaging and for a support call, but it is never the thing
+ * someone is scanning a board for — so it reads as a label, not as a status.
+ * A hand-entered order says so in words rather than wearing a brand name.
+ */
+export function SourceBadge({ source }: { source: string | null | undefined }) {
+  if (!source) return <Dash />
+  const manual = source === 'MANUAL'
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ring-1 ring-inset ${
+        manual
+          ? 'bg-sunken text-muted ring-line-strong italic'
+          : 'bg-slate-100 text-slate-700 ring-slate-200'
+      }`}
+    >
+      {sourceLabel(source)}
     </span>
   )
 }

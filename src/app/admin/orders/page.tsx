@@ -213,10 +213,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           scheduledArrival: o.scheduledArrival?.toISOString() ?? null,
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
+          source: o.source,
           remark: o.remark,
             ...callNoteRow(o),
         }))}
         showOutlet
+        showSource
         statusOptions={statusOptions}
         emptyNote={
           hasFilters

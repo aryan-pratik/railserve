@@ -6,6 +6,7 @@ import { Restaurant, User } from '@/lib/models'
 import type { OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
+import { sourceLabel } from '@/lib/orderEnums'
 import { Card, CardHeader, Dash, PageHeader, PaymentBadge, StatusBadge, TypeBadge } from '@/components/ui'
 import { TrainTiming } from '@/components/TrainTiming'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
@@ -84,7 +85,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
         back={{ href: '/admin/orders', label: 'All orders' }}
         title={<span className="font-mono">{order.externalOrderId}</span>}
         badges={<><TypeBadge type={order.orderType} /><StatusBadge status={order.status} /></>}
-        note={`${outlet ? `${outlet.name} · ${outlet.stationCode}` : 'No outlet'} · ${formatServiceDate(order.serviceDate)}`}
+        note={`${sourceLabel(order.source)} → ${outlet ? `${outlet.name} · ${outlet.stationCode}` : 'No outlet'} · ${formatServiceDate(order.serviceDate)}`}
       />
 
       <div className="grid gap-5 lg:grid-cols-3">

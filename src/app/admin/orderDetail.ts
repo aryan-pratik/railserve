@@ -22,6 +22,8 @@ import { adminNextStatusOptions } from './statusOptions'
  * it crosses to a client component.
  */
 export type OrderDetail = {
+  /** The aggregator the order arrived from. The outlet cooks it; this sold it. */
+  source: string
   id: string
   externalOrderId: string
   status: string
@@ -92,6 +94,9 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
     status: order.status,
     orderType: order.orderType,
     outlet: outlet ? { name: outlet.name, stationCode: outlet.stationCode } : null,
+    // Which platform the order arrived from. Distinct from the outlet: the
+    // outlet cooks it, the aggregator sold it.
+    source: order.source,
     serviceDate: order.serviceDate,
     trainNo: order.trainNo ?? null,
     trainName: order.trainName ?? null,

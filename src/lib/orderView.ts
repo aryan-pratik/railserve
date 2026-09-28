@@ -58,6 +58,7 @@ type LeanOrder = {
   _id: unknown
   externalOrderId: string
   orderType: string
+  source?: string | null
   status: string
   trainNo?: string | null
   trainName?: string | null
@@ -83,6 +84,7 @@ export function toCardData(o: LeanOrder): OrderCardData {
     id: String(o._id),
     externalOrderId: o.externalOrderId,
     orderType: o.orderType,
+    source: o.source ?? null,
     status: o.status,
     trainNo: o.trainNo ?? null,
     trainName: o.trainName ?? null,
@@ -104,6 +106,22 @@ export function toCardData(o: LeanOrder): OrderCardData {
     })),
     createdAt: o.createdAt.toISOString(),
   }
+}
+
+/**
+ * The food on an order, one label each: "Veg Thali ×2".
+ *
+ * Packing lines — tissue, spoon, water — are filtered out: they belong on the
+ * KOT the kitchen packs from, not on a board someone scans to see what is
+ * being cooked. The ×N is dropped for a single unit, because "Lassi ×1" is
+ * three characters of noise on a row that has to stay one line.
+ */
+export function foodItemLabels(
+  items: { name: string; qty: number; isPacking: boolean }[],
+): string[] {
+  return items
+    .filter((i) => !i.isPacking)
+    .map((i) => (i.qty > 1 ? `${i.name} ×${i.qty}` : i.name))
 }
 
 /**
@@ -163,7 +181,7 @@ export function callBoardRow(
 ): CallBoardRowData {
   const { count, hint } = callNoteSummary(order.callLog ?? [])
   const last = order.callLog?.at(-1)
-  const food = order.items.filter((i) => !i.isPacking)
+  const food = foodItemLabels(order.items)
 
   return {
     id: String(order._id),
@@ -177,7 +195,7 @@ export function callBoardRow(
     contactName: order.contactName ?? null,
     contactPhone: order.contactPhone ?? null,
     itemCount: food.length,
-    itemSummary: food.length ? food.map((i) => (i.qty > 1 ? `${i.name} ×${i.qty}` : i.name)).join(', ') : null,
+    itemSummary: food.length ? food.join(', ') : null,
     paymentMode: order.paymentMode ?? null,
     outletName: opts.outletName,
     canCancel: allowedNextStatuses(order.status as OrderStatus, 'TELECALLER').includes('CANCELLED'),
