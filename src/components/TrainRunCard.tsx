@@ -33,6 +33,8 @@ export type RunOrderRow = {
   pax?: Maybe<number>
   contactName?: Maybe<string>
   itemCount: number
+  /** What is being cooked, one label each — see foodItemLabels. */
+  itemNames: string[]
   amountPaise?: Maybe<number>
   paymentMode?: Maybe<string>
   /** Only set, and only rendered, when the viewer holds more than one outlet. */
@@ -85,6 +87,7 @@ export function TrainRunFrame({
   refreshAction,
   collapsible,
   copyText,
+  body = 'list',
 }: {
   run: RunHeaderData
   orderCount: number
@@ -102,6 +105,12 @@ export function TrainRunFrame({
   collapsible?: { open: boolean }
   /** Plain text for the header's "Copy train details" button. Omit to hide it. */
   copyText?: string
+  /**
+   * How the rows are wrapped. `list` puts them in a <ul>, for a caller
+   * handing in <li> rows; `plain` hands the body over as it is, for a caller
+   * whose rows are a <table> — which cannot sit inside a list.
+   */
+  body?: 'list' | 'plain'
 }) {
   const arrivalIso = run.timing.effectiveArrival?.toISOString() ?? null
   // Seeds the rail's first paint; it ticks on its own clock after hydration.
@@ -164,6 +173,23 @@ export function TrainRunFrame({
 
   const rail = <UrgencyRail at={arrivalIso} serverNow={serverNow} />
 
+  // A `plain` body brings its own top border and its own dividers; only the
+  // list form needs wrapping.
+  const rows =
+    body === 'plain' ? (
+      children
+    ) : (
+      <ul
+        className={
+          collapsible
+            ? 'divide-y divide-line border-t border-line-strong/60 bg-surface'
+            : 'divide-y divide-line border-t border-line'
+        }
+      >
+        {children}
+      </ul>
+    )
+
   if (collapsible) {
     return (
       <Card className="overflow-hidden">
@@ -179,7 +205,7 @@ export function TrainRunFrame({
               className="mx-3 self-center text-muted transition-transform group-open:rotate-180 motion-reduce:transition-none"
             />
           </summary>
-          <ul className="divide-y divide-line border-t border-line-strong/60 bg-surface">{children}</ul>
+          {rows}
           {footer ? <div className="border-t border-line bg-sunken/60 px-4 py-2.5">{footer}</div> : null}
         </details>
       </Card>
@@ -194,7 +220,7 @@ export function TrainRunFrame({
         <div className="min-w-0 flex-1">
           {headerBody}
 
-          <ul className="divide-y divide-line border-t border-line">{children}</ul>
+          {rows}
 
           {footer ? <div className="border-t border-line bg-sunken/60 px-4 py-2.5">{footer}</div> : null}
         </div>
@@ -215,7 +241,7 @@ function orderDetailsText(o: RunOrderRow, run: RunHeaderData): string {
     `Order ${o.externalOrderId} (${o.orderType})`,
     `Passenger: ${o.contactName ?? '-'}`,
     `Seat: ${seat}`,
-    o.pax ? `Pax: ${o.pax}` : `Items: ${o.itemCount}`,
+    o.pax ? `Pax: ${o.pax}` : `Items: ${o.itemNames.join(', ') || 'No items'}`,
     o.amountPaise != null
       ? `Amount: ${formatRupees(o.amountPaise)}${o.paymentMode ? ` (${o.paymentMode})` : ''}`
       : o.paymentMode
@@ -283,10 +309,33 @@ export function TrainRunCard({
                 <TypeBadge type={o.orderType} />
                 <CallNoteHint orderId={o.id} count={o.callNoteCount} hint={o.callNoteHint} />
               </div>
-              <div className="truncate text-xs text-muted">
-                {o.outletName ? `${o.outletName} · ` : ''}
-                {o.pax ? `${o.pax} pax` : `${o.itemCount} item${o.itemCount === 1 ? '' : 's'}`}
-                {o.handoverPoint ? ` · ${o.handoverPoint}` : ''}
+              {/* What is being cooked, not how much of it: a cook reading the
+                  board wants the dish. Only the first name fits a row this
+                  dense, so the rest sit behind a count badge and the tooltip,
+                  the way the admin board's Items column already reads. A pax
+                  thali is one item whose "name" is the whole composite menu
+                  (see OrderItemSchema.spec), so it stays a head count.
+
+                  The outlet and the handover point give way first — they
+                  shrink four times as fast as the dish beside them — so a long
+                  outlet name cannot squeeze "Veg Thali" down to "Veg Th…". */}
+              <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+                {o.outletName ? <span className="shrink-[4] truncate">{o.outletName} ·</span> : null}
+                {o.pax ? (
+                  <span className="whitespace-nowrap">{o.pax} pax</span>
+                ) : o.itemNames.length > 0 ? (
+                  <span className="flex min-w-0 items-center gap-1.5" title={o.itemNames.join('\n')}>
+                    <span className="truncate">{o.itemNames[0]}</span>
+                    {o.itemNames.length > 1 ? (
+                      <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10px] font-semibold text-muted">
+                        +{o.itemNames.length - 1}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="whitespace-nowrap">No items</span>
+                )}
+                {o.handoverPoint ? <span className="shrink-[4] truncate">· {o.handoverPoint}</span> : null}
               </div>
             </div>
 

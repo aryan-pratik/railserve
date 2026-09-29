@@ -5,13 +5,14 @@ import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { timingFor } from '@/lib/train/service'
 import { sortRunsByUrgency } from '@/lib/runs'
-import { todayIST, formatServiceDate, shiftServiceDate } from '@/lib/format'
+import { todayIST, formatServiceDate, formatTimeIST, shiftServiceDate } from '@/lib/format'
 import { countLive, loadRunBoard, type BoardMode } from '@/lib/board'
 import { inRollover } from '@/lib/liveDay'
-import { callNoteRow } from '@/lib/orderView'
+import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
-import { TrainRunCard, type RunCardData } from '@/components/TrainRunCard'
+import { TrainRunFrame } from '@/components/TrainRunCard'
+import { RunOrderTable, type RunTableOrder } from '@/components/RunOrderTable'
 import { OrdersTable } from '@/components/OrdersTable'
 import { GroupByTrainToggle } from '@/components/GroupByTrainToggle'
 import { OrderFeed } from '@/components/OrderFeed'
@@ -84,30 +85,45 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
   const allOrders = runs.flatMap((r) => r.orders)
 
-  const cards: RunCardData[] = runs.map((run) => ({
-    key: run.key,
-    trainNo: run.trainNo,
-    trainName: run.trainName,
-    stationCode: run.stationCode,
-    timing: board.timingOf(run),
-    orders: run.orders.map((o) => ({
+  const cards = runs.map((run) => {
+    const orders: RunTableOrder[] = run.orders.map((o) => ({
       id: String(o._id),
+      href: `/store/orders/${String(o._id)}`,
       externalOrderId: o.externalOrderId,
       orderType: o.orderType,
       status: o.status,
-      coach: o.coach,
-      berth: o.berth,
-      rawSeat: o.rawSeat,
-      handoverPoint: o.handoverPoint,
-      pax: o.pax,
-      contactName: o.contactName,
-      itemCount: o.items.filter((i) => !i.isPacking).length,
-      amountPaise: o.amountPaise,
-      paymentMode: o.paymentMode,
+      coach: o.coach ?? null,
+      berth: o.berth ?? null,
+      rawSeat: o.rawSeat ?? null,
+      handoverPoint: o.handoverPoint ?? null,
+      pax: o.pax ?? null,
+      contactName: o.contactName ?? null,
+      contactPhone: o.contactPhone ?? null,
+      itemNames: foodItemLabels(o.items),
+      amountPaise: o.amountPaise ?? null,
+      paymentMode: o.paymentMode ?? null,
       outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,
-            ...callNoteRow(o),
-    })),
-  }))
+      orderTimeLabel: formatTimeIST(o.createdAt),
+      isNew: o.status === 'RECEIVED',
+      ...callNoteRow(o),
+    }))
+
+    return {
+      key: run.key,
+      trainNo: run.trainNo,
+      trainName: run.trainName,
+      stationCode: run.stationCode,
+      timing: board.timingOf(run),
+      orders,
+      // The header counts what the rows name: a run's worth of dish names
+      // would not read up there, but "14 items" tells a kitchen its size.
+      itemCount: orders.reduce((n, o) => n + o.itemNames.length, 0),
+      // Cash to collect on this run, not the gross total: it is the rider's float.
+      codTotal: orders
+        .filter((o) => o.paymentMode === 'COD')
+        .reduce((sum, o) => sum + (o.amountPaise ?? 0), 0),
+    }
+  })
 
   // `runs` is already in urgency order, and `cards` follows it.
   const sorted = cards
@@ -192,10 +208,14 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       ) : isGrouped ? (
         <div className="space-y-3">
           {pageCards.map((card) => (
-            <TrainRunCard
+            <TrainRunFrame
               key={card.key}
               run={card}
-              orderHref={(id) => `/store/orders/${id}`}
+              orderCount={card.orders.length}
+              itemCount={card.itemCount}
+              codTotal={card.codTotal}
+              body="plain"
+              copyText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''} · ${card.stationCode}`.trim()}
               refreshAction={
                 card.orders[0] ? (
                   <RefreshTrainButton orderId={card.orders[0].id} action={forceRefreshOrderTrain} />
@@ -212,7 +232,9 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
                   riders={riders}
                 />
               }
-            />
+            >
+              <RunOrderTable orders={card.orders} showOutlet={multiOutlet} />
+            </TrainRunFrame>
           ))}
         </div>
       ) : (

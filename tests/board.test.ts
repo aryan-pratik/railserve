@@ -3,7 +3,7 @@ import { disconnectDb } from '../src/lib/db'
 import { countOrders } from '../src/lib/repo/orderRepo'
 import { loadRunBoard, liveFilter } from '../src/lib/board'
 import { inRollover, liveServiceDates, REFRESH_SECONDS, ROLLOVER_HOUR_IST } from '../src/lib/liveDay'
-import { callBoardRow } from '../src/lib/orderView'
+import { callBoardRow, foodItemLabels } from '../src/lib/orderView'
 import { shiftServiceDate, todayIST } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
 import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
@@ -176,5 +176,21 @@ describe('what the call board is given', () => {
     expect(fresh.lastCall).toBeNull()
     expect(fresh.callNoteCount).toBe(0)
     expect(fresh.canCancel).toBe(false)
+  })
+})
+
+describe('what a board row calls the food', () => {
+  it('drops packing, and the ×1 on a single unit', () => {
+    expect(
+      foodItemLabels([
+        { name: 'Veg Thali', qty: 2, isPacking: false },
+        { name: 'Lassi', qty: 1, isPacking: false },
+        { name: 'Carry bag', qty: 1, isPacking: true },
+      ]),
+    ).toEqual(['Veg Thali ×2', 'Lassi'])
+  })
+
+  it('is empty for an order that is packing only', () => {
+    expect(foodItemLabels([{ name: 'Spoon', qty: 4, isPacking: true }])).toEqual([])
   })
 })

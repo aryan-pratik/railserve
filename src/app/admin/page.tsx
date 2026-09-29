@@ -6,7 +6,7 @@ import { Restaurant } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatDateRange, formatTimeIST, shiftServiceDate } from '@/lib/format'
-import { callNoteRow } from '@/lib/orderView'
+import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { AutoRefresh, StaleNotice } from '@/components/AutoRefresh'
 import { countLive } from '@/lib/board'
@@ -161,29 +161,29 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
       checkedAtIso: t.checkedAt?.toISOString() ?? null,
       nextCheckAtIso: t.nextCheckAt?.toISOString() ?? null,
       arrived: t.arrived,
-      orders: run.orders.map((o) => ({
-        id: String(o._id),
-        externalOrderId: o.externalOrderId,
-        orderType: o.orderType,
-        contactName: o.contactName ?? null,
-        contactPhone: o.contactPhone ?? null,
-        coach: o.coach ?? null,
-        berth: o.berth ?? null,
-        rawSeat: o.rawSeat ?? null,
-        handoverPoint: o.handoverPoint ?? null,
-        itemCount: o.items.filter((i) => !i.isPacking).length,
-        itemNames: o.items
-          .filter((i) => !i.isPacking)
-          .map((i) => (i.qty > 1 ? `${i.name} ×${i.qty}` : i.name)),
-        pax: o.pax ?? null,
-        amountPaise: o.amountPaise ?? null,
-        paymentMode: o.paymentMode ?? null,
-        status: o.status,
-        outletName: outletName.get(String(o.restaurantId)) ?? null,
-        orderTimeLabel: formatTimeIST(o.createdAt),
-        isNew: o.status === 'RECEIVED',
-        ...callNoteRow(o),
-      })),
+      orders: run.orders.map((o) => {
+        const itemNames = foodItemLabels(o.items)
+        return {
+          id: String(o._id),
+          externalOrderId: o.externalOrderId,
+          orderType: o.orderType,
+          contactName: o.contactName ?? null,
+          contactPhone: o.contactPhone ?? null,
+          coach: o.coach ?? null,
+          berth: o.berth ?? null,
+          rawSeat: o.rawSeat ?? null,
+          handoverPoint: o.handoverPoint ?? null,
+          itemNames,
+          pax: o.pax ?? null,
+          amountPaise: o.amountPaise ?? null,
+          paymentMode: o.paymentMode ?? null,
+          status: o.status,
+          outletName: outletName.get(String(o.restaurantId)) ?? null,
+          orderTimeLabel: formatTimeIST(o.createdAt),
+          isNew: o.status === 'RECEIVED',
+          ...callNoteRow(o),
+        }
+      }),
     }
   })
 

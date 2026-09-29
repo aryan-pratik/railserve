@@ -2,38 +2,20 @@
 
 import { useState } from 'react'
 import { useNowMs } from '@/components/useNow'
-import { formatRupees } from '@/lib/format'
-import { Card, CoachChip, Dash, PaymentBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from '@/components/ui'
-import { CallNoteHint } from '@/components/CallNoteHint'
+import { Card, focusRingInset } from '@/components/ui'
 import { IconChevronDown } from '@/components/Icons'
 import { CopyButton } from '@/components/CopyButton'
+import { RunOrderTable, type RunTableOrder } from '@/components/RunOrderTable'
 import { OrderModal, type OrderPreview } from './OrderModal'
 import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
 import { UrgencyRail } from '@/components/UrgencyRail'
 
-export type GroupOrder = {
-  id: string
-  externalOrderId: string
-  orderType: string
-  contactName: string | null
-  contactPhone: string | null
-  coach: string | null
-  berth: string | null
-  rawSeat: string | null
-  handoverPoint: string | null
-  itemCount: number
-  itemNames: string[]
-  pax: number | null
-  amountPaise: number | null
-  paymentMode: string | null
-  status: string
-  outletName: string | null
-  orderTimeLabel: string
-  isNew: boolean
-  /** Call-note count and prebuilt tooltip text. See callNoteSummary. */
-  callNoteCount?: number | null
-  callNoteHint?: string | null
-}
+/**
+ * The admin board's rows are the shared run table's rows — the kitchen board
+ * lists the same seven columns, and one definition is how the two stay
+ * saying the same thing about an order.
+ */
+export type GroupOrder = RunTableOrder
 
 export type TrainGroup = {
   key: string
@@ -78,24 +60,6 @@ function trainDetailsText(g: TrainGroup): string {
     `${g.trainNo ?? 'No train no.'} ${g.trainName ?? ''}`.trim(),
     g.stationCode + (g.platform ? ` · PF ${g.platform}` : ''),
     `ETA ${g.arrivalLabel}${g.delayMinutes !== null && g.delayMinutes > 5 ? ` (${lateLabel(g.delayMinutes)})` : ''}`,
-  ]
-  return lines.join('\n')
-}
-
-/** Everything shown in an order row, as plain text for pasting elsewhere. */
-function orderDetailsText(o: GroupOrder): string {
-  const seat = o.handoverPoint
-    ? `Handover: ${o.handoverPoint}`
-    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
-  const items = o.pax ? `${o.pax} pax thali` : o.itemNames.length > 0 ? o.itemNames.join(', ') : 'No items'
-  const lines = [
-    `Order ${o.externalOrderId} (${o.orderType})`,
-    `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,
-    `Seat: ${seat}`,
-    `Items: ${items}`,
-    `Amount: ${formatRupees(o.amountPaise)}${o.paymentMode ? ` (${o.paymentMode})` : ''}`,
-    `Status: ${o.status}`,
-    `Placed: ${o.orderTimeLabel}`,
   ]
   return lines.join('\n')
 }
@@ -154,7 +118,7 @@ export function TrainGroups({
       id: o.id,
       externalOrderId: o.externalOrderId,
       status: o.status,
-      outletName: o.outletName,
+      outletName: o.outletName ?? null,
     })
 
   return (
@@ -258,107 +222,14 @@ export function TrainGroups({
                   </div>
 
                   {isOpen ? (
-                    <div id={panelId} className="overflow-x-auto border-t border-line">
-                      <table className="w-full min-w-[46rem] text-sm">
-                        <thead className="border-b border-line bg-sunken/60">
-                          <tr>
-                            <th className={thClass}>Order</th>
-                            <th className={thClass}>Passenger</th>
-                            <th className={thClass}>Seat</th>
-                            <th className={thClass}>Items</th>
-                            <th className={`${thClass} text-right`}>Amount</th>
-                            <th className={thClass}>Status</th>
-                            <th className={`${thClass} whitespace-nowrap`}>Placed</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-line">
-                          {g.orders.map((o) => (
-                            <tr
-                              key={o.id}
-                              onClick={() => select(o)}
-                              className="group cursor-pointer transition-colors hover:bg-sunken/50"
-                            >
-                              <td className="whitespace-nowrap px-3 py-2.5">
-                                <div className="flex items-center gap-1.5">
-                                  {/* The real control. The row click is a convenience for the mouse. */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); select(o) }}
-                                    className={`rounded font-mono text-xs font-semibold text-accent hover:underline ${focusRingInset}`}
-                                  >
-                                    {o.externalOrderId}
-                                  </button>
-                                  <CallNoteHint
-                                    orderId={o.id}
-                                    count={o.callNoteCount}
-                                    hint={o.callNoteHint}
-                                  />
-                                  <TypeBadge type={o.orderType} />
-                                  {o.isNew ? (
-                                    <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
-                                      New
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </td>
-
-                              <td className="px-3 py-2.5">
-                                <div className="max-w-[12rem] truncate font-medium text-ink">
-                                  {o.contactName ?? <Dash />}
-                                </div>
-                                {o.contactPhone ? (
-                                  <div className="font-mono text-[11px] tabular-nums text-muted">{o.contactPhone}</div>
-                                ) : null}
-                              </td>
-
-                              <td className="whitespace-nowrap px-3 py-2.5">
-                                {o.handoverPoint ? (
-                                  <span className="inline-block max-w-[12rem] truncate text-xs font-medium text-fuchsia-700" title={o.handoverPoint}>
-                                    Handover: {o.handoverPoint}
-                                  </span>
-                                ) : (
-                                  <CoachChip coach={o.coach} berth={o.berth} />
-                                )}
-                              </td>
-
-                              <td className="max-w-[14rem] px-3 py-2.5">
-                                {o.pax ? (
-                                  <div className="font-medium text-ink">{o.pax} pax thali</div>
-                                ) : o.itemNames.length > 0 ? (
-                                  <div className="flex min-w-0 items-center gap-1.5 text-ink" title={o.itemNames.join('\n')}>
-                                    <span className="truncate">{o.itemNames[0]}</span>
-                                    {o.itemNames.length > 1 ? (
-                                      <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10px] font-semibold text-muted">
-                                        +{o.itemNames.length - 1}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                ) : (
-                                  <span className="text-muted">No items</span>
-                                )}
-                              </td>
-
-                              <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                                <div className="font-semibold tabular-nums text-ink">{formatRupees(o.amountPaise)}</div>
-                                <PaymentBadge mode={o.paymentMode} />
-                              </td>
-
-                              <td className="whitespace-nowrap px-3 py-2.5">
-                                <StatusBadge status={o.status} />
-                              </td>
-
-                              <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums text-muted">
-                                <div className="flex items-center gap-1">
-                                  {o.orderTimeLabel}
-                                  <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                                    <CopyButton text={orderDetailsText(o)} label="Copy order details" />
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div id={panelId}>
+                      {/* Named per row only where a train is served by more
+                          than one kitchen — the header already says so. */}
+                      <RunOrderTable
+                        orders={g.orders}
+                        onSelect={select}
+                        showOutlet={g.outletNames.length > 1}
+                      />
                     </div>
                   ) : null}
                 </div>
