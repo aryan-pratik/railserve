@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { formatRupees } from '@/lib/format'
+import { formatRupees, seatText } from '@/lib/format'
 import { CoachChip, Dash, PaymentBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from './ui'
 import { CallNoteHint } from './CallNoteHint'
 import { CopyButton } from './CopyButton'
@@ -43,7 +43,7 @@ export type RunTableOrder = {
 function orderDetailsText(o: RunTableOrder, trainText?: string): string {
   const seat = o.handoverPoint
     ? `Handover: ${o.handoverPoint}`
-    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
+    : seatText(o)
   const items = o.pax ? `${o.pax} pax thali` : o.itemNames.join(', ') || 'No items'
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,

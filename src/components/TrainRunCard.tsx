@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { formatRupees, formatTimeIST } from '@/lib/format'
+import { formatRupees, formatTimeIST, seatText } from '@/lib/format'
 import type { TimingView } from '@/lib/train/policy'
 import { CheckCycle, DelayPill, FeedUpdated, PlatformBadge, StaleFlag } from './TrainTiming'
 import { UrgencyRail } from './UrgencyRail'
@@ -236,7 +236,7 @@ export function TrainRunFrame({
 function orderDetailsText(o: RunOrderRow, run: RunHeaderData): string {
   const seat = o.handoverPoint
     ? `Handover: ${o.handoverPoint}`
-    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
+    : seatText(o)
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,
     `Passenger: ${o.contactName ?? '-'}`,

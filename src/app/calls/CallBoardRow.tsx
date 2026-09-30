@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { CallBoardRowData } from '@/lib/orderView'
+import { seatText } from '@/lib/format'
 import { CallNoteHint } from '@/components/CallNoteHint'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { IconChevronDown, IconPhone } from '@/components/Icons'
@@ -20,7 +21,7 @@ import { CancelOrderButton } from './CancelOrderButton'
 function orderDetailsText(o: CallBoardRowData): string {
   const seat = o.handoverPoint
     ? `Handover: ${o.handoverPoint}`
-    : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
+    : seatText(o)
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,
     `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,

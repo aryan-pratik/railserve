@@ -140,3 +140,17 @@ export function formatRupees(paise: number | null | undefined): string {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0,
   }).format(paise / 100)
 }
+
+/**
+ * A seat as plain text, e.g. "A1 26". Mirrors CoachChip: `rawSeat` is the
+ * original ingested string ("A1-26"), so it only stands in when the coach did
+ * not parse — printing it beside a parsed coach and berth says the seat twice.
+ */
+export function seatText(o: {
+  coach?: string | null | undefined
+  berth?: string | null | undefined
+  rawSeat?: string | null | undefined
+}): string {
+  if (!o.coach) return o.rawSeat || '-'
+  return [o.coach, o.berth].filter(Boolean).join(' ')
+}

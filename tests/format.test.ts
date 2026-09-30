@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatIST, formatServiceDate, istLocalToUtc, paiseToRupees,
-  rupeesToPaise, shiftServiceDate, utcToIstLocal,
+  rupeesToPaise, seatText, shiftServiceDate, utcToIstLocal,
 } from '../src/lib/format'
 
 describe('IST handling', () => {
@@ -59,5 +59,19 @@ describe('money', () => {
     expect(rupeesToPaise('')).toBeNull()
     expect(rupeesToPaise(null)).toBeNull()
     expect(rupeesToPaise('-5')).toBeNull()
+  })
+})
+
+describe('seatText', () => {
+  it('says the seat once when coach and berth parsed', () => {
+    expect(seatText({ coach: 'A1', berth: '26', rawSeat: 'A1-26' })).toBe('A1 26')
+  })
+
+  it('falls back to the raw string when the coach did not parse', () => {
+    expect(seatText({ coach: null, berth: null, rawSeat: 'RAC/B2, SEAT: 39' })).toBe('RAC/B2, SEAT: 39')
+  })
+
+  it('shows a dash when there is nothing', () => {
+    expect(seatText({ coach: null, berth: null, rawSeat: null })).toBe('-')
   })
 })
