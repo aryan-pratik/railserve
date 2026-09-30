@@ -86,8 +86,7 @@ export function RunOrderTable({
   showOutlet?: boolean
   /**
    * The train's details as plain text, appended to "Copy order details" so a
-   * pasted order says which train it is on. Off by default: the kitchen board
-   * already has the train in the card header.
+   * pasted order says which train it is on. Off by default.
    */
   trainText?: string
 }) {

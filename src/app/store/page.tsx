@@ -233,7 +233,11 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
                 />
               }
             >
-              <RunOrderTable orders={card.orders} showOutlet={multiOutlet} />
+              <RunOrderTable
+                orders={card.orders}
+                showOutlet={multiOutlet}
+                trainText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''}`.trim()}
+              />
             </TrainRunFrame>
           ))}
         </div>
