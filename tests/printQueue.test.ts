@@ -17,15 +17,26 @@ const renderKotScreenshots = vi.fn(async (url: string) => {
 })
 vi.mock('@/lib/printer/screenshot', () => ({ renderKotScreenshots }))
 
-const { enqueueOrderKotPrint, enqueueRunKotPrint } = await import('../src/lib/printer/queue')
-const { PrintJob } = await import('../src/lib/models')
-const { resetDb, makeRestaurant } = await import('./fixtures')
+// The last hop to a real printer over TCP. Stubbed here because these tests
+// are about which path a job takes and what it leaves behind; the socket
+// itself is exercised against a fake printer, not against Mongo.
+const printImagesDirect = vi.fn<(images: Buffer[], host: string, port: number) => Promise<void>>(
+  async () => {},
+)
+vi.mock('@/lib/printer/directPrint', () => ({ printImagesDirect }))
+
+const { enqueueOrderKotPrint, enqueueRunKotPrint, retryDirectPrintJobs } =
+  await import('../src/lib/printer/queue')
+const { PrintJob, Station } = await import('../src/lib/models')
+const { resetDb, makeRestaurant, makeStation } = await import('./fixtures')
 
 const ORIGIN = 'https://bitestation.elvo.in'
 
 beforeEach(async () => {
   await resetDb()
   renderKotScreenshots.mockClear()
+  printImagesDirect.mockClear()
+  printImagesDirect.mockImplementation(async () => {})
 })
 
 describe('enqueueRunKotPrint', () => {
@@ -117,5 +128,147 @@ describe('enqueueOrderKotPrint', () => {
       orderId: 'aaaaaaaaaaaaaaaaaaaaaaa1',
     })
     expect((await PrintJob.findOne({}))!.stationCode).toBe('CNB')
+  })
+})
+
+/**
+ * Two ways a ticket reaches a printer: an agent in the kitchen polls for it,
+ * or — where the router forwards the printer to a public address — this
+ * server sends it straight there. One field on the station chooses, and a
+ * station that has not been switched over must not notice this code exists.
+ */
+describe('direct printing', () => {
+  const orderJob = () =>
+    enqueueOrderKotPrint({
+      appOrigin: ORIGIN,
+      stationCode: 'CNB',
+      restaurantId: null,
+      orderId: 'aaaaaaaaaaaaaaaaaaaaaaa1',
+    })
+
+  it('leaves an agent-path station alone: the job waits to be polled', async () => {
+    await makeStation('CNB')
+    await orderJob()
+
+    expect(printImagesDirect).not.toHaveBeenCalled()
+    const job = (await PrintJob.findOne({}))!
+    expect(job.status).toBe('pending')
+    expect(job.error ?? null).toBeNull()
+  })
+
+  it('does the same for a station nobody has registered at all', async () => {
+    await orderJob()
+    expect(printImagesDirect).not.toHaveBeenCalled()
+    expect((await PrintJob.findOne({}))!.status).toBe('pending')
+  })
+
+  it('delivers at enqueue time for a direct station, and marks the job done', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7', directPrinterPort: 9200 })
+    await orderJob()
+
+    expect(printImagesDirect).toHaveBeenCalledTimes(1)
+    const [images, host, port] = printImagesDirect.mock.calls[0]
+    expect(images).toHaveLength(1)
+    expect(host).toBe('203.0.113.7')
+    expect(port).toBe(9200)
+
+    const job = (await PrintJob.findOne({}))!
+    expect(job.status).toBe('done')
+    expect(job.doneAt).toBeInstanceOf(Date)
+    // The station's own "last printed" clock, which the setup screen reads.
+    expect((await Station.findById('CNB'))!.agentLastPrintedAt).toBeInstanceOf(Date)
+  })
+
+  it('falls back to 9100 when the station names no port', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    await orderJob()
+    expect(printImagesDirect.mock.calls[0][2]).toBe(9100)
+  })
+
+  it('sends a whole run as one job', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    await enqueueRunKotPrint({
+      appOrigin: ORIGIN,
+      runKey: '12487~2026-09-19~CNB',
+      orderIds: ['aaaaaaaaaaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaaaaaaaaaa2'],
+    })
+
+    expect(printImagesDirect).toHaveBeenCalledTimes(1)
+    expect(printImagesDirect.mock.calls[0][0]).toHaveLength(2)
+    expect((await PrintJob.findOne({}))!.status).toBe('done')
+  })
+
+  it('records an unreachable printer and leaves the job to be retried', async () => {
+    // A printer being off is not a reason to fail the click that queued the
+    // ticket: the job is already rendered and saved, so it stays pending.
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    printImagesDirect.mockRejectedValueOnce(new Error('connect ECONNREFUSED'))
+
+    await expect(orderJob()).resolves.toBeUndefined()
+
+    const job = (await PrintJob.findOne({}))!
+    expect(job.status).toBe('pending')
+    expect(job.error).toMatch(/ECONNREFUSED/)
+  })
+})
+
+describe('retryDirectPrintJobs', () => {
+  const pendingJobAt = (stationCode: string) =>
+    PrintJob.create({
+      stationCode,
+      restaurantId: null,
+      refType: 'order',
+      refId: `ref-${stationCode}`,
+      images: [Buffer.from('png')],
+      status: 'pending',
+    })
+
+  it('does nothing at all when no station prints directly', async () => {
+    await makeStation('CNB')
+    await pendingJobAt('CNB')
+
+    expect(await retryDirectPrintJobs()).toEqual({ attempted: 0, delivered: 0 })
+    expect(printImagesDirect).not.toHaveBeenCalled()
+    expect((await PrintJob.findOne({}))!.status).toBe('pending')
+  })
+
+  it('retries only the direct station, never the agent station beside it', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    await makeStation('PRYJ')
+    await pendingJobAt('CNB')
+    await pendingJobAt('PRYJ')
+
+    expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 1 })
+    expect(printImagesDirect).toHaveBeenCalledTimes(1)
+    expect((await PrintJob.findOne({ stationCode: 'CNB' }))!.status).toBe('done')
+    // The agent's job is still the agent's to claim.
+    expect((await PrintJob.findOne({ stationCode: 'PRYJ' }))!.status).toBe('pending')
+  })
+
+  it('reports a printer that is still down, and keeps the job for next time', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    await pendingJobAt('CNB')
+    printImagesDirect.mockRejectedValue(new Error('still offline'))
+
+    expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 0 })
+    const job = (await PrintJob.findOne({}))!
+    expect(job.status).toBe('pending')
+    expect(job.error).toMatch(/still offline/)
+  })
+
+  it('does not re-send a job that already printed', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    await PrintJob.create({
+      stationCode: 'CNB',
+      restaurantId: null,
+      refType: 'order',
+      refId: 'already-done',
+      images: [Buffer.from('png')],
+      status: 'done',
+      doneAt: new Date(),
+    })
+
+    expect(await retryDirectPrintJobs()).toEqual({ attempted: 0, delivered: 0 })
+    expect(printImagesDirect).not.toHaveBeenCalled()
   })
 })

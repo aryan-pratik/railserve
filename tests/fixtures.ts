@@ -42,12 +42,20 @@ export async function makeRestaurant(name: string, stationCode: string, aliases:
 
 export async function makeStation(
   code: string,
-  opts: { name?: string; printAgentToken?: string } = {},
+  opts: {
+    name?: string
+    printAgentToken?: string
+    /** Set it and the station leaves the agent path for direct printing. */
+    directPrinterHost?: string
+    directPrinterPort?: number
+  } = {},
 ) {
   return Station.create({
     _id: code,
     name: opts.name ?? `${code} Junction`,
     printAgentToken: opts.printAgentToken ?? null,
+    directPrinterHost: opts.directPrinterHost ?? null,
+    ...(opts.directPrinterPort === undefined ? {} : { directPrinterPort: opts.directPrinterPort }),
   })
 }
 

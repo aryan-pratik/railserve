@@ -2,19 +2,27 @@
 
 Runs on one always-on device on the **kitchen's own Wi-Fi** — not on the app
 server, which cannot reach the printer's private IP from a data-center VM.
-See `docs/plan.md` (or ask in the app repo) for why this exists.
+See `docs/KOT_PRINTING.md` in the app repo for the full picture.
+
+**Not every station needs this.** Where the outlet has a static public IP and
+a router we administer, the printer's port is forwarded and the app server
+prints to it directly — no agent, no token, no device in the kitchen. Setting
+that up is
+[Direct printing](../docs/KOT_PRINTING.md#direct-printing--when-the-printer-has-a-public-address),
+not this README.
 
 ## What it does
 
-Loops forever: asks the RailServe server "any print job for this outlet?",
+Loops forever: asks the RailServe server "any print job for this station?",
 and when there is one, sends it straight to the kitchen printer over the
 local network, then tells the server it's done.
 
-## One-time setup per outlet
+## One-time setup per station
 
-1. On the RailServe server (not here), generate a token for the outlet:
+1. On the RailServe server (not here), generate a token for the station —
+   one station is one kitchen is one printer, however many brands trade there:
    ```
-   npm run print-agent:token -- --restaurant <restaurantId>
+   npm run print-agent:token -- --station <CODE>
    ```
    This prints an `AGENT_TOKEN` — copy it.
 

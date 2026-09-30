@@ -16,7 +16,7 @@
  *
  * Config (env vars, or a .env file next to this script — see .env.example):
  *   SERVER_URL        e.g. https://bitestation.elvo.in
- *   AGENT_TOKEN        this outlet's printAgentToken (Restaurant.printAgentToken)
+ *   AGENT_TOKEN        this station's printAgentToken (Station.printAgentToken)
  *   PRINTER_HOST       the printer's local IP, e.g. 192.168.1.5
  *   PRINTER_PORT       default 9100
  *   POLL_INTERVAL_MS   default 3000
@@ -86,12 +86,19 @@ async function printJob(job) {
     interface: `tcp://${PRINTER_HOST}:${PRINTER_PORT}`,
     options: { timeout: 5000 },
   })
+  // One execute() per ticket, not one for the whole job: execute() sends
+  // whatever's buffered and immediately destroys the TCP connection without
+  // waiting for the printer to finish processing it. A single ticket's image
+  // clears that race easily; a whole run's tickets bundled into one giant
+  // write do not — the connection tears down before the printer has drained
+  // and cut the later tickets, so they print back-to-back with no cuts.
   for (const b64 of job.images) {
+    printer.clear()
     printer.alignCenter()
     await printer.printImageBuffer(Buffer.from(b64, 'base64'))
     printer.cut()
+    await printer.execute()
   }
-  await printer.execute()
 }
 
 async function tick() {

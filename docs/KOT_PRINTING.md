@@ -3,7 +3,13 @@
 ## Why this exists
 - Kitchen printer (KPC307-UEWB-AB28) sits on the outlet's local Wi-Fi, private IP.
 - App server (Contabo VM) is in a data center — cannot reach a private LAN IP directly.
-- Fix: a small **print agent** runs on a device at the outlet, bridges cloud → local printer.
+- Two fixes, and a station uses exactly one of them:
+  - **Agent path** (default) — a small **print agent** runs on a device at the
+    outlet and bridges cloud → local printer.
+  - **Direct path** — where the outlet has a public address and a router we
+    control, the printer's port is forwarded and the server prints straight to
+    it. No device in the kitchen. See
+    [Direct printing](#direct-printing--when-the-printer-has-a-public-address).
 
 ## One station, one printer, one agent
 - A `Restaurant` is an **aggregator brand**, not a kitchen. YATRI BHOJAN and
@@ -21,12 +27,119 @@
 Manager clicks "Generate KOT" (or Print)
   → server renders the real KotTicket component via headless Chrome (screenshot, not hand-typed text)
   → image saved as a PrintJob in MongoDB, status "pending"
-  → outlet's print agent polls /api/print-agent/poll every few seconds
-  → agent claims the job, sends image to printer's local IP:9100 (ESC/POS raster)
-  → agent calls /api/print-agent/ack (done/failed)
+  │
+  ├─ station has NO directPrinterHost  (agent path — the default)
+  │    → outlet's print agent polls /api/print-agent/poll every few seconds
+  │    → agent claims the job, sends image to printer's local IP:9100 (ESC/POS raster)
+  │    → agent calls /api/print-agent/ack (done/failed)
+  │
+  └─ station HAS directPrinterHost  (direct path)
+       → tryDirectDeliver() opens host:port from the server, in the same request
+       → on success: job "done"; on failure: job stays "pending" with `error` set
+       → /api/cron/print-retry sweeps anything left pending
 ```
-- Server **never** talks to the printer directly. Only the agent does.
-- Each outlet needs its own printer + its own agent + its own token.
+- On the **agent path** the server never talks to the printer — it cannot, from
+  a data-center VM, reach a private LAN IP. Only the agent does.
+- On the **direct path** it is the server that talks to the printer, over the
+  internet, because the router has given the printer a public address.
+- Agent-path stations each need their own printer + agent + token. A
+  direct-path station needs **no agent and no `printAgentToken` at all** —
+  don't mint one it will never use.
+- Either way the routing key is the same: a job belongs to a `stationCode`, and
+  a station only ever gets its own jobs.
+
+## Direct printing — when the printer has a public address
+
+Where an outlet has a static public IP and a router we control, the last hop
+needs no bridge: the router forwards the printer's `9100` to the public
+address and the server opens that socket itself.
+
+Setting `Station.directPrinterHost` is the whole switch. Nothing else changes —
+same ticket, same `PrintJob`, same buttons. The station stops needing an agent
+the moment the field is set.
+
+Use it when the outlet has a **static** public IP and somebody can administer
+the router. Use the agent path for everything else: a dynamic IP, a router we
+don't control, or a network where exposing a port is not acceptable.
+
+### How it works
+- `tryDirectDeliver()` (`src/lib/printer/queue.ts`) runs immediately after the
+  `PrintJob` is saved, in the same request that pressed the button. It looks up
+  the station, and returns doing nothing if `directPrinterHost` is null — which
+  is what keeps every agent-path station on its old behaviour.
+- On success the job goes `done` and `Station.agentLastPrintedAt` is stamped,
+  the same field the agent path stamps on ack.
+- On failure it **does not throw**. The job is left `pending` with the error
+  message in `PrintJob.error`, and the caller's print click still succeeds — a
+  printer being briefly unreachable is not a reason to fail an order action.
+- `/api/cron/print-retry` is the safety net: it re-attempts every `pending` job
+  belonging to a direct-path station. Agent-path stations are left strictly
+  alone, since their agent will claim those jobs on its own next poll.
+- The direct path never sets status `failed`. Jobs go `pending` → `done` only,
+  so **`error` on a still-`pending` job is the only failure signal** — that is
+  the field to read when a ticket doesn't come out.
+- `agentLastSeenAt` stays null forever on a direct-path station. There is no
+  poll, so there is no heartbeat; that field means "an agent called in" and
+  only applies to agent-path stations.
+- `printImagesDirect()` sends **one `execute()` per ticket**, not one per job.
+  `execute()` destroys the TCP connection as soon as it has written, without
+  waiting for the printer to drain — bundle a whole run into one write and the
+  later tickets print back-to-back with no cuts. Same fix lives in
+  `agent/print-agent.mjs`.
+
+### Connecting a printer this way (per station)
+1. Do the [physical printer setup](#one-time-printer-setup-per-printer) steps
+   1–8 exactly as for the agent path, **including the DHCP reservation**. The
+   port forward points at a LAN IP, so that IP must not move.
+2. On the outlet's router, forward a TCP port to the printer:
+   `<external port> → <printer LAN IP>:9100`.
+3. **Restrict the forward's source to the app server's IP** in the router's
+   firewall. See the security note below — this step is not optional.
+4. Check the socket from the app server (not from a laptop — if step 3 is done
+   right, everywhere else is supposed to fail):
+   ```
+   nc -vz <public host> <external port>
+   ```
+5. Point the station at it. There is **no script and no admin UI for this yet** —
+   it is a direct Mongo update on the box:
+   ```
+   docker exec -it railserve-mongo mongosh railserve --eval '
+     db.stations.updateOne(
+       { _id: "<STATION CODE>" },
+       { $set: { directPrinterHost: "<public host or IP>", directPrinterPort: <external port> } }
+     )
+   '
+   ```
+   Leave the port **unquoted** — the schema wants a Number, and a raw driver
+   update like this one does no Mongoose casting, so `"9100"` would be stored
+   as a string and never connect. `directPrinterPort` is the **external**
+   forwarded port, not the printer's own `9100`, unless the forward happens to
+   keep the number. It defaults to `9100` when unset.
+6. Print a test KOT from that station and confirm the job went `done`.
+
+To move a station back to the agent path, set `directPrinterHost` to `null` and
+set up an agent as normal. Real hosts and ports belong in `docs/INFRA.local.md`,
+never here — **this repo is public**.
+
+### Security
+A forwarded `9100` is a raw ESC/POS socket on the open internet. Anyone who
+finds it can print whatever they like on the kitchen's printer, burn its paper,
+or wedge it. Two mitigations, both required:
+- **Source-restrict the forward to the app server's IP** in the router
+  firewall. This is the one that actually matters.
+- **Use a non-default external port.** `9100` is in every scanner's default
+  list; it buys time, not safety, and does not replace the rule above.
+
+### Two behaviours to expect, neither a bug
+- **A failed run reprints whole.** One `execute()` per ticket means a job that
+  dies on ticket 3 of 5 has already printed 1 and 2 — but the job still holds
+  all five images, so the retry prints all five again. The kitchen sees
+  duplicates. Cutting mid-job is worse than a duplicate, so this is the trade
+  that was taken.
+- **The sweep has no age cap.** `retryDirectPrintJobs()` takes *every* pending
+  job for a direct station with no time bound. A printer that is off overnight
+  will print the whole backlog when it comes back. If that bites, the fix is a
+  `createdAt` floor in that query.
 
 ## One-time printer setup (per printer)
 1. Power on, load paper.
@@ -80,6 +193,14 @@ PRINT_RENDER_TOKEN="<random secret>"   # generate: node -e "console.log(require(
 - Guards `/internal/print/*` (the pages the headless-browser screenshot step renders).
 - Missing → print button/auto-print returns a clear 503, not a silent failure.
 
+```
+CRON_TOKEN="<random secret>"   # only if any station prints directly
+```
+- Gates `/api/cron/print-retry` (and the other `/api/cron/*` endpoints) — see
+  `docs/DEPLOY.md` for the crontab entry. Leave it blank and the endpoint is
+  open to anyone; set it and it must match what the cron runner sends, or every
+  tick 401s silently and pending jobs are never retried.
+
 ## When printing happens
 - Two separate, always-visible controls — neither one ever navigates away from the page:
   - **Preview KOT** — plain link to the KOT page. Read-only, never queues a print. Available from `ACCEPTED` onward, so a ticket can be checked before it's ever generated.
@@ -97,18 +218,24 @@ PRINT_RENDER_TOKEN="<random secret>"   # generate: node -e "console.log(require(
 | `agent/README.md` | Agent-specific setup notes. |
 | `scripts/set-print-agent-token.ts` | Mint/rotate an outlet's agent token. |
 | `src/lib/models/PrintJob.ts` | The print queue (Mongo). |
-| `src/lib/models/Station.ts` | The station: `printAgentToken`, `agentLastSeenAt`. One per printer. |
+| `src/lib/models/Station.ts` | The station: `printAgentToken`, `agentLastSeenAt`, and `directPrinterHost`/`directPrinterPort` — the one field that chooses the delivery path. One per printer. |
 | `scripts/migrate-station-printing.ts` | Moves the token from outlet to station. Idempotent; adopts a live token so the kitchen needs no reconfiguration. |
 | `src/lib/printer/screenshot.ts` | Headless-Chrome screenshot of the real ticket → PNG, resized to the printer's `576` dot width. |
-| `src/lib/printer/queue.ts` | Enqueue helpers (`enqueueOrderKotPrint`, `enqueueRunKotPrint`). |
+| `src/lib/printer/queue.ts` | Enqueue helpers (`enqueueOrderKotPrint`, `enqueueRunKotPrint`), plus `tryDirectDeliver` / `retryDirectPrintJobs` for the direct path. |
+| `src/lib/printer/directPrint.ts` | `printImagesDirect` — server → printer over TCP, for direct-path stations. No agent involved. |
+| `src/app/api/cron/print-retry` | Re-attempts pending jobs for direct-path stations. Cron-token auth; ignores agent-path stations. |
 | `src/app/internal/print/order/[id]`, `.../run/[runKey]` | Token-gated, session-free render-only pages the screenshot step hits. |
 | `src/app/api/print-agent/poll`, `/ack` | What the agent calls. Token-authenticated, no login session. |
 | `src/app/api/store/orders/[id]/kot`, `.../runs/[runKey]/kot` | Manual print trigger (the Print button). |
 | `src/app/store/actions.ts` | `generateKot` / `generateRunKot` — auto-print hook. |
 
 ## Troubleshooting
-- **Nothing prints, no error shown**: check the agent is actually running (`ps aux | grep print-agent`) and its `AGENT_TOKEN` matches the order's outlet — a mismatched token means the job just sits `pending` forever, silently.
-- **Job stuck `pending`**: query `printjobs` collection, check `restaurantId` matches an outlet whose agent is currently polling.
+- **Nothing prints, no error shown, agent-path station**: check the agent is actually running (`ps aux | grep print-agent`) and its `AGENT_TOKEN` is the one minted for the order's **station** — a mismatched token means the job just sits `pending` forever, silently.
+- **Job stuck `pending`, agent-path station**: query the `printjobs` collection and check `stationCode` matches a station whose agent is currently polling (`agentLastSeenAt` recent).
+- **Job stuck `pending`, direct-path station**: read that job's **`error`** field — the direct path never writes status `failed`, so a pending job with an error is a delivery that failed, not one nobody has claimed. Then check, in order: the printer is on and on the network, `nc -vz <host> <port>` from the app server, and that the `print-retry` cron line actually exists in the crontab (`docs/DEPLOY.md`) and its token matches `CRON_TOKEN`.
+- **Nothing prints at a direct-path station and jobs have no `error` at all**: `directPrinterHost` is probably unset or misspelled — the job was queued for an agent that does not exist. Check `db.stations.findOne({_id:"<CODE>"})`.
+- **Tickets print back-to-back with no cuts**: something has collapsed the per-ticket `execute()` into one call for the whole job. See `printImagesDirect` and `agent/print-agent.mjs` — both deliberately execute once per ticket.
+- **Duplicate tickets after an outage**: expected on the direct path when a run failed part-way through; see [Two behaviours to expect](#two-behaviours-to-expect-neither-a-bug).
 - **Schema/field changes to `Restaurant` or `PrintJob` not taking effect after a dev-server restart**: Turbopack's `.next` cache can serve a stale compiled model. Fix: `rm -rf .next` then `npm run dev`.
 - **`printJobId not found or not claimed by you`** on ack: another agent instance (wrong token, or a duplicate process) already claimed it first — check for duplicate agent processes.
 - **Print looks different from the screen**: shouldn't happen — it's a screenshot of the real `KotTicket` component, not a hand-typed copy. If it does, check `PRINTER_DOT_WIDTH`/`DEVICE_SCALE_FACTOR` in `screenshot.ts` still matches the printer's actual dot width (from its self-test page).
@@ -120,9 +247,19 @@ PRINT_RENDER_TOKEN="<random secret>"   # generate: node -e "console.log(require(
 
 ## Adding a new station later
 1. Create the `Restaurant` record(s) — the station row is created with them.
-2. Physical printer setup (steps above).
-3. `npm run print-agent:token -- --station <CODE>`.
-4. Deploy `agent/` to one always-on device there, configure `.env`, run as a service.
+2. Physical printer setup (steps above), including the DHCP reservation.
+3. Then pick a delivery path:
+
+   **Agent path** (default, works anywhere):
+   1. `npm run print-agent:token -- --station <CODE>`.
+   2. Deploy `agent/` to one always-on device there, configure `.env`, run as a service.
+
+   **Direct path** (static public IP + a router we administer):
+   1. Forward a port to the printer and source-restrict it to the app server.
+   2. Set `directPrinterHost`/`directPrinterPort` on the station.
+   3. No token, no agent, no device in the kitchen.
+
+   Full steps in [Direct printing](#direct-printing--when-the-printer-has-a-public-address).
 
 ## Ticket content
 - Layout lives entirely in `src/components/KotTicket.tsx` — what's printed is a screenshot of this component, not a separate template.

@@ -94,7 +94,7 @@ Changes take effect on container **restart**, not rebuild:
 | `AUTH_SECRET` | **yes** | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 | `AUTH_TRUST_HOST` | **yes** | Set to `true`. Auth.js refuses every request with `UntrustedHost` otherwise, and it fails at runtime, not at build. |
 | `SEED_PASSWORD` | no | Only used by the seed script; irrelevant in production. |
-| `CRON_TOKEN` | recommended | Shared secret for `/api/cron/train-poll`. Leave unset and the endpoint is open. |
+| `CRON_TOKEN` | recommended | Shared secret for every `/api/cron/*` endpoint (`train-poll`, `gmail-sync`, `gmail-watch`, `print-retry`). Leave unset and they are open. |
 | `TRAIN_API_PROVIDER` | no | `simulator` (default), `rapidapi`, or `railkit` — currently `railkit`. |
 | `TRAIN_API_KEY` / `TRAIN_API_HOST` | no | `TRAIN_API_HOST` applies to the `rapidapi` provider only; the `railkit` adapter takes just the key and ignores it. |
 | `R2_ACCOUNT_ID` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | no | Delivery photo storage. All blank ⇒ photo capture does not appear and delivery still works. |
@@ -115,9 +115,17 @@ Same box, driving the app over its public URL:
 ```
 */2 * * * *  -> /api/cron/train-poll     # every 2 minutes
 *   * * * *  -> /api/cron/gmail-sync     # every minute
+*/2 * * * *  -> /api/cron/print-retry    # every 2 minutes — direct-print stations only
 17  4 * * *  -> /api/cron/gmail-watch    # daily — renews the Gmail watch
 30  3 * * *  -> /root/railserve-backups/backup.sh
 ```
+
+`print-retry` is needed only once a station prints directly (a
+`Station.directPrinterHost` is set) — it re-sends tickets whose delivery failed
+because the printer was briefly unreachable. Stations on the poll/agent path
+are untouched by it, so the line is harmless when none exist. Without it, a
+ticket that fails delivery is never retried and just sits `pending`. See
+`docs/KOT_PRINTING.md`.
 
 `/root/railserve-cron/run-cron.sh` curls `$TARGET_URL` (in its `.env`, now
 `https://bitestation.elvo.in`) with `x-cron-token`, which must match the

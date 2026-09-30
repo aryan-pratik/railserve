@@ -1,19 +1,50 @@
 import { headers } from 'next/headers'
 import { connectDb } from '@/lib/db'
-import { PrintJob } from '@/lib/models'
+import { PrintJob, Station } from '@/lib/models'
 import { env } from '@/lib/env'
 import { renderKotScreenshots } from '@/lib/printer/screenshot'
+import { printImagesDirect } from '@/lib/printer/directPrint'
 import { parseRunKey } from '@/lib/runs'
 import { normaliseStationCode } from '@/lib/stations'
 import type mongoose from 'mongoose'
+import type { PrintJobDoc } from '@/lib/models/PrintJob'
 
 /**
- * Everything in this file renders a ticket and queues it for an outlet's
- * local print agent — this server never talks to the kitchen printer's
- * private IP itself (it can't, from a data-center VM; see agent/README.md).
- * The agent polls /api/print-agent/poll and does the actual last-hop
- * delivery.
+ * Everything in this file renders a ticket and queues it for delivery to a
+ * station's kitchen printer, one of two ways:
+ *
+ * - Most stations: the server never talks to the printer's private IP itself
+ *   (it can't, from a data-center VM; see agent/README.md) — a local agent
+ *   polls /api/print-agent/poll and does the actual last-hop delivery.
+ * - A station with `Station.directPrinterHost` set (its router port-forwards
+ *   the printer to a public IP): delivered straight from here, right after
+ *   the job is created, no agent involved. tryDirectDeliver() below is the
+ *   best-effort attempt at enqueue time; /api/cron/print-retry catches
+ *   anything that failed (printer briefly offline, etc).
  */
+
+/**
+ * Attempts immediate delivery for a station configured for direct printing.
+ * Leaves the job `pending` (with `error` set) on failure rather than
+ * throwing — the enqueue call already rendered and saved the job, and a
+ * printer being briefly unreachable is not a reason to fail the caller;
+ * the retry cron picks it up from `pending`.
+ */
+async function tryDirectDeliver(job: PrintJobDoc): Promise<void> {
+  const station = await Station.findById(job.stationCode).select('directPrinterHost directPrinterPort')
+  if (!station?.directPrinterHost) return
+
+  try {
+    await printImagesDirect(job.images, station.directPrinterHost, station.directPrinterPort ?? 9100)
+    await PrintJob.updateOne({ _id: job._id }, { $set: { status: 'done', doneAt: new Date() } })
+    await Station.updateOne({ _id: station._id }, { $set: { agentLastPrintedAt: new Date() } })
+  } catch (err) {
+    await PrintJob.updateOne(
+      { _id: job._id },
+      { $set: { error: err instanceof Error ? err.message : String(err) } },
+    )
+  }
+}
 
 /**
  * For a Server Action, unlike a Route Handler, there's no `req.url` to read
@@ -41,7 +72,7 @@ export async function enqueueOrderKotPrint(params: {
   const images = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
 
   await connectDb()
-  await PrintJob.create({
+  const job = await PrintJob.create({
     stationCode: normaliseStationCode(stationCode),
     restaurantId,
     refType: 'order',
@@ -49,6 +80,7 @@ export async function enqueueOrderKotPrint(params: {
     images,
     status: 'pending',
   })
+  await tryDirectDeliver(job)
 }
 
 /**
@@ -85,7 +117,7 @@ export async function enqueueRunKotPrint(params: {
   }
 
   await connectDb()
-  await PrintJob.create({
+  const job = await PrintJob.create({
     stationCode: normaliseStationCode(identity.stationCode),
     // A run spans brands; the run key is the provenance.
     restaurantId: null,
@@ -94,6 +126,29 @@ export async function enqueueRunKotPrint(params: {
     images,
     status: 'pending',
   })
+  await tryDirectDeliver(job)
+}
+
+/**
+ * Retries pending jobs for stations configured for direct printing —
+ * everything else (stations still on the poll/agent path) is left alone,
+ * since a normal agent will pick those up on its own next poll.
+ */
+export async function retryDirectPrintJobs(): Promise<{ attempted: number; delivered: number }> {
+  await connectDb()
+
+  const directStations = await Station.find({ directPrinterHost: { $ne: null } }).select('_id')
+  const stationCodes = directStations.map((s) => s._id)
+  if (stationCodes.length === 0) return { attempted: 0, delivered: 0 }
+
+  const jobs = await PrintJob.find({ status: 'pending', stationCode: { $in: stationCodes } })
+  for (const job of jobs) await tryDirectDeliver(job)
+
+  const delivered = await PrintJob.countDocuments({
+    _id: { $in: jobs.map((j) => j._id) },
+    status: 'done',
+  })
+  return { attempted: jobs.length, delivered }
 }
 
 export class PrintAgentNotConfiguredError extends Error {
