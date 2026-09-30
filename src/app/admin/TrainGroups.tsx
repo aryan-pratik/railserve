@@ -54,10 +54,14 @@ function lateLabel(mins: number): string {
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m late` : `${mins}m late`
 }
 
+function trainLabel(g: TrainGroup): string {
+  return `${g.trainNo ?? 'No train no.'} ${g.trainName ?? ''}`.trim()
+}
+
 /** Everything shown in the train header, as plain text for pasting elsewhere. */
 function trainDetailsText(g: TrainGroup): string {
   const lines = [
-    `${g.trainNo ?? 'No train no.'} ${g.trainName ?? ''}`.trim(),
+    trainLabel(g),
     g.stationCode + (g.platform ? ` · PF ${g.platform}` : ''),
     `ETA ${g.arrivalLabel}${g.delayMinutes !== null && g.delayMinutes > 5 ? ` (${lateLabel(g.delayMinutes)})` : ''}`,
   ]
@@ -229,6 +233,7 @@ export function TrainGroups({
                         orders={g.orders}
                         onSelect={select}
                         showOutlet={g.outletNames.length > 1}
+                        trainText={trainLabel(g)}
                       />
                     </div>
                   ) : null}

@@ -40,7 +40,7 @@ export type RunTableOrder = {
 }
 
 /** Everything shown in a row, as plain text for pasting elsewhere. */
-function orderDetailsText(o: RunTableOrder): string {
+function orderDetailsText(o: RunTableOrder, trainText?: string): string {
   const seat = o.handoverPoint
     ? `Handover: ${o.handoverPoint}`
     : [o.coach, o.berth, o.rawSeat].filter(Boolean).join(' ') || '-'
@@ -53,8 +53,9 @@ function orderDetailsText(o: RunTableOrder): string {
     `Amount: ${formatRupees(o.amountPaise)}${o.paymentMode ? ` (${o.paymentMode})` : ''}`,
     `Status: ${o.status}`,
     `Placed: ${o.orderTimeLabel}`,
+    trainText ? `Train: ${trainText}` : null,
   ]
-  return lines.join('\n')
+  return lines.filter((l): l is string => l !== null).join('\n')
 }
 
 /**
@@ -73,6 +74,7 @@ export function RunOrderTable({
   orders,
   onSelect,
   showOutlet = false,
+  trainText,
 }: {
   orders: RunTableOrder[]
   /** Only from a client parent. Rows without it navigate by `href`. */
@@ -82,6 +84,12 @@ export function RunOrderTable({
    * every order is from the same kitchen it is the same word on every row.
    */
   showOutlet?: boolean
+  /**
+   * The train's details as plain text, appended to "Copy order details" so a
+   * pasted order says which train it is on. Off by default: the kitchen board
+   * already has the train in the card header.
+   */
+  trainText?: string
 }) {
   return (
     // The min-width gives the scroll wrapper something coherent to scroll:
@@ -214,7 +222,7 @@ export function RunOrderTable({
                 <div className="flex items-center gap-1">
                   {o.orderTimeLabel}
                   <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                    <CopyButton text={orderDetailsText(o)} label="Copy order details" />
+                    <CopyButton text={orderDetailsText(o, trainText)} label="Copy order details" />
                   </span>
                 </div>
               </td>
