@@ -156,9 +156,9 @@ function AdminOrderRow({
         {formatShortDate(order.serviceDate)}
       </td>
       <td className="whitespace-nowrap px-3 py-2.5">
-        <span className="font-mono tabular-nums text-ink">{order.trainNo ?? <Dash />}</span>
+        <div className="font-mono tabular-nums text-ink">{order.trainNo ?? <Dash />}</div>
         {order.scheduledArrival ? (
-          <span className="ml-1.5 text-xs tabular-nums text-muted">{formatTimeIST(order.scheduledArrival)}</span>
+          <div className="text-xs tabular-nums text-muted">{formatTimeIST(order.scheduledArrival)}</div>
         ) : null}
       </td>
       <td className="px-3 py-2.5">
