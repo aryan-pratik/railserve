@@ -13,6 +13,7 @@ import { OrderCard } from '@/components/OrderCard'
 import { EventLog } from '@/components/EventLog'
 import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
+import { KotNoteForm } from '@/components/KotNoteForm'
 import { IconPhone } from '@/components/Icons'
 import { CancelOrderButton } from '../../CancelOrderButton'
 import { OutcomeActionButton } from '../../OutcomeActionButton'
@@ -189,6 +190,16 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
           <p className="whitespace-pre-wrap px-4 py-3 text-sm text-muted">{order.notes}</p>
         </Card>
       ) : null}
+
+      {/* Unconditional, like Call log below: the box to add one has to be
+          here when there is no note yet, which is its most common state. This
+          is not the read-only "Notes" card above — that one is set once at
+          creation and never changes; this one is what a telecaller writes for
+          the kitchen to see on the printed KOT. */}
+      <Card>
+        <CardHeader title="KOT note" />
+        <KotNoteForm orderId={id} kotNote={order.kotNote ?? null} />
+      </Card>
 
       {/* Unconditional, unlike the cards above: the composer has to be here
           when the log is empty, which is its most common state. */}

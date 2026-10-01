@@ -269,11 +269,14 @@ export async function updateOrderFields(
   fields: Record<string, unknown>,
 ): Promise<boolean> {
   if (!mongoose.isValidObjectId(orderId)) return false
-  if ('status' in fields || 'events' in fields || 'callLog' in fields) {
-    // callLog joins the list so "append-only" is true at the boundary rather
-    // than by convention — without it, { callLog: [] } here is a one-line log
-    // wipe available to any admin action.
-    throw new Error('status and events are written only by transitionOrder; callLog only by appendCallNote')
+  if ('status' in fields || 'events' in fields || 'callLog' in fields || 'kotNote' in fields) {
+    // callLog and kotNote join the list so their own doors stay the only way
+    // in — without it, { callLog: [] } here is a one-line log wipe available
+    // to any admin action, and a kotNote write would skip setKotNote's role
+    // check entirely.
+    throw new Error(
+      'status and events are written only by transitionOrder; callLog only by appendCallNote; kotNote only by setKotNote',
+    )
   }
   const res = await Order.updateOne(
     scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
@@ -422,6 +425,46 @@ export async function appendCallNote(
   if (res.matchedCount === 0) throw new NotFoundError('Order not found')
 
   return note
+}
+
+/** Longest a KOT note may be. The same number as a call note and the admin remark. */
+export const KOT_NOTE_MAX = 500
+
+/**
+ * Sets (or clears, on an empty string) the single note that prints on the KOT.
+ *
+ * Overwritable, not append-only — unlike callLog, a correction replaces the
+ * previous value outright, the same contract as `remark`. The difference from
+ * `remark` is only that KotTicket prints this one. The role check lives here
+ * rather than only in the calling action, for the same reason appendCallNote's
+ * does: this is the door, and a door that trusts every caller to have checked
+ * is one new caller away from not being a door — and since updateOne runs no
+ * document validators, the length check below is what actually enforces the
+ * schema's maxlength, not the schema itself.
+ */
+export async function setKotNote(
+  ctx: AuthContext,
+  orderId: string,
+  text: string,
+): Promise<void> {
+  if (ctx.role !== 'TELECALLER' && ctx.role !== 'ADMIN') {
+    throw new ForbiddenError('Only a telecaller or an admin may set a KOT note.')
+  }
+
+  const body = text.trim()
+  if (body.length > KOT_NOTE_MAX) {
+    throw new Error(`Keep the KOT note under ${KOT_NOTE_MAX} characters.`)
+  }
+
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
+
+  const res = await Order.updateOne(
+    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
+    { $set: { kotNote: body.length > 0 ? body : null } },
+  )
+  // Scoped, so another outlet's order is a miss rather than a refusal — a 403
+  // here would itself confirm the order exists.
+  if (res.matchedCount === 0) throw new NotFoundError('Order not found')
 }
 
 /**

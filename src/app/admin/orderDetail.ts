@@ -49,6 +49,8 @@ export type OrderDetail = {
   amountPaise: number | null
   paymentMode: string | null
   notes: string | null
+  /** A telecaller's (or admin's) instruction, printed on the KOT — see Order.kotNote. */
+  kotNote: string | null
   items: { id: string; name: string; qty: number; pricePaise: number | null; isPacking: boolean; spec: string | null; notes: string | null }[]
   events: { id: string; toStatus: string; fromStatus: string | null; actor: string; at: string; action: string | null }[]
   /** The call log, flattened the same way. See CallLog. */
@@ -115,6 +117,7 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
     amountPaise: order.amountPaise ?? null,
     paymentMode: order.paymentMode ?? null,
     notes: order.notes ?? null,
+    kotNote: order.kotNote ?? null,
     items: order.items.map((i) => ({
       id: String(i._id),
       name: i.name,

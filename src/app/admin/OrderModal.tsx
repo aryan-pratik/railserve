@@ -310,6 +310,16 @@ export function OrderModal({
                 </Section>
               ) : null}
 
+              {/* Distinct from "Note" above: this is Order.kotNote, a
+                  telecaller's (or admin's) instruction that prints on the
+                  ticket. Read-only here — the box to write or change it is on
+                  the full /admin/orders/[id] page this modal is a preview of. */}
+              {detail.kotNote ? (
+                <Section title="KOT note · prints on ticket">
+                  <p className="whitespace-pre-wrap py-1 text-sm font-medium text-ink">{detail.kotNote}</p>
+                </Section>
+              ) : null}
+
               {/* Call log and the full event history are the right thing to
                   have, but not before the accept decision — closed by
                   default on a fresh order so they add no scroll weight,

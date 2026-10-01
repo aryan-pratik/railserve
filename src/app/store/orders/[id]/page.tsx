@@ -92,6 +92,19 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
         </Card>
       ) : null}
 
+      {/* Distinct from the amber remark above: this one is printed on the KOT
+          itself, which is why it gets its own colour — a manager should never
+          mistake one for the other. Read-only here: the box to write it lives
+          on the telecaller's and admin's own pages. */}
+      {order.kotNote ? (
+        <Card>
+          <CardHeader title="KOT note" />
+          <p className="m-4 whitespace-pre-wrap rounded-lg bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 ring-1 ring-inset ring-sky-200">
+            {order.kotNote}
+          </p>
+        </Card>
+      ) : null}
+
       {order.notes ? (
         <Card>
           <CardHeader title="Notes" />

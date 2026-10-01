@@ -15,6 +15,7 @@ import { forceRefreshOrderTrain } from './actions'
 import { EventLog } from '@/components/EventLog'
 import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
+import { KotNoteForm } from '@/components/KotNoteForm'
 import { DeliveryProof } from '@/components/DeliveryProof'
 import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
 import { adminNextStatusOptions } from '../../statusOptions'
@@ -231,6 +232,12 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           <Card>
             <CardHeader title="Remark for the kitchen" />
             <RemarkForm orderId={String(order._id)} remark={order.remark ?? null} />
+          </Card>
+
+          {/* Distinct from the remark above: this one prints on the KOT. */}
+          <Card>
+            <CardHeader title="KOT note" />
+            <KotNoteForm orderId={String(order._id)} kotNote={order.kotNote ?? null} />
           </Card>
 
           <DeliveryProof

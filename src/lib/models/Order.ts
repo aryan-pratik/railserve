@@ -129,20 +129,25 @@ const OrderSchema = new Schema(
 
     // What the passenger said on the phone, one entry per call.
     //
-    // Free text is scattered across five fields now, which is four more than
+    // Free text is scattered across six fields now, which is five more than
     // anyone holds in their head. Two sit on individual items, up in
     // OrderItemSchema:
     //   items[].spec   — the composite breakdown of a combo or thali,
     //                    PRINTED ON THE KOT as a block under the item
     //   items[].notes  — a note about that one item, admin-editable inline,
     //                    PRINTED ON THE KOT as "note:" under the item
-    // and three describe the whole order, here:
+    // and four describe the whole order, here:
     //   notes    — set once at creation, PRINTED ON THE KOT, never edited
     //   remark   — one admin instruction to the kitchen, overwritten on save,
     //              not printed
+    //   kotNote  — a telecaller's (or admin's) instruction to the kitchen,
+    //              overwritten on save like remark, but PRINTED ON THE KOT —
+    //              that is the one difference that earns it a field of its
+    //              own instead of reusing remark or notes.
     //   callLog  — this. Written by telecallers and admins, never printed,
     //              read by everyone, and editable or deletable by its author
     //              or an admin.
+    kotNote: { type: String, default: null, trim: true, maxlength: 500 },
     callLog: { type: [CallNoteSchema], default: [] },
 
     items: { type: [OrderItemSchema], default: [] },

@@ -35,6 +35,8 @@ export type KotOrder = {
   contactName?: Maybe<string>
   contactPhone?: Maybe<string>
   notes?: Maybe<string>
+  /** A telecaller's (or admin's) instruction, printed prominently — see Order.kotNote. */
+  kotNote?: Maybe<string>
   paymentMode?: Maybe<string>
   amountPaise?: Maybe<number>
   items: {
@@ -110,6 +112,24 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
       <Line label="Arrives" value={formatTimeIST(order.scheduledArrival)} />
       <Line label="Name" value={order.contactName ?? '-'} />
       <Line label="Phone" value={order.contactPhone ?? '-'} />
+
+      {/* Boxed like the PAX count below, for the same reason: this is the one
+          line on the ticket someone decided the kitchen must not miss, so it
+          gets the ticket's own language for "important" rather than a new one.
+          Placed above KITCHEN, not down by the low-emphasis NOTE: block near
+          the footer — those are two different fields (Order.notes vs
+          Order.kotNote) and this one is the one meant to be seen first. */}
+      {order.kotNote ? (
+        <>
+          <Rule />
+          <div className="my-1 border border-black px-2 py-1">
+            <div className="text-[12px] font-bold uppercase tracking-wide">KOT Note</div>
+            <div className="whitespace-pre-wrap break-words text-[12px] font-bold leading-snug">
+              {order.kotNote}
+            </div>
+          </div>
+        </>
+      ) : null}
 
       <Rule />
 

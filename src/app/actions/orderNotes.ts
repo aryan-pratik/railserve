@@ -7,7 +7,9 @@ import {
   deleteCallNote,
   editCallNote,
   listCallNotes,
+  setKotNote,
   CALL_NOTE_MAX,
+  KOT_NOTE_MAX,
 } from '@/lib/repo/orderRepo'
 import type { CallNoteView } from '@/lib/callNotes'
 
@@ -97,6 +99,39 @@ export async function editCallNoteAction(
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Could not update the note.' }
   }
+}
+
+export type KotNoteState = { error?: string; ok?: string }
+
+/**
+ * Sets the single note that prints on the KOT, for both roles that may write
+ * it. setKotNote already refuses every other role and every outlet the
+ * caller does not hold, so there is nothing role-specific left to duplicate
+ * here.
+ */
+export async function setKotNoteAction(
+  _prev: KotNoteState,
+  formData: FormData,
+): Promise<KotNoteState> {
+  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const raw = String(formData.get('kotNote') ?? '').trim()
+
+  if (raw.length > KOT_NOTE_MAX) {
+    return { error: `Keep the KOT note under ${KOT_NOTE_MAX} characters.` }
+  }
+
+  try {
+    // Emptying the box clears the note rather than storing '', so the KOT
+    // omits the block entirely instead of printing an empty one — setKotNote
+    // does that conversion itself.
+    await setKotNote(ctx, orderId, raw)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not save the KOT note.' }
+  }
+
+  revalidateAll(orderId)
+  return { ok: raw ? 'KOT note saved.' : 'KOT note cleared.' }
 }
 
 /** Removes a note outright. Its author or an admin only. */
