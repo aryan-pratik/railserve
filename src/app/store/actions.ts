@@ -232,9 +232,15 @@ export async function generateRunKot(formData: FormData) {
   // fire another job. The ticket set printed is still the whole run,
   // matching what the /kot page shows and what its own Print button sends.
   const before = await findRun(ctx, runKey)
-  const hasNewlyAccepted = (before?.orders ?? []).some((o) => o.status === 'ACCEPTED')
+  // Ticked orders on the board print only their own tickets; nothing ticked
+  // keeps the whole train.
+  const picked = new Set(selectedOrderIds(formData))
+  const scope = (before?.orders ?? []).filter((o) => picked.size === 0 || picked.has(String(o._id)))
+  const hasNewlyAccepted = scope.some((o) => o.status === 'ACCEPTED')
 
-  await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' })
+  await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' }, {
+    orderIds: [...picked],
+  })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
@@ -245,7 +251,10 @@ export async function generateRunKot(formData: FormData) {
       await enqueueRunKotPrint({
         appOrigin: await getAppOrigin(),
         runKey,
-        orderIds: before.orders.map((o) => String(o._id)),
+        orderIds:
+          picked.size === 0
+            ? before.orders.map((o) => String(o._id))
+            : scope.filter((o) => o.status === 'ACCEPTED').map((o) => String(o._id)),
       })
     } catch (err) {
       console.error(`[generateRunKot] auto-print enqueue failed for run ${runKey}:`, err)
