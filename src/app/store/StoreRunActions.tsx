@@ -151,7 +151,7 @@ export function StoreRunActions({
               {printLabel}
             </Button>
           ) : (
-            <form action={generateRunKot}>
+            <form action={generateRunKot} onSubmit={() => setTimeout(() => clearSelection?.(), 0)}>
               <input type="hidden" name="runKey" value={runKey} />
               <SelectedIds ids={tickedIds} />
               <Button type="submit" size="sm">{printLabel}</Button>
@@ -223,7 +223,10 @@ export function StoreRunActions({
           onCancel={() => setConfirmingPrint(false)}
           actions={
             <>
-              <form action={generateRunKot} className="flex-1" onSubmit={() => setConfirmingPrint(false)}>
+              <form action={generateRunKot} className="flex-1" onSubmit={() => {
+                  setConfirmingPrint(false)
+                  setTimeout(() => clearSelection?.(), 0)
+                }}>
                 <input type="hidden" name="runKey" value={runKey} />
                 <SelectedIds ids={tickedIds} />
                 <Button type="submit" className="w-full">Print anyway</Button>

@@ -24,7 +24,9 @@ const DANGER_STATUSES: readonly OrderStatus[] = [
 export type AdminStatusOption = { to: OrderStatus; label: string; danger: boolean }
 
 export function adminNextStatusOptions(status: OrderStatus): AdminStatusOption[] {
-  return allowedNextStatuses(status, 'ADMIN').map((to) => ({
+  // On the way needs a named rider, which a bare status button cannot supply;
+  // the admin board's train card hands an order over with the rider chosen.
+  return allowedNextStatuses(status, 'ADMIN').filter((to) => to !== 'DISPATCHED').map((to) => ({
     to,
     // Plain status names, not verbs: "Cancel" not "Mark cancelled".
     label: to === 'CANCELLED' ? 'Cancel' : statusLabel(to),
