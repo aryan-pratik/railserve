@@ -146,6 +146,8 @@ describe('call log', () => {
     it('lets a store manager and a rider read the log', async () => {
       const id = await newOrder()
       await appendCallNote(telecaller, id, 'Passenger asked for coach B2')
+      // A rider reads only orders assigned to them.
+      await assignRider(id, agent.userId)
 
       expect((await logOf(manager, id)).map((n) => n.text)).toEqual(['Passenger asked for coach B2'])
       expect((await logOf(agent, id)).map((n) => n.text)).toEqual(['Passenger asked for coach B2'])
@@ -305,6 +307,8 @@ describe('call log', () => {
     it('marks a note manageable by its author and by an admin, and by nobody else', async () => {
       const id = await newOrder()
       await appendCallNote(telecaller, id, 'Written by the desk')
+      // A rider reads only orders assigned to them.
+      await assignRider(id, agent.userId)
 
       expect((await listCallNotes(telecaller, id))[0].canManage).toBe(true)
       expect((await listCallNotes(admin, id))[0].canManage).toBe(true)

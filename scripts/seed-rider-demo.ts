@@ -11,10 +11,11 @@
  * orders for the demo outlet are replaced rather than added to, so re-running
  * gives the same board instead of piling up test data.
  *
- * Several trains, deliberately uneven. One is large — a rider picks the orders
- * they can carry, and that behaviour is untestable on a train with three — and
- * the arrival times are spread from minutes away to over an hour, because the
- * urgency colours and the leave-now maths only differ across that range.
+ * Several trains, deliberately uneven, with arrival times spread from minutes
+ * away to over an hour, because the urgency colours and the leave-now maths
+ * only differ across that range. A rider sees only what is assigned to them,
+ * so every order is given to the demo rider except the last train's, which
+ * stays unassigned to show that it never reaches the rider's phone.
  *
  *   npm run seed:rider
  */
@@ -23,7 +24,7 @@ import { connectDb, disconnectDb } from '../src/lib/db'
 import { Restaurant, User } from '../src/lib/models'
 import { __unsafeOrderModel as Order } from '../src/lib/repo/orderRepo'
 import { createManualOrder } from '../src/lib/repo/createOrder'
-import { transitionOrder } from '../src/lib/repo/transitionOrder'
+import { assignAgents, transitionOrder } from '../src/lib/repo/transitionOrder'
 import { ManualOrderInput } from '../src/lib/validation/order'
 import { todayIST, utcToIstLocal } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
@@ -166,6 +167,12 @@ async function main() {
     created.push({ id: String(doc._id), order: o })
   }
 
+  // Assigned as the office would, all but the last train.
+  for (const { id, order: o } of created) {
+    if (o.train === '15631') continue
+    await assignAgents({ ctx: adminCtx, orderId: id, agentIds: [String(rider._id)] })
+  }
+
   // Everything through the kitchen, so it is all sitting ready to collect.
   for (const { id } of created) {
     for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
@@ -211,7 +218,7 @@ async function main() {
   }
   console.log(`\n         ${dispatched.length} DISPATCHED  -> rider sees "Deliver now"`)
   console.log(`         ${delivered.length} DELIVERED   -> rider sees them under "Delivered"`)
-  console.log(`         ${prepared} PREPARED    -> rider picks which ones to take`)
+  console.log(`         ${prepared} PREPARED    -> ready at the counter (train 15631 is unassigned, so the rider never sees it)`)
   console.log(`\nrider login: 9000000004 / ${PASSWORD}`)
   console.log(`store login: 9000000002 / ${PASSWORD}`)
 
