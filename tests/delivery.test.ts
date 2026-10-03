@@ -368,6 +368,19 @@ describe('acting on some orders of a train', () => {
     // Still in the kitchen, so untouched by either handover.
     expect(await statusOf(ids[2])).toBe('KOT_PRINTED')
   })
+
+  it('an admin can hand an order to a rider too, but only by naming one', async () => {
+    const admin = ctxFor(await makeUser('ADMIN', '9000000033'))
+    await transitionRun(admin, runKey3, 'KOT_PRINTED', 'PREPARED', {}, { orderIds: [ids[2]] })
+    await expect(
+      transitionOrder({ ctx: admin, orderId: ids[2], to: 'DISPATCHED' }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+
+    const res = await handRunToRider(admin, runKey3, String(riderB), { orderIds: [ids[2]] })
+    expect(res).toEqual({ moved: 1, skipped: 0, errors: [] })
+    const order = await findById(admin, ids[2])
+    expect(order!.delivery.agentIds.map(String)).toEqual([String(riderB)])
+  })
 })
 
 /**
