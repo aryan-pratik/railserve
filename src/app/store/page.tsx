@@ -91,6 +91,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       href: `/store/orders/${String(o._id)}`,
       externalOrderId: o.externalOrderId,
       orderType: o.orderType,
+      source: o.source,
       status: o.status,
       coach: o.coach ?? null,
       berth: o.berth ?? null,
@@ -247,6 +248,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
             id: String(o._id),
             externalOrderId: o.externalOrderId,
             orderType: o.orderType,
+            source: o.source,
             status: o.status,
             serviceDate: o.serviceDate,
             trainNo: o.trainNo,
@@ -262,6 +264,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
           }))}
           hrefFor={(id) => `/store/orders/${id}`}
           showOutlet={multiOutlet}
+          showSource
         />
       )}
 

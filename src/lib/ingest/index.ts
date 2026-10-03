@@ -13,6 +13,7 @@ import { BrotherByteParser } from './parsers/brotherbyte'
 import { HomeBytesParser } from './parsers/homebytes'
 import { RailRestroParser } from './parsers/railrestro'
 import { matchOutlet } from './outletMatch'
+import { isAllowedSender, senderAddress } from './senders'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
 import { warmTrainStatus } from '../train/service'
 import type { OrderParser, ParsedOrder } from './types'
@@ -36,6 +37,12 @@ export type IngestSource = {
   gmailMessageId?: string | null
   subject?: string | null
   from?: string | null
+  /**
+   * The admin's list of aggregator senders. Only the Gmail sync passes it: a
+   * pasted email has no sender and is pasted on purpose, so it is always
+   * parsed. Absent or empty means every sender. See ./senders.ts.
+   */
+  allowedSenders?: readonly string[]
 }
 
 /**
@@ -53,6 +60,8 @@ export type IngestOutcome =
   | { status: 'PAYMENT'; paymentId: string; rrn: string }
   | { status: 'PAYMENT_DUPLICATE'; rrn: string }
   | { status: 'UNPARSED'; inboxId: string; reason: string; detail: string }
+  /** Not from a listed aggregator sender: skipped, with no inbox row. */
+  | { status: 'IGNORED'; from: string | null }
 
 /**
  * Turns a raw email into an order, a payment, or an unparsed-inbox row. Never
@@ -80,6 +89,13 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   // filed as "an order nobody is cooking".
   const paymentOutcome = await tryIngestPayment(input, rawPayload)
   if (paymentOutcome) return paymentOutcome
+
+  // Checked after payments, so a bank alert never needs its sender listed,
+  // and before the parsers, so mail from anyone else never becomes an inbox
+  // row. A listed sender's mail that fails to parse still lands there below.
+  if (!isAllowedSender(input.from, input.allowedSenders ?? [])) {
+    return { status: 'IGNORED', from: senderAddress(input.from) }
+  }
 
   const parser = PARSERS.find((p) => p.matches(input.body))
 

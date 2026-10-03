@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { Listing, Restaurant, Station, User } from '@/lib/models'
+import { GMAIL_STATE_ID, IngestState, Listing, Restaurant, Station, User } from '@/lib/models'
 import { countOrders } from '@/lib/repo/orderRepo'
 import { getAuthContext } from '@/lib/session'
 import {
@@ -17,6 +17,7 @@ import { DeleteRowButton } from './DeleteRowButton'
 import { AggregatorRow } from './AggregatorRow'
 import { AggregatorsCell } from './AggregatorsCell'
 import { StationDefaultForm } from './StationDefaultForm'
+import { SenderAllowlist } from './SenderAllowlist'
 
 export const metadata = { title: 'Setup · RailServe' }
 
@@ -89,6 +90,9 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   // know which rows are storefronts and what feeds each kitchen.
   const listings = staff ? [] : await Listing.find({}).sort({ stationCode: 1, name: 1 }).lean()
   const stations = staff ? [] : await Station.find({}).lean()
+  const allowedSenders = aggregators
+    ? ((await IngestState.findOne({ _id: GMAIL_STATE_ID }).select('allowedSenders').lean())?.allowedSenders ?? [])
+    : []
   const listingOrderCounts = new Map<string, number>()
   if (aggregators && ctx) {
     for (const l of listings) {
@@ -175,6 +179,8 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
 
       {aggregators ? (
         <div className="space-y-4">
+          <SenderAllowlist senders={[...allowedSenders].sort()} />
+
           {/* One card per station: the storefronts there, then the fallback
               underneath them, because the fallback only makes sense once you
               can see what it is a fallback for. */}

@@ -3,7 +3,7 @@ import { arrivalBucket, isFiltered, readCallFilter, rowMatches, type CallFilter 
 import type { CallBoardRowData } from '../src/lib/orderView'
 
 const row = (over: Partial<CallBoardRowData> = {}): CallBoardRowData => ({
-  id: '1', externalOrderId: 'MAN-001', orderType: 'RETAIL', status: 'RECEIVED',
+  id: '1', externalOrderId: 'MAN-001', orderType: 'RETAIL', source: 'ZOOP', status: 'RECEIVED',
   coach: 'B2', berth: '14', rawSeat: null, handoverPoint: null,
   contactName: 'Asha Verma', contactPhone: '9876500001', itemCount: 1, itemSummary: 'Veg Thali',
   paymentMode: 'COD', outletName: null, canCancel: true, callNoteCount: 0, callNoteHint: null, lastCall: null,

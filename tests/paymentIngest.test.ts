@@ -33,6 +33,11 @@ describe('payment ingestion', () => {
     await disconnectDb()
   })
 
+  it('reads a bank alert even when its sender is not on the aggregator allowlist', async () => {
+    const r = await ingestEmail({ ...alert(fx.SAMPLE, 'gmail-pay-allow'), allowedSenders: ['@zoop.in'] })
+    expect(r.status).toBe('PAYMENT')
+  })
+
   it('turns a credit alert into a payment and never into an inbox row', async () => {
     const r = await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
     expect(r.status).toBe('PAYMENT')

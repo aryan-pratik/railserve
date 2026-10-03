@@ -167,6 +167,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           id: String(o._id),
           externalOrderId: o.externalOrderId,
           orderType: o.orderType,
+          source: o.source,
           contactName: o.contactName ?? null,
           contactPhone: o.contactPhone ?? null,
           coach: o.coach ?? null,
@@ -266,6 +267,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
             id: String(o._id),
             externalOrderId: o.externalOrderId,
             orderType: o.orderType,
+            source: o.source,
             status: o.status,
             serviceDate: o.serviceDate,
             trainNo: o.trainNo,
@@ -280,6 +282,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           }))}
           hrefFor={(id) => `/admin/orders/${id}`}
           showOutlet
+          showSource
         />
       )}
 
