@@ -40,7 +40,7 @@ function revalidateOrder(orderId: string) {
  * down: transitionOrder re-reads the order through the caller's scope, so an
  * order from an outlet this telecaller does not hold is a 404 rather than a
  * refusal, and the TRANSITIONS allow-list is what says a telecaller may cancel
- * from RECEIVED/ACCEPTED/KOT_PRINTED/PREPARED and nowhere else.
+ * from RECEIVED through DISPATCHED and nowhere else.
  */
 export async function cancelOrder(
   _prev: CallActionState,
@@ -133,6 +133,67 @@ export async function markRefunded(
   formData: FormData,
 ): Promise<CallActionState> {
   return markOutcome('REFUNDED', 'Could not mark the order as refunded.', formData)
+}
+
+/**
+ * The passenger confirms on the phone that the food arrived.
+ *
+ * No reason field: "delivered" needs no explaining, and a box nobody fills in
+ * would only slow down the one outcome that is good news. Open from PREPARED
+ * and DISPATCHED, so a delivery the rider never tapped through can still be
+ * closed out from the call desk.
+ */
+export async function markDelivered(
+  _prev: CallActionState,
+  formData: FormData,
+): Promise<CallActionState> {
+  const ctx = await requireRole('TELECALLER')
+  const orderId = String(formData.get('orderId') ?? '')
+
+  try {
+    await transitionOrder({ ctx, orderId, to: 'DELIVERED', meta: { via: 'telecaller-call' } })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not mark the order delivered.' }
+  }
+
+  revalidateOrder(orderId)
+  return { ok: 'Marked delivered.' }
+}
+
+/**
+ * Not delivered: the food did not reach the passenger. Recorded as FAILED, the
+ * same status a rider sets from the platform, with the reason written to
+ * `delivery.failureReason` exactly where the rider's own reason would go.
+ */
+export async function markNotDelivered(
+  _prev: CallActionState,
+  formData: FormData,
+): Promise<CallActionState> {
+  const ctx = await requireRole('TELECALLER')
+  const orderId = String(formData.get('orderId') ?? '')
+  const reason = String(formData.get('reason') ?? '').trim()
+
+  if (reason.length < 3) {
+    return { error: 'Say briefly what happened: this is what the outlet and admin will see.' }
+  }
+  if (reason.length > 500) {
+    return { error: 'Keep the reason under 500 characters.' }
+  }
+
+  try {
+    await transitionOrder({
+      ctx,
+      orderId,
+      to: 'FAILED',
+      meta: { via: 'telecaller-call', reason },
+      apply: { failureReason: reason },
+    })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not mark the order not delivered.' }
+  }
+
+  revalidateOrder(orderId)
+  return { ok: 'Marked not delivered.' }
 }
 
 /**

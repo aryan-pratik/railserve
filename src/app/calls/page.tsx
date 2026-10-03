@@ -18,6 +18,8 @@ import {
   Pagination, inputClass, statusLabel, thClass,
 } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
+import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
+import { PendingCancelRequests } from '@/components/CancelRequest'
 
 export const metadata = { title: 'Call list · RailServe' }
 
@@ -124,7 +126,7 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
     { status: 'CANCELLED' },
   ]
 
-  const [orders, total, todayCount, yesterdayCount, upcomingCount, cancelledCount] = await Promise.all([
+  const [orders, total, todayCount, yesterdayCount, upcomingCount, cancelledCount, cancelRequests] = await Promise.all([
     findMany(ctx, base, {
       // Newest order on top, by the time it was placed, on every tab. A
       // telecaller works from the order that just came in, not from the train
@@ -143,6 +145,9 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
     countOrders(ctx, counts[1]),
     countOrders(ctx, counts[2]),
     countOrders(ctx, counts[3]),
+    // Whatever the tab: a store manager waiting on an answer should not have
+    // to wait for someone to look at the right date.
+    listPendingCancelRequests(ctx),
   ])
 
   // The train's live expected arrival, the same one the kitchen board shows,
@@ -195,6 +200,8 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
                   : formatServiceDate(today)
         }
       />
+
+      <PendingCancelRequests rows={cancelRequests} orderBasePath="/calls/orders" />
 
       <Tabs
         label="Call list"

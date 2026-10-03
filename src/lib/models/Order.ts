@@ -65,6 +65,35 @@ const CallNoteSchema = new Schema(
   { _id: true },
 )
 
+/**
+ * A store manager asking for an order to be cancelled.
+ *
+ * The kitchen does not cancel orders itself: the passenger, the aggregator and
+ * the refund all sit with the call desk. But the kitchen is often first to know
+ * an order cannot go out (an item is finished, the train was diverted), so it
+ * asks, with a reason, and a telecaller or an admin accepts or refuses.
+ *
+ * One request per order at a time. A refused request stays here, so the
+ * manager can read why, until they ask again; an accepted one stays as the
+ * record of who asked. The event log carries each step as well.
+ */
+export const CANCEL_REQUEST_STATUSES = ['PENDING', 'APPROVED', 'REFUSED'] as const
+
+const CancelRequestSchema = new Schema(
+  {
+    status: { type: String, required: true, enum: CANCEL_REQUEST_STATUSES },
+    reason: { type: String, required: true, trim: true, maxlength: 500 },
+    requestedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    requestedAt: { type: Date, required: true },
+    decidedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    decidedAt: { type: Date, default: null },
+    // Why it was refused, when the person refusing said. Optional: "the
+    // passenger still wants it" is the usual answer and goes without saying.
+    decisionNote: { type: String, default: null, trim: true, maxlength: 500 },
+  },
+  { _id: false },
+)
+
 const DeliverySchema = new Schema(
   {
     // Written null in the MVP; runs are derived from
@@ -149,6 +178,8 @@ const OrderSchema = new Schema(
     //              or an admin.
     kotNote: { type: String, default: null, trim: true, maxlength: 500 },
     callLog: { type: [CallNoteSchema], default: [] },
+
+    cancelRequest: { type: CancelRequestSchema, default: null },
 
     items: { type: [OrderItemSchema], default: [] },
     events: { type: [OrderEventSchema], default: [] },
