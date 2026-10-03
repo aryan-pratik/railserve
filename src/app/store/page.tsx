@@ -24,6 +24,7 @@ import { IconPlus } from '@/components/Icons'
 import { StoreRunActions } from './StoreRunActions'
 import { forceRefreshOrderTrain } from './actions'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
+import { RunSelection } from '@/components/RunSelection'
 
 export const metadata = { title: 'Kitchen board · RailServe' }
 
@@ -209,37 +210,40 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       ) : isGrouped ? (
         <div className="space-y-3">
           {pageCards.map((card) => (
-            <TrainRunFrame
-              key={card.key}
-              run={card}
-              orderCount={card.orders.length}
-              itemCount={card.itemCount}
-              codTotal={card.codTotal}
-              body="plain"
-              copyText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''} · ${card.stationCode}`.trim()}
-              refreshAction={
-                card.orders[0] ? (
-                  <RefreshTrainButton orderId={card.orders[0].id} action={forceRefreshOrderTrain} />
-                ) : null
-              }
-              footer={
-                <StoreRunActions
-                  runKey={card.key}
-                  counts={statusCounts.get(card.key) ?? {}}
-                  trainNo={card.trainNo ?? null}
-                  delayMinutes={card.timing.delayMinutes}
-                  expectedArrival={card.timing.effectiveArrival?.toISOString() ?? null}
-                  delayThresholdMinutes={env.KOT_DELAY_THRESHOLD_MINUTES}
-                  riders={riders}
+            // Ticks on the rows narrow the footer's actions to those orders —
+            // one train can be half ready, or need more than one rider.
+            <RunSelection key={card.key} orders={card.orders.map((o) => ({ id: o.id, status: o.status }))}>
+              <TrainRunFrame
+                run={card}
+                orderCount={card.orders.length}
+                itemCount={card.itemCount}
+                codTotal={card.codTotal}
+                body="plain"
+                copyText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''} · ${card.stationCode}`.trim()}
+                refreshAction={
+                  card.orders[0] ? (
+                    <RefreshTrainButton orderId={card.orders[0].id} action={forceRefreshOrderTrain} />
+                  ) : null
+                }
+                footer={
+                  <StoreRunActions
+                    runKey={card.key}
+                    counts={statusCounts.get(card.key) ?? {}}
+                    trainNo={card.trainNo ?? null}
+                    delayMinutes={card.timing.delayMinutes}
+                    expectedArrival={card.timing.effectiveArrival?.toISOString() ?? null}
+                    delayThresholdMinutes={env.KOT_DELAY_THRESHOLD_MINUTES}
+                    riders={riders}
+                  />
+                }
+              >
+                <RunOrderTable
+                  orders={card.orders}
+                  showOutlet={multiOutlet}
+                  trainText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''}`.trim()}
                 />
-              }
-            >
-              <RunOrderTable
-                orders={card.orders}
-                showOutlet={multiOutlet}
-                trainText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''}`.trim()}
-              />
-            </TrainRunFrame>
+              </TrainRunFrame>
+            </RunSelection>
           ))}
         </div>
       ) : (

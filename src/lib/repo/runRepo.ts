@@ -75,6 +75,19 @@ export async function findRun(
 export type RunActionResult = { moved: number; skipped: number; errors: string[] }
 
 /**
+ * Narrows a run to the orders the manager ticked. Omitted or empty means the
+ * whole run, which is what the board does when nothing is selected.
+ *
+ * Only ids already on the run count: an id from another train, or another
+ * outlet, is not on `run.orders` and so cannot be moved through this run.
+ */
+function pickOrders<T extends { _id: unknown }>(orders: T[], orderIds?: string[]): T[] {
+  if (!orderIds || orderIds.length === 0) return orders
+  const wanted = new Set(orderIds)
+  return orders.filter((o) => wanted.has(String(o._id)))
+}
+
+/**
  * Moves every order on a run that is sitting in `from` into `to`.
  *
  * The run is the unit of work — one rider takes one train — so the whole run
@@ -92,13 +105,14 @@ export async function transitionRun(
   from: OrderStatus,
   to: OrderStatus,
   meta: Record<string, unknown> = {},
+  opts: { orderIds?: string[] } = {},
 ): Promise<RunActionResult> {
   const run = await findRun(ctx, runKey)
   if (!run) return { moved: 0, skipped: 0, errors: ['Run not found'] }
 
   const result: RunActionResult = { moved: 0, skipped: 0, errors: [] }
 
-  for (const order of run.orders) {
+  for (const order of pickOrders(run.orders, opts.orderIds)) {
     if (order.status !== from) {
       result.skipped += 1
       continue
@@ -117,7 +131,10 @@ export async function transitionRun(
 }
 
 /**
- * A store manager hands a whole run to a named rider.
+ * A store manager hands a run, or the orders ticked on it, to a named rider.
+ *
+ * One train often needs more than one rider — five orders spread down a
+ * twenty-coach rake — so `orderIds` lets each rider take just their share.
  *
  * The rider is usually standing at the counter with both hands full; asking
  * them to unlock a phone at the exact minute the clock matters is how orders
@@ -133,6 +150,7 @@ export async function handRunToRider(
   ctx: AuthContext,
   runKey: string,
   riderId: string,
+  opts: { orderIds?: string[] } = {},
 ): Promise<RunActionResult> {
   if (ctx.role !== 'STORE_MANAGER' && ctx.role !== 'ADMIN') {
     throw new ForbiddenError('Only a store manager may hand a run over')
@@ -157,7 +175,7 @@ export async function handRunToRider(
   if (!run) return { moved: 0, skipped: 0, errors: ['Run not found'] }
 
   const result: RunActionResult = { moved: 0, skipped: 0, errors: [] }
-  for (const order of run.orders) {
+  for (const order of pickOrders(run.orders, opts.orderIds)) {
     if (order.status !== 'PREPARED') {
       result.skipped += 1
       continue

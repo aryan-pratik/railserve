@@ -170,6 +170,11 @@ export async function generateKot(formData: FormData) {
  * action and fifteen.
  */
 
+/** The orders ticked on the board, if any. None means the whole run. */
+function selectedOrderIds(formData: FormData): string[] {
+  return formData.getAll('orderId').map(String).filter(Boolean)
+}
+
 function summarise(result: RunActionResult, verb: string): StoreActionState {
   if (result.errors.length > 0) return { error: result.errors[0] }
   if (result.moved === 0) return { error: `Nothing to ${verb}.` }
@@ -183,7 +188,9 @@ export async function acceptRun(
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const runKey = String(formData.get('runKey') ?? '')
 
-  const result = await transitionRun(ctx, runKey, 'RECEIVED', 'ACCEPTED', { via: 'store-board' })
+  const result = await transitionRun(ctx, runKey, 'RECEIVED', 'ACCEPTED', { via: 'store-board' }, {
+    orderIds: selectedOrderIds(formData),
+  })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
@@ -197,7 +204,9 @@ export async function markRunPrepared(
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const runKey = String(formData.get('runKey') ?? '')
 
-  const result = await transitionRun(ctx, runKey, 'KOT_PRINTED', 'PREPARED', { via: 'store-board' })
+  const result = await transitionRun(ctx, runKey, 'KOT_PRINTED', 'PREPARED', { via: 'store-board' }, {
+    orderIds: selectedOrderIds(formData),
+  })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
@@ -222,11 +231,15 @@ export async function generateRunKot(formData: FormData) {
   // Snapshot before transitioning, to know which orders this click is for —
   // a repeat click on an already-printed run finds none and fires nothing.
   const before = await findRun(ctx, runKey)
-  const acceptedIds = (before?.orders ?? [])
-    .filter((o) => o.status === 'ACCEPTED')
-    .map((o) => String(o._id))
+  // Ticked orders on the board print only their own tickets; nothing ticked
+  // keeps the whole train.
+  const picked = new Set(selectedOrderIds(formData))
+  const scope = (before?.orders ?? []).filter((o) => picked.size === 0 || picked.has(String(o._id)))
+  const acceptedIds = scope.filter((o) => o.status === 'ACCEPTED').map((o) => String(o._id))
 
-  await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' })
+  await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' }, {
+    orderIds: [...picked],
+  })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
@@ -252,7 +265,8 @@ export async function generateRunKot(formData: FormData) {
 }
 
 /**
- * Hands a whole train's ready food to a named rider and marks it on the way.
+ * Hands a train's ready food — all of it, or the ticked orders — to a named
+ * rider and marks it on the way.
  *
  * The rider is recorded as the one carrying it, not the manager who clicked —
  * `handRunToRider` verifies the id belongs to an active rider before the
@@ -266,7 +280,7 @@ export async function handRunToRiderAction(
   const runKey = String(formData.get('runKey') ?? '')
   const riderId = String(formData.get('riderId') ?? '')
 
-  const result = await handRunToRider(ctx, runKey, riderId)
+  const result = await handRunToRider(ctx, runKey, riderId, { orderIds: selectedOrderIds(formData) })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')

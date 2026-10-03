@@ -97,7 +97,8 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     // unlock a phone at the one moment the clock matters is how orders miss a
     // halt. The manager must name who took it — see `handedTo` in
     // transitionOrder — so the record still says which rider has the food.
-    DISPATCHED: ['DELIVERY_AGENT', 'STORE_MANAGER'],
+    // An admin can do the same from their own board, under the same rule.
+    DISPATCHED: ['DELIVERY_AGENT', 'STORE_MANAGER', 'ADMIN'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
     MISDELIVERY: ['TELECALLER'],
     MISSED_DELIVERY: ['TELECALLER'],

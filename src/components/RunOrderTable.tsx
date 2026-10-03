@@ -6,6 +6,7 @@ import { CoachChip, Dash, PaymentBadge, SourceBadge, StatusBadge, TypeBadge, foc
 import { sourceLabel } from '@/lib/orderEnums'
 import { CallNoteHint } from './CallNoteHint'
 import { CopyButton } from './CopyButton'
+import { useRunSelection } from './RunSelection'
 
 /** One order as a run's table lists it. */
 export type RunTableOrder = {
@@ -94,6 +95,12 @@ export function RunOrderTable({
    */
   trainText?: string
 }) {
+  // Inside a RunSelection (the kitchen board) each row gets a tick box, so the
+  // train's actions can be narrowed to some of its orders. Elsewhere, none.
+  const selection = useRunSelection()
+  const allTicked = selection ? orders.length > 0 && orders.every((o) => selection.selected.has(o.id)) : false
+  const someTicked = selection ? orders.some((o) => selection.selected.has(o.id)) : false
+
   return (
     // The min-width gives the scroll wrapper something coherent to scroll:
     // seven columns do not fit a phone, and a squeezed table is worse than
@@ -102,6 +109,20 @@ export function RunOrderTable({
       <table className="w-full min-w-[46rem] text-sm">
         <thead className="border-b border-line bg-sunken/60">
           <tr>
+            {selection ? (
+              <th className={`${thClass} w-8`}>
+                <input
+                  type="checkbox"
+                  aria-label="Select every order on this train"
+                  checked={allTicked}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someTicked && !allTicked
+                  }}
+                  onChange={(e) => selection.setAll(e.target.checked)}
+                  className="size-4 cursor-pointer accent-accent"
+                />
+              </th>
+            ) : null}
             <th className={thClass}>Order</th>
             <th className={thClass}>Passenger</th>
             <th className={thClass}>Seat</th>
@@ -122,8 +143,21 @@ export function RunOrderTable({
               // order in a new tab is how a manager keeps their place on a
               // board they are working down.
               onClick={onSelect ? () => onSelect(o) : undefined}
-              className={`group transition-colors hover:bg-sunken/50 ${onSelect ? 'cursor-pointer' : ''}`}
+              className={`group transition-colors hover:bg-sunken/50 ${onSelect ? 'cursor-pointer' : ''} ${
+                selection?.selected.has(o.id) ? 'bg-accent-soft/40' : ''
+              }`}
             >
+              {selection ? (
+                <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select order ${o.externalOrderId}`}
+                    checked={selection.selected.has(o.id)}
+                    onChange={() => selection.toggle(o.id)}
+                    className="size-4 cursor-pointer accent-accent"
+                  />
+                </td>
+              ) : null}
               <td className="whitespace-nowrap px-3 py-2.5">
                 <div className="flex items-center gap-1.5">
                   {/* The real control. */}

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { findById, findMany } from '../src/lib/repo/orderRepo'
 import { transitionOrder, assignAgents } from '../src/lib/repo/transitionOrder'
-import { dispatchRun, findRun, findRuns, handRunToRider } from '../src/lib/repo/runRepo'
+import { dispatchRun, findRun, findRuns, handRunToRider, transitionRun } from '../src/lib/repo/runRepo'
 import { ForbiddenError, type AuthContext } from '../src/lib/authContext'
 import { runKeyFor } from '../src/lib/runs'
 import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
@@ -294,6 +294,92 @@ describe('store manager hands a run to a rider', () => {
     const res = await handRunToRider(outsider, runKey2, String(riderId))
     expect(res.moved).toBe(0)
     expect(res.errors[0]).toContain('Run not found')
+  })
+})
+
+/**
+ * One train is not always one trip: some of its orders are ready before the
+ * rest, and orders spread down a long rake can need more than one rider. The
+ * board's ticks narrow a run action to the chosen orders.
+ */
+describe('acting on some orders of a train', () => {
+  let manager: AuthContext
+  let riderA: import('mongoose').Types.ObjectId
+  let riderB: import('mongoose').Types.ObjectId
+  let runKey3: string
+  let ids: string[]
+
+  beforeAll(async () => {
+    await resetDb()
+    const g = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
+    manager = ctxFor(await makeUser('STORE_MANAGER', '9000000030', g._id))
+    riderA = (await makeUser('DELIVERY_AGENT', '9000000031', g._id))._id
+    riderB = (await makeUser('DELIVERY_AGENT', '9000000032', g._id))._id
+
+    for (const coach of ['A1', 'B2', 'S9']) {
+      await makeOrder({
+        restaurantId: g._id, serviceDate: DATE, trainNo: '12301', trainName: 'RAJDHANI',
+        stationCode: 'CNB', coach, scheduledArrival: new Date('2026-08-27T09:00:00Z'),
+      })
+    }
+    runKey3 = runKeyFor({ trainNo: '12301', serviceDate: DATE, stationCode: 'CNB' })
+    const run = await findRun(manager, runKey3)
+    ids = run!.orders.map((o) => String(o._id))
+    for (const id of ids) {
+      for (const to of ['ACCEPTED', 'KOT_PRINTED'] as const) {
+        await transitionOrder({ ctx: manager, orderId: id, to })
+      }
+    }
+  })
+
+  afterAll(async () => {
+    await disconnectDb()
+  })
+
+  const statusOf = async (id: string) => (await findById(manager, id))!.status
+
+  it('marks only the ticked orders ready', async () => {
+    const res = await transitionRun(manager, runKey3, 'KOT_PRINTED', 'PREPARED', {}, { orderIds: ids.slice(0, 2) })
+    expect(res.moved).toBe(2)
+    expect(await statusOf(ids[0])).toBe('PREPARED')
+    expect(await statusOf(ids[1])).toBe('PREPARED')
+    expect(await statusOf(ids[2])).toBe('KOT_PRINTED')
+  })
+
+  it('ignores an id that is not on this run', async () => {
+    const res = await transitionRun(manager, runKey3, 'KOT_PRINTED', 'PREPARED', {}, {
+      orderIds: ['000000000000000000000000'],
+    })
+    expect(res.moved).toBe(0)
+    expect(await statusOf(ids[2])).toBe('KOT_PRINTED')
+  })
+
+  it('hands different orders on one train to different riders', async () => {
+    const a = await handRunToRider(manager, runKey3, String(riderA), { orderIds: [ids[0]] })
+    const b = await handRunToRider(manager, runKey3, String(riderB), { orderIds: [ids[1]] })
+    expect(a.moved).toBe(1)
+    expect(b.moved).toBe(1)
+
+    const first = await findById(manager, ids[0])
+    const second = await findById(manager, ids[1])
+    expect(first!.status).toBe('DISPATCHED')
+    expect(first!.delivery.agentIds.map(String)).toEqual([String(riderA)])
+    expect(second!.delivery.agentIds.map(String)).toEqual([String(riderB)])
+    // Still in the kitchen, so untouched by either handover.
+    expect(await statusOf(ids[2])).toBe('KOT_PRINTED')
+  })
+
+  it('an admin can hand an order to a rider too, but only by naming one', async () => {
+    const admin = ctxFor(await makeUser('ADMIN', '9000000033'))
+    await transitionRun(admin, runKey3, 'KOT_PRINTED', 'PREPARED', {}, { orderIds: [ids[2]] })
+    await expect(
+      transitionOrder({ ctx: admin, orderId: ids[2], to: 'DISPATCHED' }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+
+    const res = await handRunToRider(admin, runKey3, String(riderB), { orderIds: [ids[2]] })
+    expect(res).toEqual({ moved: 1, skipped: 0, errors: [] })
+    const order = await findById(admin, ids[2])
+    expect(order!.delivery.agentIds.map(String)).toEqual([String(riderB)])
   })
 })
 
