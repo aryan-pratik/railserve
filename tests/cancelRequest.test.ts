@@ -11,7 +11,7 @@ import {
 } from '../src/lib/repo/cancelRequestRepo'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
 import { canRequestCancellation } from '../src/lib/orderStatus'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
  * A store manager asks for a cancellation with a reason; a telecaller or an
@@ -126,6 +126,7 @@ describe('cancellation requests', () => {
     for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
       await transitionOrder({ ctx: manager, orderId: id, to })
     }
+    await assignRider(id, agent.userId)
     await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
 
     await approveCancellation(admin, id)

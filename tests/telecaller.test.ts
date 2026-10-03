@@ -147,6 +147,7 @@ describe('telecaller', () => {
     it('marks a dispatched order delivered, keeping the rider on record', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
+      await assignRider(id, agentId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
 
       const out = await transitionOrder({ ctx: telecaller, orderId: id, to: 'DELIVERED' })
@@ -167,6 +168,7 @@ describe('telecaller', () => {
     it('marks not delivered with the reason in failureReason', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
+      await assignRider(id, agentId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
 
       const out = await transitionOrder({
