@@ -101,7 +101,7 @@ export function StoreRunActions({
   }, [acceptState, readyState, handState, clearSelection])
 
   const toAccept = narrowed ? tickedIn('RECEIVED') : (counts.RECEIVED ?? 0)
-  const toPrint = counts.ACCEPTED ?? 0
+  const toPrint = narrowed ? tickedIn('ACCEPTED') : (counts.ACCEPTED ?? 0)
   const toReady = narrowed ? tickedIn('KOT_PRINTED') : (counts.KOT_PRINTED ?? 0)
   const waiting = narrowed ? tickedIn('PREPARED') : (counts.PREPARED ?? 0)
   const kotsPrinted = counts.KOT_PRINTED ?? 0
@@ -109,7 +109,7 @@ export function StoreRunActions({
   // The delay guard asks, it never blocks: the system does not know how long
   // the dish keeps or how full the pass is.
   const late = shouldWarnAboutDelay(delayMinutes, delayThresholdMinutes)
-  const printLabel = `Print ${toPrint} KOT${toPrint === 1 ? '' : 's'}`
+  const printLabel = `Print ${toPrint}${which} KOT${toPrint === 1 ? '' : 's'}`
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -126,8 +126,8 @@ export function StoreRunActions({
         </span>
       ) : null}
 
-      {narrowed && toAccept + toReady + waiting === 0 ? (
-        <span className="text-xs text-muted">Nothing to accept, mark ready or hand over in this selection.</span>
+      {narrowed && toAccept + toPrint + toReady + waiting === 0 ? (
+        <span className="text-xs text-muted">Nothing to accept, print, mark ready or hand over in this selection.</span>
       ) : null}
 
       {toAccept > 0 ? (
@@ -144,7 +144,7 @@ export function StoreRunActions({
       {toPrint > 0 ? (
         <>
           <ButtonLink href={`/store/runs/${encodeURIComponent(runKey)}/kot`} variant="secondary" size="sm">
-            Preview {toPrint} KOT{toPrint === 1 ? '' : 's'}
+            Preview {counts.ACCEPTED ?? 0} KOT{(counts.ACCEPTED ?? 0) === 1 ? '' : 's'}
           </ButtonLink>
           {late ? (
             <Button type="button" size="sm" onClick={() => setConfirmingPrint(true)}>
@@ -153,6 +153,7 @@ export function StoreRunActions({
           ) : (
             <form action={generateRunKot}>
               <input type="hidden" name="runKey" value={runKey} />
+              <SelectedIds ids={tickedIds} />
               <Button type="submit" size="sm">{printLabel}</Button>
             </form>
           )}
@@ -224,6 +225,7 @@ export function StoreRunActions({
             <>
               <form action={generateRunKot} className="flex-1" onSubmit={() => setConfirmingPrint(false)}>
                 <input type="hidden" name="runKey" value={runKey} />
+                <SelectedIds ids={tickedIds} />
                 <Button type="submit" className="w-full">Print anyway</Button>
               </form>
               <Button type="button" variant="secondary" onClick={() => setConfirmingPrint(false)}>
