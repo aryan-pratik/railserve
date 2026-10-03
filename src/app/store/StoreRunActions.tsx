@@ -1,9 +1,10 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useState } from 'react'
 import { Button, ButtonLink, FormNote, inputBase } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { shouldWarnAboutDelay } from '@/lib/train/policy'
+import { useRunSelection } from '@/components/RunSelection'
 import {
   acceptRun, generateRunKot, handRunToRiderAction, markRunPrepared,
   type StoreActionState,
@@ -48,8 +49,13 @@ function ReprintRunKotButton({ runKey, count }: { runKey: string; count: number 
   )
 }
 
+/** The ticked orders, posted as `orderId` so the action moves only those. */
+function SelectedIds({ ids }: { ids: string[] }) {
+  return ids.map((id) => <input key={id} type="hidden" name="orderId" value={id} />)
+}
+
 /**
- * Whole-train actions.
+ * Whole-train actions, or the ticked orders' actions when any rows are ticked.
  *
  * Only the step the run is actually waiting on is offered. Showing Accept,
  * Print and Ready together would mean reading three buttons to find the one
@@ -77,10 +83,28 @@ export function StoreRunActions({
   const [handState, hand, handing] = useActionState(handRunToRiderAction, initial)
   const [confirmingPrint, setConfirmingPrint] = useState(false)
 
-  const toAccept = counts.RECEIVED ?? 0
+  // With rows ticked, Accept, Mark ready and the rider handover count and move
+  // only those; with none ticked they act on the whole train as before.
+  const selection = useRunSelection()
+  const ticked = selection ? selection.orders.filter((o) => selection.selected.has(o.id)) : []
+  const narrowed = ticked.length > 0
+  const tickedIn = (status: string) => ticked.filter((o) => o.status === status).length
+  const tickedIds = ticked.map((o) => o.id)
+  const which = narrowed ? ' selected' : ''
+
+  // A move that went through leaves nothing worth keeping ticked; clearing it
+  // means the next click is back to the whole train, which is what the
+  // buttons will then say.
+  const clearSelection = selection?.clear
+  useEffect(() => {
+    if (acceptState.ok || readyState.ok || handState.ok) clearSelection?.()
+  }, [acceptState, readyState, handState, clearSelection])
+
+  const toAccept = narrowed ? tickedIn('RECEIVED') : (counts.RECEIVED ?? 0)
   const toPrint = counts.ACCEPTED ?? 0
-  const toReady = counts.KOT_PRINTED ?? 0
-  const waiting = counts.PREPARED ?? 0
+  const toReady = narrowed ? tickedIn('KOT_PRINTED') : (counts.KOT_PRINTED ?? 0)
+  const waiting = narrowed ? tickedIn('PREPARED') : (counts.PREPARED ?? 0)
+  const kotsPrinted = counts.KOT_PRINTED ?? 0
 
   // The delay guard asks, it never blocks: the system does not know how long
   // the dish keeps or how full the pass is.
@@ -89,11 +113,29 @@ export function StoreRunActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {narrowed ? (
+        <span className="flex items-center gap-1.5 text-xs font-medium text-accent">
+          {ticked.length} selected
+          <button
+            type="button"
+            onClick={() => selection?.clear()}
+            className="rounded px-1 text-muted underline-offset-2 hover:text-ink hover:underline"
+          >
+            Clear
+          </button>
+        </span>
+      ) : null}
+
+      {narrowed && toAccept + toReady + waiting === 0 ? (
+        <span className="text-xs text-muted">Nothing to accept, mark ready or hand over in this selection.</span>
+      ) : null}
+
       {toAccept > 0 ? (
         <form action={accept} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="runKey" value={runKey} />
+          <SelectedIds ids={tickedIds} />
           <Button type="submit" size="sm" pending={accepting}>
-            Accept {toAccept}
+            Accept {toAccept}{which}
           </Button>
           <FormNote state={acceptState} />
         </form>
@@ -118,18 +160,24 @@ export function StoreRunActions({
       ) : null}
 
       {toReady > 0 ? (
+        <form action={ready} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="runKey" value={runKey} />
+          <SelectedIds ids={tickedIds} />
+          <Button type="submit" size="sm" variant="go" pending={readying}>
+            Mark {toReady}{which} ready
+          </Button>
+          <FormNote state={readyState} />
+        </form>
+      ) : null}
+
+      {/* KOT preview and reprint stay whole-train: they are about the
+          tickets, not about which orders are moving. */}
+      {kotsPrinted > 0 ? (
         <>
-          <form action={ready} className="flex flex-wrap items-center gap-2">
-            <input type="hidden" name="runKey" value={runKey} />
-            <Button type="submit" size="sm" variant="go" pending={readying}>
-              Mark {toReady} ready
-            </Button>
-            <FormNote state={readyState} />
-          </form>
           <ButtonLink href={`/store/runs/${encodeURIComponent(runKey)}/kot`} variant="secondary" size="sm">
-            Preview {toReady} KOT{toReady === 1 ? '' : 's'}
+            Preview {kotsPrinted} KOT{kotsPrinted === 1 ? '' : 's'}
           </ButtonLink>
-          <ReprintRunKotButton runKey={runKey} count={toReady} />
+          <ReprintRunKotButton runKey={runKey} count={kotsPrinted} />
         </>
       ) : null}
 
@@ -139,8 +187,9 @@ export function StoreRunActions({
         riders.length > 0 ? (
           <form action={hand} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="runKey" value={runKey} />
+            <SelectedIds ids={tickedIds} />
             <label htmlFor={`rider-${runKey}`} className="text-xs font-medium text-emerald-700">
-              {waiting} on the shelf. Hand to
+              {narrowed ? `Hand ${waiting} selected to` : `${waiting} on the shelf. Hand to`}
             </label>
             <select
               id={`rider-${runKey}`}

@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { requireRole } from '@/lib/session'
 import { findMany, countOrders } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
-import { Restaurant } from '@/lib/models'
+import { Restaurant, User } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatDateRange, formatTimeIST, shiftServiceDate } from '@/lib/format'
@@ -99,7 +99,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
-  const [outlets, dayOrders, todayCount, upcomingCount, ingest] = await Promise.all([
+  const [outlets, dayOrders, todayCount, upcomingCount, ingest, riderDocs] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     // Open orders today: the same number the kitchen and call boards badge as
@@ -112,7 +112,10 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     // nobody working a lunch rush navigates to the inbox to ask why it is
     // calm. It has to be said here, where the counting happens.
     checkIngestStaleness(),
+    // For handing ready orders to a rider from a train card.
+    User.find({ role: 'DELIVERY_AGENT', active: true }).select('name').sort({ name: 1 }).lean(),
   ])
+  const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
 
   const visible = tab.statuses
     ? dayOrders.filter((o) => tab.statuses!.includes(o.status))
@@ -259,7 +262,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           }
         />
       ) : isGrouped ? (
-        <TrainGroups groups={groups} serverNow={serverNow} refreshAction={forceRefreshOrderTrain} />
+        <TrainGroups
+          groups={groups}
+          serverNow={serverNow}
+          refreshAction={forceRefreshOrderTrain}
+          riders={riders}
+        />
       ) : (
         <OrdersTable
           orders={visible.map((o) => ({

@@ -170,6 +170,11 @@ export async function generateKot(formData: FormData) {
  * action and fifteen.
  */
 
+/** The orders ticked on the board, if any. None means the whole run. */
+function selectedOrderIds(formData: FormData): string[] {
+  return formData.getAll('orderId').map(String).filter(Boolean)
+}
+
 function summarise(result: RunActionResult, verb: string): StoreActionState {
   if (result.errors.length > 0) return { error: result.errors[0] }
   if (result.moved === 0) return { error: `Nothing to ${verb}.` }
@@ -183,7 +188,9 @@ export async function acceptRun(
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const runKey = String(formData.get('runKey') ?? '')
 
-  const result = await transitionRun(ctx, runKey, 'RECEIVED', 'ACCEPTED', { via: 'store-board' })
+  const result = await transitionRun(ctx, runKey, 'RECEIVED', 'ACCEPTED', { via: 'store-board' }, {
+    orderIds: selectedOrderIds(formData),
+  })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
@@ -197,7 +204,9 @@ export async function markRunPrepared(
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const runKey = String(formData.get('runKey') ?? '')
 
-  const result = await transitionRun(ctx, runKey, 'KOT_PRINTED', 'PREPARED', { via: 'store-board' })
+  const result = await transitionRun(ctx, runKey, 'KOT_PRINTED', 'PREPARED', { via: 'store-board' }, {
+    orderIds: selectedOrderIds(formData),
+  })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
@@ -247,7 +256,8 @@ export async function generateRunKot(formData: FormData) {
 }
 
 /**
- * Hands a whole train's ready food to a named rider and marks it on the way.
+ * Hands a train's ready food — all of it, or the ticked orders — to a named
+ * rider and marks it on the way.
  *
  * The rider is recorded as the one carrying it, not the manager who clicked —
  * `handRunToRider` verifies the id belongs to an active rider before the
@@ -261,7 +271,7 @@ export async function handRunToRiderAction(
   const runKey = String(formData.get('runKey') ?? '')
   const riderId = String(formData.get('riderId') ?? '')
 
-  const result = await handRunToRider(ctx, runKey, riderId)
+  const result = await handRunToRider(ctx, runKey, riderId, { orderIds: selectedOrderIds(formData) })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')

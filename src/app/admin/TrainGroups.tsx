@@ -9,6 +9,8 @@ import { RunOrderTable, type RunTableOrder } from '@/components/RunOrderTable'
 import { OrderModal, type OrderPreview } from './OrderModal'
 import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
 import { UrgencyRail } from '@/components/UrgencyRail'
+import { RunSelection } from '@/components/RunSelection'
+import { AdminRunActions } from './AdminRunActions'
 
 /**
  * The admin board's rows are the shared run table's rows — the kitchen board
@@ -96,10 +98,13 @@ export function TrainGroups({
   groups,
   serverNow,
   refreshAction,
+  riders,
 }: {
   groups: TrainGroup[]
   serverNow: string
   refreshAction: (prev: RefreshTrainState, formData: FormData) => Promise<RefreshTrainState>
+  /** Active riders, for handing ready orders over from the board. */
+  riders: { id: string; name: string }[]
 }) {
   const ticked = useNowMs(30_000)
   const now = ticked ?? new Date(serverNow).getTime()
@@ -227,14 +232,20 @@ export function TrainGroups({
 
                   {isOpen ? (
                     <div id={panelId}>
-                      {/* Named per row only where a train is served by more
-                          than one kitchen — the header already says so. */}
-                      <RunOrderTable
-                        orders={g.orders}
-                        onSelect={select}
-                        showOutlet={g.outletNames.length > 1}
-                        trainText={trainLabel(g)}
-                      />
+                      {/* Ticks on the rows narrow Mark ready and the rider
+                          handover to those orders: one train can be half
+                          ready, and can need more than one rider. */}
+                      <RunSelection orders={g.orders.map((o) => ({ id: o.id, status: o.status }))}>
+                        {/* Named per row only where a train is served by more
+                            than one kitchen — the header already says so. */}
+                        <RunOrderTable
+                          orders={g.orders}
+                          onSelect={select}
+                          showOutlet={g.outletNames.length > 1}
+                          trainText={trainLabel(g)}
+                        />
+                        <AdminRunActions runKey={g.key} riders={riders} />
+                      </RunSelection>
                     </div>
                   ) : null}
                 </div>
