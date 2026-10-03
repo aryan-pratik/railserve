@@ -13,6 +13,7 @@ import {
 import { DateFilter } from '@/components/DateFilter'
 import { QueryForm } from '@/components/QueryForm'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
+import { NO_RIDER, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
 import type { QueryFilter } from 'mongoose'
 
 /**
@@ -56,6 +57,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const train = one(sp.train)
   const orderId = one(sp.orderId)
   const payment = one(sp.payment)
+  // Dropped when it is neither an id nor NO_RIDER, so links never carry junk.
+  const byRider = riderClause(one(sp.rider))
+  const rider = byRider ? one(sp.rider) : ''
 
   const pageParam = Number.parseInt(one(sp.page), 10)
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
@@ -78,17 +82,20 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   }
   if (train) base.trainNo = train.toUpperCase()
   if (orderId) base.externalOrderId = { $regex: escapeRegExp(orderId), $options: 'i' }
+  if (byRider) Object.assign(base, byRider)
 
   const filter = payment ? { ...base, paymentMode: payment } : base
 
   await connectDb()
-  const [outlets, orders, paymentCounts, statusesInUse, totalCount] = await Promise.all([
+  const [outlets, orders, paymentCounts, statusesInUse, totalCount, riders] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, filter, { sort: { createdAt: -1 }, limit: pageSize, skip: (page - 1) * pageSize }),
     countByPaymentMode(ctx, base),
     distinctStatuses(ctx),
     countOrders(ctx, filter),
+    riderOptions(ctx),
   ])
+  const riderName = await riderNamesFor(orders)
 
   // Custom statuses an admin has typed in stay selectable once they exist.
   const customStatuses = statusesInUse
@@ -97,13 +104,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const statusOptions = [...ORDER_STATUSES, ...customStatuses]
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
-  const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || orderId || payment)
+  const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || orderId || payment || rider)
 
   // Every link and the export carry the filters already in play.
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment, ...over,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment, rider, ...over,
     })) {
       if (v) u.set(k, v)
     }
@@ -129,7 +136,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment, rider,
     })) {
       if (v) u.set(k, v)
     }
@@ -163,7 +170,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-6">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
@@ -186,11 +193,20 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           <input name="orderId" defaultValue={orderId} placeholder="Order ID"
             autoComplete="off" spellCheck={false}
             className={`${inputClass} font-mono`} aria-label="Order ID" />
+          <select name="rider" defaultValue={rider} className={inputClass} aria-label="Rider">
+            <option value="">Any rider</option>
+            <option value={NO_RIDER}>No rider yet</option>
+            {riders.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}{r.active ? '' : ' (inactive)'}
+              </option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
-          <div className="sm:col-span-2 lg:col-span-5">
+          <div className="sm:col-span-2 lg:col-span-6">
             <Field label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
             </Field>
@@ -215,10 +231,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           outletName: outletName.get(String(o.restaurantId)) ?? null,
           source: o.source,
           remark: o.remark,
+          rider: riderName.get(String(o._id)),
             ...callNoteRow(o),
         }))}
         showOutlet
         showSource
+        showRider
         statusOptions={statusOptions}
         emptyNote={
           hasFilters

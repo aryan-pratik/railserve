@@ -46,9 +46,12 @@ const ROOTS = new Set(['/admin', '/store', '/agent', '/calls'])
 export function NavLinks({
   items,
   onItemClick,
+  compact = false,
 }: {
   items: NavItem[]
   onItemClick?: () => void
+  /** Icons only, for the collapsed sidebar. The label moves to a tooltip. */
+  compact?: boolean
 }) {
   const pathname = usePathname()
 
@@ -56,6 +59,7 @@ export function NavLinks({
     <nav className="space-y-0.5" aria-label="Main">
       {items.map((item) => {
         const Icon = (item.icon && ICONS[item.icon]) || IconOrders
+        const countedLabel = item.count ? `${item.label} (${item.count})` : item.label
         // A section root only matches itself; /admin must not light up on /admin/orders.
         const active = ROOTS.has(item.href)
           ? pathname === item.href
@@ -67,7 +71,9 @@ export function NavLinks({
             href={item.href}
             onClick={onItemClick}
             aria-current={active ? 'page' : undefined}
-            className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${focusRing} ${
+            aria-label={compact ? countedLabel : undefined}
+            title={compact ? countedLabel : undefined}
+            className={`group relative flex items-center rounded-lg py-2 ${compact ? 'justify-center px-2' : 'gap-3 px-3'} text-sm font-medium transition-colors ${focusRing} ${
               active ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sunken hover:text-ink'
             }`}
           >
@@ -75,9 +81,16 @@ export function NavLinks({
               size={18}
               className={`shrink-0 ${active ? 'text-accent' : 'text-faint group-hover:text-ink'}`}
             />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            <LinkHint />
-            {item.count ? (
+            {compact ? null : (
+              <>
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <LinkHint />
+              </>
+            )}
+            {item.count && compact ? (
+              // A dot on the icon: a count would not fit, and the number is in the tooltip.
+              <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-red-600 ring-2 ring-surface" aria-hidden="true" />
+            ) : item.count ? (
               <span
                 className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
                   active ? 'bg-accent text-white' : 'bg-red-600 text-white'

@@ -5,6 +5,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { formatIST, paiseToRupees } from '@/lib/format'
 import { resolveDateRange } from '@/lib/dateFilter'
+import { riderClause, riderNamesFor } from '@/lib/repo/riderFilter'
 import type { QueryFilter } from 'mongoose'
 
 export const dynamic = 'force-dynamic'
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
   const status = url.searchParams.get('status') ?? ''
   const train = url.searchParams.get('train') ?? ''
   const payment = url.searchParams.get('payment') ?? ''
+  const rider = url.searchParams.get('rider') ?? ''
 
   const tab = url.searchParams.get('tab') ?? ''
   const statuses = status
@@ -73,6 +75,8 @@ export async function GET(request: Request) {
   if (outlet) filter.restaurantId = outlet
   if (train) filter.trainNo = train.toUpperCase()
   if (payment) filter.paymentMode = payment
+  const byRider = riderClause(rider)
+  if (byRider) Object.assign(filter, byRider)
 
   const [orders, outlets] = await Promise.all([
     // A history export spanning every service date needs far more headroom
@@ -82,11 +86,12 @@ export async function GET(request: Request) {
     connectDb().then(() => Restaurant.find({}).select('name stationCode').lean()),
   ])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
+  const riderName = await riderNamesFor(orders)
 
   const header = [
     'Order ID', 'Status', 'Type', 'Outlet', 'Station', 'Train no', 'Train name',
     'Scheduled arrival', 'Coach', 'Berth', 'Handover', 'Pax',
-    'Passenger', 'Phone', 'Items', 'Amount (INR)', 'Payment', 'Created',
+    'Passenger', 'Phone', 'Items', 'Amount (INR)', 'Payment', 'Rider', 'Created',
   ]
 
   const rows = orders.map((o) => [
@@ -107,6 +112,7 @@ export async function GET(request: Request) {
     o.items.filter((i) => !i.isPacking).map((i) => `${i.name} x${i.qty}`).join('; '),
     paiseToRupees(o.amountPaise),
     o.paymentMode ?? '',
+    riderName.get(String(o._id)) ?? '',
     formatIST(o.createdAt),
   ])
 

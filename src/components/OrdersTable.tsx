@@ -22,6 +22,8 @@ export type OrderRow = {
   /** The aggregator the order arrived from — Order.source. */
   source?: Maybe<string>
   remark?: Maybe<string>
+  /** Who has the order, from delivery.agentIds; comma-joined when several. */
+  rider?: Maybe<string>
   /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
   callNoteCount?: Maybe<number>
   callNoteHint?: Maybe<string>
@@ -40,9 +42,11 @@ export type OrderRow = {
 export function OrderTableColGroup({
   showOutlet,
   showSource = false,
+  showRider = false,
 }: {
   showOutlet: boolean
   showSource?: boolean
+  showRider?: boolean
 }) {
   const weights = [
     15, // order id
@@ -52,6 +56,7 @@ export function OrderTableColGroup({
     15, // passenger
     ...(showSource ? [11] : []), // aggregator
     ...(showOutlet ? [12] : []), // outlet
+    ...(showRider ? [11] : []), // rider
     14, // remark
     9, // amount
     13, // status
@@ -82,6 +87,7 @@ export function OrdersTable({
   hrefFor,
   showOutlet = false,
   showSource = false,
+  showRider = false,
   emptyNote = 'Nothing matches these filters.',
 }: {
   orders: OrderRow[]
@@ -89,6 +95,8 @@ export function OrdersTable({
   showOutlet?: boolean
   /** Which aggregator each order came from. Off where every row is the same one. */
   showSource?: boolean
+  /** Who has each order. On in history, where "who took this one" gets asked. */
+  showRider?: boolean
   emptyNote?: string
 }) {
   if (orders.length === 0) {
@@ -100,8 +108,10 @@ export function OrdersTable({
       {/* The min-width gives the scroll wrapper something coherent to scroll:
           without it the percentages resolve against a 375px phone and the
           seat and amount columns collapse to nothing. */}
-      <table className={`w-full table-fixed text-sm ${showSource ? 'min-w-[64rem]' : 'min-w-[56rem]'}`}>
-        <OrderTableColGroup showOutlet={showOutlet} showSource={showSource} />
+      <table className={`w-full table-fixed text-sm ${
+        showSource && showRider ? 'min-w-[72rem]' : showSource || showRider ? 'min-w-[64rem]' : 'min-w-[56rem]'
+      }`}>
+        <OrderTableColGroup showOutlet={showOutlet} showSource={showSource} showRider={showRider} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={thClass}>Order</th>
@@ -111,6 +121,7 @@ export function OrdersTable({
             <th className={thClass}>Passenger</th>
             {showSource ? <th className={thClass}>Aggregator</th> : null}
             {showOutlet ? <th className={thClass}>Outlet</th> : null}
+            {showRider ? <th className={thClass}>Rider</th> : null}
             <th className={thClass}>Remark</th>
             <th className={`${thClass} text-right`}>Amount</th>
             <th className={thClass}>Status</th>
@@ -147,6 +158,7 @@ export function OrdersTable({
                 <td className="px-3 py-2.5"><SourceBadge source={o.source} /></td>
               ) : null}
               {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={o.outletName ?? undefined}>{o.outletName ?? <Dash />}</td> : null}
+              {showRider ? <td className="truncate px-3 py-2.5 text-ink" title={o.rider || undefined}>{o.rider || <Dash />}</td> : null}
               <td className="truncate px-3 py-2.5 text-amber-800" title={o.remark ?? undefined}>
                 {o.remark ?? <Dash />}
               </td>
