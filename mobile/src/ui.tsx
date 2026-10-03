@@ -190,9 +190,6 @@ export function CallButton({ phone, wide }: { phone: string; wide?: boolean }) {
 
 /**
  * A tick box big enough to hit while walking.
- *
- * Selection is the point of the pickup list — a rider takes the five orders
- * they can carry, not all forty.
  */
 export function Check({ on }: { on: boolean }) {
   return (
@@ -408,15 +405,15 @@ export const s = StyleSheet.create({
 })
 
 /**
- * Whether this phone is sharing its location, said plainly on the rider's own
- * screen.
+ * Shown only when location is not getting through because of the phone:
+ * the permission was declined or location is switched off.
  *
- * Not decoration and not optional. The office can see where this rider is, and
- * the person being tracked is entitled to know that without opening settings
- * to find out — so it sits in the header, visible the whole time the app is
- * open, and turns amber the moment sharing stops working. It doubles as the
- * only way a rider can tell that a denied permission is why the office keeps
- * ringing to ask where they are.
+ * Once the rider has allowed location, the app says nothing about it. Android
+ * already shows its own indicator in the status bar, and riders found a second
+ * "sharing location" badge on top of that to be clutter. The one case still
+ * worth a word is the denied one, because it is the only way a rider can tell
+ * why the office keeps ringing to ask where they are, and tapping it opens
+ * Settings.
  */
 export function SharingIndicator({
   state,
@@ -427,20 +424,10 @@ export function SharingIndicator({
     | { status: 'sharing'; background: boolean }
   onPress?: () => void
 }) {
-  const sharing = state.status === 'sharing'
-  const warn = state.status === 'denied' || state.status === 'pending'
-  if (state.status === 'off') return null
+  if (state.status !== 'denied') return null
 
-  const label =
-    // "While app is open" is worth spelling out: a rider who declined the
-    // always-allow prompt should know their position stops at the lock screen
-    // rather than discovering it when the office rings to ask where they are.
-    state.status === 'sharing'
-      ? state.background ? 'Sharing location' : 'Sharing while app is open'
-    : state.status === 'pending' ? 'Location waiting for signal'
-    : 'Location off'
-
-  const fg = sharing ? C.green : warn ? C.amber : C.muted
+  const label = 'Location off'
+  const fg = C.amber
 
   return (
     <Pressable

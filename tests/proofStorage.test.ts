@@ -8,7 +8,7 @@ import {
   isProofStorageConfigured,
   ProofStoreUnavailable,
 } from '../src/lib/storage'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 import type { AuthContext } from '../src/lib/authContext'
 
 /**
@@ -32,6 +32,7 @@ describe('delivery proof storage', () => {
     for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
       await transitionOrder({ ctx: manager, orderId, to })
     }
+    await assignRider(orderId, rider.userId)
     await transitionOrder({ ctx: rider, orderId, to: 'DISPATCHED' })
   })
 

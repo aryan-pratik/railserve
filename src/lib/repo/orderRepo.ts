@@ -22,15 +22,17 @@ import type { OrderSource } from '../orderEnums'
  *
  * - ADMIN sees everything.
  * - STORE_MANAGER sees every outlet they hold, and nothing else.
- * - DELIVERY_AGENT sees every outlet they are attached to, and nothing else.
+ * - DELIVERY_AGENT sees only the orders assigned to them, at outlets they are
+ *   attached to.
  * - TELECALLER sees every outlet they are attached to, and nothing else.
  *
- * Riders used to be scoped by assignment — `delivery.agentIds` contained who
- * was *going* to deliver. Nothing assigns that any more: a rider picks up
- * whatever is ready at their kitchen, and the system records who actually
- * delivered afterwards. Scoping by assignment would now match nothing at all,
- * so riders are scoped by outlet exactly as managers are, and station isolation
- * is preserved by the same mechanism rather than by a second one.
+ * Riders are scoped by assignment: `delivery.agentIds` holds the rider a
+ * telecaller, store manager or admin gave the order to, and a rider no longer
+ * picks orders off the counter themselves. Doing it here rather than in the
+ * app means the rule holds for every rider read and write — a rider holding
+ * another rider's order id gets a 404 from transitionOrder, not a pickup. The
+ * outlet filter stays as well, so an order assigned across stations by mistake
+ * still does not leak into the wrong kitchen's phones.
  *
  * Holding no outlets is a data error, not an admin — returning an impossible
  * filter is the safe reading for all three scoped roles.
@@ -40,10 +42,13 @@ function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
     case 'ADMIN':
       return {}
     case 'STORE_MANAGER':
-    case 'DELIVERY_AGENT':
     case 'TELECALLER':
       return ctx.restaurantIds.length > 0
         ? { restaurantId: { $in: ctx.restaurantIds } }
+        : { _id: { $exists: false } }
+    case 'DELIVERY_AGENT':
+      return ctx.restaurantIds.length > 0
+        ? { restaurantId: { $in: ctx.restaurantIds }, 'delivery.agentIds': ctx.userId }
         : { _id: { $exists: false } }
   }
 }

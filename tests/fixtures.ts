@@ -114,3 +114,15 @@ export async function makeOrder(overrides: Record<string, unknown> = {}) {
     ...overrides,
   })
 }
+
+/**
+ * Gives an order to a rider, as a telecaller, store manager or admin would.
+ * A rider sees only what is assigned to them, so any test that has a rider
+ * act on an order assigns it first.
+ */
+export async function assignRider(
+  orderId: string | mongoose.Types.ObjectId,
+  riderId: mongoose.Types.ObjectId,
+) {
+  await Order.updateOne({ _id: orderId }, { $addToSet: { 'delivery.agentIds': riderId } })
+}

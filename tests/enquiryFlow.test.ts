@@ -4,7 +4,7 @@ import { createEnquiry } from '../src/lib/repo/createEnquiry'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
 import { findById, updateOrderFields, outletAnalytics } from '../src/lib/repo/orderRepo'
 import { ConflictError, ForbiddenError, type AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeRestaurant, makeUser, resetDb } from './fixtures'
 import { parseBulkEnquiry } from '../src/lib/ingest/parsers/bulkEnquiry'
 
 const SAMPLE = `*Query*
@@ -145,6 +145,7 @@ describe('analytics', () => {
       for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
         await transitionOrder({ ctx: manager, orderId: id, to })
       }
+      await assignRider(id, agent._id)
       await transitionOrder({ ctx: agentCtx, orderId: id, to: 'DISPATCHED' })
       await transitionOrder({
         ctx: agentCtx, orderId: id, to: outcome,
