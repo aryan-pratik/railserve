@@ -20,6 +20,8 @@ import { TrainGroups, type TrainGroup } from './TrainGroups'
 import { OrdersToolbar } from './OrdersToolbar'
 import { forceRefreshOrderTrain } from './orders/[id]/actions'
 import type { QueryFilter } from 'mongoose'
+import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
+import { PendingCancelRequests } from '@/components/CancelRequest'
 
 export const metadata = { title: 'Orders · RailServe' }
 
@@ -99,7 +101,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
-  const [outlets, dayOrders, todayCount, upcomingCount, ingest, riderDocs] = await Promise.all([
+  const [outlets, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     // Open orders today: the same number the kitchen and call boards badge as
@@ -114,6 +116,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     checkIngestStaleness(),
     // For handing ready orders to a rider from a train card.
     User.find({ role: 'DELIVERY_AGENT', active: true }).select('name').sort({ name: 1 }).lean(),
+    // Independent of every filter on this board, like the ingestion warning.
+    listPendingCancelRequests(ctx),
   ])
   const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
 
@@ -229,6 +233,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           </Link>
         </Notice>
       ) : null}
+
+      <PendingCancelRequests rows={cancelRequests} orderBasePath="/admin/orders" />
 
       <OrdersToolbar
         tabs={TABS.map((t) => ({
