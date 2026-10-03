@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import { formatIST, formatMoney, formatServiceDate, formatTimeIST } from '@/lib/format'
+import { sourceLabel } from '@/lib/orderEnums'
 
 /**
  * Kitchen Order Ticket. Plan §10.
@@ -9,8 +10,14 @@ import { formatIST, formatMoney, formatServiceDate, formatTimeIST } from '@/lib/
  * sections, because the packing items are what get forgotten on a large order
  * and they belong to a different person than the cooking does.
  *
- * One ticket per order, always. A batch print stacks these; globals.css puts a
- * page break between them so the printer cuts between dockets.
+ * Every order prints as two tickets, each its own cut (see KotTickets below):
+ * this one for the kitchen, and a short bag slip. A batch print stacks them;
+ * the print queue sends each as its own job so the printer cuts between them.
+ *
+ * Set in Space Mono rather than the app's JetBrains Mono: JetBrains marks its
+ * zero (a dot, or a slash with "zero" on), and on a thermal head that mark
+ * fills in and the 0 reads as an 8. Space Mono's zero is plain and narrower
+ * than its O, which keeps the two apart without a mark.
  */
 
 /**
@@ -24,6 +31,8 @@ type Maybe<T> = T | null | undefined
 export type KotOrder = {
   externalOrderId: string
   orderType: string
+  /** The aggregator the order came through — see orderEnums.ts. */
+  source?: Maybe<string>
   stationCode: string
   serviceDate: string
   trainNo?: Maybe<string>
@@ -51,6 +60,14 @@ export type KotOrder = {
 
 export type KotOutlet = { name: string; stationName?: Maybe<string> } | null
 
+/**
+ * Shared by both tickets. `.kot` is what the screenshot step captures, one
+ * image (and so one cut) per element. font-feature-settings is reset because
+ * the body turns on "zero" app-wide, which would put the mark straight back.
+ */
+const TICKET_CLASS =
+  'kot w-[80mm] max-w-full bg-white p-3 font-kot [font-feature-settings:normal] text-[12px] leading-tight text-black shadow-sm print:shadow-none'
+
 function Rule() {
   return <div aria-hidden className="my-1.5 border-t border-dashed border-black" />
 }
@@ -70,7 +87,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
   const isBulk = order.orderType === 'BULK'
 
   return (
-    <div className="kot w-[80mm] max-w-full bg-white p-3 font-mono text-[12px] leading-tight text-black shadow-sm print:shadow-none">
+    <div className={TICKET_CLASS}>
       <div className="text-center">
         {/* Which brand's ticket this is. Several brands share one printer at
             a station, so this is the routing label the kitchen reads first -
@@ -148,7 +165,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
             </div>
             {/* The composite thali text, printed once, verbatim. */}
             {i.spec ? (
-              <pre className="ml-8 mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px]">
+              <pre className="ml-8 mt-0.5 whitespace-pre-wrap break-words font-kot text-[11px]">
                 {i.spec}
               </pre>
             ) : null}
@@ -203,5 +220,56 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
 
       <div className="text-center text-[10px]">Printed {formatIST(new Date())}</div>
     </div>
+  )
+}
+
+/**
+ * The second ticket: what goes on the bag. Train, seat, order id, aggregator
+ * and the food, and nothing else — the rider and the hand-off need to match a
+ * bag to a seat at a glance, not read a kitchen docket.
+ */
+export function KotSlip({ order }: { order: KotOrder }) {
+  const food = order.items.filter((i) => !i.isPacking)
+  const isBulk = order.orderType === 'BULK'
+
+  return (
+    <div className={TICKET_CLASS}>
+      <div className="text-center text-[18px] font-bold">{order.externalOrderId}</div>
+
+      <Rule />
+
+      <Line label="Train" value={order.trainNo ?? 'NOT SPECIFIED'} />
+      {isBulk ? (
+        <Line label="Handover" value={order.handoverPoint ?? '-'} />
+      ) : (
+        <Line label="Seat" value={order.rawSeat ?? '-'} />
+      )}
+      <Line label="From" value={sourceLabel(order.source)} />
+
+      <Rule />
+
+      <ul className="space-y-0.5">
+        {food.map((i) => (
+          <li key={String(i._id)} className="flex gap-2">
+            <span className="w-8 shrink-0 font-bold tabular-nums">{i.qty}×</span>
+            <span className="font-bold uppercase">{i.name}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * Everything one order prints, in print order. Every KOT surface renders
+ * this rather than the tickets one by one, so the preview, the print and
+ * TICKETS_PER_ORDER in printer/queue.ts cannot drift apart.
+ */
+export function KotTickets({ order, outlet }: { order: KotOrder; outlet: KotOutlet }) {
+  return (
+    <>
+      <KotTicket order={order} outlet={outlet} />
+      <KotSlip order={order} />
+    </>
   )
 }

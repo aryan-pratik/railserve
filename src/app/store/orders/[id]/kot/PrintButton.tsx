@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui'
 
-export function PrintButton({ printUrl }: { printUrl: string }) {
+export function PrintButton({ printUrl, label = 'Print' }: { printUrl: string; label?: string }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -26,7 +26,7 @@ export function PrintButton({ printUrl }: { printUrl: string }) {
   return (
     <div className="flex flex-col items-end gap-1">
       <Button type="button" onClick={handlePrint} pending={pending}>
-        Print
+        {label}
       </Button>
       {error ? <span className="text-xs text-red-600">{error}</span> : null}
     </div>

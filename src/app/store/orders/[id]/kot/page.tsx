@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { KotTicket } from '@/components/KotTicket'
+import { KotTickets } from '@/components/KotTicket'
 import { PrintButton } from './PrintButton'
 import { BackLink } from '@/components/ui'
 
@@ -31,8 +31,8 @@ export default async function KotPage(props: PageProps<'/store/orders/[id]/kot'>
         </div>
       </div>
 
-      <div className="flex justify-center">
-        <KotTicket order={order} outlet={outlet} />
+      <div className="flex flex-col items-center gap-4">
+        <KotTickets order={order} outlet={outlet} />
       </div>
     </div>
   )
