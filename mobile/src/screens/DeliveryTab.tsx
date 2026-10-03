@@ -79,7 +79,7 @@ export function DeliveryTabScreen({
           <View style={{ alignItems: 'center', paddingVertical: 80 }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>No active deliveries</Text>
             <Text style={{ fontSize: 14, fontWeight: '400', color: colors.secondaryText, marginTop: 8, textAlign: 'center', lineHeight: 20 }}>
-              Pick up orders from the Orders tab to deliver them to passengers on the platform.
+              Orders assigned to you show in the Orders tab. Once you mark one picked up, it moves here.
             </Text>
           </View>
         ) : (

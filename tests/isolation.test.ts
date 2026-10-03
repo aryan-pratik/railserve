@@ -41,7 +41,11 @@ describe('cross-tenant store isolation', () => {
       stationCode: 'CNB',
       delivery: { agentIds: [a1._id] },
     })
-    const ob = await makeOrder({ restaurantId: annapurna._id, stationCode: 'PRYJ' })
+    const ob = await makeOrder({
+      restaurantId: annapurna._id,
+      stationCode: 'PRYJ',
+      delivery: { agentIds: [a2._id] },
+    })
     orderA = String(oa._id)
     orderB = String(ob._id)
   })

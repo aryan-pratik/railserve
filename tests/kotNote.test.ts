@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { findById, setKotNote, updateOrderFields, KOT_NOTE_MAX } from '../src/lib/repo/orderRepo'
 import { ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
  * The KOT note: a telecaller's (or admin's) instruction that prints on the
@@ -121,6 +121,8 @@ describe('KOT note', () => {
   it('lets a store manager and a rider read it, but not write it', async () => {
     const id = await newOrder()
     await setKotNote(telecaller, id, 'Visible to the kitchen')
+    // A rider reads only what is assigned to them.
+    await assignRider(id, agent.userId)
     expect(await noteOn(manager, id)).toBe('Visible to the kitchen')
     expect(await noteOn(agent, id)).toBe('Visible to the kitchen')
   })

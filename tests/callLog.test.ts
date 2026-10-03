@@ -13,7 +13,7 @@ import {
 } from '../src/lib/repo/orderRepo'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
 import { ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
  * The call log: what the passenger said on the phone.
@@ -176,6 +176,7 @@ describe('call log', () => {
       for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
         await transitionOrder({ ctx: manager, orderId: id, to })
       }
+      await assignRider(id, agent.userId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
       await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
 

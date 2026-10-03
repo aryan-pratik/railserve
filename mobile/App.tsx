@@ -227,15 +227,19 @@ function AppShell() {
   }
 
   /**
-   * Take the orders the rider ticked.
+   * The rider has collected orders the office assigned to them.
    *
-   * One batch, because ticking ten boxes was one decision. Applied locally
-   * first so the list reflects the choice even with no signal — the queue
-   * carries it to the server whenever that returns.
+   * Applied locally first so the list reflects it even with no signal — the
+   * queue carries it to the server whenever that returns.
    */
   async function takeOrders(orderIds: string[]) {
     if (!token || orderIds.length === 0) return
     setBusy(true)
+    // Stay on the list while there is more to collect; move to deliveries once
+    // the last ready order is in hand.
+    const moreReady = (data?.runs ?? []).some((r) =>
+      r.orders.some((o) => o.status === 'PREPARED' && !orderIds.includes(o.id)),
+    )
     for (const id of orderIds) applyLocally(id, { status: 'DISPATCHED' })
 
     const at = new Date().toISOString()
@@ -249,27 +253,7 @@ function AppShell() {
     setOffline(r.offline)
     if (!r.offline) await refresh(token, false)
     setBusy(false)
-    setTab('delivery')
-  }
-
-  /**
-   * Put an order back on the counter.
-   *
-   * The rider tapped "picked up" on something they are not carrying. The food
-   * has not moved, so the record should not say it has — and the server logs
-   * both the take and the return, so this is a correction, not an erasure.
-   */
-  async function returnOrder(orderId: string) {
-    if (!token) return
-    setBusy(true)
-    applyLocally(orderId, { status: 'PREPARED' })
-    const r = await queueAndFlush(token, {
-      kind: 'RETURN_ORDER', clientId: newClientId(), orderId, at: new Date().toISOString(),
-    })
-    setQueueSize(r.remaining)
-    setOffline(r.offline)
-    if (!r.offline) await refresh(token, false)
-    setBusy(false)
+    if (!moreReady) setTab('delivery')
   }
 
   async function deliver(orderId: string, receivedBy: string, amountCollected: string | null) {
@@ -460,9 +444,7 @@ function AppShell() {
               void sync(token)
             }
           }}
-          onTake={(orderIds) => void takeOrders(orderIds)}
-          onReturn={(orderId) => void returnOrder(orderId)}
-          onOpenOrder={(o, r) => setScreen({ name: 'delivery', runKey: r.key, orderId: o.id })}
+          onPickedUp={(orderId) => void takeOrders([orderId])}
         />
       )}
 

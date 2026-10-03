@@ -7,7 +7,7 @@ import { latestBalance, setPaymentRemark } from '../src/lib/repo/paymentRepo'
 import { dispatchRun } from '../src/lib/repo/runRepo'
 import { ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
 import { allowedNextStatuses, canFlagRatingOrder } from '../src/lib/orderStatus'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
  * The telecaller: cancelling, four states, one outlet set.
@@ -94,6 +94,7 @@ describe('telecaller', () => {
     it('cannot cancel once a rider is carrying it', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
+      await assignRider(id, agentId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
 
       // There is no DISPATCHED -> CANCELLED edge at all: this is the illegal
@@ -124,6 +125,7 @@ describe('telecaller', () => {
     it('the support outcomes refuse once an order is terminal', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
+      await assignRider(id, agentId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
       await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
 
@@ -141,6 +143,7 @@ describe('telecaller', () => {
       async (to) => {
         const id = await newOrder()
         await advanceTo(id, 'PREPARED')
+        await assignRider(id, agentId)
         await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
 
         const out = await transitionOrder({
@@ -168,6 +171,7 @@ describe('telecaller', () => {
     it('flags an order from any status, including a terminal one', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
+      await assignRider(id, agentId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
       await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
 
@@ -248,6 +252,7 @@ describe('telecaller', () => {
     it('reports a fresh cancellation with its reason and who made it, in scope only', async () => {
       const serviceDate = '2026-09-19'
       const mine = await newOrder({ serviceDate })
+      await assignRider(mine, agentId)
       const theirs = String(
         (await makeOrder({ restaurantId: annapurna, stationCode: 'PRYJ', serviceDate }))._id,
       )
@@ -271,7 +276,7 @@ describe('telecaller', () => {
       expect(forManager[0].reason).toBe('Train cancelled or diverted')
       expect(forManager[0].by).toBe(`TELECALLER ${'9000000010'}`)
 
-      // The rider at the same outlet is told too — they are the last person
+      // The rider it is assigned to is told too — they are the last person
       // who can stop the food leaving the counter.
       expect((await recentCancellations(agent, { serviceDate, since })).map((c) => c.id)).toEqual([
         mine,
