@@ -77,6 +77,8 @@ export type SyncSummary = {
   /** Bank credit alerts recorded on the payments page rather than as orders. */
   payments: number
   unparsed: number
+  /** From a sender not on Setup → Aggregators' list, so skipped. */
+  ignored: number
   errors: string[]
 }
 
@@ -89,7 +91,7 @@ export type SyncSummary = {
  */
 export async function syncGmailHistory(): Promise<SyncSummary> {
   const summary: SyncSummary = {
-    processed: 0, created: 0, duplicates: 0, payments: 0, unparsed: 0, errors: [],
+    processed: 0, created: 0, duplicates: 0, payments: 0, unparsed: 0, ignored: 0, errors: [],
   }
   if (!isGmailConfigured()) return summary
 
@@ -150,6 +152,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
         gmailMessageId: id,
         subject: headerValue(headers, 'Subject'),
         from: headerValue(headers, 'From'),
+        allowedSenders: state.allowedSenders ?? [],
       })
       summary.processed += 1
       if (outcome.status === 'CREATED') summary.created += 1
@@ -158,6 +161,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
       // A replayed payment alert is a no-op, like a replayed order — counted
       // with the duplicates rather than as a payment that just arrived.
       else if (outcome.status === 'PAYMENT_DUPLICATE') summary.duplicates += 1
+      else if (outcome.status === 'IGNORED') summary.ignored += 1
       else summary.unparsed += 1
     } catch (err) {
       summary.errors.push(`${id}: ${err instanceof Error ? err.message : 'failed'}`)

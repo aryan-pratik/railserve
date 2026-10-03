@@ -4,10 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { CallBoardRowData } from '@/lib/orderView'
 import { seatText } from '@/lib/format'
+import { sourceLabel } from '@/lib/orderEnums'
 import { CallNoteHint } from '@/components/CallNoteHint'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { IconChevronDown, IconPhone } from '@/components/Icons'
-import { Button, CoachChip, PaymentBadge, StatusBadge, TypeBadge, focusRing } from '@/components/ui'
+import { Button, CoachChip, PaymentBadge, SourceBadge, StatusBadge, TypeBadge, focusRing } from '@/components/ui'
 import { CopyButton } from '@/components/CopyButton'
 import { CancelOrderButton } from './CancelOrderButton'
 
@@ -24,12 +25,13 @@ function orderDetailsText(o: CallBoardRowData): string {
     : seatText(o)
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,
+    o.source ? `Aggregator: ${sourceLabel(o.source)}` : null,
     `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,
     `Seat: ${seat}`,
     `Items: ${o.itemSummary ?? `${o.itemCount} item${o.itemCount === 1 ? '' : 's'}`}`,
     `Status: ${o.status}`,
   ]
-  return lines.join('\n')
+  return lines.filter((l): l is string => l !== null).join('\n')
 }
 
 /**
@@ -104,6 +106,7 @@ export function CallBoardRow({
               {o.contactName ?? o.externalOrderId}
             </Link>
             <TypeBadge type={o.orderType} />
+            {o.source ? <SourceBadge source={o.source} /> : null}
             <CallNoteHint orderId={o.id} count={o.callNoteCount} hint={o.callNoteHint} />
           </div>
           <div className="truncate text-xs text-muted">

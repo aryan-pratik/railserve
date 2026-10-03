@@ -4,7 +4,7 @@ import { isProofStorageConfigured } from '@/lib/storage'
 import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { formatIST, formatMoney, paiseToRupees } from '@/lib/format'
 import { runKeyFor } from '@/lib/runs'
-import { BackLink, Card, CardHeader, Dash, StatusBadge, TypeBadge } from '@/components/ui'
+import { BackLink, Card, CardHeader, Dash, SourceBadge, StatusBadge, TypeBadge } from '@/components/ui'
 import { IconPhone } from '@/components/Icons'
 import { CallLog } from '@/components/CallLog'
 import { DeliverForm, FailForm, TakeOrderButton } from '../../AgentActions'
@@ -41,6 +41,7 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-lg font-bold text-ink">{order.externalOrderId}</span>
           <TypeBadge type={order.orderType} />
+          <SourceBadge source={order.source} />
           <StatusBadge status={order.status} />
         </div>
 

@@ -39,6 +39,8 @@ export async function ingestPastedEmail(
     if (r.status === 'PAYMENT_DUPLICATE') {
       return { ok: `Payment ${r.rrn} is already recorded: ignored.` }
     }
+    // Unreachable for a paste, which passes no sender list; here for the type.
+    if (r.status === 'IGNORED') return { error: 'Skipped: not from a listed aggregator sender.' }
     return { error: `Could not parse: ${r.detail}. Filed in the unparsed inbox.` }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Ingestion failed.' }

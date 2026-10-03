@@ -82,6 +82,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
           id: String(o._id),
           externalOrderId: o.externalOrderId,
           orderType: o.orderType,
+          source: o.source,
           status: o.status,
           serviceDate: o.serviceDate,
           trainNo: o.trainNo,
@@ -97,6 +98,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
         }))}
         hrefFor={(id) => `/store/orders/${id}`}
         showOutlet={multiOutlet}
+        showSource
         emptyNote="Nothing in this date range. Widen the dates or clear the search."
       />
 
