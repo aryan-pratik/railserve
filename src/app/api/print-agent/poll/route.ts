@@ -27,7 +27,9 @@ export async function GET(req: Request) {
   const job = await PrintJob.findOneAndUpdate(
     { stationCode: station._id, status: 'pending' },
     { $set: { status: 'claimed', claimedAt: new Date() } },
-    { sort: { createdAt: 1 }, returnDocument: 'after' },
+    // _id breaks a same-millisecond tie: a train's tickets are queued back to
+    // back as one job each, and must still print in order.
+    { sort: { createdAt: 1, _id: 1 }, returnDocument: 'after' },
   )
 
   if (!job) return NextResponse.json({ ok: true, job: null })

@@ -33,6 +33,9 @@
 
   --font-sans: var(--font-sans-face), system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, monospace;
+  /* The KOT only (see layout.tsx). JetBrains next, for any glyph Space Mono
+     lacks, such as the rupee sign. */
+  --font-kot: var(--font-kot-face), var(--font-mono-face), ui-monospace, monospace;
 
   --animate-progress: progress 1.2s ease-in-out infinite;
 
@@ -105,6 +108,6 @@ h2, h3 { letter-spacing: -0.01em; }
     print-color-adjust: exact;
   }
 
-  /* Each ticket in a batch print starts its own cut. */
+  /* Each ticket in a batch print starts its own page. */
   .kot + .kot { break-before: page; }
 }

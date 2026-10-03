@@ -5,7 +5,14 @@ import { enqueueRunKotPrint, getAppOrigin, PrintAgentNotConfiguredError, assertP
 
 export const dynamic = 'force-dynamic'
 
-/** Manual (re)print for a whole train — see the order route's equivalent note. */
+/**
+ * Manual reprint for a whole train — see the order route's equivalent note.
+ *
+ * Reprints only the orders whose KOT has gone out and that are still being
+ * cooked (KOT_PRINTED). The rest of the train either has no KOT yet (the
+ * board's "Print N KOTs" sends those, with the status change) or is past the
+ * kitchen.
+ */
 export async function POST(req: Request, ctx: RouteContext<'/api/store/runs/[runKey]/kot'>) {
   const auth = await requireRole('STORE_MANAGER', 'ADMIN')
   const { runKey } = await ctx.params
@@ -15,12 +22,20 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/runs/[run
     return NextResponse.json({ ok: false, error: 'Run not found' }, { status: 404 })
   }
 
+  const orderIds = run.orders.filter((o) => o.status === 'KOT_PRINTED').map((o) => String(o._id))
+  if (orderIds.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: 'No order on this train is waiting in the kitchen' },
+      { status: 409 },
+    )
+  }
+
   try {
     assertPrintAgentConfigured()
     await enqueueRunKotPrint({
       appOrigin: await getAppOrigin(),
       runKey,
-      orderIds: run.orders.map((o) => String(o._id)),
+      orderIds,
     })
   } catch (err) {
     if (err instanceof PrintAgentNotConfiguredError) {
@@ -32,5 +47,5 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/runs/[run
     )
   }
 
-  return NextResponse.json({ ok: true, count: run.orders.length })
+  return NextResponse.json({ ok: true, count: orderIds.length })
 }

@@ -206,38 +206,43 @@ export async function markRunPrepared(
 }
 
 /**
- * Prints one ticket per order for the whole train, as a single print job.
+ * Prints the KOTs for every order on the train that is waiting for one.
  *
- * The chef wants a ticket per order — one bag, one docket — but the manager
- * should not have to open five pages to get five tickets. The print view
- * renders them stacked with a page break between, so the printer cuts between
- * dockets on its own.
+ * The chef wants tickets per order — one bag, one docket — but the manager
+ * should not have to open five pages to get five tickets. Only orders this
+ * click actually moved from ACCEPTED to KOT_PRINTED are printed: a train
+ * can hold an order still waiting to be accepted, or one already printed,
+ * and neither belongs in this batch. Each ticket goes to the printer as its
+ * own job, so it comes out cut on its own (see printer/queue.ts).
  */
 export async function generateRunKot(formData: FormData) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const runKey = String(formData.get('runKey') ?? '')
 
-  // Snapshot before transitioning: whether to auto-print at all is decided
-  // by whether this click actually moved anything, the same guard
-  // generateKot uses — a repeat click on an already-printed run must not
-  // fire another job. The ticket set printed is still the whole run,
-  // matching what the /kot page shows and what its own Print button sends.
+  // Snapshot before transitioning, to know which orders this click is for —
+  // a repeat click on an already-printed run finds none and fires nothing.
   const before = await findRun(ctx, runKey)
-  const hasNewlyAccepted = (before?.orders ?? []).some((o) => o.status === 'ACCEPTED')
+  const acceptedIds = (before?.orders ?? [])
+    .filter((o) => o.status === 'ACCEPTED')
+    .map((o) => String(o._id))
 
   await transitionRun(ctx, runKey, 'ACCEPTED', 'KOT_PRINTED', { via: 'store-board' })
   revalidatePath('/store')
   revalidatePath('/calls')
   revalidatePath('/admin')
 
-  if (before && hasNewlyAccepted) {
+  // Re-read rather than trust the snapshot: an order that failed its
+  // transition (or moved under another click) did not get a KOT here.
+  const after = acceptedIds.length > 0 ? await findRun(ctx, runKey) : null
+  const printedNow = new Set(
+    (after?.orders ?? []).filter((o) => o.status === 'KOT_PRINTED').map((o) => String(o._id)),
+  )
+  const orderIds = acceptedIds.filter((id) => printedNow.has(id))
+
+  if (orderIds.length > 0) {
     try {
       assertPrintAgentConfigured()
-      await enqueueRunKotPrint({
-        appOrigin: await getAppOrigin(),
-        runKey,
-        orderIds: before.orders.map((o) => String(o._id)),
-      })
+      await enqueueRunKotPrint({ appOrigin: await getAppOrigin(), runKey, orderIds })
     } catch (err) {
       console.error(`[generateRunKot] auto-print enqueue failed for run ${runKey}:`, err)
     }

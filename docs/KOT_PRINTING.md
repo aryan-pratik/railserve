@@ -85,7 +85,12 @@ don't control, or a network where exposing a port is not acceptable.
   `execute()` destroys the TCP connection as soon as it has written, without
   waiting for the printer to drain — bundle a whole run into one write and the
   later tickets print back-to-back with no cuts. Same fix lives in
-  `agent/print-agent.mjs`.
+  `agent/print-agent.mjs`. Both also pause 500ms after each ticket so the next
+  connection doesn't land while the printer is still taking in the last one.
+- The queue itself now creates **one `PrintJob` per ticket** (each order prints
+  a KOT and a bag slip, so two jobs per order). A one-ticket job is cut on its
+  own whatever agent version a kitchen is running, which is what fixed train
+  batches coming out as one uncut strip.
 
 ### Connecting a printer this way (per station)
 1. Do the [physical printer setup](#one-time-printer-setup-per-printer) steps
@@ -131,11 +136,10 @@ or wedge it. Two mitigations, both required:
   list; it buys time, not safety, and does not replace the rule above.
 
 ### Two behaviours to expect, neither a bug
-- **A failed run reprints whole.** One `execute()` per ticket means a job that
-  dies on ticket 3 of 5 has already printed 1 and 2 — but the job still holds
-  all five images, so the retry prints all five again. The kitchen sees
-  duplicates. Cutting mid-job is worse than a duplicate, so this is the trade
-  that was taken.
+- **A failed ticket reprints alone.** Every ticket is its own job, so a run
+  that dies on ticket 3 of 5 retries ticket 3 onwards, not the whole train.
+  (Jobs queued before that change could hold several images and still reprint
+  whole.)
 - **The sweep has no age cap.** `retryDirectPrintJobs()` takes *every* pending
   job for a direct station with no time bound. A printer that is off overnight
   will print the whole backlog when it comes back. If that bites, the fix is a
@@ -234,8 +238,8 @@ CRON_TOKEN="<random secret>"   # only if any station prints directly
 - **Job stuck `pending`, agent-path station**: query the `printjobs` collection and check `stationCode` matches a station whose agent is currently polling (`agentLastSeenAt` recent).
 - **Job stuck `pending`, direct-path station**: read that job's **`error`** field — the direct path never writes status `failed`, so a pending job with an error is a delivery that failed, not one nobody has claimed. Then check, in order: the printer is on and on the network, `nc -vz <host> <port>` from the app server, and that the `print-retry` cron line actually exists in the crontab (`docs/DEPLOY.md`) and its token matches `CRON_TOKEN`.
 - **Nothing prints at a direct-path station and jobs have no `error` at all**: `directPrinterHost` is probably unset or misspelled — the job was queued for an agent that does not exist. Check `db.stations.findOne({_id:"<CODE>"})`.
-- **Tickets print back-to-back with no cuts**: something has collapsed the per-ticket `execute()` into one call for the whole job. See `printImagesDirect` and `agent/print-agent.mjs` — both deliberately execute once per ticket.
-- **Duplicate tickets after an outage**: expected on the direct path when a run failed part-way through; see [Two behaviours to expect](#two-behaviours-to-expect-neither-a-bug).
+- **Tickets print back-to-back with no cuts**: check the `printjobs` for that run each hold one image (`enqueueTickets` in `src/lib/printer/queue.ts`). If they do, something has collapsed the per-ticket `execute()` — see `printImagesDirect` and `agent/print-agent.mjs`, both deliberately execute once per ticket.
+- **Duplicate tickets after an outage**: rare now that every ticket is its own job; see [Two behaviours to expect](#two-behaviours-to-expect-neither-a-bug).
 - **Schema/field changes to `Restaurant` or `PrintJob` not taking effect after a dev-server restart**: Turbopack's `.next` cache can serve a stale compiled model. Fix: `rm -rf .next` then `npm run dev`.
 - **`printJobId not found or not claimed by you`** on ack: another agent instance (wrong token, or a duplicate process) already claimed it first — check for duplicate agent processes.
 - **Print looks different from the screen**: shouldn't happen — it's a screenshot of the real `KotTicket` component, not a hand-typed copy. If it does, check `PRINTER_DOT_WIDTH`/`DEVICE_SCALE_FACTOR` in `screenshot.ts` still matches the printer's actual dot width (from its self-test page).
