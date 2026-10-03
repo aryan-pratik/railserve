@@ -59,10 +59,12 @@ function AdminColGroup({
     10, // train
     11, // seat
     10, // passenger
-    ...(showSource ? [11] : []), // aggregator
+    // The rider column is paid for out of remark, which truncates with a
+    // tooltip; the aggregator badge does not truncate, so it gets a little more.
+    ...(showSource ? [showRider ? 13 : 11] : []), // aggregator
     ...(showOutlet ? [11] : []), // outlet
-    ...(showRider ? [11] : []), // rider
-    14, // remark
+    ...(showRider ? [10] : []), // rider
+    showRider ? 9 : 14, // remark
     8, // amount
     13, // status
     9, // delete
