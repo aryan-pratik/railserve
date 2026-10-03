@@ -13,7 +13,14 @@ import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
  * write do not — the connection tears down before the printer has drained
  * and cut the later tickets, so they print back-to-back with no cuts. See
  * the same fix in agent/print-agent.mjs.
+ *
+ * The queue now gives every ticket its own job, so this normally sends one
+ * image; the pause after each one is for back-to-back jobs, so the next
+ * connection never lands while the printer is still taking in the last.
  */
+/** How long the printer gets to take in one ticket before the next connection. */
+const SETTLE_MS = 500
+
 export async function printImagesDirect(
   images: Buffer[],
   host: string,
@@ -31,5 +38,6 @@ export async function printImagesDirect(
     await printer.printImageBuffer(image)
     printer.cut()
     await printer.execute()
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
   }
 }

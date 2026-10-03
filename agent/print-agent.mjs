@@ -98,6 +98,8 @@ async function printJob(job) {
     await printer.printImageBuffer(Buffer.from(b64, 'base64'))
     printer.cut()
     await printer.execute()
+    // Let the printer take in this ticket before the next connection lands.
+    await sleep(500)
   }
 }
 

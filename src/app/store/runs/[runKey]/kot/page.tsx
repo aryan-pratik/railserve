@@ -3,28 +3,33 @@ import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { KotTicket } from '@/components/KotTicket'
+import { KotTickets } from '@/components/KotTicket'
 import { PrintButton } from '../../../orders/[id]/kot/PrintButton'
 import { BackLink } from '@/components/ui'
 
 export const metadata = { title: 'KOT batch · RailServe' }
 
 /**
- * Every ticket for one train, as a single print job.
+ * The KOTs for one train: the orders waiting for one (ACCEPTED) and the ones
+ * in the kitchen now (KOT_PRINTED). An order not yet accepted, or already
+ * cooked, has no KOT to show, so it is not on this page either.
  *
- * The chef still gets one docket per order — one bag, one ticket — but the
- * manager prints the whole train once. globals.css breaks the page between
- * tickets so the printer cuts in the right places.
+ * The Print button here is a reprint, so it covers only the KOT_PRINTED
+ * orders; the board's "Print N KOTs" is what sends the ACCEPTED ones.
  */
 export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/kot'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const { runKey } = await props.params
 
   const run = await findRun(ctx, decodeURIComponent(runKey))
-  if (!run || run.orders.length === 0) notFound()
+  const orders = (run?.orders ?? []).filter(
+    (o) => o.status === 'ACCEPTED' || o.status === 'KOT_PRINTED',
+  )
+  if (!run || orders.length === 0) notFound()
+  const reprintable = orders.filter((o) => o.status === 'KOT_PRINTED').length
 
   await connectDb()
-  const outletIds = run.orders.map((o) => o.restaurantId).filter((id) => id != null)
+  const outletIds = orders.map((o) => o.restaurantId).filter((id) => id != null)
   const outlets = await Restaurant.find({ _id: { $in: outletIds } })
     .select('name stationName')
     .lean()
@@ -36,16 +41,21 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
         <BackLink href="/store">Back to the board</BackLink>
         <div className="flex items-center gap-3">
           <span className="text-xs text-faint">
-            {run.orders.length} ticket{run.orders.length === 1 ? '' : 's'} ·{' '}
+            {orders.length} order{orders.length === 1 ? '' : 's'} ·{' '}
             {run.trainNo ?? 'no train no.'}
           </span>
-          <PrintButton printUrl={`/api/store/runs/${encodeURIComponent(runKey)}/kot`} />
+          {reprintable > 0 ? (
+            <PrintButton
+              printUrl={`/api/store/runs/${encodeURIComponent(runKey)}/kot`}
+              label={`Reprint ${reprintable}`}
+            />
+          ) : null}
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-4">
-        {run.orders.map((order) => (
-          <KotTicket
+        {orders.map((order) => (
+          <KotTickets
             key={String(order._id)}
             order={order}
             outlet={outletById.get(String(order.restaurantId)) ?? null}
