@@ -8,6 +8,7 @@ import { OrdersTable } from '@/components/OrdersTable'
 import { QueryForm } from '@/components/QueryForm'
 import { Button, Card, Field, PageHeader, Pagination, inputClass } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
+import { NO_RIDER, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
 
 export const metadata = { title: 'Order history · RailServe' }
 
@@ -24,6 +25,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
   const to = typeof sp.to === 'string' && sp.to ? sp.to : todayIST()
   const from = typeof sp.from === 'string' && sp.from ? sp.from : shiftServiceDate(to, -7)
   const q = typeof sp.q === 'string' ? sp.q.trim() : ''
+  const rider = typeof sp.rider === 'string' ? sp.rider : ''
   const { page, pageSize, skip } = readPage(sp)
 
   const filter: Record<string, unknown> = { serviceDate: { $gte: from, $lte: to } }
@@ -34,16 +36,20 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
     const rx = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
     filter.$or = [{ externalOrderId: rx }, { trainNo: rx }, { contactPhone: rx }]
   }
+  const byRider = riderClause(rider)
+  if (byRider) Object.assign(filter, byRider)
 
   await connectDb()
   const multiOutlet = ctx.restaurantIds.length > 1 || ctx.role === 'ADMIN'
   // Paged, not capped: findMany used to stop at its default 200 silently, and
   // the header then reported 200 as if it were the whole range.
-  const [orders, total, outlets] = await Promise.all([
+  const [orders, total, outlets, riders] = await Promise.all([
     findMany(ctx, filter, { sort: { serviceDate: -1, createdAt: -1 }, limit: pageSize, skip }),
     countOrders(ctx, filter),
     multiOutlet ? Restaurant.find({}).select('name').lean() : Promise.resolve([]),
+    riderOptions(ctx),
   ])
+  const riderName = await riderNamesFor(orders)
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
   return (
@@ -54,7 +60,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
       />
 
       <Card>
-        <QueryForm action="/store/history" className="grid items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <QueryForm action="/store/history" className="grid items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="From" htmlFor="from">
             <input id="from" name="from" type="date" defaultValue={from} className={inputClass} />
           </Field>
@@ -72,6 +78,17 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
               spellCheck={false}
               className={inputClass}
             />
+          </Field>
+          <Field label="Rider" htmlFor="rider">
+            <select id="rider" name="rider" defaultValue={byRider ? rider : ''} className={inputClass}>
+              <option value="">Any rider</option>
+              <option value={NO_RIDER}>No rider yet</option>
+              {riders.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}{r.active ? '' : ' (inactive)'}
+                </option>
+              ))}
+            </select>
           </Field>
           <Button type="submit" variant="secondary">Apply</Button>
         </QueryForm>
@@ -93,11 +110,13 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
           amountPaise: o.amountPaise,
           outletName: outletName.get(String(o.restaurantId)) ?? null,
           remark: o.remark,
+          rider: riderName.get(String(o._id)),
           ...callNoteRow(o),
         }))}
         hrefFor={(id) => `/store/orders/${id}`}
         showOutlet={multiOutlet}
-        emptyNote="Nothing in this date range. Widen the dates or clear the search."
+        showRider
+        emptyNote="Nothing in this date range. Widen the dates or clear the search and rider."
       />
 
       {total > 0 ? (
@@ -111,6 +130,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
               if (sp.from) u.set('from', from)
               if (sp.to) u.set('to', to)
               if (q) u.set('q', q)
+              if (byRider) u.set('rider', rider)
               const s = withPage(u, target).toString()
               return s ? `/store/history?${s}` : '/store/history'
             }}

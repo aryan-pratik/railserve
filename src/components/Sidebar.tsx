@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { NavLinks, type NavItem } from './NavLinks'
-import { IconTrain, IconMenu, IconClose, IconSignOut } from './Icons'
+import { IconTrain, IconMenu, IconClose, IconSignOut, IconChevronLeft, IconChevronRight } from './Icons'
 import { IconButton, focusRing } from './ui'
+import { SIDEBAR_COOKIE } from '@/lib/sidebar'
 
 export type SidebarUser = {
   name: string
@@ -15,15 +16,17 @@ export type SidebarUser = {
   outlets: string[]
 }
 
-function Brand({ href }: { href: string }) {
+function Brand({ href, compact = false }: { href: string; compact?: boolean }) {
   return (
-    <Link href={href} className={`flex items-center gap-2.5 rounded-lg ${focusRing}`}>
-      <span className="flex size-8 items-center justify-center rounded-lg bg-accent text-white">
+    <Link href={href} aria-label={compact ? 'RailServe' : undefined} className={`flex items-center gap-2.5 rounded-lg ${focusRing}`}>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
         <IconTrain size={18} />
       </span>
-      <span className="text-base font-bold tracking-tight text-ink">
-        Rail<span className="text-accent">Serve</span>
-      </span>
+      {compact ? null : (
+        <span className="text-base font-bold tracking-tight text-ink">
+          Rail<span className="text-accent">Serve</span>
+        </span>
+      )}
     </Link>
   )
 }
@@ -32,10 +35,13 @@ export function Sidebar({
   items,
   user,
   logoutAction,
+  initialCollapsed = false,
 }: {
   items: NavItem[]
   user: SidebarUser
   logoutAction: () => Promise<void>
+  /** Desktop only. The phone drawer always opens at full width. */
+  initialCollapsed?: boolean
 }) {
   const pathname = usePathname()
   // The drawer is open for one pathname at a time. A navigation, including
@@ -43,6 +49,13 @@ export function Sidebar({
   const [openAt, setOpenAt] = useState<string | null>(null)
   const open = openAt === pathname
   const setOpen = (next: boolean) => setOpenAt(next ? pathname : null)
+
+  const [collapsed, setCollapsed] = useState(initialCollapsed)
+  const toggleCollapsed = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    document.cookie = `${SIDEBAR_COOKIE}=${next ? 'collapsed' : 'expanded'}; path=/; max-age=31536000; samesite=lax`
+  }
 
   useEffect(() => {
     if (!open) return
@@ -74,32 +87,47 @@ export function Sidebar({
         ? user.outlets[0]
         : `${user.outlets.length} outlets`
 
-  const content = (
-    <div className="flex h-full flex-col p-4">
-      <div className="flex items-center justify-between">
-        <Brand href={user.roleHome} />
+  // The drawer is always full width; only the desktop column collapses.
+  const renderContent = (compact: boolean) => (
+    <div className={`flex h-full flex-col ${compact ? 'items-center px-2 py-4' : 'p-4'}`}>
+      <div className={`flex items-center ${compact ? 'flex-col gap-3' : 'justify-between'}`}>
+        <Brand href={user.roleHome} compact={compact} />
         <IconButton aria-label="Close menu" size="sm" className="lg:hidden" onClick={() => setOpen(false)}>
           <IconClose size={18} />
         </IconButton>
+        <IconButton
+          aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!compact}
+          size="sm"
+          className="hidden lg:inline-flex"
+          onClick={toggleCollapsed}
+        >
+          {compact ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
+        </IconButton>
       </div>
 
-      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
-        <NavLinks items={items} onItemClick={() => setOpen(false)} />
+      <div className={`mt-6 min-h-0 flex-1 overflow-y-auto ${compact ? 'w-full' : ''}`}>
+        <NavLinks items={items} compact={compact} onItemClick={() => setOpen(false)} />
       </div>
 
-      <div className="mt-4 flex items-center gap-2.5 border-t border-line pt-4">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent">
+      <div className={`mt-4 flex items-center border-t border-line pt-4 ${compact ? 'w-full flex-col gap-2' : 'gap-2.5'}`}>
+        <span
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent"
+          title={compact ? `${user.name} · ${user.roleLabel}${outletLabel ? ` · ${outletLabel}` : ''}` : undefined}
+        >
           {initials}
         </span>
-        <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-sm font-medium text-ink" title={user.name}>
-            {user.name}
+        {compact ? null : (
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-sm font-medium text-ink" title={user.name}>
+              {user.name}
+            </div>
+            <div className="truncate text-xs text-muted" title={user.outlets.join(', ') || undefined}>
+              {user.roleLabel}
+              {outletLabel ? ` · ${outletLabel}` : ''}
+            </div>
           </div>
-          <div className="truncate text-xs text-muted" title={user.outlets.join(', ') || undefined}>
-            {user.roleLabel}
-            {outletLabel ? ` · ${outletLabel}` : ''}
-          </div>
-        </div>
+        )}
         <form action={logoutAction}>
           <IconButton type="submit" aria-label="Sign out" size="sm">
             <IconSignOut size={16} />
@@ -137,12 +165,16 @@ export function Sidebar({
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {content}
+        {renderContent(false)}
       </div>
 
-      {/* Desktop: a fixed column. */}
-      <aside className="no-print hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-60 lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface">
-        {content}
+      {/* Desktop: a fixed column, collapsible to an icon rail. */}
+      <aside
+        className={`no-print hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-surface lg:transition-[width] lg:duration-200 motion-reduce:transition-none ${
+          collapsed ? 'lg:w-16' : 'lg:w-60'
+        }`}
+      >
+        {renderContent(collapsed)}
       </aside>
     </>
   )

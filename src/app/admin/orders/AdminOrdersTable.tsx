@@ -32,6 +32,8 @@ export type AdminOrderRow = {
   /** The aggregator the order arrived from — Order.source. */
   source?: Maybe<string>
   remark?: Maybe<string>
+  /** Who has the order, from delivery.agentIds; comma-joined when several. */
+  rider?: Maybe<string>
   /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
   callNoteCount?: Maybe<number>
   callNoteHint?: Maybe<string>
@@ -45,9 +47,11 @@ export type AdminOrderRow = {
 function AdminColGroup({
   showOutlet,
   showSource = false,
+  showRider = false,
 }: {
   showOutlet: boolean
   showSource?: boolean
+  showRider?: boolean
 }) {
   const weights = [
     17, // order id
@@ -57,6 +61,7 @@ function AdminColGroup({
     10, // passenger
     ...(showSource ? [11] : []), // aggregator
     ...(showOutlet ? [11] : []), // outlet
+    ...(showRider ? [11] : []), // rider
     14, // remark
     8, // amount
     13, // status
@@ -83,6 +88,7 @@ export function AdminOrdersTable({
   orders,
   showOutlet = false,
   showSource = false,
+  showRider = false,
   statusOptions,
   emptyNote = 'Nothing matches these filters.',
 }: {
@@ -90,6 +96,8 @@ export function AdminOrdersTable({
   showOutlet?: boolean
   /** Which aggregator each order came from. */
   showSource?: boolean
+  /** Who has each order. */
+  showRider?: boolean
   statusOptions: string[]
   emptyNote?: string
 }) {
@@ -99,8 +107,8 @@ export function AdminOrdersTable({
 
   return (
     <TableFrame>
-      <table className="w-full min-w-[60rem] table-fixed text-sm">
-        <AdminColGroup showOutlet={showOutlet} showSource={showSource} />
+      <table className={`w-full table-fixed text-sm ${showRider ? 'min-w-[68rem]' : 'min-w-[60rem]'}`}>
+        <AdminColGroup showOutlet={showOutlet} showSource={showSource} showRider={showRider} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={thClass}>Order</th>
@@ -110,6 +118,7 @@ export function AdminOrdersTable({
             <th className={thClass}>Passenger</th>
             {showSource ? <th className={thClass}>Aggregator</th> : null}
             {showOutlet ? <th className={thClass}>Outlet</th> : null}
+            {showRider ? <th className={thClass}>Rider</th> : null}
             <th className={thClass}>Remark</th>
             <th className={`${thClass} text-right`}>Amount</th>
             <th className={thClass}>Status</th>
@@ -118,7 +127,7 @@ export function AdminOrdersTable({
         </thead>
         <tbody className="divide-y divide-line">
           {orders.map((o) => (
-            <AdminOrderRow key={o.id} order={o} showOutlet={showOutlet} showSource={showSource} statusOptions={statusOptions} />
+            <AdminOrderRow key={o.id} order={o} showOutlet={showOutlet} showSource={showSource} showRider={showRider} statusOptions={statusOptions} />
           ))}
         </tbody>
       </table>
@@ -130,11 +139,13 @@ function AdminOrderRow({
   order,
   showOutlet,
   showSource,
+  showRider,
   statusOptions,
 }: {
   order: AdminOrderRow
   showOutlet: boolean
   showSource: boolean
+  showRider: boolean
   statusOptions: string[]
 }) {
   const [editing, setEditing] = useState<'amount' | 'status' | null>(null)
@@ -167,6 +178,7 @@ function AdminOrderRow({
       <td className="truncate px-3 py-2.5 text-ink" title={order.contactName ?? undefined}>{order.contactName ?? <Dash />}</td>
       {showSource ? <td className="px-3 py-2.5"><SourceBadge source={order.source} /></td> : null}
       {showOutlet ? <td className="truncate px-3 py-2.5 text-muted" title={order.outletName ?? undefined}>{order.outletName ?? <Dash />}</td> : null}
+      {showRider ? <td className="truncate px-3 py-2.5 text-ink" title={order.rider || undefined}>{order.rider || <Dash />}</td> : null}
       <td className="truncate px-3 py-2.5 text-amber-800" title={order.remark ?? undefined}>
         {order.remark ?? <Dash />}
       </td>

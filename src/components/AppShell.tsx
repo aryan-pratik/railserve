@@ -3,6 +3,8 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { logout } from '@/app/actions/session'
 import { ROLE_HOME, ROLE_LABEL } from '@/lib/roles'
+import { cookies } from 'next/headers'
+import { SIDEBAR_COOKIE } from '@/lib/sidebar'
 import { Sidebar } from './Sidebar'
 import { TopProgress } from './TopProgress'
 import type { NavItem } from './NavLinks'
@@ -30,6 +32,8 @@ export async function AppShell({
     outlets = rs.map((r) => r.name)
   }
 
+  const sidebarCollapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === 'collapsed'
+
   const sidebarUser = {
     name: user.name,
     role: user.role,
@@ -46,7 +50,7 @@ export async function AppShell({
       >
         Skip to content
       </a>
-      <Sidebar items={nav} user={sidebarUser} logoutAction={logout} />
+      <Sidebar items={nav} user={sidebarUser} logoutAction={logout} initialCollapsed={sidebarCollapsed} />
       <div className="relative min-w-0 flex-1">
         <TopProgress />
         <main id="main" className="w-full max-w-7xl min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
