@@ -3,16 +3,16 @@ import { disconnectDb } from '../src/lib/db'
 import { findById, findMany } from '../src/lib/repo/orderRepo'
 import { transitionOrder, assignAgents } from '../src/lib/repo/transitionOrder'
 import { dispatchRun, findRun, findRuns, handRunToRider, transitionRun } from '../src/lib/repo/runRepo'
-import { ForbiddenError, type AuthContext } from '../src/lib/authContext'
+import { ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
 import { runKeyFor } from '../src/lib/runs'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 const DATE = '2026-08-27'
 
 /**
- * Riders are not assigned work; they take what is ready at their own kitchen,
- * and the system records who actually handled it. These tests pin both halves:
- * a rider sees their outlet and nothing else, and delivering writes them onto
+ * Riders are assigned work by a telecaller, store manager or admin, and see
+ * only that. These tests pin both halves: a rider sees what is assigned to
+ * them at their own outlet and nothing else, and delivering writes them onto
  * the order.
  */
 describe('delivery: outlet scope, dispatch, proof', () => {
@@ -44,24 +44,33 @@ describe('delivery: outlet scope, dispatch, proof', () => {
     riderB = ctxFor(b)
     outsiderCtx = ctxFor(outsider)
 
-    // Three orders on one train, deliberately out of coach order.
+    // Three orders on one train, deliberately out of coach order, all given
+    // to rider A.
     for (const coach of ['S9', 'B2', 'A1']) {
-      await makeOrder({
+      const o = await makeOrder({
         restaurantId: ganga, serviceDate: DATE, trainNo: '12506', trainName: 'NORTH EAST EXP',
         stationCode: 'CNB', coach, berth: '11', rawSeat: `${coach}-11`,
         scheduledArrival: new Date('2026-08-27T07:55:00Z'),
       })
+      await assignRider(o._id, a._id)
     }
-    // A second train at the same kitchen, so grouping has something to separate.
-    await makeOrder({
+    // A second train at the same kitchen, given to rider B.
+    const kalka = await makeOrder({
       restaurantId: ganga, serviceDate: DATE, trainNo: '12312', trainName: 'KALKA MAIL',
       stationCode: 'CNB', coach: 'B1', scheduledArrival: new Date('2026-08-27T04:10:00Z'),
     })
-    // An order at the other station entirely.
+    await assignRider(kalka._id, b._id)
+    // Nobody has been given this one yet.
     await makeOrder({
+      restaurantId: ganga, serviceDate: DATE, trainNo: '12004', trainName: 'SHATABDI EXP',
+      stationCode: 'CNB', coach: 'S4', scheduledArrival: new Date('2026-08-27T05:00:00Z'),
+    })
+    // An order at the other station entirely, given to the rider there.
+    const pryj = await makeOrder({
       restaurantId: other._id, serviceDate: DATE, trainNo: '12801', stationCode: 'PRYJ',
       coach: 'A2', scheduledArrival: new Date('2026-08-27T06:00:00Z'),
     })
+    await assignRider(pryj._id, outsider._id)
 
     runKey = runKeyFor({ trainNo: '12506', serviceDate: DATE, stationCode: 'CNB' })
   })
@@ -72,15 +81,25 @@ describe('delivery: outlet scope, dispatch, proof', () => {
     await disconnectDb()
   })
 
-  it('a rider sees every run at their own kitchen without being assigned', async () => {
-    const runs = await findRuns(riderA, DATE)
-    expect(runs.map((r) => r.trainNo).sort()).toEqual(['12312', '12506'])
+  it('a rider sees only the orders assigned to them', async () => {
+    expect((await findRuns(riderA, DATE)).map((r) => r.trainNo)).toEqual(['12506'])
+    expect((await findRuns(riderB, DATE)).map((r) => r.trainNo)).toEqual(['12312'])
   })
 
-  it('both riders at a kitchen see the same work', async () => {
-    const a = (await findRuns(riderA, DATE)).map((r) => r.key).sort()
-    const b = (await findRuns(riderB, DATE)).map((r) => r.key).sort()
-    expect(a).toEqual(b)
+  it('a rider cannot see or take an order assigned to someone else', async () => {
+    const theirs = (await findRun(riderA, runKey))!.orders[0]
+    expect(await findById(riderB, String(theirs._id))).toBeNull()
+  })
+
+  it('an order nobody has been given is invisible to every rider', async () => {
+    const unassigned = (await findMany(admin, { trainNo: '12004', restaurantId: ganga }))[0]
+    for (const o of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
+      await transitionOrder({ ctx: manager, orderId: String(unassigned._id), to: o })
+    }
+    expect(await findById(riderA, String(unassigned._id))).toBeNull()
+    await expect(
+      transitionOrder({ ctx: riderA, orderId: String(unassigned._id), to: 'DISPATCHED' }),
+    ).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it('a rider at another station sees none of it', async () => {
@@ -127,7 +146,7 @@ describe('delivery: outlet scope, dispatch, proof', () => {
     expect(res.errors).toEqual([])
   })
 
-  it('records which rider dispatched, without anyone assigning them', async () => {
+  it('records which rider dispatched', async () => {
     const run = await findRun(riderA, runKey)
     const dispatched = run!.orders.filter((o) => o.status === 'DISPATCHED')
     expect(dispatched).toHaveLength(2)
@@ -159,18 +178,21 @@ describe('delivery: outlet scope, dispatch, proof', () => {
   })
 
   it('delivering without a photo is allowed — proof is optional', async () => {
-    const run = await findRun(riderB, runKey)
+    const run = await findRun(riderA, runKey)
     const dispatched = run!.orders.find((o) => o.status === 'DISPATCHED')!
 
+    // Another rider cannot close it, even holding its id.
+    await expect(
+      transitionOrder({ ctx: riderB, orderId: String(dispatched._id), to: 'DELIVERED' }),
+    ).rejects.toBeInstanceOf(NotFoundError)
+
     const done = await transitionOrder({
-      ctx: riderB, orderId: String(dispatched._id), to: 'DELIVERED',
+      ctx: riderA, orderId: String(dispatched._id), to: 'DELIVERED',
       apply: { proofType: 'SIGNATURE', proofValue: 'Neelesh Soni' },
     })
 
     expect(done.status).toBe('DELIVERED')
-    // riderB delivered it, so riderB is on it — even though riderA dispatched.
-    expect(done.delivery.agentIds.map(String)).toContain(String(riderBId))
-    expect(done.delivery.agentIds.map(String)).toContain(String(riderAId))
+    expect(done.delivery.agentIds.map(String)).toEqual([String(riderAId)])
   })
 
   it('records a failure with its reason and the rider who reported it', async () => {
@@ -384,10 +406,11 @@ describe('acting on some orders of a train', () => {
 })
 
 /**
- * Taking an order is one tap on a phone held in a busy hand, so it gets
- * mistapped. Putting it back has to be a correction rather than an erasure:
- * the food returns to the counter, the claim is released so the board stops
- * showing it as out, and both halves stay on the event log.
+ * Marking an order picked up is one tap on a phone held in a busy hand, so it
+ * gets mistapped. Putting it back has to be a correction rather than an
+ * erasure: the food returns to the counter, the order stays assigned to the
+ * same rider (only the office reassigns), and both halves stay on the event
+ * log.
  */
 describe('a rider puts back an order they took by mistake', () => {
   let manager: AuthContext
@@ -409,6 +432,7 @@ describe('a rider puts back an order they took by mistake', () => {
       scheduledArrival: new Date('2026-08-27T07:55:00Z'),
     })
     orderId = String(order._id)
+    await assignRider(orderId, riderId)
 
     for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
       await transitionOrder({ ctx: manager, orderId, to })
@@ -420,7 +444,7 @@ describe('a rider puts back an order they took by mistake', () => {
     await disconnectDb()
   })
 
-  it('goes back to the counter and releases the rider’s claim', async () => {
+  it('goes back to the counter and stays assigned to the rider', async () => {
     const before = await findById(rider, orderId)
     expect(before!.status).toBe('DISPATCHED')
     expect(before!.delivery.agentIds.map(String)).toContain(String(riderId))
@@ -428,9 +452,9 @@ describe('a rider puts back an order they took by mistake', () => {
     const back = await transitionOrder({ ctx: rider, orderId, to: 'PREPARED' })
 
     expect(back.status).toBe('PREPARED')
-    // The board must stop claiming this rider has the food — that is the one
-    // question delivery.agentIds exists to answer.
-    expect(back.delivery.agentIds.map(String)).not.toContain(String(riderId))
+    // Still theirs: a rider cannot hand their own assignment back. The board
+    // counts only DISPATCHED orders as carried, so it stops showing it as out.
+    expect(back.delivery.agentIds.map(String)).toEqual([String(riderId)])
   })
 
   it('keeps both the take and the return on the event log', async () => {

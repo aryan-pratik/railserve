@@ -13,7 +13,7 @@ import {
 } from '../src/lib/repo/orderRepo'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
 import { ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
  * The call log: what the passenger said on the phone.
@@ -146,6 +146,8 @@ describe('call log', () => {
     it('lets a store manager and a rider read the log', async () => {
       const id = await newOrder()
       await appendCallNote(telecaller, id, 'Passenger asked for coach B2')
+      // A rider reads only orders assigned to them.
+      await assignRider(id, agent.userId)
 
       expect((await logOf(manager, id)).map((n) => n.text)).toEqual(['Passenger asked for coach B2'])
       expect((await logOf(agent, id)).map((n) => n.text)).toEqual(['Passenger asked for coach B2'])
@@ -176,6 +178,7 @@ describe('call log', () => {
       for (const to of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
         await transitionOrder({ ctx: manager, orderId: id, to })
       }
+      await assignRider(id, agent.userId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
       await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
 
@@ -304,6 +307,8 @@ describe('call log', () => {
     it('marks a note manageable by its author and by an admin, and by nobody else', async () => {
       const id = await newOrder()
       await appendCallNote(telecaller, id, 'Written by the desk')
+      // A rider reads only orders assigned to them.
+      await assignRider(id, agent.userId)
 
       expect((await listCallNotes(telecaller, id))[0].canManage).toBe(true)
       expect((await listCallNotes(admin, id))[0].canManage).toBe(true)

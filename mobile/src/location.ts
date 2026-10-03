@@ -268,15 +268,12 @@ export async function startSharing(token: string): Promise<void> {
         accuracy: Location.Accuracy.Balanced,
         timeInterval: FIX_INTERVAL_MS,
         distanceInterval: FIX_DISTANCE_M,
-        // Android requires a visible notification for a location foreground
-        // service, and that is the right outcome anyway: the person being
-        // tracked can see it is happening without opening the app.
-        foregroundService: {
-          notificationTitle: 'RailServe is sharing your location',
-          notificationBody: 'The office can see where you are while you are on shift.',
-          notificationColor: '#3538cd',
-          killServiceOnDestroy: true,
-        },
+        // No foregroundService. On Android that option is what posts the
+        // "RailServe is sharing your location" notification, and riders found
+        // it noise: once they have granted the permission, the system's own
+        // location indicator in the status bar is all they should see. The
+        // cost is that Android batches background fixes more coarsely while
+        // the app is not on screen; with the app open nothing changes.
         showsBackgroundLocationIndicator: true,
       })
     }
