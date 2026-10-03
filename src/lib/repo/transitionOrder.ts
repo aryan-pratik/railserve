@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
-import { Order, type OrderDoc } from '../models'
+import { Order, User, type OrderDoc } from '../models'
 import {
+  isTerminal,
   isTransitionAllowed,
   missingQuoteFields,
   TRANSITIONS,
@@ -406,4 +407,101 @@ export async function assignAgents(params: {
   } finally {
     await session.endSession()
   }
+}
+
+/**
+ * The office assigns riders to one order: a telecaller, store manager or admin
+ * picks who will carry it, and it then shows up in that rider's app.
+ *
+ * Unlike `assignAgents` (an admin's correction of the record), this is live
+ * routing, so it is stricter: the order must still be open, and every rider
+ * must be active. A telecaller or manager may only pick riders who work at the
+ * order's outlet; an admin may pick anyone. An empty list takes the order off
+ * every rider.
+ *
+ * It is not a status change. A rider taking an order is still their own tap.
+ */
+export async function assignRiders(params: {
+  ctx: AuthContext
+  orderId: string
+  riderIds: string[]
+}): Promise<OrderDoc> {
+  const { ctx, orderId, riderIds } = params
+
+  if (ctx.role !== 'ADMIN' && ctx.role !== 'TELECALLER' && ctx.role !== 'STORE_MANAGER') {
+    throw new ForbiddenError('Only the office may assign riders')
+  }
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
+  const unique = [...new Set(riderIds)]
+  if (!unique.every((r) => mongoose.isValidObjectId(r))) {
+    throw new ConflictError('Choose a rider from the list')
+  }
+
+  const _id = new mongoose.Types.ObjectId(orderId)
+  const ids = unique.map((r) => new mongoose.Types.ObjectId(r))
+
+  const session = await mongoose.startSession()
+  try {
+    let updated: OrderDoc | null = null
+    await session.withTransaction(async () => {
+      const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
+      if (!current) throw new NotFoundError('Order not found')
+      if (isTerminal(current.status as OrderStatus)) {
+        throw new ConflictError('This order is closed, so a rider cannot be assigned')
+      }
+
+      if (ids.length > 0) {
+        const riders = await User.find(
+          {
+            _id: { $in: ids },
+            role: 'DELIVERY_AGENT',
+            active: true,
+            ...(ctx.role === 'ADMIN' ? {} : { restaurantIds: current.restaurantId }),
+          },
+          '_id',
+          { session },
+        ).lean()
+        if (riders.length !== ids.length) {
+          throw new ConflictError('One of those riders is not active at this outlet')
+        }
+      }
+
+      await Order.updateOne(
+        { _id },
+        {
+          $set: {
+            'delivery.agentIds': ids,
+            'delivery.assignedAt': ids.length > 0 ? new Date() : null,
+          },
+          $push: {
+            events: {
+              fromStatus: current.status,
+              toStatus: current.status,
+              userId: ctx.userId,
+              meta: { action: 'ASSIGN_RIDERS', agentIds: unique },
+              createdAt: new Date(),
+            },
+          },
+        },
+        { session },
+      )
+      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+    })
+    return updated!
+  } finally {
+    await session.endSession()
+  }
+}
+
+/** Active riders an office user may pick for an order: those at its outlet. */
+export async function listAssignableRiders(
+  restaurantId: mongoose.Types.ObjectId | null | undefined,
+): Promise<{ id: string; name: string; phone: string }[]> {
+  // An enquiry has no outlet yet, so there is no one to pick.
+  if (!restaurantId) return []
+  const riders = await User.find({ role: 'DELIVERY_AGENT', active: true, restaurantIds: restaurantId })
+    .select('name phone')
+    .sort({ name: 1 })
+    .lean()
+  return riders.map((r) => ({ id: String(r._id), name: r.name, phone: r.phone }))
 }

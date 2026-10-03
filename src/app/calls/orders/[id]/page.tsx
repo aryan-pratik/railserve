@@ -6,7 +6,7 @@ import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
 import { timingFor, timingForOrders } from '@/lib/train/service'
 import { TrainTiming } from '@/components/TrainTiming'
-import { allowedNextStatuses, canFlagRatingOrder, type OrderStatus } from '@/lib/orderStatus'
+import { allowedNextStatuses, canFlagRatingOrder, isTerminal, type OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import { BackLink, Card, CardHeader, Notice } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
@@ -22,6 +22,8 @@ import { DeliveredButton } from '../../DeliveredButton'
 import { markMisdelivery, markMissedDelivery, markNotDelivered, markRefunded } from '../../actions'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
+import { AssignRidersCard } from '@/components/AssignRiders'
+import { listAssignableRiders } from '@/lib/repo/transitionOrder'
 
 /**
  * One order, as the person on the phone needs it: what was ordered, which
@@ -41,9 +43,10 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
 
   await connectDb()
   // Live arrival, cache-only, for the same reasons as the call list.
-  const [timings, cancelRequest] = await Promise.all([
+  const [timings, cancelRequest, riders] = await Promise.all([
     timingForOrders([order], { allowFetch: false }),
     viewCancelRequest(order),
+    listAssignableRiders(order.restaurantId),
   ])
   // Both logs draw their authors from one query — $in dedupes server-side, so
   // widening the id list costs no extra round trip.
@@ -183,6 +186,14 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
       {cancelRequest ? (
         <CancelRequestCard orderId={id} request={cancelRequest} canDecide />
       ) : null}
+
+      {isTerminal(order.status as OrderStatus) ? null : (
+        <AssignRidersCard
+          orderId={id}
+          riders={riders}
+          assigned={(order.delivery?.agentIds ?? []).map(String)}
+        />
+      )}
 
       {order.contactPhone ? (
         <Card>

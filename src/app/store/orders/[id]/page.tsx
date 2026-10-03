@@ -10,7 +10,9 @@ import { OrderCard } from '@/components/OrderCard'
 import { EventLog } from '@/components/EventLog'
 import { CallLog } from '@/components/CallLog'
 import { AcceptButton, GenerateKotButton, MarkPreparedButton, PreviewKotLink } from '../../StoreOrderActions'
-import { canRequestCancellation } from '@/lib/orderStatus'
+import { canRequestCancellation, isTerminal, type OrderStatus } from '@/lib/orderStatus'
+import { AssignRidersCard } from '@/components/AssignRiders'
+import { listAssignableRiders } from '@/lib/repo/transitionOrder'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard, RequestCancelButton } from '@/components/CancelRequest'
 
@@ -31,9 +33,10 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
   const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
     (v): v is NonNullable<typeof v> => Boolean(v),
   )
-  const [actors, cancelRequest] = await Promise.all([
+  const [actors, cancelRequest, riders] = await Promise.all([
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     viewCancelRequest(order),
+    listAssignableRiders(order.restaurantId),
   ])
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
   // The call log names the role too: a manager reading a note cares whether it
@@ -89,6 +92,14 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
       {cancelRequest ? (
         <CancelRequestCard orderId={id} request={cancelRequest} canDecide={false} />
       ) : null}
+
+      {isTerminal(order.status as OrderStatus) ? null : (
+        <AssignRidersCard
+          orderId={id}
+          riders={riders}
+          assigned={(order.delivery?.agentIds ?? []).map(String)}
+        />
+      )}
 
       {order.contactPhone ? (
         <Card>
