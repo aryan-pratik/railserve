@@ -127,7 +127,16 @@ export async function transitionOrder(params: {
       // food over the counter — has to name who took it. Without this the order
       // could reach DISPATCHED with delivery.agentIds empty, and "who has my
       // food" would have no answer at exactly the moment it gets asked.
-      if (RECORDS_THE_RIDER.includes(to) && ctx.role !== 'DELIVERY_AGENT' && !handedTo) {
+      //
+      // A telecaller is the exception: closing an order out from what the
+      // passenger said on the phone is not a handover, so there is nobody new
+      // to name. Whoever already carries it stays on delivery.agentIds.
+      if (
+        RECORDS_THE_RIDER.includes(to) &&
+        ctx.role !== 'DELIVERY_AGENT' &&
+        ctx.role !== 'TELECALLER' &&
+        !handedTo
+      ) {
         throw new ForbiddenError(
           `${ctx.role} must name the rider taking this order (${from} -> ${to})`,
         )

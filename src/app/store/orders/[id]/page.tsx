@@ -10,6 +10,9 @@ import { OrderCard } from '@/components/OrderCard'
 import { EventLog } from '@/components/EventLog'
 import { CallLog } from '@/components/CallLog'
 import { AcceptButton, GenerateKotButton, MarkPreparedButton, PreviewKotLink } from '../../StoreOrderActions'
+import { canRequestCancellation } from '@/lib/orderStatus'
+import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
+import { CancelRequestCard, RequestCancelButton } from '@/components/CancelRequest'
 
 export default async function StoreOrderDetail(props: PageProps<'/store/orders/[id]'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
@@ -28,13 +31,22 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
   const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
     (v): v is NonNullable<typeof v> => Boolean(v),
   )
-  const actors = await User.find({ _id: { $in: actorIds } }).select('name role').lean()
+  const [actors, cancelRequest] = await Promise.all([
+    User.find({ _id: { $in: actorIds } }).select('name role').lean(),
+    viewCancelRequest(order),
+  ])
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
   // The call log names the role too: a manager reading a note cares whether it
   // came from the call desk or from an admin.
   const actorLabel = new Map(
     actors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
   )
+
+  // Only a manager asks (an admin here can cancel from /admin), and only while
+  // nothing is already waiting for an answer. A refused request can be asked
+  // again, with a new reason.
+  const canRequestCancel =
+    canRequestCancellation(ctx.role, order.status) && cancelRequest?.status !== 'PENDING'
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -67,9 +79,16 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
                 <span className="text-sm font-medium text-emerald-700">On the shelf, waiting for the rider</span>
               </>
             ) : null}
+            {canRequestCancel ? (
+              <RequestCancelButton orderId={id} externalOrderId={order.externalOrderId} />
+            ) : null}
           </>
         }
       />
+
+      {cancelRequest ? (
+        <CancelRequestCard orderId={id} request={cancelRequest} canDecide={false} />
+      ) : null}
 
       {order.contactPhone ? (
         <Card>

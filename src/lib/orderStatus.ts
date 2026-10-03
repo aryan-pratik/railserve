@@ -30,21 +30,22 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
  *
  * Retail enters at RECEIVED; bulk enters at ENQUIRY and merges at RECEIVED.
  *
- * A TELECALLER appears on two kinds of edge. `-> CANCELLED`, only from the
- * four states before a rider is carrying the food — they ring the passenger,
- * the passenger cancels, and the cancellation has to reach the kitchen before
- * the food is cooked rather than via a WhatsApp message somebody has to
- * notice. Once an order is DISPATCHED the rider owns the outcome, so no
- * CANCELLED edge is added there. And `-> MISDELIVERY` / `-> MISSED_DELIVERY`
+ * A TELECALLER appears on three kinds of edge. `-> CANCELLED`, from every
+ * state of the shared pipeline — they ring the passenger, the passenger
+ * cancels, and the cancellation has to reach the kitchen (or the rider)
+ * rather than via a WhatsApp message somebody has to notice. `-> DELIVERED` /
+ * `-> FAILED` ("not delivered"), from PREPARED and DISPATCHED — the passenger
+ * tells them how the delivery went, and that is recorded whether or not the
+ * rider tapped anything. And `-> MISDELIVERY` / `-> MISSED_DELIVERY`
  * / `-> REFUNDED`, from every non-terminal state — these are support-call
  * outcomes a telecaller records from whatever a passenger tells them on the
  * phone, not a pipeline step reached from one particular place, so unlike
- * CANCELLED they are open from ENQUIRY all the way through DISPATCHED.
+ * CANCELLED they are open from the bulk head (ENQUIRY, QUOTED) too.
  *
- * ADMIN deliberately does NOT hold these three edges: the admin order screen
+ * ADMIN deliberately does NOT hold the support-outcome edges: the admin order screen
  * offers only Accept-the-next-step and Cancel, same as before this feature
  * existed. An admin who genuinely needs to set one of these three can still
- * reach it through the free-text override below — it is a telecaller's call
+ * reach it through the free-text override — it is a telecaller's call
  * to make from the phone, not a button on the admin's normal order view.
  *
  * RATING_ORDER (decoy orders run purely to prompt an app-store rating) is
@@ -98,14 +99,26 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     // halt. The manager must name who took it — see `handedTo` in
     // transitionOrder — so the record still says which rider has the food.
     DISPATCHED: ['DELIVERY_AGENT', 'STORE_MANAGER'],
+    // A telecaller may close the order out from the counter too: when the
+    // rider never tapped "on the way" but the passenger confirms on the phone
+    // that the food arrived (or did not), that call is the outcome.
+    DELIVERED: ['TELECALLER'],
+    FAILED: ['TELECALLER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
     MISDELIVERY: ['TELECALLER'],
     MISSED_DELIVERY: ['TELECALLER'],
     REFUNDED: ['TELECALLER'],
   },
   DISPATCHED: {
-    DELIVERED: ['DELIVERY_AGENT'],
-    FAILED: ['DELIVERY_AGENT'],
+    // The rider records these from the platform; a telecaller records them
+    // from the passenger's word on the phone, which is often the first anyone
+    // hears of how a delivery went.
+    DELIVERED: ['DELIVERY_AGENT', 'TELECALLER'],
+    FAILED: ['DELIVERY_AGENT', 'TELECALLER'],
+    // Cancelling food already on its way is rare (a train diverted after the
+    // rider left the counter), but it is the call desk's or an admin's call to
+    // make, and the rider's screen drops the order the moment it happens.
+    CANCELLED: ['ADMIN', 'TELECALLER'],
     // Taking an order is one tap on a phone held in a busy hand, so it gets
     // mistapped. Putting it back is the correction: the food returns to the
     // counter for someone else to take. Only the rider holding it may do this
@@ -200,4 +213,23 @@ export function normalizeCustomStatus(raw: string): string {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+}
+
+/**
+ * May this role ask for an order in this status to be cancelled?
+ *
+ * Only a store manager asks: a telecaller and an admin can cancel outright.
+ * The request is open exactly where the person who will act on it could
+ * cancel, so an accepted request never turns into an illegal transition.
+ */
+export function canRequestCancellation(role: Role, status: string): boolean {
+  return (
+    role === 'STORE_MANAGER' &&
+    isTransitionAllowed(status as OrderStatus, 'CANCELLED', 'TELECALLER')
+  )
+}
+
+/** Who answers a store manager's cancellation request. */
+export function canDecideCancellation(role: Role): boolean {
+  return role === 'TELECALLER' || role === 'ADMIN'
 }

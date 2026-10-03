@@ -18,7 +18,10 @@ import { IconPhone } from '@/components/Icons'
 import { CancelOrderButton } from '../../CancelOrderButton'
 import { OutcomeActionButton } from '../../OutcomeActionButton'
 import { RatingOrderButton } from '../../RatingOrderButton'
-import { markMisdelivery, markMissedDelivery, markRefunded } from '../../actions'
+import { DeliveredButton } from '../../DeliveredButton'
+import { markMisdelivery, markMissedDelivery, markNotDelivered, markRefunded } from '../../actions'
+import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
+import { CancelRequestCard } from '@/components/CancelRequest'
 
 /**
  * One order, as the person on the phone needs it: what was ordered, which
@@ -38,7 +41,10 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
 
   await connectDb()
   // Live arrival, cache-only, for the same reasons as the call list.
-  const timings = await timingForOrders([order], { allowFetch: false })
+  const [timings, cancelRequest] = await Promise.all([
+    timingForOrders([order], { allowFetch: false }),
+    viewCancelRequest(order),
+  ])
   // Both logs draw their authors from one query — $in dedupes server-side, so
   // widening the id list costs no extra round trip.
   //
@@ -63,6 +69,8 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   // buttons follow it rather than drifting from it.
   const nextStatuses = allowedNextStatuses(order.status as OrderStatus, 'TELECALLER')
   const canCancel = nextStatuses.includes('CANCELLED')
+  const canDeliver = nextStatuses.includes('DELIVERED')
+  const canFail = nextStatuses.includes('FAILED')
   const canMisdeliver = nextStatuses.includes('MISDELIVERY')
   const canMissDeliver = nextStatuses.includes('MISSED_DELIVERY')
   const canRefund = nextStatuses.includes('REFUNDED')
@@ -73,7 +81,7 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   // twice is a no-op transitionOrder would just reject.
   const canFlagRating = canFlagRatingOrder('TELECALLER') && order.status !== 'RATING_ORDER'
   const noOutcomeAvailable =
-    !canCancel && !canMisdeliver && !canMissDeliver && !canRefund && !canFlagRating
+    !canCancel && !canDeliver && !canFail && !canMisdeliver && !canMissDeliver && !canRefund && !canFlagRating
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -87,6 +95,25 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
         timing={<TrainTiming timing={timingFor(order, timings)} />}
         actions={
           <div className="space-y-2">
+            {canDeliver || canFail ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {canDeliver ? <DeliveredButton orderId={id} /> : null}
+                {canFail ? (
+                  <OutcomeActionButton
+                    orderId={id}
+                    action={markNotDelivered}
+                    buttonLabel="Not delivered"
+                    modalTitle="Mark as not delivered?"
+                    description="The food did not reach the passenger. This closes the order as not delivered, with your reason, for the outlet and admin."
+                    quickReasons={[
+                      'Passenger not reachable at the seat',
+                      'Train left before the rider got there',
+                      'Passenger refused the food',
+                    ]}
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {canCancel || canMisdeliver || canMissDeliver || canRefund ? (
               <div className="flex flex-wrap items-center gap-2">
                 {canCancel ? (
@@ -146,14 +173,16 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
                   ? 'Already cancelled.'
                   : order.status === 'RATING_ORDER'
                     ? 'Already marked as a rating order.'
-                    : order.status === 'DISPATCHED'
-                      ? 'A rider is already carrying this: call the outlet instead.'
-                      : 'This order can no longer be updated from here.'}
+                    : 'This order can no longer be updated from here.'}
               </span>
             ) : null}
           </div>
         }
       />
+
+      {cancelRequest ? (
+        <CancelRequestCard orderId={id} request={cancelRequest} canDecide />
+      ) : null}
 
       {order.contactPhone ? (
         <Card>

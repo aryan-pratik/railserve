@@ -91,32 +91,38 @@ describe('telecaller', () => {
       }
     })
 
-    it('cannot cancel once a rider is carrying it', async () => {
+    it('cancels while a rider is carrying it', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
 
-      // There is no DISPATCHED -> CANCELLED edge at all: this is the illegal
-      // transition branch, not the wrong-role one.
-      await expect(
-        transitionOrder({ ctx: telecaller, orderId: id, to: 'CANCELLED' }),
-      ).rejects.toThrow(ForbiddenError)
-      expect((await findById(agent, id))!.status).toBe('DISPATCHED')
+      const out = await transitionOrder({
+        ctx: telecaller,
+        orderId: id,
+        to: 'CANCELLED',
+        meta: { via: 'telecaller-call', reason: 'Train diverted' },
+      })
+      expect(out.status).toBe('CANCELLED')
     })
 
-    it('CANCELLED plus the three support outcomes are all a telecaller may reach, from every non-terminal state', () => {
+    it('exactly these outcomes are open to a telecaller, per status', () => {
       const outcomes = ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED']
-      for (const from of ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
+      for (const from of ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED'] as const) {
         expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(
           [...outcomes, 'CANCELLED'].sort(),
         )
       }
-      // DISPATCHED and the bulk head of the pipeline never had a CANCELLED
-      // edge — a rider already owns the outcome, or an admin does — but the
-      // three support outcomes are open everywhere non-terminal, since a
-      // telecaller can be told any of these happened whatever stage an order
-      // is stuck at.
-      for (const from of ['DISPATCHED', 'ENQUIRY', 'QUOTED'] as const) {
+      // Once the food is ready, the passenger can also tell them how the
+      // delivery went.
+      for (const from of ['PREPARED', 'DISPATCHED'] as const) {
+        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(
+          [...outcomes, 'CANCELLED', 'DELIVERED', 'FAILED'].sort(),
+        )
+      }
+      // The bulk head of the pipeline never had a CANCELLED edge for them
+      // (an admin owns it), but the three support outcomes are open everywhere
+      // non-terminal.
+      for (const from of ['ENQUIRY', 'QUOTED'] as const) {
         expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(outcomes.sort())
       }
     })
@@ -132,6 +138,60 @@ describe('telecaller', () => {
           ForbiddenError,
         )
       }
+    })
+  })
+
+  describe('delivered and not delivered', () => {
+    it('marks a dispatched order delivered, keeping the rider on record', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+
+      const out = await transitionOrder({ ctx: telecaller, orderId: id, to: 'DELIVERED' })
+      expect(out.status).toBe('DELIVERED')
+      expect(out.delivery.deliveredAt).toBeInstanceOf(Date)
+      // The telecaller is not the carrier: the rider stays, and only the rider.
+      expect(out.delivery.agentIds.map(String)).toEqual([String(agentId)])
+    })
+
+    it('marks a prepared order delivered without naming a rider', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      const out = await transitionOrder({ ctx: telecaller, orderId: id, to: 'DELIVERED' })
+      expect(out.status).toBe('DELIVERED')
+      expect(out.delivery.agentIds).toEqual([])
+    })
+
+    it('marks not delivered with the reason in failureReason', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+
+      const out = await transitionOrder({
+        ctx: telecaller,
+        orderId: id,
+        to: 'FAILED',
+        meta: { via: 'telecaller-call', reason: 'Passenger not at seat' },
+        apply: { failureReason: 'Passenger not at seat' },
+      })
+      expect(out.status).toBe('FAILED')
+      expect(out.delivery.failureReason).toBe('Passenger not at seat')
+    })
+
+    it('cannot mark delivered before the food is ready', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'KOT_PRINTED')
+      await expect(
+        transitionOrder({ ctx: telecaller, orderId: id, to: 'DELIVERED' }),
+      ).rejects.toThrow(ForbiddenError)
+    })
+
+    it('a store manager still has to name the rider', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      await expect(
+        transitionOrder({ ctx: manager, orderId: id, to: 'DISPATCHED' }),
+      ).rejects.toThrow(ForbiddenError)
     })
   })
 

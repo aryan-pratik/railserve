@@ -19,6 +19,8 @@ import { KotNoteForm } from '@/components/KotNoteForm'
 import { DeliveryProof } from '@/components/DeliveryProof'
 import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
 import { adminNextStatusOptions } from '../../statusOptions'
+import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
+import { CancelRequestCard } from '@/components/CancelRequest'
 
 /** Statuses an order can only be in if its KOT has already been sent once. */
 const PRINTED_STATUSES = ['KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'FAILED']
@@ -50,13 +52,14 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
     (v): v is NonNullable<typeof v> => Boolean(v),
   )
 
-  const [outlet, agents, actors, timings] = await Promise.all([
+  const [outlet, agents, actors, timings, cancelRequest] = await Promise.all([
     order.restaurantId
       ? Restaurant.findById(order.restaurantId).select('name stationCode stationName').lean()
       : null,
     User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone').sort({ name: 1 }).lean(),
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     timingForOrders([order]),
+    viewCancelRequest(order),
   ])
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
@@ -91,6 +94,10 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          {cancelRequest ? (
+            <CancelRequestCard orderId={String(order._id)} request={cancelRequest} canDecide />
+          ) : null}
+
           <Card>
             <CardHeader title="Journey" />
             <div className="divide-y divide-line">
