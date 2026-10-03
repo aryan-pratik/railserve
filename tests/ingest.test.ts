@@ -92,6 +92,24 @@ describe('retail ingestion', () => {
     expect(r.reason).toBe('PARSE_FAILED')
   })
 
+  it('skips mail from a sender not on the allowlist, with no inbox row', async () => {
+    const r = await ingestEmail({
+      ...email(fx.GARBAGE, 'gmail-newsletter'),
+      from: 'Deals <news@shop.example>',
+      allowedSenders: ['@yatrirestro.example'],
+    })
+    expect(r).toEqual({ status: 'IGNORED', from: 'news@shop.example' })
+    expect(await UnparsedInbox.countDocuments({})).toBe(0)
+  })
+
+  it('still parses, and still files failures from, a listed sender', async () => {
+    const allowedSenders = ['orders@yatrirestro.example']
+    const ok = await ingestEmail({ ...email(fx.SAMPLE_WITH_EMOJI, 'gmail-listed-1'), allowedSenders })
+    expect(ok.status).toBe('CREATED')
+    const bad = await ingestEmail({ ...email(fx.GARBAGE, 'gmail-listed-2'), allowedSenders })
+    expect(bad.status).toBe('UNPARSED')
+  })
+
   it('does not pile up inbox rows when the same bad message is replayed', async () => {
     await ingestEmail(email(fx.GARBAGE, 'gmail-4'))
     await ingestEmail(email(fx.GARBAGE, 'gmail-4'))

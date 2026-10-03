@@ -17,6 +17,10 @@ const IngestStateSchema = new Schema(
     lastWatchRenewalAt: { type: Date, default: null },
     lastMessageAt: { type: Date, default: null },
     lastError: { type: String, default: null },
+    // Aggregator sending addresses (or `@domain`s) whose mail is parsed as
+    // orders. Empty means every sender, as before the list existed. Edited
+    // under Setup → Aggregators; see lib/ingest/senders.ts.
+    allowedSenders: { type: [String], default: [] },
   },
   { timestamps: true, strict: true, strictQuery: true, versionKey: false },
 )

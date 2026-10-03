@@ -138,6 +138,8 @@ export type CallBoardRowData = {
   id: string
   externalOrderId: string
   orderType: string
+  /** The aggregator the order arrived from — Order.source. */
+  source: string | null
   status: string
   coach: string | null
   berth: string | null
@@ -163,6 +165,7 @@ type LeanCallBoardOrder = {
   _id: unknown
   externalOrderId: string
   orderType: string
+  source?: string | null
   status: string
   coach?: string | null
   berth?: string | null
@@ -187,6 +190,7 @@ export function callBoardRow(
     id: String(order._id),
     externalOrderId: order.externalOrderId,
     orderType: order.orderType,
+    source: order.source ?? null,
     status: order.status,
     coach: order.coach ?? null,
     berth: order.berth ?? null,

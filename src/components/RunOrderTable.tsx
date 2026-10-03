@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { formatRupees, seatText } from '@/lib/format'
-import { CoachChip, Dash, PaymentBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from './ui'
+import { CoachChip, Dash, PaymentBadge, SourceBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from './ui'
+import { sourceLabel } from '@/lib/orderEnums'
 import { CallNoteHint } from './CallNoteHint'
 import { CopyButton } from './CopyButton'
 
@@ -17,6 +18,8 @@ export type RunTableOrder = {
   href?: string | null
   externalOrderId: string
   orderType: string
+  /** The aggregator the order arrived from — Order.source. */
+  source?: string | null
   contactName: string | null
   contactPhone: string | null
   coach: string | null
@@ -47,6 +50,7 @@ function orderDetailsText(o: RunTableOrder, trainText?: string): string {
   const items = o.pax ? `${o.pax} pax thali` : o.itemNames.join(', ') || 'No items'
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,
+    o.source ? `Aggregator: ${sourceLabel(o.source)}` : null,
     `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,
     `Seat: ${seat}`,
     `Items: ${items}`,
@@ -147,12 +151,18 @@ export function RunOrderTable({
                     </span>
                   ) : null}
                 </div>
-                {/* Which kitchen this one is on. Under the id rather than in
-                    a column of its own: it is the same answer for most of a
-                    board, and the columns that vary earn the width. */}
-                {showOutlet && o.outletName ? (
-                  <div className="mt-0.5 max-w-[12rem] truncate text-[11px] text-muted" title={o.outletName}>
-                    {o.outletName}
+                {/* Which aggregator it came from, and which kitchen it is on.
+                    Under the id rather than in columns of their own: a train
+                    is mostly one or two answers, and the columns that vary
+                    earn the width. */}
+                {o.source || (showOutlet && o.outletName) ? (
+                  <div className="mt-1 flex max-w-[14rem] items-center gap-1.5">
+                    {o.source ? <SourceBadge source={o.source} /> : null}
+                    {showOutlet && o.outletName ? (
+                      <span className="truncate text-[11px] text-muted" title={o.outletName}>
+                        {o.outletName}
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </td>

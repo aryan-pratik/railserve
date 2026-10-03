@@ -147,7 +147,7 @@ describe('what the call board is given', () => {
     const keys = Object.keys(row).sort()
     expect(keys).toEqual(
       [
-        'id', 'externalOrderId', 'orderType', 'status', 'coach', 'berth', 'rawSeat', 'handoverPoint',
+        'id', 'externalOrderId', 'orderType', 'source', 'status', 'coach', 'berth', 'rawSeat', 'handoverPoint',
         'contactName', 'contactPhone', 'itemCount', 'itemSummary', 'paymentMode', 'outletName',
         'canCancel', 'callNoteCount', 'callNoteHint', 'lastCall',
       ].sort(),
