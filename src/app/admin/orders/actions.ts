@@ -71,5 +71,9 @@ export async function updateOrderStatusAction(
   }
 
   revalidatePath('/admin/orders')
+  revalidatePath('/admin')
+  revalidatePath('/store')
+  revalidatePath('/calls')
+  revalidatePath('/agent')
   return { ok: `Status set to ${statusLabel(to)}.` }
 }

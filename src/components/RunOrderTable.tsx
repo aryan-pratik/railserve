@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { formatRupees, seatText } from '@/lib/format'
 import { CoachChip, Dash, PaymentBadge, SourceBadge, StatusBadge, TypeBadge, focusRingInset, thClass } from './ui'
@@ -80,6 +81,7 @@ export function RunOrderTable({
   onSelect,
   showOutlet = false,
   trainText,
+  renderStatus,
 }: {
   orders: RunTableOrder[]
   /** Only from a client parent. Rows without it navigate by `href`. */
@@ -94,6 +96,8 @@ export function RunOrderTable({
    * pasted order says which train it is on. Off by default.
    */
   trainText?: string
+  /** Replaces the status badge, e.g. with an editor. Only from a client parent. */
+  renderStatus?: (o: RunTableOrder) => ReactNode
 }) {
   // Inside a RunSelection (the kitchen board) each row gets a tick box, so the
   // train's actions can be narrowed to some of its orders. Elsewhere, none.
@@ -258,7 +262,7 @@ export function RunOrderTable({
               </td>
 
               <td className="whitespace-nowrap px-3 py-2.5">
-                <StatusBadge status={o.status} />
+                {renderStatus ? renderStatus(o) : <StatusBadge status={o.status} />}
               </td>
 
               <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums text-muted">

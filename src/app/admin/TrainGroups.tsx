@@ -11,6 +11,7 @@ import { RefreshTrainButton, type RefreshTrainState } from '@/components/Refresh
 import { UrgencyRail } from '@/components/UrgencyRail'
 import { RunSelection } from '@/components/RunSelection'
 import { AdminRunActions } from './AdminRunActions'
+import { EditableStatus } from './EditableStatus'
 
 /**
  * The admin board's rows are the shared run table's rows — the kitchen board
@@ -99,12 +100,15 @@ export function TrainGroups({
   serverNow,
   refreshAction,
   riders,
+  statusOptions,
 }: {
   groups: TrainGroup[]
   serverNow: string
   refreshAction: (prev: RefreshTrainState, formData: FormData) => Promise<RefreshTrainState>
   /** Active riders, for handing ready orders over from the board. */
   riders: { id: string; name: string }[]
+  /** Every status an admin can set, custom ones included. */
+  statusOptions: string[]
 }) {
   const ticked = useNowMs(30_000)
   const now = ticked ?? new Date(serverNow).getTime()
@@ -243,6 +247,9 @@ export function TrainGroups({
                           onSelect={select}
                           showOutlet={g.outletNames.length > 1}
                           trainText={trainLabel(g)}
+                          renderStatus={(o) => (
+                            <EditableStatus orderId={o.id} status={o.status} options={statusOptions} />
+                          )}
                         />
                         <AdminRunActions runKey={g.key} riders={riders} />
                       </RunSelection>

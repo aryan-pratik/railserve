@@ -300,7 +300,7 @@ function AmountEditor({
 
 const ADD_NEW = '__add_new__'
 
-function StatusEditor({
+export function StatusEditor({
   orderId,
   current,
   options,

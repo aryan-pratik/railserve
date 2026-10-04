@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/session'
-import { findMany, countOrders } from '@/lib/repo/orderRepo'
+import { findMany, countOrders, distinctStatuses } from '@/lib/repo/orderRepo'
+import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
@@ -101,7 +102,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
-  const [outlets, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests] = await Promise.all([
+  const [outlets, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests, statusesInUse] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     // Open orders today: the same number the kitchen and call boards badge as
@@ -118,7 +119,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     User.find({ role: 'DELIVERY_AGENT', active: true }).select('name').sort({ name: 1 }).lean(),
     // Independent of every filter on this board, like the ingestion warning.
     listPendingCancelRequests(ctx),
+    // Custom statuses an admin has typed in stay selectable once they exist.
+    distinctStatuses(ctx),
   ])
+  const statusOptions = [
+    ...ORDER_STATUSES,
+    ...statusesInUse.filter((s) => !(ORDER_STATUSES as readonly string[]).includes(s)).sort(),
+  ]
   const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
 
   const visible = tab.statuses
@@ -274,6 +281,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           serverNow={serverNow}
           refreshAction={forceRefreshOrderTrain}
           riders={riders}
+          statusOptions={statusOptions}
         />
       ) : (
         <OrdersTable
