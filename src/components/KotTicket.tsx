@@ -5,7 +5,7 @@ import { sourceLabel } from '@/lib/orderEnums'
 /**
  * Kitchen Order Ticket. Plan §10.
  *
- * Sized for 80mm thermal paper, monospace, pure black on white — thermal heads
+ * Sized for 80mm thermal paper, pure black on white — thermal heads
  * render greys as mush, so nothing here relies on colour or shading. Two
  * sections, because the packing items are what get forgotten on a large order
  * and they belong to a different person than the cooking does.
@@ -14,10 +14,14 @@ import { sourceLabel } from '@/lib/orderEnums'
  * this one for the kitchen, and a short bag slip. A batch print stacks them;
  * the print queue sends each as its own job so the printer cuts between them.
  *
- * Set in Space Mono rather than the app's JetBrains Mono: JetBrains marks its
- * zero (a dot, or a slash with "zero" on), and on a thermal head that mark
- * fills in and the 0 reads as an 8. Space Mono's zero is plain and narrower
- * than its O, which keeps the two apart without a mark.
+ * Set in Inter, at medium weight. The ticket is printed as a 576-dot 1-bit
+ * image, so a digit is about 16 dots tall and what survives is its outline,
+ * not its detail. Both monospace faces tried here failed on the 0: JetBrains
+ * Mono marks it (a dot or slash that fills in), and Space Mono draws 0 and 8
+ * as the same rounded box with small holes, so either way the 0 read as an 8.
+ * Inter's 0 is an open oval and its 8 is pinched at the waist, so the two
+ * differ in outline. Medium rather than regular because one-dot strokes print
+ * faint.
  */
 
 /**
@@ -63,10 +67,11 @@ export type KotOutlet = { name: string; stationName?: Maybe<string> } | null
 /**
  * Shared by both tickets. `.kot` is what the screenshot step captures, one
  * image (and so one cut) per element. font-feature-settings is reset because
- * the body turns on "zero" app-wide, which would put the mark straight back.
+ * the body turns on "zero" app-wide, which would slash Inter's zero too.
+ * tabular-nums keeps digits on a fixed pitch now that the face is proportional.
  */
 const TICKET_CLASS =
-  'kot w-[80mm] max-w-full bg-white p-3 font-kot [font-feature-settings:normal] text-[12px] leading-tight text-black shadow-sm print:shadow-none'
+  'kot w-[80mm] max-w-full bg-white p-3 font-kot font-medium tabular-nums [font-feature-settings:normal] text-[12px] leading-tight text-black shadow-sm print:shadow-none'
 
 function Rule() {
   return <div aria-hidden className="my-1.5 border-t border-dashed border-black" />

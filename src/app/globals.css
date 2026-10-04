@@ -33,9 +33,9 @@
 
   --font-sans: var(--font-sans-face), system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, monospace;
-  /* The KOT only (see layout.tsx). JetBrains next, for any glyph Space Mono
-     lacks, such as the rupee sign. */
-  --font-kot: var(--font-kot-face), var(--font-mono-face), ui-monospace, monospace;
+  /* The KOT only. Inter, kept as its own token so the ticket's face can be
+     changed without touching the UI's (see KotTicket.tsx). */
+  --font-kot: var(--font-sans-face), system-ui, sans-serif;
 
   --animate-progress: progress 1.2s ease-in-out infinite;
 
