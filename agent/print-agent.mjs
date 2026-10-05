@@ -20,6 +20,7 @@
  *   PRINTER_HOST       the printer's local IP, e.g. 192.168.1.5
  *   PRINTER_PORT       default 9100
  *   POLL_INTERVAL_MS   default 3000
+ *   CUT_DELAY_MS       pause after each ticket's cut, default 1500
  */
 import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
 import { readFileSync, existsSync } from 'node:fs'
@@ -51,6 +52,10 @@ const AGENT_TOKEN = required('AGENT_TOKEN')
 const PRINTER_HOST = required('PRINTER_HOST')
 const PRINTER_PORT = Number(process.env.PRINTER_PORT ?? '9100')
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? '3000')
+// Pause after each ticket so the printer finishes printing and cutting it
+// before the next one is sent; without it consecutive tickets run together
+// on one long strip.
+const CUT_DELAY_MS = Number(process.env.CUT_DELAY_MS ?? '1500')
 
 function required(name) {
   const value = process.env[name]
@@ -98,8 +103,8 @@ async function printJob(job) {
     await printer.printImageBuffer(Buffer.from(b64, 'base64'))
     printer.cut()
     await printer.execute()
-    // Let the printer take in this ticket before the next connection lands.
-    await sleep(500)
+    // Let the printer print and cut this ticket before the next connection lands.
+    await sleep(CUT_DELAY_MS)
   }
 }
 

@@ -19,7 +19,7 @@ import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
  * connection never lands while the printer is still taking in the last.
  */
 /** How long the printer gets to take in one ticket before the next connection. */
-const SETTLE_MS = 500
+const SETTLE_MS = Number(process.env.CUT_DELAY_MS ?? '1500')
 
 export async function printImagesDirect(
   images: Buffer[],
