@@ -85,8 +85,8 @@ don't control, or a network where exposing a port is not acceptable.
   `execute()` destroys the TCP connection as soon as it has written, without
   waiting for the printer to drain — bundle a whole run into one write and the
   later tickets print back-to-back with no cuts. Same fix lives in
-  `agent/print-agent.mjs`. Both also pause 500ms after each ticket so the next
-  connection doesn't land while the printer is still taking in the last one.
+  `agent/print-agent.mjs`. Both also leave 1.5s (`CUT_DELAY_MS`) between tickets
+  so the next one doesn't land while the printer is still taking in the last.
 - The queue itself now creates **one `PrintJob` per ticket** (each order prints
   a KOT and a bag slip, so two jobs per order). A one-ticket job is cut on its
   own whatever agent version a kitchen is running, which is what fixed train
@@ -140,10 +140,12 @@ or wedge it. Two mitigations, both required:
   that dies on ticket 3 of 5 retries ticket 3 onwards, not the whole train.
   (Jobs queued before that change could hold several images and still reprint
   whole.)
-- **The sweep has no age cap.** `retryDirectPrintJobs()` takes *every* pending
-  job for a direct station with no time bound. A printer that is off overnight
-  will print the whole backlog when it comes back. If that bites, the fix is a
-  `createdAt` floor in that query.
+- **A ticket that waits 30 minutes is dropped, not printed late.** Both the
+  agent poll and `retryDirectPrintJobs()` first call `expireStalePrintJobs()`
+  (`PRINT_JOB_MAX_AGE_MS` in `queue.ts`), which marks older `pending` jobs
+  `failed` with `error: expired…`. Without it a printer that was off, or a
+  station with no agent running, prints its whole backlog the moment it comes
+  back — Kanpur had 552 jobs waiting when this was added.
 
 ## One-time printer setup (per printer)
 1. Power on, load paper.
@@ -161,10 +163,47 @@ npm run print-agent:token -- --station CNB
 # --rotate to replace an existing token
 ```
 - Generates/reads `Station.printAgentToken`. Copy the printed `AGENT_TOKEN`.
+- The script reads `.env.local`, so from a laptop it talks to the **dev**
+  database. Production rejects a dev token (`HTTP 401` in the agent log); a
+  production station's token is `Station.printAgentToken` in the database on
+  the server.
 - Rotating stops that kitchen printing until somebody edits `agent/.env` on the
   device there and restarts the agent.
 
+## Printing from the browser (Ctrl/Cmd+P) cannot cut per ticket
+- The KOT pages print fine from the browser, but a whole train comes out as
+  **one uncut strip**, and no CSS fixes that.
+- The printer's Mac driver (Caysn POS80) has a single cut setting,
+  `CutPaperAfterJob`: one cut per *print job*. A browser print is one job
+  however many tickets are on the page, so there is one cut, at the end.
+- The agent is the fix: it sends every ticket as its own job with the cut
+  command inside it. Once a station's agent runs, staff use **Generate KOT /
+  Print** and stop using Ctrl+P (which would now print a second, uncut copy).
+
+## One-time agent setup on a Mac that already prints (one line)
+Use this when the kitchen has a Mac with the printer installed (it can print
+from the browser). Nothing needs to be installed first, and it asks for no
+admin password. In Terminal on that Mac:
+```
+curl -fsSL https://raw.githubusercontent.com/aryan-pratik/railserve/main/agent/install-mac.sh | bash -s -- "<AGENT_TOKEN>"
+```
+- Downloads its own Node and the agent into `~/railserve-print-agent`.
+- Finds the kitchen printer by itself (the one printed to most recently). Add
+  the printer's name as a second quoted argument if the Mac has several and it
+  picks wrong; `lpstat -p` lists them.
+- Prints **two test tickets, which must come out as two separate pieces**, and
+  asks for a y/n before it goes on.
+- Registers the agent to start at every login and waits until that background
+  copy has reached the server before it says DONE.
+- Prints through the Mac's own print queue (`PRINTER_QUEUE` in `.env`), so it
+  works over Wi-Fi or USB and the printer's IP does not matter.
+- Log: `~/railserve-print-agent/agent.log`. Remove everything:
+  `... | bash -s -- --uninstall`.
+- The Mac has to be on, logged in and awake; after a power cut someone must
+  log in. Nothing on the board shows that an agent is down.
+
 ## One-time agent setup (per outlet, on one always-on device there)
+For a device with no installed printer (it reaches the printer by IP).
 ```
 cd agent
 npm install
@@ -238,6 +277,9 @@ CRON_TOKEN="<random secret>"   # only if any station prints directly
 - **Job stuck `pending`, agent-path station**: query the `printjobs` collection and check `stationCode` matches a station whose agent is currently polling (`agentLastSeenAt` recent).
 - **Job stuck `pending`, direct-path station**: read that job's **`error`** field — the direct path never writes status `failed`, so a pending job with an error is a delivery that failed, not one nobody has claimed. Then check, in order: the printer is on and on the network, `nc -vz <host> <port>` from the app server, and that the `print-retry` cron line actually exists in the crontab (`docs/DEPLOY.md`) and its token matches `CRON_TOKEN`.
 - **Nothing prints at a direct-path station and jobs have no `error` at all**: `directPrinterHost` is probably unset or misspelled — the job was queued for an agent that does not exist. Check `db.stations.findOne({_id:"<CODE>"})`.
+- **A whole train prints as one long uncut strip**: it was printed from the browser (Ctrl/Cmd+P), not by the agent — see [Printing from the browser](#printing-from-the-browser-ctrlcmdp-cannot-cut-per-ticket). Check the station's `agentLastSeenAt`; null or old means no agent is running there.
+- **Job `failed` with `expired: not printed within 30 min`**: nothing took the ticket in time — no agent running, or the printer was off. Reprint it from the app.
+- **Job `failed` with `printer did not take the ticket within 30s`** (Mac agent): the Mac's print queue could not reach the printer — off, out of paper, or the queue is paused in System Settings > Printers.
 - **Tickets print back-to-back with no cuts**: check the `printjobs` for that run each hold one image (`enqueueTickets` in `src/lib/printer/queue.ts`). If they do, something has collapsed the per-ticket `execute()` — see `printImagesDirect` and `agent/print-agent.mjs`, both deliberately execute once per ticket.
 - **Duplicate tickets after an outage**: rare now that every ticket is its own job; see [Two behaviours to expect](#two-behaviours-to-expect-neither-a-bug).
 - **Schema/field changes to `Restaurant` or `PrintJob` not taking effect after a dev-server restart**: Turbopack's `.next` cache can serve a stale compiled model. Fix: `rm -rf .next` then `npm run dev`.

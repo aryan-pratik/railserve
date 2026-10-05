@@ -1,4 +1,3 @@
-import net from 'node:net'
 import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
 
 /**
@@ -22,23 +21,6 @@ import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
 /** How long the printer gets to take in one ticket before the next connection. */
 const SETTLE_MS = Number(process.env.CUT_DELAY_MS ?? '1500')
 
-/**
- * Writes the bytes and closes the connection gracefully (FIN, after the
- * write has fully flushed). printer.execute() destroys the socket as soon as
- * the write returns, which can drop the tail of a large raster job — the cut
- * command is the last bytes, so the ticket prints but never cuts.
- */
-function sendRaw(data: Buffer, host: string, port: number, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host, port })
-    socket.setTimeout(timeoutMs)
-    socket.once('timeout', () => socket.destroy(new Error(`Printer ${host}:${port} timed out`)))
-    socket.once('error', reject)
-    socket.once('close', () => resolve())
-    socket.once('connect', () => socket.end(data))
-  })
-}
-
 export async function printImagesDirect(
   images: Buffer[],
   host: string,
@@ -55,7 +37,7 @@ export async function printImagesDirect(
     printer.alignCenter()
     await printer.printImageBuffer(image)
     printer.cut()
-    await sendRaw(printer.getBuffer(), host, port, 15000)
+    await printer.execute()
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
   }
 }

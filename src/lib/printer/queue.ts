@@ -23,6 +23,27 @@ import type { PrintJobDoc } from '@/lib/models/PrintJob'
  *   anything that failed (printer briefly offline, etc).
  */
 
+/** How long a ticket may wait for a printer before it is given up on. */
+export const PRINT_JOB_MAX_AGE_MS = 30 * 60 * 1000
+
+/**
+ * Gives up on tickets that have waited too long, and returns the cutoff so
+ * the caller can keep its own query on the right side of it.
+ *
+ * A ticket is only worth printing while the kitchen is still waiting for it.
+ * Without this a queue that nobody drained (no agent running, a printer off
+ * for the afternoon) comes out all at once the moment something starts
+ * taking jobs again: hundreds of tickets for trains long gone.
+ */
+export async function expireStalePrintJobs(stationCodes: string[]): Promise<Date> {
+  const cutoff = new Date(Date.now() - PRINT_JOB_MAX_AGE_MS)
+  await PrintJob.updateMany(
+    { stationCode: { $in: stationCodes }, status: 'pending', createdAt: { $lt: cutoff } },
+    { $set: { status: 'failed', error: 'expired: not printed within 30 min' } },
+  )
+  return cutoff
+}
+
 /**
  * Attempts immediate delivery for a station configured for direct printing.
  * Leaves the job `pending` (with `error` set) on failure rather than
@@ -183,9 +204,14 @@ export async function retryDirectPrintJobs(): Promise<{ attempted: number; deliv
   const stationCodes = directStations.map((s) => s._id)
   if (stationCodes.length === 0) return { attempted: 0, delivered: 0 }
 
+  const cutoff = await expireStalePrintJobs(stationCodes)
+
   // Oldest first, so a train's tickets still come out in order on retry.
-  const jobs = await PrintJob.find({ status: 'pending', stationCode: { $in: stationCodes } })
-    .sort({ createdAt: 1, _id: 1 })
+  const jobs = await PrintJob.find({
+    status: 'pending',
+    stationCode: { $in: stationCodes },
+    createdAt: { $gte: cutoff },
+  }).sort({ createdAt: 1, _id: 1 })
   // A station whose printer failed once this sweep is skipped for the rest
   // of it, so its later tickets never print ahead of the one that failed.
   const down = new Set<string>()

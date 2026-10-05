@@ -29,8 +29,9 @@ const printImagesDirect = vi.fn<(images: Buffer[], host: string, port: number) =
 )
 vi.mock('@/lib/printer/directPrint', () => ({ printImagesDirect }))
 
-const { enqueueOrderKotPrint, enqueueRunKotPrint, retryDirectPrintJobs } =
+const { enqueueOrderKotPrint, enqueueRunKotPrint, retryDirectPrintJobs, PRINT_JOB_MAX_AGE_MS } =
   await import('../src/lib/printer/queue')
+const { GET: pollForJob } = await import('../src/app/api/print-agent/poll/route')
 
 /** Jobs in the order an agent claims them, matching the poll route's sort. */
 const jobsInPrintOrder = () => PrintJob.find({}).sort({ createdAt: 1, _id: 1 })
@@ -326,5 +327,69 @@ describe('retryDirectPrintJobs', () => {
 
     expect(await retryDirectPrintJobs()).toEqual({ attempted: 0, delivered: 0 })
     expect(printImagesDirect).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A ticket is only worth printing while the kitchen is still waiting for it.
+ * Kanpur ran for two weeks with no agent and built up 552 pending jobs; the
+ * first agent to start there would have printed every one of them.
+ */
+describe('stale jobs', () => {
+  const jobAged = async (stationCode: string, ageMs: number) => {
+    const job = await PrintJob.create({
+      stationCode,
+      restaurantId: null,
+      refType: 'order',
+      refId: `aged-${ageMs}`,
+      images: [Buffer.from(`png-${ageMs}`)],
+      status: 'pending',
+    })
+    // createdAt is immutable to mongoose, so back-date it underneath.
+    await PrintJob.collection.updateOne(
+      { _id: job._id },
+      { $set: { createdAt: new Date(Date.now() - ageMs) } },
+    )
+    return job
+  }
+
+  const poll = async (token: string) => {
+    const res = await pollForJob(
+      new Request(`${ORIGIN}/api/print-agent/poll`, { headers: { 'x-agent-token': token } }),
+    )
+    return (await res.json()) as { ok: boolean; job: { id: string; images: string[] } | null }
+  }
+
+  it('never hands an agent a ticket older than the limit, and retires it', async () => {
+    await makeStation('CNB', { printAgentToken: 'cnb-token' })
+    const old = await jobAged('CNB', PRINT_JOB_MAX_AGE_MS + 60_000)
+    const fresh = await jobAged('CNB', 60_000)
+
+    const first = await poll('cnb-token')
+    expect(first.job?.id).toBe(String(fresh._id))
+    expect((await poll('cnb-token')).job).toBeNull()
+
+    const expired = (await PrintJob.findById(old._id))!
+    expect(expired.status).toBe('failed')
+    expect(expired.error).toMatch(/expired/)
+  })
+
+  it("leaves another station's old tickets for that station's own poll", async () => {
+    await makeStation('CNB', { printAgentToken: 'cnb-token' })
+    await makeStation('PRYJ', { printAgentToken: 'pryj-token' })
+    const theirs = await jobAged('PRYJ', PRINT_JOB_MAX_AGE_MS + 60_000)
+
+    await poll('cnb-token')
+    expect((await PrintJob.findById(theirs._id))!.status).toBe('pending')
+  })
+
+  it('does not send a stale ticket on the direct-print retry sweep either', async () => {
+    await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
+    const old = await jobAged('CNB', PRINT_JOB_MAX_AGE_MS + 60_000)
+    await jobAged('CNB', 60_000)
+
+    expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 1 })
+    expect(printImagesDirect).toHaveBeenCalledTimes(1)
+    expect((await PrintJob.findById(old._id))!.status).toBe('failed')
   })
 })

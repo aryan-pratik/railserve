@@ -14,8 +14,30 @@ not this README.
 ## What it does
 
 Loops forever: asks the RailServe server "any print job for this station?",
-and when there is one, sends it straight to the kitchen printer over the
-local network, then tells the server it's done.
+and when there is one, sends it to the kitchen printer, then tells the server
+it's done. Every ticket goes out on its own with its own cut — which a print
+from the browser (Ctrl/Cmd+P) cannot do: the printer driver cuts once per
+print job, so a whole train comes out as one strip.
+
+## A Mac that already prints: one line
+
+If the kitchen has a Mac with the printer installed, paste this into Terminal
+on it (the token comes from step 1 below):
+
+```
+curl -fsSL https://raw.githubusercontent.com/aryan-pratik/railserve/main/agent/install-mac.sh | bash -s -- "<AGENT_TOKEN>"
+```
+
+It needs nothing installed and no admin password. It downloads Node and the
+agent into `~/railserve-print-agent`, finds the printer, prints two test
+tickets (they must come out as **two separate pieces**), and registers the
+agent to start at every login. It prints through the Mac's own print queue
+(`PRINTER_QUEUE`), so Wi-Fi or USB both work and no IP is needed. Add the
+printer's name as a second quoted argument if the Mac has several; pass
+`--uninstall` instead of the token to remove it. Log:
+`~/railserve-print-agent/agent.log`.
+
+The rest of this file is the manual setup, for any other device.
 
 ## One-time setup per station
 
@@ -24,7 +46,10 @@ local network, then tells the server it's done.
    ```
    npm run print-agent:token -- --station <CODE>
    ```
-   This prints an `AGENT_TOKEN` — copy it.
+   This prints an `AGENT_TOKEN` — copy it. The script reads `.env.local`, so
+   run from a laptop it talks to the **dev** database; production rejects
+   that token (the agent logs `HTTP 401`). A production station's token is
+   `Station.printAgentToken` in the database on the server.
 
 2. Get the printer's local IP (hold its feed button ~3s to print a self-test
    page, look for `STA IP`). Set a DHCP reservation for it on the outlet's
@@ -38,13 +63,18 @@ local network, then tells the server it's done.
    Fill in `.env`:
    - `SERVER_URL` — the production app URL (e.g. `https://bitestation.elvo.in`)
    - `AGENT_TOKEN` — from step 1
-   - `PRINTER_HOST` — from step 2
+   - `PRINTER_HOST` — from step 2. On a computer that already has the printer
+     installed, set `PRINTER_QUEUE` to its name (`lpstat -p`) instead and
+     skip step 2
    - `PRINTER_PORT` — leave as `9100` unless the printer's self-test page says otherwise
 
 4. Run it:
    ```
    npm start
    ```
+   `node print-agent.mjs --test` prints two test tickets without touching the
+   server; they must come out as two separate pieces.
+
    Leave it running — set it up as a system service (systemd, pm2, launchd,
    whatever the bridge device supports) so it survives a reboot.
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { connectDb } from '@/lib/db'
 import { PrintJob, Station } from '@/lib/models'
+import { expireStalePrintJobs } from '@/lib/printer/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,8 +25,11 @@ export async function GET(req: Request) {
   // from a dead agent.
   await Station.updateOne({ _id: station._id }, { $set: { agentLastSeenAt: new Date() } })
 
+  // An agent that starts after a gap must not print the backlog it missed.
+  const cutoff = await expireStalePrintJobs([station._id])
+
   const job = await PrintJob.findOneAndUpdate(
-    { stationCode: station._id, status: 'pending' },
+    { stationCode: station._id, status: 'pending', createdAt: { $gte: cutoff } },
     { $set: { status: 'claimed', claimedAt: new Date() } },
     // _id breaks a same-millisecond tie: a train's tickets are queued back to
     // back as one job each, and must still print in order.
