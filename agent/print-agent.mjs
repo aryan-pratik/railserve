@@ -40,6 +40,21 @@ import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
+// Every line carries the computer's own date and time: the log is what gets
+// read when printing has stopped, and "when did it stop" is the first question.
+function stamp() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  )
+}
+for (const level of ['log', 'error']) {
+  const write = console[level].bind(console)
+  console[level] = (...args) => write(stamp(), ...args)
+}
+
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const envFile = path.join(dir, '.env')
 if (existsSync(envFile)) {
