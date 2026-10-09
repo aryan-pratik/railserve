@@ -139,6 +139,35 @@ describe('RelFood WhatsApp parser', () => {
   })
 })
 
+describe('RelFood customer with two phone numbers', () => {
+  // Real orders 1192282 and 1192332: the customer left two numbers, and the
+  // order used to come out with no phone at all.
+  const twoNumbers = (body: string, from: string) => body.replace(from, '8584033906, 9748539608')
+
+  it('keeps the first number from the mail', () => {
+    const body = twoNumbers(fx.MAIL_SAMPLE_GMAIL, '6393369360')
+    expect(body).toContain('8584033906, 9748539608')
+    const r = mail.parse(body, RECEIVED)
+    expect(r.ok && r.order.contactPhone).toBe('8584033906')
+  })
+
+  it('keeps the first number from the WhatsApp message', () => {
+    const body = twoNumbers(fx.WHATSAPP_SAMPLE, '9563871687')
+    const r = whatsapp.parse(body, RECEIVED)
+    expect(r.ok && r.order.contactPhone).toBe('8584033906')
+  })
+
+  it('still reads a number written with +91 and spaces', () => {
+    const r = whatsapp.parse(fx.WHATSAPP_SAMPLE.replace('9563871687', '+91 95638 71687'), RECEIVED)
+    expect(r.ok && r.order.contactPhone).toBe('9563871687')
+  })
+
+  it('leaves the phone empty when nothing in the field is a number', () => {
+    const r = whatsapp.parse(fx.WHATSAPP_SAMPLE.replace('9563871687', 'NA'), RECEIVED)
+    expect(r.ok && r.order.contactPhone).toBeNull()
+  })
+})
+
 describe('RelFood across both layouts', () => {
   // The mail is ingested by itself and the WhatsApp message is pasted by a
   // person, so the same order routinely arrives twice. The unique index on

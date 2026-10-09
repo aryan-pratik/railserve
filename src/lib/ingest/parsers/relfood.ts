@@ -94,8 +94,15 @@ function parseSeat(raw: string | null): Pick<ParsedOrder, 'coach' | 'berth' | 'r
   return { coach, berth, rawSeat: coach && berth ? `${coach}-${berth}` : null }
 }
 
+/**
+ * A customer sometimes leaves two numbers, "8584033906, 9748539608", in the one
+ * field of both layouts. looksLikePhone counts digits, so it sees twenty and
+ * rejects the pair. The first is kept, as RailRestro's is: a call is placed to
+ * one number, and the order has room for one.
+ */
 function parsePhone(raw: string | null): string | null {
-  return raw && looksLikePhone(raw) ? raw.replace(/\D/g, '').slice(-10) : null
+  const first = raw?.split(/[,/;]|\s{2,}|\band\b/i).find((part) => looksLikePhone(part))
+  return first ? first.replace(/\D/g, '').slice(-10) : null
 }
 
 function parseRupees(raw: string | null): number | null {
