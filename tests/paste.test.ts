@@ -1,10 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
-import { UnparsedInbox } from '../src/lib/models'
+import { Order, UnparsedInbox } from '../src/lib/models'
+import { ingestEmail } from '../src/lib/ingest'
 import { createOrderFromPaste } from '../src/lib/ingest/paste'
 import { ctxFor, makeRestaurant, makeUser, resetDb } from './fixtures'
 import type { AuthContext } from '../src/lib/authContext'
 import * as fx from './fixtures/yatriRestro'
+import * as relfoodFx from './fixtures/relfood'
 
 /**
  * Pasting an order is the fast path for both roles: an aggregator message
@@ -51,6 +53,24 @@ describe('paste-to-create', () => {
     const again = await createOrderFromPaste(admin, fx.SAMPLE_WITH_EMOJI)
     expect(again.ok).toBe(false)
     if (!again.ok) expect(again.detail).toContain('already in the system')
+  })
+
+  // RelFood sends each order twice: a mail the Gmail sync ingests by itself,
+  // and a WhatsApp message somebody pastes. The two share nothing but
+  // RelFood's own reference, and that has to be enough to make the paste a
+  // no-op rather than a second order for the kitchen to cook.
+  it('reports the WhatsApp copy of an order its mail already created', async () => {
+    await makeRestaurant('THE COSMOZIN LOUNGE', 'CNB')
+    const mailed = await ingestEmail({
+      body: relfoodFx.MAIL_SAMPLE,
+      receivedAt: new Date('2026-10-09T05:00:00Z'),
+    })
+    expect(mailed.status).toBe('CREATED')
+
+    const r = await createOrderFromPaste(admin, relfoodFx.WHATSAPP_SAMPLE)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.detail).toMatch(/1192186 is already in the system/)
+    expect(await Order.countDocuments({ source: 'RELFOOD' })).toBe(1)
   })
 
   it('explains an unrecognised paste rather than filing it', async () => {

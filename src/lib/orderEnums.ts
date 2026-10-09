@@ -7,7 +7,7 @@
  * `timers/promises`). Keeping the vocabulary free of the ODM lets both sides
  * share one source of truth.
  */
-export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'OLF', 'YATRIBHOJAN', 'RAJBHOG', 'ZOOP', 'BROTHERBYTE', 'HOMEBYTES', 'RAILRESTRO', 'MANUAL'] as const
+export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'OLF', 'YATRIBHOJAN', 'RAJBHOG', 'ZOOP', 'BROTHERBYTE', 'HOMEBYTES', 'RAILRESTRO', 'RELFOOD', 'MANUAL'] as const
 export const ORDER_TYPES = ['RETAIL', 'BULK'] as const
 export const PAYMENT_MODES = ['PREPAID', 'COD', 'INVOICE'] as const
 export const PROOF_TYPES = ['OTP', 'PHOTO', 'SIGNATURE'] as const
@@ -40,6 +40,7 @@ export const SOURCE_LABEL: Record<OrderSource, string> = {
   BROTHERBYTE: 'BrotherByte',
   HOMEBYTES: 'HomeBytes',
   RAILRESTRO: 'RailRestro',
+  RELFOOD: 'RelFood',
   MANUAL: 'Entered by hand',
 }
 

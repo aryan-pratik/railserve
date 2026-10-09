@@ -12,6 +12,7 @@ import { ZoopParser } from './parsers/zoop'
 import { BrotherByteParser } from './parsers/brotherbyte'
 import { HomeBytesParser } from './parsers/homebytes'
 import { RailRestroParser } from './parsers/railrestro'
+import { RelFoodParser, RelFoodWhatsAppParser } from './parsers/relfood'
 import { matchOutlet } from './outletMatch'
 import { isAllowedSender, senderAddress } from './senders'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
@@ -29,6 +30,9 @@ export const PARSERS: OrderParser[] = [
   new BrotherByteParser(),
   new HomeBytesParser(),
   new RailRestroParser(),
+  new RelFoodParser(),
+  // Matches on shape alone — the message names no vendor — so it stays last.
+  new RelFoodWhatsAppParser(),
 ]
 
 export type IngestSource = {

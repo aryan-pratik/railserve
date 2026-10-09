@@ -6,6 +6,7 @@ import { matchOutlet } from '../src/lib/ingest/outletMatch'
 import { makeRestaurant, resetDb } from './fixtures'
 import * as fx from './fixtures/yatriRestro'
 import * as bookingFx from './fixtures/yatriRestroBooking'
+import * as relfoodFx from './fixtures/relfood'
 
 const RECEIVED = new Date('2026-08-27T08:00:00Z')
 
@@ -108,6 +109,32 @@ describe('retail ingestion', () => {
     expect(ok.status).toBe('CREATED')
     const bad = await ingestEmail({ ...email(fx.GARBAGE, 'gmail-listed-2'), allowedSenders })
     expect(bad.status).toBe('UNPARSED')
+  })
+
+  // The whole Gmail path for an aggregator added after the sender list
+  // existed: the mail as gmail/client.ts flattens it, from the address it
+  // really comes from, past a list that names only that domain.
+  it('turns a RelFood mail from its listed sender into an order', async () => {
+    await makeRestaurant('THE COSMOZIN LOUNGE', 'CNB')
+    const r = await ingestEmail({
+      body: relfoodFx.MAIL_SAMPLE_GMAIL,
+      receivedAt: new Date('2026-10-08T01:59:40Z'),
+      gmailMessageId: 'gmail-relfood-1',
+      subject: 'REL FOOD Order Invoice No.: 1190676',
+      from: 'orders@relfood.com',
+      allowedSenders: ['@relfood.com'],
+    })
+    expect(r.status).toBe('CREATED')
+
+    const order = await Order.findOne({ externalOrderId: '1190676' }).lean()
+    expect(order).toMatchObject({
+      source: 'RELFOOD',
+      stationCode: 'CNB',
+      serviceDate: '2026-10-08',
+      amountPaise: 15800,
+      paymentMode: 'COD',
+      rawSeat: 'B7-65',
+    })
   })
 
   it('does not pile up inbox rows when the same bad message is replayed', async () => {
