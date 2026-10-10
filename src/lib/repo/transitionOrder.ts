@@ -394,7 +394,11 @@ export async function assignAgents(params: {
               fromStatus: current.status,
               toStatus: current.status,
               userId: ctx.userId,
-              meta: { action: 'ASSIGN_AGENTS', agentIds: agentIds },
+              meta: {
+                action: 'ASSIGN_AGENTS',
+                fromAgentIds: (current.delivery?.agentIds ?? []).map(String),
+                agentIds: agentIds,
+              },
               createdAt: new Date(),
             },
           },
