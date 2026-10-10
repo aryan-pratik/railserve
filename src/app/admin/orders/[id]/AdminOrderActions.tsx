@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react'
 import { Button, FormNote, IconButton, inputClass, textareaClass } from '@/components/ui'
+import { PAYMENT_MODES } from '@/lib/orderEnums'
 import { IconPencil, IconPlus } from '@/components/Icons'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
@@ -10,6 +11,7 @@ import {
   assignAgentsAction,
   deleteOrderAction,
   updateOrderItemAction,
+  updateOrderPaymentModeAction,
   updateOrderRemarkAction,
   type ActionState,
 } from './actions'
@@ -234,6 +236,30 @@ export function RemarkForm({ orderId, remark }: { orderId: string; remark: strin
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="sm" variant="secondary" pending={pending}>
           Save remark
+        </Button>
+        <FormNote state={state} />
+      </div>
+    </form>
+  )
+}
+
+/** Corrects how the order is paid (prepaid / COD / invoice). Admin-only. */
+export function PaymentModeForm({ orderId, paymentMode }: { orderId: string; paymentMode: string | null }) {
+  const [state, action, pending] = useActionState(updateOrderPaymentModeAction, initial)
+
+  return (
+    <form action={action} className="space-y-2 p-4">
+      <input type="hidden" name="orderId" value={orderId} />
+      <label htmlFor="order-payment-mode" className="sr-only">Payment mode</label>
+      <select id="order-payment-mode" name="paymentMode" defaultValue={paymentMode ?? ''} className={inputClass}>
+        <option value="">Not set</option>
+        {PAYMENT_MODES.map((m) => (
+          <option key={m} value={m}>{m === 'COD' ? 'COD' : m.charAt(0) + m.slice(1).toLowerCase()}</option>
+        ))}
+      </select>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="sm" variant="secondary" pending={pending}>
+          Save payment mode
         </Button>
         <FormNote state={state} />
       </div>

@@ -12,6 +12,7 @@ import {
   getAppOrigin,
 } from '@/lib/printer/queue'
 import type { OrderStatus } from '@/lib/orderStatus'
+import { PAYMENT_MODES, type PaymentMode } from '@/lib/orderEnums'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
 
 export type ActionState = { error?: string; ok?: string }
@@ -247,4 +248,36 @@ export async function updateOrderRemarkAction(
   revalidatePath(`/store/orders/${orderId}`)
   revalidatePath('/store')
   return { ok: 'Remark saved.' }
+}
+
+/**
+ * Admin-only correction of how an order is paid. Ingest guesses the mode from
+ * the aggregator's mail and sometimes gets it wrong; the KOT and the store
+ * board both read it, so fixing it here fixes them too. An empty value clears
+ * it back to "unknown".
+ */
+export async function updateOrderPaymentModeAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const raw = String(formData.get('paymentMode') ?? '')
+  if (raw && !PAYMENT_MODES.includes(raw as PaymentMode)) {
+    return { error: 'Pick a valid payment mode.' }
+  }
+
+  try {
+    const ok = await updateOrderFields(ctx, orderId, { paymentMode: raw || null })
+    if (!ok) return { error: 'Order not found.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not save the payment mode.' }
+  }
+
+  revalidatePath(`/admin/orders/${orderId}`)
+  revalidatePath(`/store/orders/${orderId}`)
+  revalidatePath('/admin/orders')
+  revalidatePath('/admin')
+  revalidatePath('/store')
+  return { ok: 'Payment mode saved.' }
 }

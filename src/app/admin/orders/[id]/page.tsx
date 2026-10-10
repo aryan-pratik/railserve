@@ -17,7 +17,7 @@ import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { KotNoteForm } from '@/components/KotNoteForm'
 import { DeliveryProof } from '@/components/DeliveryProof'
-import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
+import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, PaymentModeForm, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
 import { adminNextStatusOptions } from '../../statusOptions'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
@@ -234,6 +234,11 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             {order.restaurantId && PRINTED_STATUSES.includes(order.status) ? (
               <ReprintKotButton orderId={String(order._id)} />
             ) : null}
+          </Card>
+
+          <Card>
+            <CardHeader title="Payment mode" />
+            <PaymentModeForm orderId={String(order._id)} paymentMode={order.paymentMode ?? null} />
           </Card>
 
           <Card>
