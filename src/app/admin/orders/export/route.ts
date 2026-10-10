@@ -4,6 +4,7 @@ import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { formatIST, paiseToRupees } from '@/lib/format'
+import { sourceLabel } from '@/lib/orderEnums'
 import { resolveDateRange } from '@/lib/dateFilter'
 import { riderClause, riderNamesFor } from '@/lib/repo/riderFilter'
 import type { QueryFilter } from 'mongoose'
@@ -89,15 +90,16 @@ export async function GET(request: Request) {
   const riderName = await riderNamesFor(orders)
 
   const header = [
-    'Order ID', 'Status', 'Type', 'Outlet', 'Station', 'Train no', 'Train name',
+    'Order ID', 'Status', 'Type', 'Aggregator', 'Outlet', 'Station', 'Train no', 'Train name',
     'Scheduled arrival', 'Coach', 'Berth', 'Handover', 'Pax',
-    'Passenger', 'Phone', 'Items', 'Amount (INR)', 'Payment', 'Rider', 'Created',
+    'Passenger', 'Phone', 'Items', 'Amount (INR)', 'Payment', 'Rider', 'Notes', 'Remark', 'Created',
   ]
 
   const rows = orders.map((o) => [
     o.externalOrderId,
     o.status,
     o.orderType,
+    o.source ? sourceLabel(o.source) : '',
     outletName.get(String(o.restaurantId)) ?? '',
     o.stationCode,
     o.trainNo ?? '',
@@ -113,6 +115,8 @@ export async function GET(request: Request) {
     paiseToRupees(o.amountPaise),
     o.paymentMode ?? '',
     riderName.get(String(o._id)) ?? '',
+    o.notes ?? '',
+    o.remark ?? '',
     formatIST(o.createdAt),
   ])
 
