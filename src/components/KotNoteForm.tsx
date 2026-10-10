@@ -22,6 +22,8 @@ export function KotNoteForm({ orderId, kotNote }: { orderId: string; kotNote: st
       <label htmlFor={fieldId} className="sr-only">KOT note</label>
       <div className="max-w-[68ch] space-y-2">
         <textarea
+          // Keyed by the value, so a save elsewhere shows here after the refresh.
+          key={kotNote ?? ''}
           id={fieldId}
           name="kotNote"
           defaultValue={kotNote ?? ''}

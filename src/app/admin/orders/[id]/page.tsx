@@ -5,7 +5,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import type { OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
-import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
+import { formatIST, formatMoney, formatServiceDate, paiseToRupees, utcToIstLocal } from '@/lib/format'
 import { sourceLabel } from '@/lib/orderEnums'
 import { Card, CardHeader, Dash, PageHeader, PaymentBadge, StatusBadge, TypeBadge } from '@/components/ui'
 import { TrainTiming } from '@/components/TrainTiming'
@@ -17,7 +17,11 @@ import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { KotNoteForm } from '@/components/KotNoteForm'
 import { DeliveryProof } from '@/components/DeliveryProof'
-import { AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, PaymentModeForm, RemarkForm, ReprintKotButton, TransitionButtons } from './AdminOrderActions'
+import {
+  AddOrderItem, AssignAgents, DeleteOrderButton, EditOrderItem, OrderDetailsEditor, PaymentModeForm, RemarkForm,
+  ReprintKotButton, StatusOverride, TransitionButtons,
+} from './AdminOrderActions'
+import { ORDER_EDIT_FIELDS } from '@/lib/orderEditFields'
 import { adminNextStatusOptions } from '../../statusOptions'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
@@ -48,19 +52,41 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   // existed, and InferSchemaType types it non-optional, so nothing else catches
   // it. Both logs then resolve their authors from the one existing query.
   const callLog = order.callLog ?? []
-  const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
-    (v): v is NonNullable<typeof v> => Boolean(v),
-  )
+  // Rider corrections log the riders by id, before and after; they are named
+  // from the same query as the people who acted.
+  const riderIdsInLog = order.events.flatMap((e) => {
+    const m = (e.meta ?? {}) as Record<string, unknown>
+    return [m.agentIds, m.fromAgentIds].flatMap((v) => (Array.isArray(v) ? v.map(String) : []))
+  })
+  const actorIds = [
+    ...order.events.map((e) => e.userId),
+    ...callLog.map((n) => n.userId),
+    ...riderIdsInLog.filter((id) => /^[0-9a-f]{24}$/i.test(id)),
+  ].filter((v): v is NonNullable<typeof v> => Boolean(v))
 
-  const [outlet, agents, actors, timings, cancelRequest] = await Promise.all([
-    order.restaurantId
-      ? Restaurant.findById(order.restaurantId).select('name stationCode stationName').lean()
-      : null,
+  const [outlets, agents, actors, timings, cancelRequest] = await Promise.all([
+    Restaurant.find().select('name stationCode stationName').sort({ name: 1 }).lean(),
     User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone').sort({ name: 1 }).lean(),
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     timingForOrders([order]),
     viewCancelRequest(order),
   ])
+  const outlet = order.restaurantId
+    ? (outlets.find((o) => o._id.equals(order.restaurantId!)) ?? null)
+    : null
+
+  // What the edit form opens with: every editable field as the string its
+  // input takes. Money in rupees and times in IST, as an admin types them.
+  const row = order as unknown as Record<string, unknown>
+  const editValues = Object.fromEntries(
+    ORDER_EDIT_FIELDS.map((f) => {
+      const v = row[f.key]
+      if (v === null || v === undefined) return [f.key, '']
+      if (f.kind === 'money') return [f.key, paiseToRupees(v as number)]
+      if (f.kind === 'datetime') return [f.key, utcToIstLocal(v as Date)]
+      return [f.key, String(v)]
+    }),
+  )
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
   // Only the call log names the role: both a telecaller and an admin write
@@ -143,6 +169,15 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           </Card>
 
           <Card>
+            <CardHeader title="Order details" />
+            <OrderDetailsEditor
+              orderId={String(order._id)}
+              values={editValues}
+              outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
+            />
+          </Card>
+
+          <Card>
             <CardHeader title="Items" />
             <ul className="divide-y divide-line">
               {kitchenItems.map((i) => (
@@ -159,6 +194,8 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                         qty={i.qty}
                         pricePaise={i.pricePaise}
                         notes={i.notes}
+                        spec={i.spec}
+                        isPacking={i.isPacking}
                       />
                     </span>
                   </div>
@@ -171,17 +208,29 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                 </li>
               ))}
               {packingItems.length > 0 ? (
-                <li className="px-4 py-3">
-                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Packing</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {packingItems.map((i) => (
-                      <span key={String(i._id)} className="rounded-full bg-sunken px-2 py-0.5 text-xs text-muted">
-                        {i.name} ×{i.qty}
-                      </span>
-                    ))}
+                <li className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted">Packing</li>
+              ) : null}
+              {packingItems.map((i) => (
+                <li key={String(i._id)} className="px-4 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-x-4">
+                    <span className="text-muted">{i.name}</span>
+                    <span className="flex shrink-0 items-center gap-2 tabular-nums text-muted">
+                      ×{i.qty}
+                      {i.pricePaise != null ? ` · ${formatMoney(i.pricePaise)}` : ''}
+                      <EditOrderItem
+                        orderId={String(order._id)}
+                        itemId={String(i._id)}
+                        name={i.name}
+                        qty={i.qty}
+                        pricePaise={i.pricePaise}
+                        notes={i.notes}
+                        spec={i.spec}
+                        isPacking={i.isPacking}
+                      />
+                    </span>
                   </div>
                 </li>
-              ) : null}
+              ))}
             </ul>
             <div className="border-t border-line">
               <AddOrderItem orderId={String(order._id)} />
@@ -214,6 +263,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           <Card>
             <CardHeader title="Event log" />
             <EventLog
+              names={actorName}
               events={order.events.map((e) => ({
                 fromStatus: e.fromStatus ?? null,
                 toStatus: e.toStatus,
@@ -234,6 +284,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             {order.restaurantId && PRINTED_STATUSES.includes(order.status) ? (
               <ReprintKotButton orderId={String(order._id)} />
             ) : null}
+            <StatusOverride orderId={String(order._id)} status={order.status} />
           </Card>
 
           <Card>

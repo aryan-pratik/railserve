@@ -1,6 +1,6 @@
 import mongoose, { type QueryFilter } from 'mongoose'
 import { Order, Counter, User, type OrderDoc } from '../models'
-import { type AuthContext, ForbiddenError, NotFoundError } from '../authContext'
+import { type AuthContext, ConflictError, ForbiddenError, NotFoundError } from '../authContext'
 import { ROLE_LABEL } from '../roles'
 import type { CallNoteView } from '../callNotes'
 import type { OrderSource } from '../orderEnums'
@@ -463,13 +463,36 @@ export async function setKotNote(
 
   if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
 
-  const res = await Order.updateOne(
-    scoped(ctx, { _id: new mongoose.Types.ObjectId(orderId) }),
-    { $set: { kotNote: body.length > 0 ? body : null } },
-  )
+  const _id = new mongoose.Types.ObjectId(orderId)
+  const next = body.length > 0 ? body : null
   // Scoped, so another outlet's order is a miss rather than a refusal — a 403
   // here would itself confirm the order exists.
-  if (res.matchedCount === 0) throw new NotFoundError('Order not found')
+  const current = await Order.findOne(scoped(ctx, { _id }), 'status kotNote').lean()
+  if (!current) throw new NotFoundError('Order not found')
+  const prev = current.kotNote ?? null
+  if (prev === next) return
+
+  // It prints on the ticket, so a change to it is logged like any other
+  // correction to the order: who, when, what it said before and after. The
+  // previous value is in the filter, so the logged "from" is what was replaced.
+  const res = await Order.updateOne(
+    scoped(ctx, { _id, kotNote: current.kotNote ?? null }),
+    {
+      $set: { kotNote: next },
+      $push: {
+        events: {
+          fromStatus: current.status,
+          toStatus: current.status,
+          userId: ctx.userId,
+          meta: { action: 'FIELD_EDITED', field: 'kotNote', label: 'KOT note', from: prev, to: next },
+          createdAt: new Date(),
+        },
+      },
+    },
+  )
+  if (res.matchedCount === 0) {
+    throw new ConflictError('The KOT note changed underneath you. Reload and try again.')
+  }
 }
 
 /**

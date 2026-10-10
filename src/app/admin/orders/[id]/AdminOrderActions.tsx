@@ -3,6 +3,8 @@
 import { useActionState, useState } from 'react'
 import { Button, FormNote, IconButton, inputClass, textareaClass } from '@/components/ui'
 import { PAYMENT_MODES } from '@/lib/orderEnums'
+import { ORDER_STATUSES } from '@/lib/orderStatus'
+import { ORDER_EDIT_FIELDS, enumOptionLabel, type EditableField } from '@/lib/orderEditFields'
 import { IconPencil, IconPlus } from '@/components/Icons'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
@@ -10,6 +12,9 @@ import {
   adminTransitionAction,
   assignAgentsAction,
   deleteOrderAction,
+  editOrderDetailsAction,
+  overrideStatusAction,
+  removeOrderItemAction,
   updateOrderItemAction,
   updateOrderPaymentModeAction,
   updateOrderRemarkAction,
@@ -225,6 +230,7 @@ export function RemarkForm({ orderId, remark }: { orderId: string; remark: strin
       <input type="hidden" name="orderId" value={orderId} />
       <label htmlFor="order-remark" className="sr-only">Remark</label>
       <textarea
+        key={remark ?? ''}
         id="order-remark"
         name="remark"
         defaultValue={remark ?? ''}
@@ -251,7 +257,10 @@ export function PaymentModeForm({ orderId, paymentMode }: { orderId: string; pay
     <form action={action} className="space-y-2 p-4">
       <input type="hidden" name="orderId" value={orderId} />
       <label htmlFor="order-payment-mode" className="sr-only">Payment mode</label>
-      <select id="order-payment-mode" name="paymentMode" defaultValue={paymentMode ?? ''} className={inputClass}>
+      {/* Keyed by the value: the details form can change it too, and an
+          uncontrolled select would go on showing the old one. On the select,
+          not the form, so the form's "saved" note survives the refresh. */}
+      <select key={paymentMode ?? ''} id="order-payment-mode" name="paymentMode" defaultValue={paymentMode ?? ''} className={inputClass}>
         <option value="">Not set</option>
         {PAYMENT_MODES.map((m) => (
           <option key={m} value={m}>{m === 'COD' ? 'COD' : m.charAt(0) + m.slice(1).toLowerCase()}</option>
@@ -267,13 +276,25 @@ export function PaymentModeForm({ orderId, paymentMode }: { orderId: string; pay
   )
 }
 
+/** The checkbox, and the marker that tells the action it was on the form. */
+function PackingBox({ id, checked }: { id: string; checked: boolean }) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-2 text-xs text-muted">
+      <input type="hidden" name="hasIsPacking" value="1" />
+      <input id={id} type="checkbox" name="isPacking" defaultChecked={checked} className="size-4 rounded border-line-strong accent-accent" />
+      Packing item (tissue, spoon, water)
+    </label>
+  )
+}
+
 /**
  * Edit-in-place for one order item. Collapsed to a pencil button by default;
  * clicking it swaps the row for a small form so a wrong qty, price or name
- * doesn't need a full item delete/re-add.
+ * doesn't need a full item delete/re-add. Stays open until the save goes
+ * through, so a refused value is shown rather than lost with the form.
  */
 export function EditOrderItem({
-  orderId, itemId, name, qty, pricePaise, notes,
+  orderId, itemId, name, qty, pricePaise, notes, spec, isPacking,
 }: {
   orderId: string
   itemId: string
@@ -281,58 +302,90 @@ export function EditOrderItem({
   qty: number
   pricePaise?: number | null
   notes?: string | null
+  spec?: string | null
+  isPacking?: boolean | null
 }) {
-  const [state, action, pending] = useActionState(updateOrderItemAction, initial)
   const [editing, setEditing] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [state, action, pending] = useActionState(async (prev: ActionState, fd: FormData) => {
+    const res = await updateOrderItemAction(prev, fd)
+    if (res.ok && !res.error) setEditing(false)
+    return res
+  }, initial)
+  const [removeState, removeAction, removing] = useActionState(removeOrderItemAction, initial)
 
   if (!editing) {
     return (
-      <IconButton aria-label={`Edit ${name}`} size="sm" onClick={() => setEditing(true)}>
-        <IconPencil size={14} />
-      </IconButton>
+      <>
+        <IconButton aria-label={`Edit ${name}`} size="sm" onClick={() => setEditing(true)}>
+          <IconPencil size={14} />
+        </IconButton>
+        {state.ok ? <FormNote state={state} /> : null}
+      </>
     )
   }
 
   return (
-    <form
-      action={action}
-      onSubmit={() => setEditing(false)}
-      className="mt-2 space-y-2 rounded-lg border border-line-strong bg-sunken p-3"
-    >
-      <input type="hidden" name="orderId" value={orderId} />
-      <input type="hidden" name="itemId" value={itemId} />
-      <div className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem]">
-        <label className="sr-only" htmlFor={`item-name-${itemId}`}>Name</label>
-        <input id={`item-name-${itemId}`} name="name" defaultValue={name} className={inputClass} placeholder="Item name" />
-        <label className="sr-only" htmlFor={`item-qty-${itemId}`}>Quantity</label>
-        <input id={`item-qty-${itemId}`} name="qty" type="number" min={1} step={1} defaultValue={qty} className={inputClass} placeholder="Qty" />
-        <label className="sr-only" htmlFor={`item-price-${itemId}`}>Price (₹)</label>
-        <input
-          id={`item-price-${itemId}`}
-          name="pricePaise"
-          type="number"
-          min={0}
-          step="0.01"
-          defaultValue={pricePaise != null ? (pricePaise / 100).toFixed(2) : ''}
-          placeholder="Price ₹"
-          className={inputClass}
+    <div className="mt-2 w-full space-y-2 rounded-lg border border-line-strong bg-sunken p-3">
+      <form action={action} className="space-y-2">
+        <input type="hidden" name="orderId" value={orderId} />
+        <input type="hidden" name="itemId" value={itemId} />
+        <div className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem]">
+          <label className="sr-only" htmlFor={`item-name-${itemId}`}>Name</label>
+          <input id={`item-name-${itemId}`} name="name" defaultValue={name} className={inputClass} placeholder="Item name" />
+          <label className="sr-only" htmlFor={`item-qty-${itemId}`}>Quantity</label>
+          <input id={`item-qty-${itemId}`} name="qty" type="number" min={1} step={1} defaultValue={qty} className={inputClass} placeholder="Qty" />
+          <label className="sr-only" htmlFor={`item-price-${itemId}`}>Price (₹)</label>
+          <input
+            id={`item-price-${itemId}`}
+            name="pricePaise"
+            type="number"
+            min={0}
+            step="0.01"
+            defaultValue={pricePaise != null ? (pricePaise / 100).toFixed(2) : ''}
+            placeholder="Price ₹"
+            className={inputClass}
+          />
+        </div>
+        <label className="sr-only" htmlFor={`item-notes-${itemId}`}>Notes</label>
+        <textarea
+          id={`item-notes-${itemId}`}
+          name="notes"
+          defaultValue={notes ?? ''}
+          rows={2}
+          placeholder="Notes (prints on the KOT under the item)"
+          className={textareaClass}
         />
-      </div>
-      <label className="sr-only" htmlFor={`item-notes-${itemId}`}>Notes</label>
-      <textarea
-        id={`item-notes-${itemId}`}
-        name="notes"
-        defaultValue={notes ?? ''}
-        rows={2}
-        placeholder="Notes"
-        className={textareaClass}
-      />
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" size="sm" variant="secondary" pending={pending}>Save</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-        <FormNote state={state} />
-      </div>
-    </form>
+        <label className="sr-only" htmlFor={`item-spec-${itemId}`}>Spec</label>
+        <textarea
+          id={`item-spec-${itemId}`}
+          name="spec"
+          defaultValue={spec ?? ''}
+          rows={2}
+          placeholder="Spec: what the combo or thali contains"
+          className={textareaClass}
+        />
+        <PackingBox id={`item-packing-${itemId}`} checked={Boolean(isPacking)} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" size="sm" variant="secondary" pending={pending}>Save</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+          <FormNote state={state} />
+        </div>
+      </form>
+      <form action={removeAction} className="flex flex-wrap items-center gap-3 border-t border-line pt-2">
+        <input type="hidden" name="orderId" value={orderId} />
+        <input type="hidden" name="itemId" value={itemId} />
+        {confirmingRemove ? (
+          <>
+            <Button type="submit" size="sm" variant="danger" pending={removing}>Remove {name}</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmingRemove(false)}>Keep it</Button>
+          </>
+        ) : (
+          <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmingRemove(true)}>Remove item</Button>
+        )}
+        <FormNote state={removeState} />
+      </form>
+    </div>
   )
 }
 
@@ -341,16 +394,21 @@ export function EditOrderItem({
  * with nothing pre-filled and no item id: it appends rather than replaces.
  */
 export function AddOrderItem({ orderId }: { orderId: string }) {
-  const [state, action, pending] = useActionState(addOrderItemAction, initial)
   const [adding, setAdding] = useState(false)
+  const [state, action, pending] = useActionState(async (prev: ActionState, fd: FormData) => {
+    const res = await addOrderItemAction(prev, fd)
+    if (res.ok && !res.error) setAdding(false)
+    return res
+  }, initial)
 
   if (!adding) {
     return (
-      <div className="p-4">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         <Button type="button" size="sm" variant="secondary" onClick={() => setAdding(true)}>
           <IconPlus size={14} />
           Add item
         </Button>
+        {state.ok ? <FormNote state={state} /> : null}
       </div>
     )
   }
@@ -358,7 +416,6 @@ export function AddOrderItem({ orderId }: { orderId: string }) {
   return (
     <form
       action={action}
-      onSubmit={() => setAdding(false)}
       className="m-4 space-y-2 rounded-lg border border-line-strong bg-sunken p-3"
     >
       <input type="hidden" name="orderId" value={orderId} />
@@ -372,11 +429,156 @@ export function AddOrderItem({ orderId }: { orderId: string }) {
       </div>
       <label className="sr-only" htmlFor="new-item-notes">Notes</label>
       <textarea id="new-item-notes" name="notes" rows={2} placeholder="Notes" className={textareaClass} />
+      <PackingBox id="new-item-packing" checked={false} />
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="sm" variant="secondary" pending={pending}>Add</Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
         <FormNote state={state} />
       </div>
+    </form>
+  )
+}
+
+function DetailInput({
+  field, value, outlets,
+}: {
+  field: EditableField
+  value: string
+  outlets: { id: string; label: string }[]
+}) {
+  const id = `order-field-${field.key}`
+  const common = { id, name: field.key, defaultValue: value }
+  let control: React.ReactNode
+  switch (field.kind) {
+    case 'enum':
+      control = (
+        <select {...common} className={inputClass}>
+          {field.required ? null : <option value="">Not set</option>}
+          {field.options!.map((o) => (
+            <option key={o} value={o}>{enumOptionLabel(field.key, o)}</option>
+          ))}
+        </select>
+      )
+      break
+    case 'outlet':
+      control = (
+        <select {...common} className={inputClass}>
+          <option value="">No outlet</option>
+          {outlets.map((o) => (
+            <option key={o.id} value={o.id}>{o.label}</option>
+          ))}
+        </select>
+      )
+      break
+    case 'longtext':
+      control = <textarea {...common} rows={2} maxLength={field.max} className={textareaClass} />
+      break
+    case 'money':
+      control = <input {...common} type="number" min={0} step="0.01" placeholder="₹" className={inputClass} />
+      break
+    case 'int':
+      control = <input {...common} type="number" min={1} step={1} className={inputClass} />
+      break
+    case 'date':
+      control = <input {...common} type="date" required className={inputClass} />
+      break
+    case 'datetime':
+      control = <input {...common} type="datetime-local" className={inputClass} />
+      break
+    default:
+      control = <input {...common} type="text" maxLength={field.max} required={field.required} className={inputClass} />
+  }
+  return (
+    <div className={field.kind === 'longtext' ? 'space-y-1 sm:col-span-2' : 'space-y-1'}>
+      <label htmlFor={id} className="text-xs font-medium text-muted">
+        {field.label}
+        {field.kind === 'money' ? ' (₹)' : field.kind === 'datetime' ? ' (IST)' : ''}
+      </label>
+      {control}
+      <input type="hidden" name={`orig.${field.key}`} value={value} />
+    </div>
+  )
+}
+
+/**
+ * Every editable detail of the order in one form. Collapsed to a button: the
+ * page above it is for reading, and a wall of inputs would bury what it says.
+ * Each field that changes is logged on its own, old value and new.
+ */
+export function OrderDetailsEditor({
+  orderId, values, outlets,
+}: {
+  orderId: string
+  /** Form-ready strings, keyed by field: dates as IST datetime-local, money in rupees. */
+  values: Record<string, string>
+  outlets: { id: string; label: string }[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [state, action, pending] = useActionState(async (prev: ActionState, fd: FormData) => {
+    const res = await editOrderDetailsAction(prev, fd)
+    if (res.ok && !res.error) setOpen(false)
+    return res
+  }, initial)
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 p-4">
+        <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          <IconPencil size={14} />
+          Edit order details
+        </Button>
+        {state.ok ? <FormNote state={state} /> : null}
+        <p className="w-full text-xs text-muted text-pretty">
+          Train, seat, contact, outlet, amount, payment and the rest. Every change is written to the event log.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    // key: a save re-renders this with the new values, and the inputs are
+    // uncontrolled, so remounting is what makes them show the saved ones.
+    <form key={JSON.stringify(values)} action={action} className="space-y-4 p-4">
+      <input type="hidden" name="orderId" value={orderId} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {ORDER_EDIT_FIELDS.map((f) => (
+          <DetailInput key={f.key} field={f} value={values[f.key] ?? ''} outlets={outlets} />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="sm" pending={pending}>Save changes</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <FormNote state={state} />
+      </div>
+    </form>
+  )
+}
+
+/**
+ * Sets any status at all, off the pipeline if need be: the same escape hatch
+ * as the status cell on the orders list, from the order's own page.
+ */
+export function StatusOverride({ orderId, status }: { orderId: string; status: string }) {
+  const [state, action, pending] = useActionState(overrideStatusAction, initial)
+  return (
+    <form action={action} className="space-y-2 border-t border-line p-4">
+      <input type="hidden" name="orderId" value={orderId} />
+      <label htmlFor="order-status-override" className="text-xs font-medium text-muted">Set any status</label>
+      <div className="flex gap-2">
+        <input
+          id="order-status-override"
+          name="to"
+          list="order-status-options"
+          placeholder={status}
+          className={inputClass}
+          autoComplete="off"
+        />
+        <datalist id="order-status-options">
+          {ORDER_STATUSES.map((s) => <option key={s} value={s} />)}
+        </datalist>
+        <Button type="submit" size="sm" variant="secondary" pending={pending}>Set</Button>
+      </div>
+      <FormNote state={state} />
     </form>
   )
 }

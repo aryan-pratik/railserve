@@ -3,16 +3,24 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/session'
-import { assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
-import { addOrderItems, deleteOrder, findById, updateOrderFields, updateOrderItem } from '@/lib/repo/orderRepo'
+import { adminOverrideStatus, assignAgents, transitionOrder } from '@/lib/repo/transitionOrder'
+import { deleteOrder, findById } from '@/lib/repo/orderRepo'
+import {
+  adminAddOrderItem,
+  adminEditOrder,
+  adminEditOrderItem,
+  adminRemoveOrderItem,
+  type FieldChange,
+} from '@/lib/repo/adminEditOrder'
+import { ORDER_EDIT_FIELDS, type ItemEditKey } from '@/lib/orderEditFields'
 import { forceRefreshTrainStatus } from '@/lib/train/service'
 import {
   assertPrintAgentConfigured,
   enqueueOrderKotPrint,
   getAppOrigin,
 } from '@/lib/printer/queue'
-import type { OrderStatus } from '@/lib/orderStatus'
-import { PAYMENT_MODES, type PaymentMode } from '@/lib/orderEnums'
+import { normalizeCustomStatus, type OrderStatus } from '@/lib/orderStatus'
+import { statusLabel } from '@/components/ui'
 import type { RefreshTrainState } from '@/components/RefreshTrainButton'
 
 export type ActionState = { error?: string; ok?: string }
@@ -157,6 +165,71 @@ export async function deleteOrderAction(
   redirect('/admin/orders')
 }
 
+/** Every page that shows an order's details, so an edit shows everywhere at once. */
+function revalidateOrder(orderId: string) {
+  revalidatePath(`/admin/orders/${orderId}`)
+  revalidatePath(`/store/orders/${orderId}`)
+  revalidatePath(`/calls/orders/${orderId}`)
+  revalidatePath('/admin/orders')
+  revalidatePath('/admin')
+  revalidatePath('/store')
+  revalidatePath('/calls')
+}
+
+function failed(err: unknown, fallback: string): ActionState {
+  return { error: err instanceof Error ? err.message : fallback }
+}
+
+function savedNote(changes: FieldChange[], what = 'Saved'): ActionState {
+  if (changes.length === 0) return { ok: 'Nothing changed.' }
+  return { ok: `${what}: ${changes.map((c) => c.label.toLowerCase()).join(', ')}.` }
+}
+
+/**
+ * The item form's fields. The packing box is a checkbox, which a browser
+ * leaves out of the form entirely when it is unticked, so the form sends a
+ * marker saying the box was there to be read.
+ */
+function itemInput(formData: FormData): Partial<Record<ItemEditKey, string>> {
+  const input: Partial<Record<ItemEditKey, string>> = {}
+  for (const key of ['name', 'qty', 'pricePaise', 'notes', 'spec'] as const) {
+    if (formData.has(key)) input[key] = String(formData.get(key) ?? '')
+  }
+  if (formData.has('hasIsPacking')) input.isPacking = formData.get('isPacking') ? 'true' : 'false'
+  return input
+}
+
+/**
+ * Saves the "Edit details" form. Only fields the admin actually changed are
+ * sent on: each input carries the value it was opened with (`orig.<key>`),
+ * so a field someone else corrected while this form sat open is not quietly
+ * put back. Each change is logged as its own event.
+ */
+export async function editOrderDetailsAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+
+  const input: Record<string, string> = {}
+  for (const f of ORDER_EDIT_FIELDS) {
+    if (!formData.has(f.key)) continue
+    const value = String(formData.get(f.key) ?? '')
+    const orig = String(formData.get(`orig.${f.key}`) ?? '')
+    if (value.trim() !== orig.trim()) input[f.key] = value
+  }
+
+  let changes: FieldChange[]
+  try {
+    changes = await adminEditOrder(ctx, orderId, input)
+  } catch (err) {
+    return failed(err, 'Could not save the order.')
+  }
+  revalidateOrder(orderId)
+  return savedNote(changes)
+}
+
 export async function updateOrderItemAction(
   _prev: ActionState,
   formData: FormData,
@@ -164,32 +237,15 @@ export async function updateOrderItemAction(
   const ctx = await requireRole('ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
   const itemId = String(formData.get('itemId') ?? '')
-  const name = String(formData.get('name') ?? '').trim()
-  const qty = Number(formData.get('qty'))
-  const rawPrice = String(formData.get('pricePaise') ?? '').trim()
-  const notes = String(formData.get('notes') ?? '').trim()
 
-  if (!name) return { error: 'Item name is required.' }
-  if (!Number.isInteger(qty) || qty < 1) return { error: 'Quantity must be at least 1.' }
-  if (rawPrice && (!Number.isFinite(Number(rawPrice)) || Number(rawPrice) < 0)) {
-    return { error: 'Price must be a positive number.' }
-  }
-
+  let changes: FieldChange[]
   try {
-    const ok = await updateOrderItem(ctx, orderId, itemId, {
-      name,
-      qty,
-      pricePaise: rawPrice ? Math.round(Number(rawPrice) * 100) : null,
-      notes: notes.length > 0 ? notes : null,
-    })
-    if (!ok) return { error: 'Item not found.' }
+    changes = await adminEditOrderItem(ctx, orderId, itemId, itemInput(formData))
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Could not save the item.' }
+    return failed(err, 'Could not save the item.')
   }
-
-  revalidatePath(`/admin/orders/${orderId}`)
-  revalidatePath(`/store/orders/${orderId}`)
-  return { ok: 'Item updated.' }
+  revalidateOrder(orderId)
+  return savedNote(changes, 'Item updated')
 }
 
 export async function addOrderItemAction(
@@ -198,33 +254,31 @@ export async function addOrderItemAction(
 ): Promise<ActionState> {
   const ctx = await requireRole('ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
-  const name = String(formData.get('name') ?? '').trim()
-  const qty = Number(formData.get('qty'))
-  const rawPrice = String(formData.get('pricePaise') ?? '').trim()
-  const notes = String(formData.get('notes') ?? '').trim()
-
-  if (!name) return { error: 'Item name is required.' }
-  if (!Number.isInteger(qty) || qty < 1) return { error: 'Quantity must be at least 1.' }
-  if (rawPrice && (!Number.isFinite(Number(rawPrice)) || Number(rawPrice) < 0)) {
-    return { error: 'Price must be a positive number.' }
-  }
 
   try {
-    const ok = await addOrderItems(ctx, orderId, [{
-      name,
-      qty,
-      pricePaise: rawPrice ? Math.round(Number(rawPrice) * 100) : null,
-      notes: notes.length > 0 ? notes : null,
-      isPacking: false,
-    }])
-    if (!ok) return { error: 'Order not found.' }
+    await adminAddOrderItem(ctx, orderId, itemInput(formData))
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Could not add the item.' }
+    return failed(err, 'Could not add the item.')
   }
-
-  revalidatePath(`/admin/orders/${orderId}`)
-  revalidatePath(`/store/orders/${orderId}`)
+  revalidateOrder(orderId)
   return { ok: 'Item added.' }
+}
+
+export async function removeOrderItemAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const itemId = String(formData.get('itemId') ?? '')
+
+  try {
+    await adminRemoveOrderItem(ctx, orderId, itemId)
+  } catch (err) {
+    return failed(err, 'Could not remove the item.')
+  }
+  revalidateOrder(orderId)
+  return { ok: 'Item removed.' }
 }
 
 export async function updateOrderRemarkAction(
@@ -233,20 +287,13 @@ export async function updateOrderRemarkAction(
 ): Promise<ActionState> {
   const ctx = await requireRole('ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
-  const raw = String(formData.get('remark') ?? '').trim()
-  if (raw.length > 500) return { error: 'Keep the remark under 500 characters.' }
-  const remark = raw.length > 0 ? raw : null
 
   try {
-    const ok = await updateOrderFields(ctx, orderId, { remark })
-    if (!ok) return { error: 'Order not found.' }
+    await adminEditOrder(ctx, orderId, { remark: String(formData.get('remark') ?? '') })
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Could not save the remark.' }
+    return failed(err, 'Could not save the remark.')
   }
-
-  revalidatePath(`/admin/orders/${orderId}`)
-  revalidatePath(`/store/orders/${orderId}`)
-  revalidatePath('/store')
+  revalidateOrder(orderId)
   return { ok: 'Remark saved.' }
 }
 
@@ -262,22 +309,36 @@ export async function updateOrderPaymentModeAction(
 ): Promise<ActionState> {
   const ctx = await requireRole('ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
-  const raw = String(formData.get('paymentMode') ?? '')
-  if (raw && !PAYMENT_MODES.includes(raw as PaymentMode)) {
-    return { error: 'Pick a valid payment mode.' }
-  }
 
   try {
-    const ok = await updateOrderFields(ctx, orderId, { paymentMode: raw || null })
-    if (!ok) return { error: 'Order not found.' }
+    await adminEditOrder(ctx, orderId, { paymentMode: String(formData.get('paymentMode') ?? '') })
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Could not save the payment mode.' }
+    return failed(err, 'Could not save the payment mode.')
   }
-
-  revalidatePath(`/admin/orders/${orderId}`)
-  revalidatePath(`/store/orders/${orderId}`)
-  revalidatePath('/admin/orders')
-  revalidatePath('/admin')
-  revalidatePath('/store')
+  revalidateOrder(orderId)
   return { ok: 'Payment mode saved.' }
+}
+
+/**
+ * Sets any status, including one off the pipeline, from the order's own page.
+ * The same escape hatch as the orders list's status cell (adminOverrideStatus),
+ * which logs the move like any transition.
+ */
+export async function overrideStatusAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireRole('ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const to = normalizeCustomStatus(String(formData.get('to') ?? ''))
+  if (!to) return { error: 'Enter a status.' }
+
+  try {
+    await adminOverrideStatus({ ctx, orderId, to, meta: { via: 'admin-detail' } })
+  } catch (err) {
+    return failed(err, 'Could not set the status.')
+  }
+  revalidateOrder(orderId)
+  revalidatePath('/agent')
+  return { ok: `Status set to ${statusLabel(to)}.` }
 }
