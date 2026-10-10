@@ -7,6 +7,7 @@ import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { ORDER_EDIT_FIELDS, enumOptionLabel, type EditableField } from '@/lib/orderEditFields'
 import { IconPencil, IconPlus } from '@/components/Icons'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { Modal } from '@/components/Modal'
 import {
   addOrderItemAction,
   adminTransitionAction,
@@ -501,8 +502,8 @@ function DetailInput({
 }
 
 /**
- * Every editable detail of the order in one form. Collapsed to a button: the
- * page above it is for reading, and a wall of inputs would bury what it says.
+ * Every editable detail of the order in one form. Opens in a modal from a
+ * button: the page is for reading, and a wall of inputs would bury what it says.
  * Each field that changes is logged on its own, old value and new.
  */
 export function OrderDetailsEditor({
@@ -520,37 +521,47 @@ export function OrderDetailsEditor({
     return res
   }, initial)
 
-  if (!open) {
-    return (
-      <div className="flex flex-wrap items-center gap-3 p-4">
-        <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>
-          <IconPencil size={14} />
-          Edit order details
-        </Button>
-        {state.ok ? <FormNote state={state} /> : null}
-        <p className="w-full text-xs text-muted text-pretty">
-          Train, seat, contact, outlet, amount, payment and the rest. Every change is written to the event log.
-        </p>
-      </div>
-    )
-  }
+  const formId = `order-details-form-${orderId}`
+  const close = () => setOpen(false)
 
   return (
-    // key: a save re-renders this with the new values, and the inputs are
-    // uncontrolled, so remounting is what makes them show the saved ones.
-    <form key={JSON.stringify(values)} action={action} className="space-y-4 p-4">
-      <input type="hidden" name="orderId" value={orderId} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        {ORDER_EDIT_FIELDS.map((f) => (
-          <DetailInput key={f.key} field={f} value={values[f.key] ?? ''} outlets={outlets} />
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" size="sm" pending={pending}>Save changes</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-        <FormNote state={state} />
-      </div>
-    </form>
+    <div className="flex flex-wrap items-center gap-3 p-4">
+      <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>
+        <IconPencil size={14} />
+        Edit order details
+      </Button>
+      {state.ok ? <FormNote state={state} /> : null}
+      <p className="w-full text-xs text-muted text-pretty">
+        Train, seat, contact, outlet, amount, payment and the rest. Every change is written to the event log.
+      </p>
+
+      {open ? (
+        <Modal
+          title="Edit order details"
+          titleId={`order-details-modal-${orderId}`}
+          onClose={close}
+          maxWidthClassName="max-w-2xl"
+          footer={
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" form={formId} size="sm" pending={pending}>Save changes</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={close}>Cancel</Button>
+              <FormNote state={state} />
+            </div>
+          }
+        >
+          {/* key: a save re-renders this with the new values, and the inputs are
+              uncontrolled, so remounting is what makes them show the saved ones. */}
+          <form id={formId} key={JSON.stringify(values)} action={action} className="p-5">
+            <input type="hidden" name="orderId" value={orderId} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {ORDER_EDIT_FIELDS.map((f) => (
+                <DetailInput key={f.key} field={f} value={values[f.key] ?? ''} outlets={outlets} />
+              ))}
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </div>
   )
 }
 
