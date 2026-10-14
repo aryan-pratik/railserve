@@ -71,7 +71,12 @@ function checkTrain(): Check {
   return {
     name: 'Live train status',
     status: 'ok',
-    detail: `live upstream via ${env.TRAIN_API_HOST}`,
+    detail:
+      env.TRAIN_API_PROVIDER === 'rapidapi'
+        ? `live upstream via ${env.TRAIN_API_HOST}`
+        : env.TRAIN_API_PROVIDER === 'railkit-v2'
+          ? 'live upstream via RailKit v2 (WIMT), falling back to v1 (NTES)'
+          : 'live upstream via RailKit v1 (NTES)',
   }
 }
 

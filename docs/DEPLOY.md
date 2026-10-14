@@ -95,7 +95,7 @@ Changes take effect on container **restart**, not rebuild:
 | `AUTH_TRUST_HOST` | **yes** | Set to `true`. Auth.js refuses every request with `UntrustedHost` otherwise, and it fails at runtime, not at build. |
 | `SEED_PASSWORD` | no | Only used by the seed script; irrelevant in production. |
 | `CRON_TOKEN` | recommended | Shared secret for every `/api/cron/*` endpoint (`train-poll`, `gmail-sync`, `gmail-watch`, `print-retry`). Leave unset and they are open. |
-| `TRAIN_API_PROVIDER` | no | `simulator` (default), `rapidapi`, or `railkit` — currently `railkit`. |
+| `TRAIN_API_PROVIDER` | no | `simulator` (default), `rapidapi`, `railkit` (RailKit v1/NTES only) or `railkit-v2` (v2/WIMT first, v1 as fallback) — currently `railkit`. The value is validated at boot, so an image older than `railkit-v2` refuses to start with it: switch to it in the same `up -d --build` that ships the code, and set it back to `railkit` **before** rolling back to an older image. Readings V1 had to serve are logged as `[train-fallback]`. |
 | `TRAIN_API_KEY` / `TRAIN_API_HOST` | no | `TRAIN_API_HOST` applies to the `rapidapi` provider only; the `railkit` adapter takes just the key and ignores it. |
 | `R2_ACCOUNT_ID` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | no | Delivery photo storage. All blank ⇒ photo capture does not appear and delivery still works. |
 | `GMAIL_*` | no | Email ingestion. All blank ⇒ orders are pasted or entered by hand. |

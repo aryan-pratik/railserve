@@ -3,6 +3,8 @@ import type { TrainStatusProvider } from './provider'
 import { SimulatedTrainStatusProvider } from './simulator'
 import { RapidApiTrainStatusProvider } from './rapidapi'
 import { RailKitTrainStatusProvider } from './railkit'
+import { RailKitV2TrainStatusProvider } from './railkitV2'
+import { FallbackTrainStatusProvider } from './fallback'
 
 /**
  * THE one-file provider swap (plan §8).
@@ -22,6 +24,15 @@ export function getTrainStatusProvider(
   }
   if (env.TRAIN_API_PROVIDER === 'railkit') {
     cached ??= new RailKitTrainStatusProvider(env.TRAIN_API_KEY)
+    return cached
+  }
+  if (env.TRAIN_API_PROVIDER === 'railkit-v2') {
+    // Two calls can now sit behind one reading, so each gets half the 8s a
+    // lone v1 call had — a dead upstream still costs no more than before.
+    cached ??= new FallbackTrainStatusProvider(
+      new RailKitV2TrainStatusProvider(env.TRAIN_API_KEY, { timeoutMs: 4000 }),
+      new RailKitTrainStatusProvider(env.TRAIN_API_KEY, { timeoutMs: 4000 }),
+    )
     return cached
   }
   cached ??= new RapidApiTrainStatusProvider(env.TRAIN_API_KEY, env.TRAIN_API_HOST)

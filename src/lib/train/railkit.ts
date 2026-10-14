@@ -12,8 +12,9 @@ import {
  * Verified against REAL responses for train 12561 on 01-09-2026 and
  * 02-09-2026 — every field name below was read off the wire, not guessed.
  *
- * The SDK is not optional. RailKit's documented REST endpoint
- * (`GET /api/trackTrain/:train/:date` with `x-api-key`) answers
+ * The SDK is not optional. RailKit's REST endpoint (`GET /api/trackTrain/
+ * :train/:date` until SDK 6.0, `/api/v1/trains/:train/live/:date` since,
+ * with `x-api-key`) answers
  * 403 "Missing SDK signature headers" on the Pro plan; only the package
  * produces the signature it wants. So this is the one provider that reaches
  * upstream through a dependency rather than `fetch`, and the timeout below is
@@ -39,13 +40,13 @@ import {
  *    which is exactly when the polling policy asks.
  */
 
-type RailKitTimes = {
+export type RailKitTimes = {
   scheduled?: string // "09:35 02-Sep", with no year
   actual?: string // same, with a trailing "*" when projected; "--" when unknown
   delay?: string // "On Time" | "22 Min" | "01:20 Hr" | ""
 }
 
-type RailKitStation = {
+export type RailKitStation = {
   type?: string // "stoppage" | "intermediate"
   status?: string // "passed" | "current" | "upcoming"
   stationCode?: string
@@ -56,7 +57,7 @@ type RailKitStation = {
   departure?: RailKitTimes
 }
 
-type RailKitResponse = {
+export type RailKitResponse = {
   success?: boolean
   error?: string
   data?: {
@@ -86,7 +87,7 @@ const MONTHS: Record<string, number> = {
 }
 
 export class RailKitTrainStatusProvider implements TrainStatusProvider {
-  readonly name = 'railkit'
+  readonly name: string = 'railkit'
 
   /**
    * Days between the run's departure from origin and its arrival at the
@@ -114,11 +115,15 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
     return `${trainNo}|${stationCode.toUpperCase()}`
   }
 
-  constructor(apiKey: string) {
+  private readonly timeoutMs: number
+
+  constructor(apiKey: string, opts: { timeoutMs?: number } = {}) {
     // configure() sets module-level state in the SDK rather than returning a
     // client, so there is nothing to hold; doing it here keeps the one call
     // next to the key rather than at import time.
     configure(apiKey)
+    // 8s alone; shorter behind a fallback, where two calls share one budget.
+    this.timeoutMs = opts.timeoutMs ?? 8000
   }
 
   async getStatus(
@@ -142,6 +147,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       // happened yet"), not a parse failure.
       providerUpdatedAt: parseLastUpdate(body.data?.lastUpdate),
       arrived: hasDeparted(row),
+      source: this.name,
     }
   }
 
@@ -288,6 +294,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       stopsAway,
       distanceKm: Number.isFinite(distance) && distance > 0 ? distance : null,
       arrived: hasDeparted(row),
+      source: this.name,
     }
   }
 
@@ -314,16 +321,21 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
     return { body, row }
   }
 
+  /** The one SDK call, in the payload shape everything above reads. */
+  protected async request(trainNo: string, ddmmyyyy: string): Promise<RailKitResponse> {
+    return (await trackTrain(trainNo, ddmmyyyy)) as RailKitResponse
+  }
+
   private async call(trainNo: string, ddmmyyyy: string): Promise<RailKitResponse> {
     try {
       // Plan §13.6: train API downtime must never block order flow. The SDK
       // exposes no timeout of its own, so the race is the only bound we have.
-      return (await Promise.race([
-        trackTrain(trainNo, ddmmyyyy),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timed out after 8000ms')), 8000),
+      return await Promise.race([
+        this.request(trainNo, ddmmyyyy),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`timed out after ${this.timeoutMs}ms`)), this.timeoutMs),
         ),
-      ])) as RailKitResponse
+      ])
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown'
       // The SDK throws rather than returning a status, so quota and auth

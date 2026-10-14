@@ -33,6 +33,12 @@ export type TrainStatusReading = {
    * polling continues exactly as before; nothing regresses for them.
    */
   arrived: boolean
+  /**
+   * Which upstream actually answered, when a provider can ask more than one.
+   * Recorded on the cache row in place of the provider's own name, so a
+   * reading served by a fallback says so. Absent means the provider itself.
+   */
+  source?: string
 }
 
 /**
@@ -68,6 +74,8 @@ export type TrainDetail = {
   distanceKm: number | null
   /** See TrainStatusReading.arrived — same meaning, same caution about it. */
   arrived: boolean
+  /** See TrainStatusReading.source. */
+  source?: string
 }
 
 export interface TrainStatusProvider {

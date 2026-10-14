@@ -72,7 +72,7 @@ export async function refreshTrainStatus(
           fetchedAt: now,
           ...(learnedSomething ? { lastSuccessAt: now } : {}),
           lastError: null,
-          provider: provider.name,
+          provider: reading.source ?? provider.name,
         },
         // $max rather than $set: false BSON-compares below true, so this can
         // only ever flip a row from not-arrived to arrived, never back. A
@@ -144,7 +144,7 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         fetchedAt: now,
         lastSuccessAt: now,
         lastError: null,
-        provider: provider.name,
+        provider: detail.source ?? provider.name,
       },
       // Same one-way $max as refreshTrainStatus — an admin's manual lookup
       // should stop the automatic tick from polling this train too, not just
