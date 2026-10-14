@@ -29,43 +29,52 @@ export type OrderRow = {
   callNoteHint?: Maybe<string>
 }
 
+type OrderTableColumns = { showOutlet: boolean; showSource?: boolean; showRider?: boolean }
+
 /**
- * Column widths for the shared order-table shape (Order, Date, Train, Seat,
- * Passenger, [Aggregator], [Outlet], Remark, Amount, Status).
+ * The narrowest each column can be, in px, padding included — for the shared
+ * order-table shape (Order, Date, Train, Seat, Passenger, [Aggregator],
+ * [Outlet], [Rider], Remark, Amount, Status).
  *
- * Built rather than written out, because the optional columns make four
- * combinations and four hand-tuned lists drift apart the first time one is
- * edited. The weights are relative; they are normalised to percentages that
- * sum to 100, which is what `table-layout: fixed` needs to keep the table
- * inside its container instead of forcing a horizontal scrollbar.
+ * Measured off real rows (Oct 2026): date, train-plus-time, the aggregator and
+ * status badges and the amount never truncate, so they get what they need;
+ * passenger, outlet, rider and remark truncate with a tooltip, so they get
+ * less. The same numbers are the colgroup weights AND, summed, the table's
+ * min-width — one list, so the minimum is always exactly what the shown
+ * columns need. Hand-picked rem minimums drifted above it: store history's
+ * 72rem was 18px wider than the 1134px a 1440px laptop leaves the table, and
+ * that alone made the page scroll sideways.
  */
-export function OrderTableColGroup({
-  showOutlet,
-  showSource = false,
-  showRider = false,
-}: {
-  showOutlet: boolean
-  showSource?: boolean
-  showRider?: boolean
-}) {
-  const weights = [
-    15, // order id
-    11, // date
-    12, // train
-    11, // seat
-    15, // passenger
-    ...(showSource ? [11] : []), // aggregator
-    ...(showOutlet ? [12] : []), // outlet
-    ...(showRider ? [11] : []), // rider
-    14, // remark
-    9, // amount
-    13, // status
+function orderTableColumnWidths({ showOutlet, showSource = false, showRider = false }: OrderTableColumns) {
+  return [
+    110, // order id
+    112, // date
+    130, // train + scheduled time
+    92, // seat
+    115, // passenger
+    ...(showSource ? [100] : []), // aggregator
+    ...(showOutlet ? [92] : []), // outlet
+    ...(showRider ? [80] : []), // rider
+    56, // remark
+    86, // amount
+    120, // status
   ]
-  const total = weights.reduce((a, b) => a + b, 0)
+}
+
+/**
+ * Column widths as percentages of the table, which is what `table-layout:
+ * fixed` needs to keep the table inside its container rather than sizing to
+ * content. Built rather than written out, because the optional columns make
+ * eight combinations and hand-tuned lists drift apart the first time one is
+ * edited.
+ */
+export function OrderTableColGroup(columns: OrderTableColumns) {
+  const widths = orderTableColumnWidths(columns)
+  const total = widths.reduce((a, b) => a + b, 0)
 
   return (
     <colgroup>
-      {weights.map((w, i) => (
+      {widths.map((w, i) => (
         <col key={i} style={{ width: `${((w / total) * 100).toFixed(3)}%` }} />
       ))}
     </colgroup>
@@ -107,10 +116,12 @@ export function OrdersTable({
     <TableFrame>
       {/* The min-width gives the scroll wrapper something coherent to scroll:
           without it the percentages resolve against a 375px phone and the
-          seat and amount columns collapse to nothing. */}
-      <table className={`w-full table-fixed text-sm ${
-        showSource && showRider ? 'min-w-[72rem]' : showSource || showRider ? 'min-w-[64rem]' : 'min-w-[56rem]'
-      }`}>
+          seat and amount columns collapse to nothing. It is the sum of the
+          shown columns' minimums, so a screen with room never scrolls. */}
+      <table
+        className="w-full table-fixed text-sm"
+        style={{ minWidth: orderTableColumnWidths({ showOutlet, showSource, showRider }).reduce((a, b) => a + b, 0) }}
+      >
         <OrderTableColGroup showOutlet={showOutlet} showSource={showSource} showRider={showRider} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
