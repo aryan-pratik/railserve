@@ -27,6 +27,14 @@ export function gmailClient(): gmail_v1.Gmail {
  * multipart/alternative, and the text/plain part is not reliably first.
  * Falls back to stripping tags from text/html, because a parser failure that
  * lands in the unparsed inbox beats dropping the message.
+ *
+ * A text/plain part is not always plain text. RailRestro's multipart mails
+ * (from 14-Oct-2026 19:16 IST) carry the full HTML document in BOTH
+ * alternatives, so preferring text/plain handed every parser raw markup —
+ * "Dear\n<b>KHANA KHAZANA</b>,</td>" instead of "Dear KHANA KHAZANA," —
+ * and eight orders went to the unparsed inbox. A plain part that is really
+ * markup is therefore treated as HTML: the real text/html alternative when
+ * there is one, else the same tag-stripping applied to the plain part.
  */
 export function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): string {
   if (!payload) return ''
@@ -44,38 +52,51 @@ export function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): s
   }
 
   const plain = walk(payload, 'text/plain')
-  if (plain) return plain
+  if (plain && !looksLikeHtml(plain)) return plain
 
-  const html = walk(payload, 'text/html')
-  if (html) {
-    return html
-      // A browser collapses any run of whitespace between tags to one space —
-      // hand-formatted HTML routinely puts each <td> on its own source line
-      // purely for readability, invisible once rendered. Without collapsing
-      // that first, the source's own line break survives as a real newline
-      // sitting right next to the tab this function inserts for </td> below,
-      // and the trailing-whitespace cleanup near the end of this chain (meant
-      // to drop a meaningless tab right before a genuine row-ending newline)
-      // deletes that tab too — silently splitting one cell's value onto its
-      // own disconnected line with no delimiter connecting it to the next.
-      .replace(/[ \t\r\n]+/g, ' ')
-      .replace(/<br\s*\/?>/gi, '\n')
-      // Table cells carry no whitespace of their own — "<td>Foo</td><td>Bar</td>"
-      // would otherwise collapse to "FooBar" once tags are stripped below, with
-      // no delimiter a field parser could split on.
-      .replace(/<\/(td|th)>/gi, '\t')
-      .replace(/<\/(p|div|tr|li)>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-  }
+  const html = walk(payload, 'text/html') ?? plain
+  if (html) return htmlToText(html)
 
   return decode(payload.body?.data)
+}
+
+/**
+ * True when a supposedly plain-text body is an HTML document or table.
+ *
+ * Deliberately narrow — a doctype, an <html>/<body> tag, or table markup —
+ * because real plain-text order mails can contain a stray "<" or an angle-
+ * bracketed address ("RailRestro <no-reply@…>") and must not be stripped.
+ */
+function looksLikeHtml(text: string): boolean {
+  return /^\s*<!doctype html|<html[\s>]|<body[\s>]|<\/?(table|tbody|tr|td)[\s>]/i.test(text)
+}
+
+function htmlToText(html: string): string {
+  return html
+    // A browser collapses any run of whitespace between tags to one space —
+    // hand-formatted HTML routinely puts each <td> on its own source line
+    // purely for readability, invisible once rendered. Without collapsing
+    // that first, the source's own line break survives as a real newline
+    // sitting right next to the tab this function inserts for </td> below,
+    // and the trailing-whitespace cleanup near the end of this chain (meant
+    // to drop a meaningless tab right before a genuine row-ending newline)
+    // deletes that tab too — silently splitting one cell's value onto its
+    // own disconnected line with no delimiter connecting it to the next.
+    .replace(/[ \t\r\n]+/g, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    // Table cells carry no whitespace of their own — "<td>Foo</td><td>Bar</td>"
+    // would otherwise collapse to "FooBar" once tags are stripped below, with
+    // no delimiter a field parser could split on.
+    .replace(/<\/(td|th)>/gi, '\t')
+    .replace(/<\/(p|div|tr|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 export function headerValue(

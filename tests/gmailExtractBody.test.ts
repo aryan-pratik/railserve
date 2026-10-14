@@ -75,3 +75,40 @@ describe('extractBody — HTML table extraction', () => {
     expect(grandTotalLine).toBe('Grand Total (Inclusive of all taxes)\t ₹ 441')
   })
 })
+
+describe('extractBody — a text/plain part that is really HTML', () => {
+  const textPart = (text: string): gmail_v1.Schema$MessagePart => ({
+    mimeType: 'text/plain',
+    body: { data: Buffer.from(text, 'utf8').toString('base64url') },
+  })
+  // The shape of RailRestro's multipart mails from 14-Oct-2026: the same HTML
+  // document in both alternatives, greeting split across source lines.
+  const RAILRESTRO_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN">
+<html><body><table><tr>
+    <td height="30" style="font:14px/16px Arial">Dear
+        <b>KHANA KHAZANA</b>,</td>
+</tr></table></body></html>`
+
+  it('strips the real HTML alternative instead of returning markup', () => {
+    const body = extractBody({
+      mimeType: 'multipart/alternative',
+      parts: [textPart(RAILRESTRO_HTML), htmlPart(RAILRESTRO_HTML)],
+    })
+    expect(body).toMatch(/^\s*Dear KHANA KHAZANA,\s*$/m)
+    expect(body).not.toContain('<b>')
+  })
+
+  it('strips the plain part itself when there is no HTML alternative', () => {
+    const body = extractBody({ mimeType: 'multipart/alternative', parts: [textPart(RAILRESTRO_HTML)] })
+    expect(body).toMatch(/^\s*Dear KHANA KHAZANA,\s*$/m)
+  })
+
+  it('leaves genuine plain text alone, angle brackets and all', () => {
+    const plain = 'Dear KHANA KHAZANA,\nFrom: RailRestro <no-reply@railrestro.com>\nAmount < 500'
+    const body = extractBody({
+      mimeType: 'multipart/alternative',
+      parts: [textPart(plain), htmlPart('<p>ignored</p>')],
+    })
+    expect(body).toBe(plain)
+  })
+})
