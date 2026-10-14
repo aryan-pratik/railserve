@@ -29,8 +29,15 @@ const printImagesDirect = vi.fn<(images: Buffer[], host: string, port: number) =
 )
 vi.mock('@/lib/printer/directPrint', () => ({ printImagesDirect }))
 
-const { enqueueOrderKotPrint, enqueueRunKotPrint, retryDirectPrintJobs, PRINT_JOB_MAX_AGE_MS } =
-  await import('../src/lib/printer/queue')
+const {
+  enqueueOrderKotPrint,
+  enqueueRunKotPrint,
+  retryDirectPrintJobs,
+  notifyPrintAgents,
+  waitForPrintJob,
+  PRINT_JOB_MAX_AGE_MS,
+  PRINT_JOB_CLAIM_LEASE_MS,
+} = await import('../src/lib/printer/queue')
 const { GET: pollForJob } = await import('../src/app/api/print-agent/poll/route')
 
 /** Jobs in the order an agent claims them, matching the poll route's sort. */
@@ -391,5 +398,140 @@ describe('stale jobs', () => {
     expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 1 })
     expect(printImagesDirect).toHaveBeenCalledTimes(1)
     expect((await PrintJob.findById(old._id))!.status).toBe('failed')
+  })
+})
+
+/**
+ * The agent holds its poll open and the enqueue wakes it, so a ticket starts
+ * printing when it exists rather than at the agent's next 3s poll; and it
+ * takes a whole train in one answer. An agent installed before either asks
+ * with no parameters and must see exactly what it always did.
+ */
+describe('agent poll: waiting and batches', () => {
+  type PollBody = {
+    ok: boolean
+    job: { id: string; images: string[] } | null
+    jobs: { id: string; images: string[] }[]
+  }
+  const poll = async (query = '', init: RequestInit = {}) => {
+    const res = await pollForJob(
+      new Request(`${ORIGIN}/api/print-agent/poll${query}`, {
+        ...init,
+        headers: { 'x-agent-token': 'cnb-token' },
+      }),
+    )
+    return (await res.json()) as PollBody
+  }
+  const runOfTwo = () =>
+    enqueueRunKotPrint({
+      appOrigin: ORIGIN,
+      runKey: '12487~2026-09-19~CNB',
+      orderIds: ['aaaaaaaaaaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaaaaaaaaaa2'],
+    })
+  const ticketsOf = (body: PollBody) =>
+    body.jobs.map((j) => Buffer.from(j.images[0], 'base64').toString())
+
+  beforeEach(async () => {
+    await makeStation('CNB', { printAgentToken: 'cnb-token' })
+  })
+
+  it('hands out one job, at once, to an agent that asks the old way', async () => {
+    await runOfTwo()
+    const body = await poll()
+    expect(body.jobs).toHaveLength(1)
+    expect(body.job?.id).toBe(body.jobs[0].id)
+    expect(await PrintJob.countDocuments({ status: 'pending' })).toBe(3)
+  })
+
+  it('hands out a whole train in print order when asked for a batch', async () => {
+    await runOfTwo()
+    const body = await poll('?max=12')
+    expect(ticketsOf(body)).toEqual([
+      'kot-aaaaaaaaaaaaaaaaaaaaaaa1',
+      'slip-aaaaaaaaaaaaaaaaaaaaaaa1',
+      'kot-aaaaaaaaaaaaaaaaaaaaaaa2',
+      'slip-aaaaaaaaaaaaaaaaaaaaaaa2',
+    ])
+    expect(body.job?.id).toBe(body.jobs[0].id)
+    expect(await PrintJob.countDocuments({ status: 'claimed' })).toBe(4)
+  })
+
+  it('never hands out more than the cap in one answer', async () => {
+    for (let i = 0; i < 7; i++) {
+      await enqueueOrderKotPrint({ appOrigin: ORIGIN, stationCode: 'CNB', orderId: `order-${i}` })
+    }
+    expect((await poll('?max=1000')).jobs).toHaveLength(12)
+  })
+
+  it('holds the poll until a ticket is queued, then answers with it', async () => {
+    const answer = poll('?wait=10&max=12')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await runOfTwo()
+    const body = await answer
+    expect(body.jobs).toHaveLength(4)
+  })
+
+  it('answers empty once the wait is over', async () => {
+    const startedAt = Date.now()
+    const body = await poll('?wait=1&max=12')
+    expect(body).toMatchObject({ ok: true, job: null, jobs: [] })
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1000)
+  })
+
+  it('hands out again a ticket claimed into a connection that never acked', async () => {
+    // A Mac that slept mid-poll: the server claimed the train into a request
+    // nobody was reading any more.
+    await runOfTwo()
+    const lost = await poll('?max=12')
+    await PrintJob.collection.updateMany(
+      {},
+      { $set: { claimedAt: new Date(Date.now() - PRINT_JOB_CLAIM_LEASE_MS - 60_000) } },
+    )
+
+    const again = await poll('?max=12')
+    expect(again.jobs.map((j) => j.id)).toEqual(lost.jobs.map((j) => j.id))
+  })
+
+  it('leaves a recently claimed ticket with the agent printing it', async () => {
+    await runOfTwo()
+    await poll('?max=12')
+    expect((await poll('?max=12')).jobs).toEqual([])
+    expect(await PrintJob.countDocuments({ status: 'claimed' })).toBe(4)
+  })
+
+  it('claims nothing for an agent that has already hung up', async () => {
+    // The ticket would be claimed into a response nobody reads, and never print.
+    await runOfTwo()
+    const body = await poll('?wait=10&max=12', { signal: AbortSignal.abort() })
+    expect(body.jobs).toEqual([])
+    expect(await PrintJob.countDocuments({ status: 'pending' })).toBe(4)
+  })
+})
+
+describe('waitForPrintJob', () => {
+  it('wakes as soon as its station is notified', async () => {
+    const startedAt = Date.now()
+    const waiting = waitForPrintJob('CNB', 5_000)
+    notifyPrintAgents('CNB')
+    await waiting
+    expect(Date.now() - startedAt).toBeLessThan(1_000)
+  })
+
+  it("does not wake for another station's ticket", async () => {
+    let woke = false
+    const waiting = waitForPrintJob('CNB', 200).then(() => (woke = true))
+    notifyPrintAgents('PRYJ')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(woke).toBe(false)
+    await waiting
+  })
+
+  it('gives up when the request is aborted', async () => {
+    const controller = new AbortController()
+    const startedAt = Date.now()
+    const waiting = waitForPrintJob('CNB', 5_000, controller.signal)
+    controller.abort()
+    await waiting
+    expect(Date.now() - startedAt).toBeLessThan(1_000)
   })
 })

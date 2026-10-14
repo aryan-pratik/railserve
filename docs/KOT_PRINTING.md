@@ -29,9 +29,11 @@ Manager clicks "Generate KOT" (or Print)
   → image saved as a PrintJob in MongoDB, status "pending"
   │
   ├─ station has NO directPrinterHost  (agent path — the default)
-  │    → outlet's print agent polls /api/print-agent/poll every few seconds
-  │    → agent claims the job, sends image to printer's local IP:9100 (ESC/POS raster)
-  │    → agent calls /api/print-agent/ack (done/failed)
+  │    → outlet's print agent holds a poll open (/api/print-agent/poll?wait=20&max=12);
+  │      the enqueue wakes it, so pickup is immediate, and it claims the whole train
+  │    → agent sends the tickets to the printer (Mac: one raw print-queue job, a cut
+  │      after every ticket; otherwise ESC/POS raster to the printer's IP:9100)
+  │    → agent calls /api/print-agent/ack (done/failed) for each job
   │
   └─ station HAS directPrinterHost  (direct path)
        → tryDirectDeliver() opens host:port from the server, in the same request
@@ -136,10 +138,17 @@ or wedge it. Two mitigations, both required:
   list; it buys time, not safety, and does not replace the rule above.
 
 ### Two behaviours to expect, neither a bug
-- **A failed ticket reprints alone.** Every ticket is its own job, so a run
-  that dies on ticket 3 of 5 retries ticket 3 onwards, not the whole train.
-  (Jobs queued before that change could hold several images and still reprint
-  whole.)
+- **A failed ticket reprints alone — except on the Mac agent.** Every ticket is
+  its own job, so on the direct path a run that dies on ticket 3 of 5 retries
+  ticket 3 onwards, not the whole train. The Mac agent sends a whole poll's
+  jobs as one print-queue job, so when the printer stops mid-train every job
+  in that batch is marked `failed`, including tickets that may already have
+  come out. Check the paper before reprinting the whole train.
+- **A ticket claimed but never acked is handed out again after 3 minutes**
+  (`PRINT_JOB_CLAIM_LEASE_MS`). That is a Mac that slept or lost Wi-Fi while
+  holding a poll open. If only the ack was lost, the ticket prints twice;
+  that is the trade for never losing one silently. Such a job carries
+  `error: reclaimed: never acked by the agent` until it prints.
 - **A ticket that waits 30 minutes is dropped, not printed late.** Both the
   agent poll and `retryDirectPrintJobs()` first call `expireStalePrintJobs()`
   (`PRINT_JOB_MAX_AGE_MS` in `queue.ts`), which marks older `pending` jobs
@@ -254,6 +263,33 @@ CRON_TOKEN="<random secret>"   # only if any station prints directly
 - Print failures never block the order status change — logged, workflow continues, Reprint is the fallback.
 - Components: `PreviewKotLink` and `GenerateKotButton` (`isReprint` prop) in `src/app/store/StoreOrderActions.tsx`; the run/batch equivalents in `src/app/store/StoreRunActions.tsx`.
 
+## How long a print takes, and where to look
+Measured at Kanpur on 2026-10-14, before the changes below: about 4 s for the
+agent to pick a ticket up (3 s poll), then about 6 s per ticket, one ticket at
+a time, because the agent waited for the Mac's print queue to report each one
+finished before fetching the next. A four-order train (8 tickets) took ~50 s.
+Now:
+- The poll is held open and the enqueue wakes it (`notifyPrintAgents` in
+  `queue.ts`), so pickup is about one network round trip.
+- One poll hands out up to 12 jobs, and the Mac agent sends them as **one**
+  raw print-queue job with a cut after every ticket, so the queue's fixed
+  per-job cost is paid once per train, not once per ticket.
+- The agent fetches the next batch while the printer works, and acks in the
+  background.
+- The render waits for `load` + fonts instead of `networkidle0`, which always
+  spent an extra 500 ms.
+
+To see the numbers:
+- **Server side** (click → tickets queued): `docker logs railserve-app 2>&1 | grep '\[print\]'`
+  — one line per print, with render and queue times in ms.
+- **Kitchen side** (queued → printed): `~/railserve-print-agent/agent.log` on
+  the Mac — `printed (Nms)` is measured from when the agent received the job.
+- `node print-agent.mjs --test` reports how long two tickets took end to end.
+
+An installed agent only gets this by being reinstalled (the one-line command
+below): the server keeps answering an agent that sends no `wait`/`max`
+exactly as before, one job at a time.
+
 ## Key files
 | Path | What |
 |---|---|
@@ -279,7 +315,7 @@ CRON_TOKEN="<random secret>"   # only if any station prints directly
 - **Nothing prints at a direct-path station and jobs have no `error` at all**: `directPrinterHost` is probably unset or misspelled — the job was queued for an agent that does not exist. Check `db.stations.findOne({_id:"<CODE>"})`.
 - **A whole train prints as one long uncut strip**: it was printed from the browser (Ctrl/Cmd+P), not by the agent — see [Printing from the browser](#printing-from-the-browser-ctrlcmdp-cannot-cut-per-ticket). Check the station's `agentLastSeenAt`; null or old means no agent is running there.
 - **Job `failed` with `expired: not printed within 30 min`**: nothing took the ticket in time — no agent running, or the printer was off. Reprint it from the app.
-- **Job `failed` with `printer did not take the ticket within 30s`** (Mac agent): the Mac's print queue could not reach the printer — off, out of paper, or the queue is paused in System Settings > Printers.
+- **Job `failed` with `printer did not take the ticket within Ns`** (Mac agent): the Mac's print queue could not reach the printer — off, out of paper, or the queue is paused in System Settings > Printers. N is 30s plus 5s for every ticket in the batch.
 - **Tickets print back-to-back with no cuts**: check the `printjobs` for that run each hold one image (`enqueueTickets` in `src/lib/printer/queue.ts`). If they do, something has collapsed the per-ticket `execute()` — see `printImagesDirect` and `agent/print-agent.mjs`, both deliberately execute once per ticket.
 - **Duplicate tickets after an outage**: rare now that every ticket is its own job; see [Two behaviours to expect](#two-behaviours-to-expect-neither-a-bug).
 - **Schema/field changes to `Restaurant` or `PrintJob` not taking effect after a dev-server restart**: Turbopack's `.next` cache can serve a stale compiled model. Fix: `rm -rf .next` then `npm run dev`.

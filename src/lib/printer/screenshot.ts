@@ -71,8 +71,17 @@ export async function renderKotScreenshots(pageUrl: string): Promise<Buffer[]> {
   try {
     await page.setExtraHTTPHeaders({ 'x-print-render-token': env.PRINT_RENDER_TOKEN })
     await page.setViewport({ width: 800, height: 1200, deviceScaleFactor: DEVICE_SCALE_FACTOR })
-    await page.goto(pageUrl, { waitUntil: 'networkidle0' })
+    // 'load', not 'networkidle0': the print page is server-rendered with no
+    // client fetching, and networkidle0 always spends a further 500ms making
+    // sure nothing else arrives. Fonts are the one thing 'load' does not wait
+    // for, and the ticket depends on Inter's open zero (see KotTicket.tsx).
+    await page.goto(pageUrl, { waitUntil: 'load' })
     await page.waitForSelector('.kot')
+    // Reading offsetHeight forces layout, which is what starts a font loading.
+    await page.evaluate(() => {
+      void document.body.offsetHeight
+      return document.fonts.ready.then(() => undefined)
+    })
 
     const tickets = await page.$$('.kot')
     if (tickets.length === 0) throw new Error('No .kot ticket found on the print page')

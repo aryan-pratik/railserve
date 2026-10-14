@@ -45,6 +45,84 @@ export async function expireStalePrintJobs(stationCodes: string[]): Promise<Date
 }
 
 /**
+ * How long an agent may hold a job without acking it before the job is taken
+ * back. The agent itself gives up on a stuck printer well inside this (30s
+ * plus 5s a ticket, at most 12 tickets), so a job still `claimed` after it
+ * went somewhere that will never ack.
+ */
+export const PRINT_JOB_CLAIM_LEASE_MS = 3 * 60 * 1000
+
+/**
+ * Puts back jobs that were claimed but never acked, so the next poll hands
+ * them out again.
+ *
+ * The agent holds its poll open for up to 20s. If the kitchen's Mac sleeps or
+ * its Wi-Fi drops in that time, no close ever reaches this server: the
+ * request still looks alive, the next train is claimed into it, and the
+ * answer goes nowhere. Without this those tickets stay `claimed` forever and
+ * never print, and nothing says so. Re-sending risks a second copy when only
+ * the ack was lost; a missing KOT is food nobody cooks, which is worse.
+ */
+export async function reclaimAbandonedPrintJobs(stationCode: string): Promise<void> {
+  await PrintJob.updateMany(
+    {
+      stationCode,
+      status: 'claimed',
+      claimedAt: { $lt: new Date(Date.now() - PRINT_JOB_CLAIM_LEASE_MS) },
+    },
+    { $set: { status: 'pending', claimedAt: null, error: 'reclaimed: never acked by the agent' } },
+  )
+}
+
+/**
+ * Wakes a print agent the moment its station has a new ticket, instead of
+ * leaving the ticket to wait for the agent's next poll.
+ *
+ * The agent holds its poll open (/api/print-agent/poll?wait=…) and the route
+ * parks on waitForPrintJob() until enqueueTickets() calls notifyPrintAgents().
+ * On globalThis for the same reason as the browser in screenshot.ts: a Server
+ * Action and a Route Handler can be separate bundles with their own copy of
+ * this module, and both must see one set of waiters. The poll route still
+ * re-checks the database every second, so a wake-up that never arrives (a
+ * second app process, say) costs a second, not a ticket.
+ */
+const globalForWake = globalThis as unknown as {
+  __railservePrintWaiters?: Map<string, Set<() => void>>
+}
+
+function printWaiters(): Map<string, Set<() => void>> {
+  return (globalForWake.__railservePrintWaiters ??= new Map())
+}
+
+export function notifyPrintAgents(stationCode: string): void {
+  for (const wake of printWaiters().get(stationCode) ?? []) wake()
+}
+
+/** Resolves when `stationCode` gets a new job, after `ms`, or when `signal` aborts — whichever is first. */
+export function waitForPrintJob(stationCode: string, ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const waiters = printWaiters()
+    const set = waiters.get(stationCode) ?? new Set()
+    waiters.set(stationCode, set)
+
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', finish)
+      set.delete(finish)
+      if (set.size === 0 && waiters.get(stationCode) === set) waiters.delete(stationCode)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    set.add(finish)
+    if (signal?.aborted) finish()
+    else signal?.addEventListener('abort', finish)
+  })
+}
+
+/**
  * Attempts immediate delivery for a station configured for direct printing.
  * Leaves the job `pending` (with `error` set) on failure rather than
  * throwing — the enqueue call already rendered and saved the job, and a
@@ -110,6 +188,7 @@ async function enqueueTickets(params: {
   images: Buffer[]
 }): Promise<void> {
   const { images, ...ref } = params
+  const stationCode = normaliseStationCode(ref.stationCode)
   await connectDb()
 
   const jobs: PrintJobDoc[] = []
@@ -117,12 +196,15 @@ async function enqueueTickets(params: {
     jobs.push(
       await PrintJob.create({
         ...ref,
-        stationCode: normaliseStationCode(ref.stationCode),
+        stationCode,
         images: [image],
         status: 'pending',
       }),
     )
   }
+  // Once, after the last ticket, so a waiting agent claims the whole train
+  // in one go rather than waking on ticket one.
+  notifyPrintAgents(stationCode)
   // Stop at the first failure: the printer is down, the rest would only wait
   // out the same timeout one by one, and printing past a gap would put the
   // train's tickets out of order. The retry cron sends them all, oldest first.
@@ -141,9 +223,24 @@ export async function enqueueOrderKotPrint(params: {
   const { appOrigin, stationCode, restaurantId = null, orderId } = params
 
   const pagePath = `/internal/print/order/${orderId}`
+  const startedAt = Date.now()
   const images = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
+  const renderedAt = Date.now()
 
   await enqueueTickets({ stationCode, restaurantId, refType: 'order', refId: orderId, images })
+  logEnqueueTiming(`order ${orderId}`, images.length, startedAt, renderedAt)
+}
+
+/**
+ * Everything between the click and the ticket being ready for the printer
+ * happens before the PrintJob exists, so nothing in the database records it.
+ * This line in `docker logs railserve-app` is the only measure of it.
+ */
+function logEnqueueTiming(what: string, tickets: number, startedAt: number, renderedAt: number) {
+  console.log(
+    `[print] ${what}: ${tickets} ticket(s) rendered in ${renderedAt - startedAt}ms, ` +
+      `queued in ${Date.now() - renderedAt}ms`,
+  )
 }
 
 /**
@@ -171,7 +268,9 @@ export async function enqueueRunKotPrint(params: {
 
   const url = new URL(`/internal/print/run/${encodeURIComponent(runKey)}`, appOrigin)
   url.searchParams.set('orders', orderIds.join(','))
+  const startedAt = Date.now()
   const images = await renderKotScreenshots(url.toString())
+  const renderedAt = Date.now()
 
   // Now a genuine invariant rather than a coincidence: the page was told
   // which orders to render, so a mismatch means the two disagree.
@@ -190,6 +289,7 @@ export async function enqueueRunKotPrint(params: {
     refId: runKey,
     images,
   })
+  logEnqueueTiming(`run ${runKey}`, images.length, startedAt, renderedAt)
 }
 
 /**

@@ -13,9 +13,10 @@ not this README.
 
 ## What it does
 
-Loops forever: asks the RailServe server "any print job for this station?",
-and when there is one, sends it to the kitchen printer, then tells the server
-it's done. Every ticket goes out on its own with its own cut — which a print
+Loops forever: asks the RailServe server "any print jobs for this station?"
+— the server holds the question open until there are — sends them to the
+kitchen printer, and tells the server each one is done. A whole train comes
+back in one answer and, on a Mac, goes to the printer as one print-queue job. Every ticket goes out on its own with its own cut — which a print
 from the browser (Ctrl/Cmd+P) cannot do: the printer driver cuts once per
 print job, so a whole train comes out as one strip.
 
@@ -83,4 +84,4 @@ The rest of this file is the manual setup, for any other device.
 For local dev, this can run on the same machine as the app server — open a
 second terminal, `cd agent`, point `SERVER_URL` at `http://localhost:3000`,
 and `npm start`. Click Print in the app; the agent should pick the job up
-within `POLL_INTERVAL_MS`.
+straight away (the server holds its poll open until there is a ticket).
