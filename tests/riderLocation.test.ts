@@ -222,6 +222,37 @@ describe('the admin board', () => {
     expect(other.work.carrying).toBe(0)
   })
 
+  it('counts a shared handover once in the day’s totals but against each rider', async () => {
+    const day = '2026-09-28'
+    await makeOrder({
+      serviceDate: day,
+      status: 'DELIVERED',
+      stationCode: 'CNB',
+      amountPaise: 50000,
+      paymentMode: 'COD',
+      delivery: { agentIds: [sharing, silent], deliveredAt: new Date() },
+    })
+    await makeOrder({
+      serviceDate: day,
+      status: 'DISPATCHED',
+      stationCode: 'PRYJ',
+      amountPaise: 20000,
+      paymentMode: 'PREPAID',
+      delivery: { agentIds: [sharing], dispatchedAt: new Date() },
+    })
+
+    const board = await riderBoard(admin, { serviceDate: day })
+    expect(board.totals).toEqual({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
+
+    const row = board.riders.find((r) => r.id === String(sharing))!
+    expect(row.work).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
+    expect(row.work.stations.sort()).toEqual(['CNB', 'PRYJ'])
+
+    const other = board.riders.find((r) => r.id === String(silent))!
+    expect(other.work).toMatchObject({ orders: 1, codOrders: 1, codPaise: 50000, amountPaise: 50000 })
+    expect(other.work.stations).toEqual(['CNB'])
+  })
+
   it('puts the riders who need looking at first', async () => {
     const board = await riderBoard(admin, { serviceDate: '2026-09-27' })
     expect(board.riders[0].id).toBe(String(sharing))

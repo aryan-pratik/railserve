@@ -1,8 +1,6 @@
 import { requireRole } from '@/lib/session'
 import { riderBoard } from '@/lib/repo/riderLocationRepo'
-import { readPage } from '@/lib/pagination'
-import { formatServiceDate, todayIST } from '@/lib/format'
-import { PageHeader } from '@/components/ui'
+import { todayIST } from '@/lib/format'
 import { PING_INTERVAL_SECONDS } from '@/lib/riderLocation'
 import { RiderLiveBoard } from './RiderLiveBoard'
 
@@ -26,18 +24,18 @@ export const dynamic = 'force-dynamic'
  */
 export default async function RidersPage(props: PageProps<'/admin/riders'>) {
   const ctx = await requireRole('ADMIN')
-  const { page, pageSize } = readPage(await props.searchParams)
-
-  const serviceDate = todayIST()
+  const sp = await props.searchParams
+  const requested = Array.isArray(sp.date) ? sp.date[0] : sp.date
+  // Any other day is read-only history; the board still polls it, since the
+  // same route serves every date.
+  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(requested ?? '') ? requested! : todayIST()
   const board = await riderBoard(ctx, { serviceDate })
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Riders"
-        note={`${formatServiceDate(serviceDate)} · positions come from the rider app every ${PING_INTERVAL_SECONDS} seconds while it is open.`}
-      />
-      <RiderLiveBoard initial={board} page={page} pageSize={pageSize} />
-    </div>
+    <RiderLiveBoard
+      initial={board}
+      today={todayIST()}
+      note={`Live tracking and performance of all delivery riders. Positions arrive from the rider app every ${PING_INTERVAL_SECONDS}s while it is open.`}
+    />
   )
 }

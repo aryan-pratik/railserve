@@ -154,13 +154,35 @@ export type RiderView = {
     /** Trains this rider is carrying food for right now, most orders first. */
     trains: string[]
     lastDeliveredAt: string | null
+    /** Every order they took off the counter today, whatever became of it. */
+    orders: number
+    codOrders: number
+    /** Paise. What they should have collected on COD orders today. */
+    codPaise: number
+    /** Paise. The value of everything they carried today. */
+    amountPaise: number
+    /** Stations they worked today, busiest first. Empty on a day off. */
+    stations: string[]
   }
+}
+
+/**
+ * The day's riders' work, counted per order rather than summed per rider: a
+ * bulk handover carried by two riders is one order and one amount, where
+ * adding up the rows would count it twice.
+ */
+export type RiderTotals = {
+  orders: number
+  codOrders: number
+  codPaise: number
+  amountPaise: number
 }
 
 export type RiderBoard = {
   serviceDate: string
   fetchedAt: string
   riders: RiderView[]
+  totals: RiderTotals
 }
 
 /**
@@ -186,12 +208,13 @@ export async function riderBoard(
 
   const ids = riders.map((r) => r._id)
   if (ids.length === 0) {
-    return { serviceDate, fetchedAt: now.toISOString(), riders: [] }
+    return { serviceDate, fetchedAt: now.toISOString(), riders: [], totals: NO_TOTALS }
   }
 
-  const [locations, work] = await Promise.all([
+  const [locations, work, totals] = await Promise.all([
     RiderLocation.find({ userId: { $in: ids } }).lean(),
     workByRider(ctx, ids, serviceDate),
+    workTotals(ctx, ids, serviceDate),
   ])
 
   const locationOf = new Map(locations.map((l) => [String(l.userId), l]))
@@ -221,7 +244,7 @@ export async function riderBoard(
         lng: p.lng,
         at: p.at.toISOString(),
       })),
-      work: w ?? { carrying: 0, delivered: 0, failed: 0, trains: [], lastDeliveredAt: null },
+      work: w ?? NO_WORK,
     }
   })
 
@@ -236,7 +259,55 @@ export async function riderBoard(
       a.name.localeCompare(b.name),
   )
 
-  return { serviceDate, fetchedAt: now.toISOString(), riders: rows }
+  return { serviceDate, fetchedAt: now.toISOString(), riders: rows, totals }
+}
+
+const NO_WORK: RiderView['work'] = {
+  carrying: 0,
+  delivered: 0,
+  failed: 0,
+  trains: [],
+  lastDeliveredAt: null,
+  orders: 0,
+  codOrders: 0,
+  codPaise: 0,
+  amountPaise: 0,
+  stations: [],
+}
+
+const NO_TOTALS: RiderTotals = { orders: 0, codOrders: 0, codPaise: 0, amountPaise: 0 }
+
+/** The orders a rider has had in hand today: on the way, handed over, or failed. */
+function riderWorkMatch(ctx: AuthContext, ids: mongoose.Types.ObjectId[], serviceDate: string) {
+  return scoped(ctx, {
+    serviceDate,
+    'delivery.agentIds': { $in: ids },
+    status: { $in: ['DISPATCHED', 'DELIVERED', 'FAILED'] },
+  })
+}
+
+const IS_COD = { $eq: ['$paymentMode', 'COD'] }
+
+/** The day's totals across every rider, one count per order. */
+async function workTotals(
+  ctx: AuthContext,
+  ids: mongoose.Types.ObjectId[],
+  serviceDate: string,
+): Promise<RiderTotals> {
+  const [row] = await Order.aggregate<RiderTotals>([
+    { $match: riderWorkMatch(ctx, ids, serviceDate) },
+    {
+      $group: {
+        _id: null,
+        orders: { $sum: 1 },
+        codOrders: { $sum: { $cond: [IS_COD, 1, 0] } },
+        codPaise: { $sum: { $cond: [IS_COD, { $ifNull: ['$amountPaise', 0] }, 0] } },
+        amountPaise: { $sum: { $ifNull: ['$amountPaise', 0] } },
+      },
+    },
+    { $project: { _id: 0 } },
+  ])
+  return row ?? NO_TOTALS
 }
 
 /**
@@ -259,14 +330,13 @@ async function workByRider(
     failed: number
     lastDeliveredAt: Date | null
     trains: (string | null)[]
+    orders: number
+    codOrders: number
+    codPaise: number
+    amountPaise: number
+    stations: string[]
   }>([
-    {
-      $match: scoped(ctx, {
-        serviceDate,
-        'delivery.agentIds': { $in: ids },
-        status: { $in: ['DISPATCHED', 'DELIVERED', 'FAILED'] },
-      }),
-    },
+    { $match: riderWorkMatch(ctx, ids, serviceDate) },
     { $unwind: '$delivery.agentIds' },
     { $match: { 'delivery.agentIds': { $in: ids } } },
     {
@@ -281,6 +351,11 @@ async function workByRider(
         trains: {
           $push: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, '$trainNo', null] },
         },
+        orders: { $sum: 1 },
+        codOrders: { $sum: { $cond: [IS_COD, 1, 0] } },
+        codPaise: { $sum: { $cond: [IS_COD, { $ifNull: ['$amountPaise', 0] }, 0] } },
+        amountPaise: { $sum: { $ifNull: ['$amountPaise', 0] } },
+        stations: { $push: '$stationCode' },
       },
     },
   ])
@@ -294,7 +369,19 @@ async function workByRider(
         failed: r.failed,
         trains: [...new Set(r.trains.filter((t): t is string => Boolean(t)))].sort(),
         lastDeliveredAt: r.lastDeliveredAt ? r.lastDeliveredAt.toISOString() : null,
+        orders: r.orders,
+        codOrders: r.codOrders,
+        codPaise: r.codPaise,
+        amountPaise: r.amountPaise,
+        stations: byFrequency(r.stations),
       },
     ]),
   )
+}
+
+/** Distinct values, most frequent first, ties alphabetical. */
+function byFrequency(values: string[]): string[] {
+  const count = new Map<string, number>()
+  for (const v of values) if (v) count.set(v, (count.get(v) ?? 0) + 1)
+  return [...count.keys()].sort((a, b) => count.get(b)! - count.get(a)! || a.localeCompare(b))
 }
