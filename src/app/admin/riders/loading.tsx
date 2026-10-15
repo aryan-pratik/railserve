@@ -8,7 +8,8 @@ function Bar({ className = '' }: { className?: string }) {
  */
 export default function Loading() {
   return (
-    <div className="@container/board space-y-5" aria-busy="true" aria-live="polite">
+    <div className="@container/board" aria-busy="true" aria-live="polite">
+    <div className="flex min-h-0 flex-col gap-5 @[60rem]/board:h-[calc(100dvh-3rem)]">
       <span className="sr-only">Loading</span>
 
       <div className="space-y-2">
@@ -58,6 +59,7 @@ export default function Loading() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   )
 }

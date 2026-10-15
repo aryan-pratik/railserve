@@ -267,7 +267,13 @@ export function RiderLiveBoard({
     // Side by side, the board is exactly one screen tall: the page does not
     // scroll, the roster does, inside its own card. Stacked, it is an
     // ordinary page. 3rem is the shell's vertical padding at that width.
-    <div className="@container/board flex min-h-0 flex-col gap-5 @[60rem]/board:h-[calc(100dvh-3rem)]">
+    //
+    // Two elements, not one: a container query answers for the nearest
+    // *ancestor* container, so the element carrying @container cannot size
+    // itself by its own width. The outer div is the yardstick, the inner
+    // one is measured against it.
+    <div className="@container/board">
+    <div className="flex min-h-0 flex-col gap-5 @[60rem]/board:h-[calc(100dvh-3rem)]">
       <PageHeader
         title="Riders"
         note={note}
@@ -448,6 +454,7 @@ export function RiderLiveBoard({
           </div>
         </>
       )}
+    </div>
     </div>
   )
 }
