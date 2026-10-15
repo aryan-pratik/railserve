@@ -32,7 +32,12 @@ export default async function RidersPage(props: PageProps<'/admin/riders'>) {
   const board = await riderBoard(ctx, { serviceDate })
 
   return (
+    // Keyed by day: picking another date is a navigation to the same route,
+    // and React keeps the client component's state across that — including
+    // the board it first loaded. A new key starts a fresh board for the day
+    // rather than showing yesterday's riders under today's date.
     <RiderLiveBoard
+      key={serviceDate}
       initial={board}
       today={todayIST()}
       note={`Live tracking and performance of all delivery riders. Positions arrive from the rider app every ${PING_INTERVAL_SECONDS}s while it is open.`}

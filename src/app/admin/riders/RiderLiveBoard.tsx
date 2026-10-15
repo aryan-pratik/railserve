@@ -895,18 +895,13 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
                 className={`scroll-my-2 transition-colors ${selected ? 'bg-accent-soft' : 'hover:bg-canvas'}`}
               >
                 <td className={`${td} pl-4`}>
-                  <div className="flex items-center gap-2.5">
-                    <Avatar rider={rider} />
-                    <div className="min-w-0">
-                      <p
-                        title={rider.name}
-                        className={`truncate font-medium ${selected ? 'text-accent' : 'text-ink'}`}
-                      >
-                        {rider.name}
-                      </p>
-                      <PhoneLink phone={rider.phone} />
-                    </div>
-                  </div>
+                  <p
+                    title={rider.name}
+                    className={`truncate font-medium ${selected ? 'text-accent' : 'text-ink'}`}
+                  >
+                    {rider.name}
+                  </p>
+                  <PhoneLink phone={rider.phone} />
                 </td>
                 <td className={td}>
                   <StationChip rider={rider} />
