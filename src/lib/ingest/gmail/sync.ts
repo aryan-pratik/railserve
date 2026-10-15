@@ -70,6 +70,21 @@ async function seedHistoryIdFromLatestMessage(gmail: ReturnType<typeof gmailClie
   return historyId
 }
 
+/**
+ * True for mail this mailbox wrote rather than received.
+ *
+ * `history.list` reports every message added to the account, not just the
+ * inbox: a reply staff send from it, and every autosaved revision of a draft.
+ * None of those is an order arriving. A reply quoting an order ("सीसी" above
+ * a `>`-quoted Yatri Restro mail, 4-Oct-2026) filed two unparseable inbox
+ * rows for an order that already existed, and a draft is deleted the moment
+ * it is revised or sent, so fetching one later fails "Requested entity was
+ * not found".
+ */
+export function isOutgoing(labelIds: readonly string[] | null | undefined): boolean {
+  return (labelIds ?? []).some((l) => l === 'SENT' || l === 'DRAFT')
+}
+
 export type SyncSummary = {
   processed: number
   created: number
@@ -120,6 +135,11 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
       })
       for (const h of res.data.history ?? []) {
         for (const added of h.messagesAdded ?? []) {
+          // Skipped before any fetch: drafts are often already deleted.
+          if (isOutgoing(added.message?.labelIds)) {
+            summary.ignored += 1
+            continue
+          }
           if (added.message?.id) messageIds.add(added.message.id)
         }
       }
@@ -145,6 +165,11 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
         id,
         format: 'full',
       })
+      // The history entry can predate a label change, so check the message too.
+      if (isOutgoing(msg.data.labelIds)) {
+        summary.ignored += 1
+        continue
+      }
       const headers = msg.data.payload?.headers
       const outcome: IngestOutcome = await ingestEmail({
         body: extractBody(msg.data.payload),

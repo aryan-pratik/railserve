@@ -112,3 +112,54 @@ describe('extractBody — a text/plain part that is really HTML', () => {
     expect(body).toBe(plain)
   })
 })
+
+describe('toParseableText — a raw RailRestro email pasted or corrected in the inbox', () => {
+  // The layout of RailRestro's order mail as stored on a failed inbox row,
+  // with invented customer details: greeting split across source lines and
+  // every field wrapped in <b>.
+  const RAILRESTRO_RAW = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN">
+<html><head><title>New Email From Railrestro</title><style type="text/css">td { color: #6f6f6f; }</style></head>
+<body><table><tr>
+    <td><a href="http://railrestro.com/"><img src="https://www.railrestro.com/img/logo.png" alt="RailRestro.com" /></a></td>
+</tr><tr>
+    <td height="30" bgcolor="#FFFFFF" style="font:14px/16px Arial">Dear
+        <b>KHANA KHAZANA</b>,</td>
+</tr><tr>
+    <td bgcolor="#FFFFFF">You have just received a new
+        order, Please ensure delivery on the journey date: <br />
+        ORDER #: <b>6000001 </b> Customer: <b>Test Passenger </b> M. <b>9000000000 </b> <br>
+                TRAIN: <b>22911 / HWH SHIPRA EXP </b> <br>
+        Delivery Time: <b>2026-10-14 23:10:00 </b> <br>
+        PNR No.: <b>1234567890 </b> Coact/Seat: <b>M2-46 </b>
+        <br>
+    </td>
+</tr><tr><td><table width="100%">
+  <thead><tr><th>Item Name</th><th>Price</th><th>Quantity</th><th>Total</th></tr></thead>
+  <tbody>
+    <tr><td> Chicken Biryani</td><td>Rs. 262</td><td><div class="">
+                2                        </div></td><td>Rs. 524</td></tr>
+    <tr><td></td><td></td><td>Total:</td><td><b>Rs. 524</b></td></tr>
+    <tr><td></td><td></td><td>Subtotal:</td><td>Rs. 550.2</td></tr>
+    <tr><td colspan=2></td><th>Payable Total:</th><td><b>Rs. 550.2</b></td></tr>
+    <tr><td colspan=2></td><th><small>(Amount to collect)</small></th><td><b>Rs. 550.2</b></td></tr>
+  </tbody>
+</table></td></tr></table></body></html>`
+
+  it('turns the stored markup into text the RailRestro parser accepts', async () => {
+    const { toParseableText } = await import('../src/lib/ingest/gmail/client')
+    const { RailRestroParser } = await import('../src/lib/ingest/parsers/railrestro')
+    const parsed = new RailRestroParser().parse(toParseableText(RAILRESTRO_RAW), new Date())
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.order.outletName).toBe('KHANA KHAZANA')
+    expect(parsed.order.externalOrderId).toBe('6000001')
+    expect(parsed.order.trainNo).toBe('22911')
+  })
+
+  it('leaves text that is already plain exactly as it was', async () => {
+    const { toParseableText } = await import('../src/lib/ingest/gmail/client')
+    const plain = 'Dear KHANA KHAZANA,\nORDER #: 6000001'
+    expect(toParseableText(plain)).toBe(plain)
+  })
+})

@@ -108,7 +108,8 @@ export default async function CallsPage(props: PageProps<'/calls'>) {
   // One box, four fields: a telecaller has whatever the passenger just read
   // out to them, and should not have to know which column it lives in.
   if (q) {
-    const rx = { $regex: escapeRegExp(q), $options: 'i' }
+    // Aggregator subjects write ids as "#6004807"; stored ids carry no '#'.
+    const rx = { $regex: escapeRegExp(q.replace(/^\s*#\s*/, '')), $options: 'i' }
     base.$or = [
       { externalOrderId: rx },
       { contactPhone: rx },

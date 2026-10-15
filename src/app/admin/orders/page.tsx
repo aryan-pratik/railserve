@@ -81,7 +81,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     base.serviceDate = range
   }
   if (train) base.trainNo = train.toUpperCase()
-  if (orderId) base.externalOrderId = { $regex: escapeRegExp(orderId), $options: 'i' }
+  // Aggregator subjects write ids as "#6004807"; stored ids carry no '#'.
+  const orderIdTerm = orderId.replace(/^\s*#\s*/, '')
+  if (orderIdTerm) base.externalOrderId = { $regex: escapeRegExp(orderIdTerm), $options: 'i' }
   if (byRider) Object.assign(base, byRider)
 
   const filter = payment ? { ...base, paymentMode: payment } : base

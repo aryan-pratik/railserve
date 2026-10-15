@@ -61,6 +61,19 @@ export function extractBody(payload: gmail_v1.Schema$MessagePart | undefined): s
 }
 
 /**
+ * A body a parser can read: HTML is reduced to text the same way extractBody
+ * does it, anything else is returned untouched.
+ *
+ * For bodies that never went through extractBody — pasted into the admin
+ * inbox, or corrected there from an unparsed row whose stored body is the raw
+ * markup that failed in the first place. Without it, "Correct and re-ingest"
+ * on a RailRestro row fails with the very error it was opened to fix.
+ */
+export function toParseableText(body: string): string {
+  return looksLikeHtml(body) ? htmlToText(body) : body
+}
+
+/**
  * True when a supposedly plain-text body is an HTML document or table.
  *
  * Deliberately narrow — a doctype, an <html>/<body> tag, or table markup —

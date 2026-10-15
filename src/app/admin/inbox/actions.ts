@@ -5,7 +5,9 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
+import { findMany } from '@/lib/repo/orderRepo'
 import { ingestEmail, PARSERS, createOrderFromParsed } from '@/lib/ingest'
+import { toParseableText } from '@/lib/ingest/gmail/client'
 import { PAYMENT_PARSERS, recordPayment } from '@/lib/ingest/payments'
 import { matchOutlet } from '@/lib/ingest/outletMatch'
 
@@ -26,7 +28,8 @@ export async function ingestPastedEmail(
   if (!body) return { error: 'Paste an email body first.' }
 
   try {
-    const r = await ingestEmail({ body, receivedAt: new Date(), subject: 'Pasted by admin' })
+    // "Show original" pastes are often the raw HTML, which no parser reads.
+    const r = await ingestEmail({ body: toParseableText(body), receivedAt: new Date(), subject: 'Pasted by admin' })
     revalidatePath('/admin/inbox')
     revalidatePath('/admin/orders')
     revalidatePath('/admin/payments')
@@ -75,15 +78,19 @@ export async function resolveUnparsed(
   // A bank alert that landed here means the template changed and the payment
   // was never recorded. Correcting it must produce the payment, not fail with
   // "no parser recognises this" — the same fix path, for the same reason.
-  const paymentParser = PAYMENT_PARSERS.find((p) => p.matches(correctedBody))
+  // The stored body of a row that failed on markup IS that markup, so the
+  // parsers get text; the raw payload below keeps what the admin submitted.
+  const text = toParseableText(correctedBody)
+
+  const paymentParser = PAYMENT_PARSERS.find((p) => p.matches(text))
   if (paymentParser) {
-    return resolveAsPayment(paymentParser, correctedBody, receivedAt, id, ctx.userId)
+    return resolveAsPayment(paymentParser, text, receivedAt, id, ctx.userId)
   }
 
-  const parser = PARSERS.find((p) => p.matches(correctedBody))
+  const parser = PARSERS.find((p) => p.matches(text))
   if (!parser) return { error: 'No parser recognises this email.' }
 
-  const parsed = parser.parse(correctedBody, receivedAt)
+  const parsed = parser.parse(text, receivedAt)
   if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
 
   const outlet = await matchOutlet(parsed.order.outletName, parsed.order.stationCode, parsed.order.source)
@@ -98,6 +105,14 @@ export async function resolveUnparsed(
     null,
   )
 
+  // An order that already exists — recovered some other way, or entered by
+  // hand — is still the order this row was about, so the row points at it
+  // rather than closing with no link. externalOrderId is unique across orders.
+  const orderId =
+    created.status === 'CREATED'
+      ? created.orderId
+      : (await findMany(ctx, { externalOrderId: created.externalOrderId }, { limit: 1 }))[0]?._id ?? null
+
   await UnparsedInbox.updateOne(
     { _id: id },
     {
@@ -105,7 +120,7 @@ export async function resolveUnparsed(
         resolved: true,
         resolvedAt: new Date(),
         resolvedById: ctx.userId,
-        resolvedOrderId: created.status === 'CREATED' ? created.orderId : null,
+        resolvedOrderId: orderId,
       },
     },
   )

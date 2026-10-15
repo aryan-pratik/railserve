@@ -33,7 +33,8 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
     // Order id, train number or phone: the things anyone actually has to hand.
     // Escaped, so a typed "(" or "+" is matched literally rather than failing
     // the whole page as an invalid regex.
-    const rx = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
+    // Aggregator subjects write ids as "#6004807"; stored ids carry no '#'.
+    const rx = { $regex: q.replace(/^\s*#\s*/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
     filter.$or = [{ externalOrderId: rx }, { trainNo: rx }, { contactPhone: rx }]
   }
   const byRider = riderClause(rider)
