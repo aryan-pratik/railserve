@@ -835,14 +835,17 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
           rather than pushing the row sideways. The row scrolls up, not
           across. */}
       <table className="w-full table-fixed text-sm">
+        {/* Money columns are sized for a five-figure rupee amount and never
+            truncated: a clipped amount is a wrong amount. Text columns give
+            way first — a long name or status note truncates with a tooltip. */}
         <colgroup>
           <col />
           <col className="w-[3.75rem]" />
-          <col className="w-[7.25rem]" />
-          <col className="w-[3.25rem]" />
-          <col className="w-[3.25rem]" />
+          <col className="w-[6.75rem]" />
           <col className="w-[4.25rem]" />
-          <col className="w-[4.5rem]" />
+          <col className="w-[3.5rem]" />
+          <col className="w-[5.5rem]" />
+          <col className="w-[5.75rem]" />
           <col className="w-[4.25rem]" />
           <col className="w-[4.75rem]" />
         </colgroup>
@@ -918,12 +921,14 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
                 <td className={`${td} text-right tabular-nums`}>
                   <span className="font-semibold text-ink">{orders}</span>
                   {carrying > 0 ? (
-                    <span className="block truncate text-xs text-blue-700">{carrying} in hand</span>
+                    <span className="block text-xs whitespace-nowrap text-blue-700">{carrying} in hand</span>
                   ) : null}
                 </td>
                 <td className={`${td} text-right text-ink tabular-nums`}>{codOrders}</td>
-                <td className={`${td} truncate text-right text-ink tabular-nums`}>{formatRupees(codPaise)}</td>
-                <td className={`${td} truncate text-right font-semibold text-ink tabular-nums`}>
+                <td className={`${td} text-right whitespace-nowrap text-ink tabular-nums`}>
+                  {formatRupees(codPaise)}
+                </td>
+                <td className={`${td} text-right font-semibold whitespace-nowrap text-ink tabular-nums`}>
                   {formatRupees(amountPaise)}
                 </td>
                 <td className={`${td} truncate text-xs text-muted tabular-nums`}>{lastActiveOf(rider, now)}</td>
