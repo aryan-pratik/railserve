@@ -31,7 +31,7 @@ export default function Loading() {
         ))}
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-4 @[60rem]/board:min-h-[24rem] @[60rem]/board:grid-cols-[minmax(18rem,4fr)_minmax(0,9fr)] @[60rem]/board:grid-rows-[minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 gap-4 @[60rem]/board:min-h-[24rem] @[60rem]/board:grid-cols-[24rem_minmax(0,1fr)] @[60rem]/board:grid-rows-[minmax(0,1fr)]">
         <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
           <div className="px-4 py-3">
             <Bar className="h-4 w-40" />

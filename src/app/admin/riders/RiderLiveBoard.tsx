@@ -311,8 +311,10 @@ export function RiderLiveBoard({
 
           {/* Side by side once the board itself has the room, measured on
               the board rather than the window: the sidebar, expanded or
-              collapsed, takes a different bite out of the same screen. */}
-          <div className="grid min-h-0 flex-1 gap-4 @[60rem]/board:min-h-[24rem] @[60rem]/board:grid-cols-[minmax(18rem,4fr)_minmax(0,9fr)] @[60rem]/board:grid-rows-[minmax(0,1fr)]">
+              collapsed, takes a different bite out of the same screen. The
+              map column is a fixed width, so nothing in the roster — a long
+              name, an empty state, a wrapped filter row — can move it. */}
+          <div className="grid min-h-0 flex-1 gap-4 @[60rem]/board:min-h-[24rem] @[60rem]/board:grid-cols-[24rem_minmax(0,1fr)] @[60rem]/board:grid-rows-[minmax(0,1fr)]">
             <div ref={mapPane} className="min-h-0 min-w-0 scroll-mt-4">
               <MapCard
                 riders={riders}
