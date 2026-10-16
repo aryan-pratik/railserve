@@ -147,6 +147,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       // happened yet"), not a parse failure.
       providerUpdatedAt: parseLastUpdate(body.data?.lastUpdate),
       arrived: hasDeparted(row),
+      startDate: parseRunDate(body.data?.date),
       source: this.name,
     }
   }
@@ -294,6 +295,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       stopsAway,
       distanceKm: Number.isFinite(distance) && distance > 0 ? distance : null,
       arrived: hasDeparted(row),
+      startDate: parseRunDate(body.data?.date),
       source: this.name,
     }
   }
@@ -408,6 +410,14 @@ function parseLastUpdate(value: string | undefined): Date | null {
       `T${m[4].padStart(2, '0')}:${m[5]}:00+05:30`,
   )
   return Number.isNaN(dt.getTime()) ? null : dt
+}
+
+/** "01-Sep-2026" -> "2026-09-01", the run's departure from origin; null if unreadable. */
+function parseRunDate(value: string | undefined): string | null {
+  const m = value ? /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(value.trim()) : null
+  const month = m ? MONTHS[m[2].toLowerCase()] : undefined
+  if (!m || month === undefined) return null
+  return `${m[3]}-${String(month + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`
 }
 
 /** Days between a stop's date and the run's departure date, or null if unreadable. */

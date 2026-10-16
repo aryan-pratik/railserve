@@ -7,7 +7,7 @@ import { timingFor } from '@/lib/train/service'
 import { sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate, formatTimeIST, shiftServiceDate } from '@/lib/format'
 import { countLive, loadRunBoard, type BoardMode } from '@/lib/board'
-import { inRollover } from '@/lib/liveDay'
+import { inRollover, liveServiceDates } from '@/lib/liveDay'
 import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
@@ -38,11 +38,11 @@ export const metadata = { title: 'Kitchen board · RailServe' }
  * through their own filter, so a finished order never crowds the open ones.
  */
 const STATUS_FILTERS: { key: string; label: string; statuses: OrderStatus[] }[] = [
-  { key: 'kitchen', label: 'Before platform', statuses: ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
+  { key: 'kitchen', label: 'Live', statuses: ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
   { key: 'platform', label: 'On platform', statuses: ['DISPATCHED'] },
   {
     key: 'returned',
-    label: 'Cancelled / returned',
+    label: 'Cancelled / Returned',
     statuses: ['CANCELLED', 'FAILED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'],
   },
   { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
@@ -79,6 +79,9 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   // actually lists — a manager checking back on last night wants the whole
   // count, not just what is still outstanding.
   const live = { status: { $in: LIVE_STATUSES } }
+  // With a status filter picked, every tab's badge counts what that filter
+  // would list there, so switching filter changes the numbers too.
+  const picked = statusFilter ? { status: { $in: statusFilter.statuses } } : null
   const mode: BoardMode = showUpcoming ? 'upcoming' : showYesterday ? 'yesterday' : 'today'
 
   await connectDb()
@@ -87,11 +90,13 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     loadRunBoard(ctx, mode, { statuses: statusFilter?.statuses }),
     // The same count the call board and admin show: today, plus last night's
     // open orders until the past-midnight window closes.
-    countLive(ctx),
+    picked
+      ? countOrders(ctx, { serviceDate: { $in: liveServiceDates() }, ...picked })
+      : countLive(ctx),
     // While last night's open orders are inside Today, counting them here too
     // would show the same orders on two tabs.
-    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday }),
-    countOrders(ctx, { serviceDate: { $gt: today }, ...live }),
+    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday, ...picked }),
+    countOrders(ctx, { serviceDate: { $gt: today }, ...(picked ?? live) }),
     User.find({
       role: 'DELIVERY_AGENT',
       active: true,
@@ -180,6 +185,13 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const groupHref = (g: string) => toHref(withPage(boardParams(g), { page: 1, pageSize }))
   const pageHref = (target: { page: number; pageSize: number }) =>
     toHref(withPage(boardParams(isGrouped ? '' : '0'), target))
+  // Switching day keeps the status filter, so the badges just compared stay meaningful.
+  const dayHref = (day: '' | 'yesterday' | 'upcoming') => {
+    const u = new URLSearchParams()
+    if (day) u.set(day, '1')
+    if (statusFilter) u.set('status', statusFilter.key)
+    return toHref(u)
+  }
   // A different filter is a different list, so it starts at page one.
   const statusHref = (st: string) =>
     toHref(withPage(boardParams(isGrouped ? '' : '0', st), { page: 1, pageSize }))
@@ -210,15 +222,15 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       <Tabs
         label="Service day"
         tabs={[
-          { href: '/store', label: 'Today', count: todayCount, active: !showUpcoming && !showYesterday },
-          { href: '/store?yesterday=1', label: 'Yesterday', count: yesterdayCount, active: showYesterday },
-          { href: '/store?upcoming=1', label: 'Upcoming', count: upcomingCount, active: showUpcoming },
+          { href: dayHref(''), label: 'Today', count: todayCount, active: !showUpcoming && !showYesterday },
+          { href: dayHref('yesterday'), label: 'Yesterday', count: yesterdayCount, active: showYesterday },
+          { href: dayHref('upcoming'), label: 'Upcoming', count: upcomingCount, active: showUpcoming },
         ]}
         action={<GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />}
       />
 
       <div className={segmentedClass} role="group" aria-label="Order status">
-        {[{ key: '', label: 'All' }, ...STATUS_FILTERS].map((f) => {
+        {[...STATUS_FILTERS, { key: '', label: 'All' }].map((f) => {
           const active = (statusFilter?.key ?? '') === f.key
           return (
             <Link key={f.key} href={statusHref(f.key)} className={segmentClass(active)} aria-current={active ? 'page' : undefined}>

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { TrainStartDate } from '@/components/TrainStartDate'
 import Link from 'next/link'
 import { formatRupees, formatTimeIST, seatText } from '@/lib/format'
 import type { TimingView } from '@/lib/train/policy'
@@ -128,6 +129,7 @@ export function TrainRunFrame({
           <span className="font-mono text-lg font-bold tabular-nums tracking-tight text-ink">
             {run.trainNo ?? 'No train no.'}
           </span>
+          <TrainStartDate date={run.timing.startDate} />
           <span className="truncate text-sm font-medium text-muted">{run.trainName}</span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">

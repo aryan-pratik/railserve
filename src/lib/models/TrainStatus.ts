@@ -32,6 +32,10 @@ const TrainStatusSchema = new Schema(
     // failed or empty read must not un-arrive a train that genuinely came.
     arrived: { type: Boolean, default: false },
 
+    // 'YYYY-MM-DD' the run left its origin, when the provider says. Shown
+    // beside the train number so staff can tell which day's train this is.
+    startDate: { type: String, default: null },
+
     // Set when the last fetch failed. The previous values are kept — degrading
     // to a known-old ETA beats showing nothing (§8) — but callers must be able
     // to tell the difference.

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { TrainStartDate } from '@/components/TrainStartDate'
 import { useNowMs } from '@/components/useNow'
 import { Card, focusRingInset } from '@/components/ui'
 import { IconChevronDown } from '@/components/Icons'
@@ -40,6 +41,8 @@ export type TrainGroup = {
   nextCheckAtIso: string | null
   /** The provider has confirmed this train left the station. */
   arrived: boolean
+  /** 'YYYY-MM-DD' the run left its origin, once the train feed has said. */
+  startDate: string | null
   orders: GroupOrder[]
 }
 
@@ -160,6 +163,7 @@ export function TrainGroups({
                           <span className="font-mono text-base font-bold tabular-nums text-ink">
                             {g.trainNo ?? 'No train no.'}
                           </span>
+                          <TrainStartDate date={g.startDate} />
                           <span className="truncate text-sm font-medium text-muted">{g.trainName}</span>
                           <span className="text-xs text-faint">
                             {g.stationCode}

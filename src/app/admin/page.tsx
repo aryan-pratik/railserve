@@ -183,6 +183,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
       checkedAtIso: t.checkedAt?.toISOString() ?? null,
       nextCheckAtIso: t.nextCheckAt?.toISOString() ?? null,
       arrived: t.arrived,
+      startDate: t.startDate,
       orders: run.orders.map((o) => {
         const itemNames = foodItemLabels(o.items)
         return {

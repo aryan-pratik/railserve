@@ -148,6 +148,8 @@ export type TimingView = {
    * show a countdown that will never arrive.
    */
   arrived: boolean
+  /** 'YYYY-MM-DD' the run left its origin, when the provider reported it. */
+  startDate: string | null
 }
 
 /**
@@ -168,6 +170,7 @@ export function buildTimingView(params: {
     fetchedAt: Date
     providerUpdatedAt?: Date | null
     arrived?: boolean
+    startDate?: string | null
   } | null
   now: Date
 }): TimingView {
@@ -186,6 +189,7 @@ export function buildTimingView(params: {
       checkedAt: null,
       nextCheckAt: null,
       arrived: false,
+      startDate: null,
     }
   }
 
@@ -213,6 +217,7 @@ export function buildTimingView(params: {
       ? null
       : new Date(reading.fetchedAt.getTime() + pollIntervalMinutes(minutesToArrival) * 60_000),
     arrived,
+    startDate: reading.startDate ?? null,
   }
 }
 

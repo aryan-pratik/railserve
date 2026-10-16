@@ -34,6 +34,13 @@ export type TrainStatusReading = {
    */
   arrived: boolean
   /**
+   * The date this run left its origin, 'YYYY-MM-DD'. Not the service date: a
+   * train reaching us on the 17th may have started on the 15th, and that is
+   * the date a passenger's ticket and the railway's own enquiry go by.
+   * Optional; providers that do not report it leave it out.
+   */
+  startDate?: string | null
+  /**
    * Which upstream actually answered, when a provider can ask more than one.
    * Recorded on the cache row in place of the provider's own name, so a
    * reading served by a fallback says so. Absent means the provider itself.
@@ -74,6 +81,8 @@ export type TrainDetail = {
   distanceKm: number | null
   /** See TrainStatusReading.arrived — same meaning, same caution about it. */
   arrived: boolean
+  /** See TrainStatusReading.startDate. */
+  startDate?: string | null
   /** See TrainStatusReading.source. */
   source?: string
 }

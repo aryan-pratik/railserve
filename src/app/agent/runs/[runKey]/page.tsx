@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { TrainStartDate } from '@/components/TrainStartDate'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
@@ -48,6 +49,7 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
       <Card className="p-4">
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-mono text-2xl font-bold tabular-nums text-ink">{run.trainNo ?? 'No train no.'}</span>
+          <TrainStartDate date={timing.startDate} />
           <span className="text-muted">{run.trainName}</span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm text-muted">

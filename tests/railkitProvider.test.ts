@@ -46,6 +46,12 @@ describe('RailKitTrainStatusProvider', () => {
     expect(datesAsked).toContain('01-09-2026')
   })
 
+  it('reports the date the run left its origin, not the service date', async () => {
+    const p = new RailKitTrainStatusProvider('key')
+    const r = await p.getStatus('12561', '2026-09-02', 'CNB')
+    expect(r.startDate).toBe('2026-09-01')
+  })
+
   it('carries the feed\'s own update time, not just our fetch time', async () => {
     const p = new RailKitTrainStatusProvider('key')
     const r = await p.getStatus('12561', '2026-09-02', 'CNB')

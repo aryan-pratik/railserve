@@ -61,6 +61,8 @@ export async function refreshTrainStatus(
     // own information is, and holding a previous run's value here would
     // overstate how far the ETA above can be trusted.
     const upstream = { providerUpdatedAt: reading.providerUpdatedAt }
+    // A property of the run, so never blanked by a provider that omits it.
+    const start = reading.startDate ? { startDate: reading.startDate } : {}
 
     const doc = await TrainStatus.findOneAndUpdate(
       filter,
@@ -69,6 +71,7 @@ export async function refreshTrainStatus(
           ...live,
           ...platform,
           ...upstream,
+          ...start,
           fetchedAt: now,
           ...(learnedSomething ? { lastSuccessAt: now } : {}),
           lastError: null,
@@ -141,6 +144,7 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         delayMinutes: detail.delayMinutes,
         platform: detail.platform,
         providerUpdatedAt: detail.providerUpdatedAt,
+        ...(detail.startDate ? { startDate: detail.startDate } : {}),
         fetchedAt: now,
         lastSuccessAt: now,
         lastError: null,
@@ -303,6 +307,7 @@ export async function timingForOrders<
                 fetchedAt: row.fetchedAt,
                 providerUpdatedAt: row.providerUpdatedAt ?? null,
                 arrived: row.arrived ?? false,
+                startDate: row.startDate ?? null,
               }
             : null,
           now,
@@ -331,6 +336,7 @@ export function timingFor<
       checkedAt: null,
       nextCheckAt: null,
       arrived: false,
+      startDate: null,
     }
   }
   return (
@@ -352,6 +358,7 @@ export function timingFor<
       checkedAt: null,
       nextCheckAt: null,
       arrived: false,
+      startDate: null,
     }
   )
 }
