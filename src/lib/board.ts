@@ -8,7 +8,7 @@ import { timingForOrders, timingFor, trainFeedHealth, type TrainFeedHealth } fro
 import type { TimingView } from './train/policy'
 import { sortRunsByUrgency, type Run } from './runs'
 import { shiftServiceDate, todayIST } from './format'
-import { ORDER_STATUSES } from './orderStatus'
+import { ORDER_STATUSES, type OrderStatus } from './orderStatus'
 import { liveServiceDates } from './liveDay'
 
 /**
@@ -57,7 +57,7 @@ export type RunBoard = {
 export async function loadRunBoard(
   ctx: AuthContext,
   mode: BoardMode,
-  opts: { allowFetch?: boolean } = {},
+  opts: { allowFetch?: boolean; statuses?: OrderStatus[] } = {},
 ): Promise<RunBoard> {
   const now = new Date()
   const today = todayIST(now)
@@ -66,12 +66,12 @@ export async function loadRunBoard(
   await connectDb()
   const [found, feedHealth, outlets] = await Promise.all([
     mode === 'upcoming'
-      ? findUpcomingRuns(ctx, today)
+      ? findUpcomingRuns(ctx, today, { statuses: opts.statuses })
       : mode === 'yesterday'
         ? // Every status: this view is for looking back at the whole of last
           // night as well as finishing what is left of it.
-          findRuns(ctx, shiftServiceDate(today, -1), { statuses: [...ORDER_STATUSES] })
-        : findRuns(ctx, liveServiceDates(now)),
+          findRuns(ctx, shiftServiceDate(today, -1), { statuses: opts.statuses ?? [...ORDER_STATUSES] })
+        : findRuns(ctx, liveServiceDates(now), { statuses: opts.statuses }),
     trainFeedHealth(),
     // Outlet names only matter to someone who holds more than one.
     multiOutlet

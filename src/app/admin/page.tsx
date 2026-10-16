@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/session'
 import { findMany, countOrders, distinctStatuses } from '@/lib/repo/orderRepo'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { connectDb } from '@/lib/db'
-import { Restaurant, User } from '@/lib/models'
+import { Restaurant, Station, User } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatDateRange, formatTimeIST, shiftServiceDate } from '@/lib/format'
@@ -57,7 +57,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   const activeFrom = resolvedRange.from || today
   const activeTo = resolvedRange.to || today
   const activeDateLabel = formatDateRange(activeFrom, activeTo)
-  const outlet = one(sp.outlet)
+  const station = one(sp.station)
   const train = one(sp.train)
   const payment = one(sp.payment)
   const sort = one(sp.sort) || 'urgent'
@@ -88,7 +88,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     ]
   }
 
-  if (outlet) dayFilter.restaurantId = outlet
+  if (station) dayFilter.stationCode = station
   if (train) dayFilter.trainNo = train
   if (payment) dayFilter.paymentMode = payment
   if (q) {
@@ -102,8 +102,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
-  const [outlets, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests, statusesInUse] = await Promise.all([
+  const [outlets, stationDocs, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests, statusesInUse] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
+    Station.find({}).select('name').lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     // Open orders today: the same number the kitchen and call boards badge as
     // Today, not a count of everything not cancelled, which read as "how many
@@ -134,6 +135,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   const timings = await timingForOrders(visible)
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
+  // Stations we serve are the ones with an outlet; the Station row, where one
+  // exists, supplies the display name.
+  const stationName = new Map(stationDocs.map((s) => [s._id, s.name]))
+  const stations = [...new Set(outlets.map((o) => o.stationCode))].sort().map((code) => ({
+    id: code,
+    label: stationName.get(code) ? `${code} · ${stationName.get(code)}` : code,
+  }))
   const trainNos = [
     ...new Set(dayOrders.map((o) => o.trainNo).filter((t): t is string => Boolean(t))),
   ].sort()
@@ -250,9 +258,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           count: counts.get(t.key) ?? 0,
           active: t.key === tab.key,
         }))}
-        outlets={outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}` }))}
+        stations={stations}
         trains={trainNos}
-        current={{ tab: tabKey, mode, month, from: rangeFrom, to: rangeTo, outlet, train, payment, sort, q, group, upcoming: isUpcoming ? '1' : '' }}
+        current={{ tab: tabKey, mode, month, from: rangeFrom, to: rangeTo, station, train, payment, sort, q, group, upcoming: isUpcoming ? '1' : '' }}
         todayCount={todayCount}
         upcomingCount={upcomingCount}
       />
@@ -261,14 +269,14 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
         <EmptyState
           title={isUpcoming ? 'Nothing booked ahead' : 'No orders'}
           note={
-            q || outlet || train || payment
+            q || station || train || payment
               ? 'Nothing matches these filters.'
               : isUpcoming
                 ? 'Bulk orders booked for a later date appear here.'
                 : `No orders for ${activeDateLabel}. New orders appear here as they arrive.`
           }
           action={
-            q || outlet || train || payment ? (
+            q || station || train || payment ? (
               <ButtonLink href="/admin">Clear filters</ButtonLink>
             ) : (
               <ButtonLink href="/admin/orders/new" variant="primary">New order</ButtonLink>

@@ -55,6 +55,7 @@ export async function GET(request: Request) {
   const rawTo = url.searchParams.get('to') || legacyDate
   const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const outlet = url.searchParams.get('outlet') ?? ''
+  const station = url.searchParams.get('station') ?? ''
   const status = url.searchParams.get('status') ?? ''
   const train = url.searchParams.get('train') ?? ''
   const payment = url.searchParams.get('payment') ?? ''
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
   }
   if (statuses) filter.status = { $in: statuses }
   if (outlet) filter.restaurantId = outlet
+  if (station) filter.stationCode = station.toUpperCase()
   if (train) filter.trainNo = train.toUpperCase()
   if (payment) filter.paymentMode = payment
   const byRider = riderClause(rider)

@@ -18,7 +18,10 @@ import { GroupByTrainToggle } from '@/components/GroupByTrainToggle'
 import { OrderFeed } from '@/components/OrderFeed'
 import { AutoRefresh, StaleNotice } from '@/components/AutoRefresh'
 import { env } from '@/lib/env'
-import { ButtonLink, EmptyState, PageHeader, Pagination, Tabs } from '@/components/ui'
+import Link from 'next/link'
+import { LinkHint } from '@/components/LinkHint'
+import { ButtonLink, EmptyState, PageHeader, Pagination, Tabs, segmentClass, segmentedClass } from '@/components/ui'
+import type { OrderStatus } from '@/lib/orderStatus'
 import { readPage, withPage } from '@/lib/pagination'
 import { IconPlus } from '@/components/Icons'
 import { StoreRunActions } from './StoreRunActions'
@@ -27,6 +30,23 @@ import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { RunSelection } from '@/components/RunSelection'
 
 export const metadata = { title: 'Kitchen board · RailServe' }
+
+/**
+ * Where an order stands, as a kitchen asks it. With none picked the board
+ * shows what it always has: every open order on Today and Upcoming, the whole
+ * night on Yesterday. Delivered and cancelled orders are reachable only
+ * through their own filter, so a finished order never crowds the open ones.
+ */
+const STATUS_FILTERS: { key: string; label: string; statuses: OrderStatus[] }[] = [
+  { key: 'kitchen', label: 'Before platform', statuses: ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
+  { key: 'platform', label: 'On platform', statuses: ['DISPATCHED'] },
+  {
+    key: 'returned',
+    label: 'Cancelled / returned',
+    statuses: ['CANCELLED', 'FAILED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'],
+  },
+  { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
+]
 
 /**
  * The kitchen board.
@@ -39,7 +59,7 @@ export const metadata = { title: 'Kitchen board · RailServe' }
 export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const sp = await props.searchParams
-  const { upcoming, yesterday: yesterdayParam, group } = sp
+  const { upcoming, yesterday: yesterdayParam, group, status } = sp
   const { page, pageSize, skip } = readPage(sp)
 
   const today = todayIST()
@@ -51,6 +71,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const groupParam = typeof group === 'string' ? group : ''
   const isGrouped = groupParam !== '0'
   const multiOutlet = ctx.restaurantIds.length > 1
+  const statusFilter = STATUS_FILTERS.find((f) => f.key === status) ?? null
 
   // Today and Upcoming badge what is still open, so each is its own cheap
   // count rather than the length of whichever tab's rows are loaded. Yesterday
@@ -63,7 +84,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   await connectDb()
   // Everything that does not depend on the runs goes out in the same round trip.
   const [board, todayCount, yesterdayCount, upcomingCount, riderDocs] = await Promise.all([
-    loadRunBoard(ctx, mode),
+    loadRunBoard(ctx, mode, { statuses: statusFilter?.statuses }),
     // The same count the call board and admin show: today, plus last night's
     // open orders until the past-midnight window closes.
     countLive(ctx),
@@ -143,11 +164,12 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const pageOrders = flatOrders.slice(skip, skip + pageSize)
   const total = isGrouped ? sorted.length : flatOrders.length
 
-  const boardParams = (g: string) => {
+  const boardParams = (g: string, st = statusFilter?.key ?? '') => {
     const u = new URLSearchParams()
     if (showUpcoming) u.set('upcoming', '1')
     if (showYesterday) u.set('yesterday', '1')
     if (g) u.set('group', g)
+    if (st) u.set('status', st)
     return u
   }
   const toHref = (u: URLSearchParams) => {
@@ -158,6 +180,9 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const groupHref = (g: string) => toHref(withPage(boardParams(g), { page: 1, pageSize }))
   const pageHref = (target: { page: number; pageSize: number }) =>
     toHref(withPage(boardParams(isGrouped ? '' : '0'), target))
+  // A different filter is a different list, so it starts at page one.
+  const statusHref = (st: string) =>
+    toHref(withPage(boardParams(isGrouped ? '' : '0', st), { page: 1, pageSize }))
 
   return (
     <div className="space-y-4">
@@ -192,10 +217,29 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
         action={<GroupByTrainToggle href={groupHref(isGrouped ? '0' : '')} isGrouped={isGrouped} />}
       />
 
+      <div className={segmentedClass} role="group" aria-label="Order status">
+        {[{ key: '', label: 'All' }, ...STATUS_FILTERS].map((f) => {
+          const active = (statusFilter?.key ?? '') === f.key
+          return (
+            <Link key={f.key} href={statusHref(f.key)} className={segmentClass(active)} aria-current={active ? 'page' : undefined}>
+              {f.label}
+              <LinkHint />
+            </Link>
+          )
+        })}
+      </div>
+
       <StaleNotice renderedAt={renderedAt} />
       <TrainFeedNotice simulated={isSimulatedProvider()} health={board.feedHealth} />
 
       {sorted.length === 0 ? (
+        statusFilter ? (
+          <EmptyState
+            title="No orders match"
+            note={`Nothing under ${statusFilter.label} for this day.`}
+            action={<ButtonLink href={statusHref('')}>Show all</ButtonLink>}
+          />
+        ) : (
         <EmptyState
           title={showUpcoming ? 'Nothing booked ahead' : showYesterday ? 'Nothing from yesterday' : 'No orders yet today'}
           note={
@@ -207,6 +251,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
           }
           action={<ButtonLink href="/store/orders/new" variant="primary">Add one by hand</ButtonLink>}
         />
+        )
       ) : isGrouped ? (
         <div className="space-y-3">
           {pageCards.map((card) => (

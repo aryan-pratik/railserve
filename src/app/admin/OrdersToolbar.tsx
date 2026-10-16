@@ -17,7 +17,7 @@ export type ToolbarState = {
   month: string
   from: string
   to: string
-  outlet: string
+  station: string
   train: string
   payment: string
   sort: string
@@ -34,20 +34,20 @@ export type ToolbarState = {
  */
 export function OrdersToolbar({
   tabs,
-  outlets,
+  stations,
   trains,
   current,
   todayCount,
   upcomingCount,
 }: {
   tabs: ToolbarTab[]
-  outlets: { id: string; label: string }[]
+  stations: { id: string; label: string }[]
   trains: string[]
   current: ToolbarState
   todayCount?: number
   upcomingCount?: number
 }) {
-  const hasActiveFilters = Boolean(current.outlet || current.train || current.payment || current.q)
+  const hasActiveFilters = Boolean(current.station || current.train || current.payment || current.q)
   const isGrouped = current.group !== '0'
   const isUpcoming = current.upcoming === '1'
 
@@ -62,7 +62,7 @@ export function OrdersToolbar({
 
   const exportHref = (() => {
     const u = new URLSearchParams()
-    for (const k of ['mode', 'month', 'from', 'to', 'outlet', 'tab', 'upcoming', 'train', 'payment'] as const) {
+    for (const k of ['mode', 'month', 'from', 'to', 'station', 'tab', 'upcoming', 'train', 'payment'] as const) {
       const v = current[k]
       if (v) u.set(k, v)
     }
@@ -120,10 +120,10 @@ export function OrdersToolbar({
             />
           </div>
 
-          <select name="outlet" defaultValue={current.outlet} aria-label="Outlet" onChange={submitOnChange} className={`${inputBase} max-w-[16rem]`}>
-            <option value="">All outlets</option>
-            {outlets.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
+          <select name="station" defaultValue={current.station} aria-label="Station" onChange={submitOnChange} className={`${inputBase} max-w-[16rem]`}>
+            <option value="">All stations</option>
+            {stations.map((s) => (
+              <option key={s.id} value={s.id}>{s.label}</option>
             ))}
           </select>
 
@@ -154,7 +154,7 @@ export function OrdersToolbar({
 
           {hasActiveFilters ? (
             <Link
-              href={href({ q: '', outlet: '', train: '', payment: '' })}
+              href={href({ q: '', station: '', train: '', payment: '' })}
               className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-accent hover:underline"
             >
               Clear filters
