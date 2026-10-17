@@ -6,13 +6,12 @@ import { connectDb } from '@/lib/db'
 import { Restaurant, Station, User } from '@/lib/models'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
-import { todayIST, formatDateRange, formatTimeIST, shiftServiceDate } from '@/lib/format'
+import { todayIST, formatDateRange, formatTimeIST } from '@/lib/format'
 import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { AutoRefresh, StaleNotice } from '@/components/AutoRefresh'
-import { countLive } from '@/lib/board'
+import { countLive, todayBoardFilter } from '@/lib/board'
 import { inRollover } from '@/lib/liveDay'
-import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { ButtonLink, EmptyState, Notice, PageHeader } from '@/components/ui'
 import { IconPlus } from '@/components/Icons'
@@ -78,14 +77,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   // Under $and, not $or, because a search below already owns the top-level $or.
   if (mode === 'today' && !isUpcoming && inRollover()) {
     delete dayFilter.serviceDate
-    dayFilter.$and = [
-      {
-        $or: [
-          { serviceDate: today },
-          { serviceDate: shiftServiceDate(today, -1), status: { $in: LIVE_STATUSES } },
-        ],
-      },
-    ]
+    // Every status for today, plus last night's open orders on a train still
+    // due — the kitchen's own rule (board.ts), so the boards agree.
+    dayFilter.$and = [todayBoardFilter(new Date(), ORDER_STATUSES)]
   }
 
   if (station) dayFilter.stationCode = station

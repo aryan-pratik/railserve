@@ -1,6 +1,5 @@
 'use server'
 
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
@@ -160,7 +159,8 @@ export async function generateKot(formData: FormData) {
     }
   }
 
-  redirect(`/store/orders/${orderId}`)
+  // No redirect: the revalidation above re-renders the order page in place,
+  // keeping its link back to the board the manager came from.
 }
 
 /* ── whole-train actions ──────────────────────────────────────────────────────
@@ -260,8 +260,9 @@ export async function generateRunKot(formData: FormData) {
       console.error(`[generateRunKot] auto-print enqueue failed for run ${runKey}:`, err)
     }
   }
-
-  redirect('/store')
+  // No redirect: the revalidation above re-renders the board the button was
+  // on, URL and all. Redirecting to a bare /store dropped the status filter,
+  // view and page, so printing a KOT from "Live" landed the manager on "All".
 }
 
 /**

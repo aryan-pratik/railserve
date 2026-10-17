@@ -30,6 +30,24 @@ function istHour(now: Date): number {
   return Number(h)
 }
 
+/**
+ * How far back a train's booked arrival may lie for last night's open order to
+ * stay on Today during the window.
+ *
+ * Without it every order from yesterday that nobody closed (a rider who never
+ * tapped Delivered, say) reappears on Today at midnight — on prod that was
+ * dozens of orders for trains that passed at breakfast. The window exists for
+ * the train due around midnight, so only a train booked to arrive within the
+ * last few hours, or still ahead, qualifies. An order with no booked arrival
+ * cannot show it is one of those, so it stays under Yesterday.
+ */
+export const ROLLOVER_ARRIVAL_GRACE_HOURS = 4
+
+/** The earliest booked arrival that carries last night's open order into Today. */
+export function rolloverCutoff(now: Date = new Date()): Date {
+  return new Date(now.getTime() - ROLLOVER_ARRIVAL_GRACE_HOURS * 3_600_000)
+}
+
 /** Whether yesterday's still-open orders are part of the live board right now. */
 export function inRollover(now: Date = new Date()): boolean {
   return istHour(now) < ROLLOVER_HOUR_IST

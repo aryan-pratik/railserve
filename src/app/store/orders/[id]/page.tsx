@@ -19,6 +19,10 @@ import { CancelRequestCard, RequestCancelButton } from '@/components/CancelReque
 export default async function StoreOrderDetail(props: PageProps<'/store/orders/[id]'>) {
   const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const { id } = await props.params
+  // The board's query this order was opened from (see /store). Rebuilt from
+  // its parsed pairs, so it can only ever be a query on /store, never a path.
+  const back = (await props.searchParams).back
+  const backQuery = typeof back === 'string' ? new URLSearchParams(back).toString() : ''
 
   // Scoped read: another outlet's id is a miss here, not a permission error.
   const order = await findById(ctx, id)
@@ -53,7 +57,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <BackLink href="/store">Back to the board</BackLink>
+      <BackLink href={backQuery ? `/store?${backQuery}` : '/store'}>Back to the board</BackLink>
 
       <OrderCard
         order={toCardData(order)}

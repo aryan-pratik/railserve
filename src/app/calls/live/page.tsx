@@ -6,8 +6,7 @@ import { countOrders } from '@/lib/repo/orderRepo'
 import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
 import { callBoardRow } from '@/lib/orderView'
-import { countLive, loadRunBoard, type BoardMode } from '@/lib/board'
-import { inRollover } from '@/lib/liveDay'
+import { loadRunBoard, todayBoardFilter, yesterdayBoardFilter, type BoardMode } from '@/lib/board'
 import {
   BUCKET_LABEL,
   STATUS_GROUPS,
@@ -63,7 +62,8 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
   const groupParam = typeof sp.group === 'string' ? sp.group : ''
   const isGrouped = groupParam !== '0'
 
-  const today = todayIST()
+  const now = new Date()
+  const today = todayIST(now)
   // The service day before today, in IST. Past midnight, last night's orders
   // that are still open leave the Today tab; this is where they can be found.
   const yesterday = shiftServiceDate(today, -1)
@@ -75,13 +75,11 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
   // provider quota. The train-poll cron keeps the same rows warm for the
   // kitchen board.
   const [board, todayCount, yesterdayCount, upcomingCount] = await Promise.all([
-    loadRunBoard(ctx, mode, { allowFetch: false }),
-    countLive(ctx),
-    // Hidden while last night's open orders are still inside Today (the
-    // past-midnight window): counting them here too would double them across
-    // two tabs. Every order from yesterday once it's shown, open or finished,
-    // matching what the Yesterday view itself lists.
-    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday }),
+    loadRunBoard(ctx, mode, { allowFetch: false, now }),
+    countOrders(ctx, todayBoardFilter(now)),
+    // Every order from yesterday, open or finished, minus what Today is still
+    // carrying past midnight — the same rows the Yesterday view lists.
+    countOrders(ctx, yesterdayBoardFilter(now)),
     countOrders(ctx, { serviceDate: { $gt: today }, status: { $in: LIVE_STATUSES } }),
   ])
 

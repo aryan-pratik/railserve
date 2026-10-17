@@ -6,8 +6,7 @@ import { User } from '@/lib/models'
 import { timingFor } from '@/lib/train/service'
 import { sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate, formatTimeIST, shiftServiceDate } from '@/lib/format'
-import { countLive, loadRunBoard, type BoardMode } from '@/lib/board'
-import { inRollover, liveServiceDates } from '@/lib/liveDay'
+import { loadRunBoard, todayBoardFilter, yesterdayBoardFilter, type BoardMode } from '@/lib/board'
 import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
@@ -82,20 +81,19 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   // With a status filter picked, every tab's badge counts what that filter
   // would list there, so switching filter changes the numbers too.
   const picked = statusFilter ? { status: { $in: statusFilter.statuses } } : null
+  // One clock for the board and every badge, so they agree at the 06:00 edge.
+  const now = new Date()
   const mode: BoardMode = showUpcoming ? 'upcoming' : showYesterday ? 'yesterday' : 'today'
 
   await connectDb()
   // Everything that does not depend on the runs goes out in the same round trip.
   const [board, todayCount, yesterdayCount, upcomingCount, riderDocs] = await Promise.all([
-    loadRunBoard(ctx, mode, { statuses: statusFilter?.statuses }),
-    // The same count the call board and admin show: today, plus last night's
-    // open orders until the past-midnight window closes.
-    picked
-      ? countOrders(ctx, { serviceDate: { $in: liveServiceDates() }, ...picked })
-      : countLive(ctx),
-    // While last night's open orders are inside Today, counting them here too
-    // would show the same orders on two tabs.
-    inRollover() ? Promise.resolve(undefined) : countOrders(ctx, { serviceDate: yesterday, ...picked }),
+    loadRunBoard(ctx, mode, { statuses: statusFilter?.statuses, now }),
+    // Exactly what each tab lists (board.ts): Today carries last night's
+    // still-due open orders past midnight, and Yesterday leaves those out, so
+    // no order is counted on both.
+    countOrders(ctx, todayBoardFilter(now, statusFilter?.statuses)),
+    countOrders(ctx, yesterdayBoardFilter(now, statusFilter?.statuses)),
     countOrders(ctx, { serviceDate: { $gt: today }, ...(picked ?? live) }),
     User.find({
       role: 'DELIVERY_AGENT',
@@ -110,12 +108,19 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const renderedAt = board.loadedAt.toISOString()
 
   const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
+  // Each order link carries the board's own query, so "Back to the board" on
+  // the order returns to this filter, view and page rather than to All.
+  const boardQuery = new URLSearchParams(
+    Object.entries(sp).flatMap(([k, v]) => (typeof v === 'string' && v ? [[k, v]] : [])),
+  ).toString()
+  const orderHref = (id: string) =>
+    boardQuery ? `/store/orders/${id}?back=${encodeURIComponent(boardQuery)}` : `/store/orders/${id}`
   const allOrders = runs.flatMap((r) => r.orders)
 
   const cards = runs.map((run) => {
     const orders: RunTableOrder[] = run.orders.map((o) => ({
       id: String(o._id),
-      href: `/store/orders/${String(o._id)}`,
+      href: orderHref(String(o._id)),
       externalOrderId: o.externalOrderId,
       orderType: o.orderType,
       source: o.source,
@@ -189,6 +194,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
   const dayHref = (day: '' | 'yesterday' | 'upcoming') => {
     const u = new URLSearchParams()
     if (day) u.set(day, '1')
+    if (!isGrouped) u.set('group', '0')
     if (statusFilter) u.set('status', statusFilter.key)
     return toHref(u)
   }
@@ -323,7 +329,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
             remark: o.remark,
             ...callNoteRow(o),
           }))}
-          hrefFor={(id) => `/store/orders/${id}`}
+          hrefFor={orderHref}
           showOutlet={multiOutlet}
           showSource
         />

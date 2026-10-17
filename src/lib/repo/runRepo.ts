@@ -26,14 +26,18 @@ export async function findRuns(
   serviceDate: string | string[],
   opts: { statuses?: OrderStatus[] } = {},
 ): Promise<Run<RunOrderDoc>[]> {
-  const orders = await findMany(
-    ctx,
-    {
-      serviceDate: Array.isArray(serviceDate) ? { $in: serviceDate } : serviceDate,
-      status: { $in: opts.statuses ?? LIVE_STATUSES },
-    },
-    { sort: { createdAt: 1 }, limit: 500 },
-  )
+  return findRunsWhere(ctx, {
+    serviceDate: Array.isArray(serviceDate) ? { $in: serviceDate } : serviceDate,
+    status: { $in: opts.statuses ?? LIVE_STATUSES },
+  })
+}
+
+/** Runs for any order filter, within the caller's scope — for the boards' own day rules (board.ts). */
+export async function findRunsWhere(
+  ctx: AuthContext,
+  filter: Parameters<typeof findMany>[1],
+): Promise<Run<RunOrderDoc>[]> {
+  const orders = await findMany(ctx, filter, { sort: { createdAt: 1 }, limit: 500 })
   return groupIntoRuns(orders)
 }
 

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { countOrders } from '../src/lib/repo/orderRepo'
-import { loadRunBoard, liveFilter } from '../src/lib/board'
-import { inRollover, liveServiceDates, REFRESH_SECONDS, ROLLOVER_HOUR_IST } from '../src/lib/liveDay'
+import { loadRunBoard, liveFilter, todayBoardFilter, yesterdayBoardFilter } from '../src/lib/board'
+import { inRollover, liveServiceDates, REFRESH_SECONDS, ROLLOVER_ARRIVAL_GRACE_HOURS, ROLLOVER_HOUR_IST } from '../src/lib/liveDay'
 import { callBoardRow, foodItemLabels } from '../src/lib/orderView'
 import { shiftServiceDate, todayIST } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
@@ -116,6 +116,100 @@ describe('the live board, seen by each role', () => {
     expect(during.t).toBe(before.t + 1)
     expect(during.a).toBe(before.a + 1)
     expect(String(stale._id)).toBeTruthy()
+  })
+})
+
+describe('which day an order is on, past midnight', () => {
+  // Fixed dates, not today: every assertion pins its own clock.
+  const day = '2026-10-17'
+  const prev = '2026-10-16'
+  const before = '2026-10-15'
+  const midnight = ist(day, '00:45') // inside the window
+  const noon = ist(day, '12:00') // outside it
+  let admin: AuthContext
+  let outlet: import('mongoose').Types.ObjectId
+  const ids: Record<string, string> = {}
+
+  const order = async (key: string, o: Record<string, unknown>) => {
+    const doc = await makeOrder({ restaurantId: outlet, stationCode: 'CNB', trainNo: key, ...o })
+    ids[key] = String(doc._id)
+  }
+  const idsIn = async (filter: Parameters<typeof countOrders>[1]) => {
+    const { Order } = await import('../src/lib/models')
+    const docs = await Order.find(filter).select('trainNo').lean()
+    return docs.map((d) => d.trainNo).sort()
+  }
+
+  beforeAll(async () => {
+    await resetDb()
+    outlet = (await makeRestaurant('HOTEL GANGA GALAXY', 'CNB'))._id
+    admin = ctxFor(await makeUser('ADMIN', '9000000030'))
+
+    // Today's own orders.
+    await order('T_OPEN', { serviceDate: day, scheduledArrival: ist(day, '09:00') })
+    await order('T_DONE', { serviceDate: day, status: 'DELIVERED', scheduledArrival: ist(day, '01:00') })
+    // Last night, still open, train due around midnight: the reason the window exists.
+    await order('Y_LATE', { serviceDate: prev, scheduledArrival: ist(prev, '23:30') })
+    await order('Y_AFTER', { serviceDate: prev, status: 'KOT_PRINTED', scheduledArrival: ist(day, '00:30') })
+    // Last night, still open, but the train went at breakfast: nobody closed it.
+    await order('Y_STALE', { serviceDate: prev, status: 'DISPATCHED', scheduledArrival: ist(prev, '10:00') })
+    // Last night, open, no booked arrival: cannot show it is still due.
+    await order('Y_NOTIME', { serviceDate: prev, scheduledArrival: null })
+    // Last night, finished on a late train.
+    await order('Y_DONE', { serviceDate: prev, status: 'DELIVERED', scheduledArrival: ist(prev, '23:40') })
+    await order('Y_CANC', { serviceDate: prev, status: 'CANCELLED', scheduledArrival: ist(day, '00:20') })
+    // Two days back, never closed.
+    await order('B_OPEN', { serviceDate: before, scheduledArrival: ist(prev, '23:50') })
+  })
+
+  afterAll(async () => {
+    await disconnectDb()
+  })
+
+  it('carries over only open orders on a train still due', async () => {
+    expect(ROLLOVER_ARRIVAL_GRACE_HOURS).toBe(4)
+    expect(await idsIn(todayBoardFilter(midnight))).toEqual(['T_OPEN', 'Y_AFTER', 'Y_LATE'])
+  })
+
+  it('never carries a finished order over, whichever status filter is picked', async () => {
+    expect(await idsIn(todayBoardFilter(midnight, ['DELIVERED']))).toEqual(['T_DONE'])
+    expect(await idsIn(todayBoardFilter(midnight, ['CANCELLED', 'FAILED']))).toEqual([])
+    expect(await idsIn(todayBoardFilter(midnight, ['DISPATCHED']))).toEqual([])
+    expect(await idsIn(todayBoardFilter(midnight, ['KOT_PRINTED']))).toEqual(['Y_AFTER'])
+  })
+
+  it('lists every other order of last night under Yesterday, and none on both tabs', async () => {
+    const y = await idsIn(yesterdayBoardFilter(midnight))
+    expect(y).toEqual(['Y_CANC', 'Y_DONE', 'Y_NOTIME', 'Y_STALE'])
+    const t = await idsIn(todayBoardFilter(midnight, ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'CANCELLED']))
+    expect(t.filter((k) => y.includes(k))).toEqual([])
+  })
+
+  it('drops last night entirely from Today once the window closes', async () => {
+    expect(await idsIn(todayBoardFilter(noon))).toEqual(['T_OPEN'])
+    expect(await idsIn(yesterdayBoardFilter(noon))).toEqual(
+      ['Y_AFTER', 'Y_CANC', 'Y_DONE', 'Y_LATE', 'Y_NOTIME', 'Y_STALE'],
+    )
+  })
+
+  it('never shows an older day on Today', async () => {
+    for (const at of [midnight, noon]) {
+      expect(await idsIn(todayBoardFilter(at))).not.toContain('B_OPEN')
+      expect(await idsIn(yesterdayBoardFilter(at))).not.toContain('B_OPEN')
+    }
+  })
+
+  it('builds the board and its count from the same rule', async () => {
+    const today = await loadRunBoard(admin, 'today', { allowFetch: false, now: midnight })
+    expect(today.runs.map((r) => r.trainNo).sort()).toEqual(['T_OPEN', 'Y_AFTER', 'Y_LATE'])
+    expect(await countOrders(admin, liveFilter(midnight))).toBe(3)
+
+    const yest = await loadRunBoard(admin, 'yesterday', { allowFetch: false, now: midnight })
+    expect(yest.runs.map((r) => r.trainNo).sort()).toEqual(['Y_CANC', 'Y_DONE', 'Y_NOTIME', 'Y_STALE'])
+
+    const delivered = await loadRunBoard(admin, 'today', { allowFetch: false, now: midnight, statuses: ['DELIVERED'] })
+    expect(delivered.runs.map((r) => r.trainNo)).toEqual(['T_DONE'])
+    expect(Object.keys(ids)).toHaveLength(9)
   })
 })
 
