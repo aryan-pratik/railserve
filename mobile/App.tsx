@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Alert, AppState, BackHandler, Linking, Pressable, StatusBar, Text, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { LogOut } from 'lucide-react-native'
-import * as Notifications from 'expo-notifications'
+import { isRunningInExpoGo } from 'expo'
 import * as Device from 'expo-device'
 import { flushQueue, fetchHistory, fetchRuns, newClientId, queueAndFlush, queueManyAndFlush, registerPushToken, ApiError, OfflineError } from './src/api'
 import {
@@ -170,7 +170,11 @@ function AppShell() {
     if (!token) return
       ; (async () => {
         try {
-          if (!Device.isDevice) return
+          // Importing expo-notifications at all throws in Expo Go on Android
+          // (remote push was removed from Expo Go in SDK 53), so it is loaded
+          // here, and only in a real build.
+          if (!Device.isDevice || isRunningInExpoGo()) return
+          const Notifications: typeof import('expo-notifications') = require('expo-notifications')
           const existing = await Notifications.getPermissionsAsync()
           const status =
             existing.status === 'granted'

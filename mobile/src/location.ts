@@ -1,3 +1,4 @@
+import { isRunningInExpoGo } from 'expo'
 import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import { sendLocations } from './api'
@@ -44,6 +45,15 @@ const BUFFER_MAX = 120
 /** The OS-level task name. Stable: the OS remembers it across app restarts. */
 const TASK_NAME = 'railserve-location-updates'
 
+/**
+ * Expo Go has no background location on Android at all, so the task above can
+ * never start there. In Expo Go a foreground watcher feeds the same buffer
+ * instead — sharing works while the app is open, which is all a dev session
+ * needs. Real builds never take this path, so there is still only one
+ * mechanism per build.
+ */
+const FOREGROUND_ONLY = isRunningInExpoGo()
+
 export type SharingState =
   /** Not started, or stopped because the rider signed out. */
   | { status: 'off' }
@@ -58,6 +68,7 @@ type Listener = (state: SharingState) => void
 
 let buffer: LocationPing[] = []
 let timer: ReturnType<typeof setInterval> | null = null
+let watcher: Location.LocationSubscription | null = null
 let state: SharingState = { status: 'off' }
 const listeners = new Set<Listener>()
 
@@ -167,6 +178,7 @@ async function flush(token: string) {
 }
 
 async function hasBackgroundPermission(): Promise<boolean> {
+  if (FOREGROUND_ONLY) return false
   try {
     return (await Location.getBackgroundPermissionsAsync()).granted
   } catch {
@@ -175,6 +187,11 @@ async function hasBackgroundPermission(): Promise<boolean> {
 }
 
 async function stopLocationTask(): Promise<void> {
+  if (FOREGROUND_ONLY) {
+    watcher?.remove()
+    watcher = null
+    return
+  }
   try {
     if (await Location.hasStartedLocationUpdatesAsync(TASK_NAME)) {
       await Location.stopLocationUpdatesAsync(TASK_NAME)
@@ -249,7 +266,7 @@ export async function startSharing(token: string): Promise<void> {
     // service carries that without the background permission. Declining costs
     // screen-off tracking, not tracking.
     let background = await hasBackgroundPermission()
-    if (!background) {
+    if (!background && !FOREGROUND_ONLY) {
       try {
         background = (await Location.requestBackgroundPermissionsAsync()).granted
       } catch {
@@ -258,7 +275,23 @@ export async function startSharing(token: string): Promise<void> {
     }
     if (mine !== generation) return
 
-    if (!(await Location.hasStartedLocationUpdatesAsync(TASK_NAME))) {
+    if (FOREGROUND_ONLY) {
+      if (!watcher) {
+        const sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: FIX_INTERVAL_MS, distanceInterval: FIX_DISTANCE_M },
+          (fix) => {
+            buffer = [...buffer, toPing(fix)].slice(-BUFFER_MAX)
+          },
+        )
+        // Signed out meanwhile, or a second startSharing got there first.
+        // Remove only this watcher: the one in `watcher` may be a newer session's.
+        if (mine !== generation || watcher) {
+          sub.remove()
+          return
+        }
+        watcher = sub
+      }
+    } else if (!(await Location.hasStartedLocationUpdatesAsync(TASK_NAME))) {
       if (mine !== generation) return
       await Location.startLocationUpdatesAsync(TASK_NAME, {
         // Balanced, not Highest. A platform is the unit that matters and
