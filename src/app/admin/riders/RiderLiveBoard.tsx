@@ -213,6 +213,15 @@ export function RiderLiveBoard({
     }
   }, [])
 
+  // A rider's own page. A past day's board opens their record on that day;
+  // today's opens it whole, since "everything this rider has done" is the
+  // question that page is for.
+  const detailHref = useCallback(
+    (id: string) =>
+      isToday ? `/admin/riders/${id}` : `/admin/riders/${id}?mode=range&from=${serviceDate}&to=${serviceDate}`,
+    [isToday, serviceDate],
+  )
+
   // A marker was clicked: light up its row, if that row is on this page.
   const selectFromMap = useCallback((id: string) => {
     setSelectedId(id)
@@ -432,12 +441,14 @@ export function RiderLiveBoard({
                     now={now}
                     selectedId={selectedId}
                     onShowOnMap={showOnMap}
+                    detailHref={detailHref}
                   />
                   <RosterCards
                     riders={pageRiders}
                     now={now}
                     selectedId={selectedId}
                     onShowOnMap={showOnMap}
+                    detailHref={detailHref}
                   />
                 </>
               )}
@@ -678,6 +689,29 @@ type RosterProps = {
   now: Date
   selectedId: string | null
   onShowOnMap: (id: string) => void
+  /** The rider's own page: their orders and event log. */
+  detailHref: (id: string) => string
+}
+
+/**
+ * Open a rider's page from a tap anywhere on their row or card, read off the
+ * row's `data-href`.
+ *
+ * The rider's name is the real link — keyboard, middle-click and a screen
+ * reader all get it there. This only widens the target for a pointer, and
+ * steps aside for the row's own controls: Locate, the menu, the phone link.
+ * A drag that selected text is not a tap either.
+ */
+function useOpenOnTap() {
+  const router = useRouter()
+  return (e: React.MouseEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement
+    const href = target.closest<HTMLElement>('[data-href]')?.dataset.href
+    if (!href || target.closest('a, button, summary, details, input, select')) return
+    if (window.getSelection()?.toString()) return
+    if (e.metaKey || e.ctrlKey || e.shiftKey) window.open(href, '_blank', 'noopener')
+    else router.push(href)
+  }
 }
 
 /** What a rider's last fix says about their movement, as one short line. */
@@ -762,7 +796,15 @@ function PhoneLink({ phone }: { phone: string }) {
  * browser already opens, closes and keeps keyboard-reachable; light dismiss
  * is the one thing it lacks, added below.
  */
-function RowActions({ rider, onShowOnMap }: { rider: RiderView; onShowOnMap: (id: string) => void }) {
+function RowActions({
+  rider,
+  onShowOnMap,
+  detailHref,
+}: {
+  rider: RiderView
+  onShowOnMap: (id: string) => void
+  detailHref: string
+}) {
   const placed = rider.position !== null && rider.presence !== 'NEVER'
   const menu = useRef<HTMLDetailsElement | null>(null)
 
@@ -805,6 +847,12 @@ function RowActions({ rider, onShowOnMap }: { rider: RiderView; onShowOnMap: (id
         </summary>
         <div className="absolute top-full right-0 z-20 mt-1 w-40 origin-top-right rounded-lg border border-line bg-surface p-1 text-sm shadow-md motion-safe:animate-pop">
           <Link
+            href={detailHref}
+            className={`block rounded-md px-2.5 py-1.5 text-ink hover:bg-sunken ${focusRing}`}
+          >
+            Orders &amp; log
+          </Link>
+          <Link
             href={`/admin/setup?tab=staff&edit=${rider.id}`}
             className={`block rounded-md px-2.5 py-1.5 text-ink hover:bg-sunken ${focusRing}`}
           >
@@ -827,7 +875,8 @@ function RowActions({ rider, onShowOnMap }: { rider: RiderView; onShowOnMap: (id
 const th = 'px-1.5 py-2.5 text-left align-bottom text-xs font-medium leading-tight text-muted'
 const td = 'px-1.5 py-3'
 
-function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
+function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: RosterProps) {
+  const open = useOpenOnTap()
   return (
     <div className="hidden min-h-0 flex-1 overflow-x-hidden overflow-y-auto border-t border-line @2xl:block">
       {/* Fixed layout, never wider than the card: every column but Rider has
@@ -886,7 +935,7 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
             <th className={`${th} pr-3 text-right`}>Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-line">
+        <tbody className="divide-y divide-line" onClick={open}>
           {riders.map((rider) => {
             const move = movementOf(rider, now)
             const { orders, codOrders, codPaise, amountPaise, carrying } = rider.work
@@ -895,15 +944,17 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
               <tr
                 key={rider.id}
                 id={`rider-${rider.id}`}
-                className={`scroll-my-2 transition-colors ${selected ? 'bg-accent-soft' : 'hover:bg-canvas'}`}
+                data-href={detailHref(rider.id)}
+                className={`scroll-my-2 cursor-pointer transition-colors ${selected ? 'bg-accent-soft' : 'hover:bg-canvas'}`}
               >
                 <td className={`${td} pl-4`}>
-                  <p
+                  <Link
+                    href={detailHref(rider.id)}
                     title={rider.name}
-                    className={`truncate font-medium ${selected ? 'text-accent' : 'text-ink'}`}
+                    className={`block truncate rounded font-medium hover:underline ${focusRing} ${selected ? 'text-accent' : 'text-ink'}`}
                   >
                     {rider.name}
-                  </p>
+                  </Link>
                   <PhoneLink phone={rider.phone} />
                 </td>
                 <td className={td}>
@@ -933,7 +984,7 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
                 </td>
                 <td className={`${td} truncate text-xs text-muted tabular-nums`}>{lastActiveOf(rider, now)}</td>
                 <td className={`${td} pr-3`}>
-                  <RowActions rider={rider} onShowOnMap={onShowOnMap} />
+                  <RowActions rider={rider} onShowOnMap={onShowOnMap} detailHref={detailHref(rider.id)} />
                 </td>
               </tr>
             )
@@ -945,9 +996,14 @@ function RosterTable({ riders, now, selectedId, onShowOnMap }: RosterProps) {
 }
 
 /** The same roster as cards, for a card too narrow to hold the table's columns. */
-function RosterCards({ riders, now, selectedId, onShowOnMap }: RosterProps) {
+function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: RosterProps) {
+  const open = useOpenOnTap()
   return (
-    <ul aria-label="Riders" className="min-h-0 flex-1 divide-y divide-line overflow-y-auto border-t border-line @2xl:hidden">
+    <ul
+      aria-label="Riders"
+      onClick={open}
+      className="min-h-0 flex-1 divide-y divide-line overflow-y-auto border-t border-line @2xl:hidden"
+    >
       {riders.map((rider) => {
         const move = movementOf(rider, now)
         const { orders, codOrders, codPaise, amountPaise, carrying } = rider.work
@@ -955,14 +1011,20 @@ function RosterCards({ riders, now, selectedId, onShowOnMap }: RosterProps) {
           <li
             key={rider.id}
             id={`rider-${rider.id}`}
-            className={`scroll-my-2 px-3 py-3.5 ${rider.id === selectedId ? 'bg-accent-soft/70' : ''}`}
+            data-href={detailHref(rider.id)}
+            className={`scroll-my-2 cursor-pointer px-3 py-3.5 ${rider.id === selectedId ? 'bg-accent-soft/70' : 'active:bg-canvas'}`}
           >
             <div className="flex items-start gap-3">
               <Avatar rider={rider} size="size-10" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-ink">{rider.name}</p>
+                    <Link
+                      href={detailHref(rider.id)}
+                      className={`block truncate rounded font-medium text-ink hover:underline ${focusRing}`}
+                    >
+                      {rider.name}
+                    </Link>
                     <PhoneLink phone={rider.phone} />
                   </div>
                   <StatusBadge rider={rider} />
@@ -989,7 +1051,7 @@ function RosterCards({ riders, now, selectedId, onShowOnMap }: RosterProps) {
                   </span>
                 ) : null}
               </div>
-              <RowActions rider={rider} onShowOnMap={onShowOnMap} />
+              <RowActions rider={rider} onShowOnMap={onShowOnMap} detailHref={detailHref(rider.id)} />
             </div>
           </li>
         )

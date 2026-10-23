@@ -743,3 +743,12 @@ export function IconCalendar({ size = 16, className = '', ...props }: IconProps)
     </svg>
   )
 }
+
+/** A pulse line: everything that has happened, as it happened. */
+export function IconActivity({ size = 20, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  )
+}

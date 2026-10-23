@@ -205,13 +205,18 @@ export async function handRunToRider(
 /**
  * Dispatch the whole run. Plan §9: the unit of dispatch is the run, not the
  * order — the agent picks up everything for that train in one go.
+ *
+ * `via` says which screen did it. The phone app and the rider web page both
+ * dispatch runs, and the activity log can only tell them apart by this tag;
+ * the app sends the default, the web page its own.
  */
 export async function dispatchRun(
   ctx: AuthContext,
   runKey: string,
+  via: 'agent-run' | 'agent-web-run' = 'agent-run',
 ): Promise<RunActionResult> {
   if (ctx.role !== 'DELIVERY_AGENT') {
     throw new ForbiddenError('Only a delivery agent may dispatch a run')
   }
-  return transitionRun(ctx, runKey, 'PREPARED', 'DISPATCHED', { via: 'agent-run' })
+  return transitionRun(ctx, runKey, 'PREPARED', 'DISPATCHED', { via })
 }

@@ -49,7 +49,7 @@ export async function dispatchRunAction(
   const runKey = String(formData.get('runKey') ?? '')
 
   try {
-    const r = await dispatchRun(ctx, runKey)
+    const r = await dispatchRun(ctx, runKey, 'agent-web-run')
     revalidatePath('/agent')
     revalidatePath(`/agent/runs/${encodeURIComponent(runKey)}`)
 

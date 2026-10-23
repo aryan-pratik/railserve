@@ -62,6 +62,21 @@ const ORDER_INDEXES: Spec[] = [
     index: { key: { 'delivery.agentIds': 1, serviceDate: 1 } },
     why: "a delivery agent's assigned runs for today",
   },
+  {
+    name: 'activity_events',
+    index: { key: { 'events.createdAt': -1 } },
+    why: 'the admin activity log: every order event in a date range',
+  },
+  {
+    name: 'activity_actor',
+    index: { key: { 'events.userId': 1, 'events.createdAt': -1 } },
+    why: "the activity log filtered to one person, and a rider's own event log",
+  },
+  {
+    name: 'activity_notes',
+    index: { key: { 'callLog.createdAt': -1 } },
+    why: 'call notes in the activity log',
+  },
 ]
 
 const RESTAURANT_INDEXES: Spec[] = [

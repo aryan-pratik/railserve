@@ -68,9 +68,83 @@ function changeDetail(meta: Record<string, unknown>, names?: Map<string, string>
       }
       return <Change label="Riders" from={list(meta.fromAgentIds)} to={list(meta.agentIds)} />
     }
+    case 'COD_SETTLED': {
+      const rider = names?.get(String(meta.riderId)) ?? 'the rider'
+      const handover =
+        typeof meta.handoverOrders === 'number' && meta.handoverOrders > 1
+          ? ` · one of ${meta.handoverOrders} orders, ${formatMoney(meta.handoverPaise as number)} in all`
+          : ''
+      return (
+        <span className="text-ink">
+          Took {formatMoney(typeof meta.amountPaise === 'number' ? meta.amountPaise : null)} cash from {rider}
+          {handover}
+        </span>
+      )
+    }
+    case 'LEAVE_NOW': {
+      const parts = [
+        str(meta.trainNo) ? `Train ${meta.trainNo}` : null,
+        str(meta.platform) ? `platform ${meta.platform}` : null,
+        typeof meta.delayMinutes === 'number' && meta.delayMinutes > 0 ? `${meta.delayMinutes} min late` : null,
+      ].filter(Boolean)
+      return parts.length ? <span className="text-ink">Time to leave for the platform · {parts.join(' · ')}</span> : null
+    }
     default:
       return null
   }
+}
+
+/**
+ * What an event was, as badges: a status move ("Ready → On platform"), the
+ * birth of the order, or the name of a side action that left the status
+ * where it was. Shared with the activity log, so one event reads the same
+ * on the order and in the log.
+ */
+export function EventBadges({
+  fromStatus,
+  toStatus,
+  meta,
+}: {
+  fromStatus: string | null
+  toStatus: string
+  meta: Record<string, unknown> | null | undefined
+}) {
+  const action = typeof meta?.action === 'string' ? meta.action : null
+  if (fromStatus === toStatus) {
+    return (
+      <span className="rounded bg-sunken px-2 py-0.5 text-xs font-medium text-muted">
+        {action === 'FIELD_EDITED' ? 'edited' : action ? action.replace(/_/g, ' ').toLowerCase() : 'updated'}
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-2">
+      {fromStatus ? (
+        <>
+          <StatusBadge status={fromStatus} />
+          <IconArrowRight size={14} className="text-faint" aria-hidden />
+        </>
+      ) : (
+        <span className="text-xs font-medium text-muted">created</span>
+      )}
+      <StatusBadge status={toStatus} />
+    </span>
+  )
+}
+
+/**
+ * The lines under an event: what a side action changed, and the reason
+ * somebody gave for it.
+ */
+export function eventDetail(
+  e: { fromStatus: string | null; toStatus: string; meta: Record<string, unknown> | null | undefined },
+  names?: Map<string, string>,
+): { detail: React.ReactNode; reason: string | null } {
+  // A telecaller has to give a reason to cancel (see /calls/actions).
+  // It is recorded so somebody can read it back, which means showing it.
+  const reason = typeof e.meta?.reason === 'string' && e.meta.reason.trim() ? e.meta.reason.trim() : null
+  const detail = e.fromStatus === e.toStatus ? changeDetail(e.meta ?? {}, names) : null
+  return { detail, reason }
 }
 
 /**
@@ -88,34 +162,12 @@ export function EventLog({ events, names }: { events: EventRow[]; names?: Map<st
   return (
     <ol className="divide-y divide-line">
       {events.map((e, i) => {
-        const action = typeof e.meta?.action === 'string' ? e.meta.action : null
-        const isSideEffect = e.fromStatus === e.toStatus
-        // A telecaller has to give a reason to cancel (see /calls/actions).
-        // It is recorded so somebody can read it back, which means showing it.
-        const reason =
-          typeof e.meta?.reason === 'string' && e.meta.reason.trim() ? e.meta.reason.trim() : null
-        const detail = isSideEffect ? changeDetail(e.meta ?? {}, names) : null
+        const { detail, reason } = eventDetail(e, names)
         return (
           <li key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
             <span className="w-32 shrink-0 text-xs tabular-nums text-faint">{formatIST(e.createdAt)}</span>
 
-            {isSideEffect ? (
-              <span className="rounded bg-sunken px-2 py-0.5 text-xs font-medium text-muted">
-                {action === 'FIELD_EDITED' ? 'edited' : action ? action.replace(/_/g, ' ').toLowerCase() : 'updated'}
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                {e.fromStatus ? (
-                  <>
-                    <StatusBadge status={e.fromStatus} />
-                    <IconArrowRight size={14} className="text-faint" aria-hidden />
-                  </>
-                ) : (
-                  <span className="text-xs font-medium text-muted">created</span>
-                )}
-                <StatusBadge status={e.toStatus} />
-              </span>
-            )}
+            <EventBadges fromStatus={e.fromStatus} toStatus={e.toStatus} meta={e.meta} />
 
             <span className="ml-auto text-xs text-faint">{e.actor}</span>
 
