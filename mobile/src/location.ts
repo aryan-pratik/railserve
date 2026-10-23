@@ -45,6 +45,9 @@ const BUFFER_MAX = 120
 /** The OS-level task name. Stable: the OS remembers it across app restarts. */
 const TASK_NAME = 'railserve-location-updates'
 
+/** android.package in app.json; expo-location prefixes its channel id with it. */
+const ANDROID_PACKAGE = 'com.railserve.rider'
+
 /**
  * Expo Go has no background location on Android at all, so the task above can
  * never start there. In Expo Go a foreground watcher feeds the same buffer
@@ -177,6 +180,36 @@ async function flush(token: string) {
   }
 }
 
+/**
+ * Create the foreground service's notification channel ourselves, before
+ * expo-location does, at the lowest importance Android has.
+ *
+ * expo-location only creates the channel when it is missing, at LOW. At MIN
+ * the notification has no status-bar icon, makes no sound, and sits folded
+ * at the bottom of the shade — the service keeps running all the same. The id
+ * must match expo-location's `<packageName>:<taskName>`. Lowering an existing
+ * channel's importance is allowed, so phones that already have it at LOW are
+ * quietened too.
+ *
+ * Loaded lazily: importing expo-notifications throws in Expo Go, which never
+ * reaches this path anyway.
+ */
+async function quietChannel(): Promise<void> {
+  try {
+    const Notifications: typeof import('expo-notifications') = require('expo-notifications')
+    await Notifications.setNotificationChannelAsync(`${ANDROID_PACKAGE}:${TASK_NAME}`, {
+      name: 'Location while on shift',
+      importance: Notifications.AndroidImportance.MIN,
+      showBadge: false,
+      sound: null,
+      enableVibrate: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.SECRET,
+    })
+  } catch {
+    // A louder notification is better than no tracking: carry on regardless.
+  }
+}
+
 async function hasBackgroundPermission(): Promise<boolean> {
   if (FOREGROUND_ONLY) return false
   try {
@@ -293,12 +326,12 @@ export async function startSharing(token: string): Promise<void> {
       }
     } else {
       // Restart rather than skip when the OS already has the task: it keeps
-      // the options it was started with. A phone upgraded from the build that
-      // ran the foreground service would otherwise keep its notification up;
-      // re-registering without the option makes expo-location stop it.
+      // the options it was started with, so a phone upgraded from a build
+      // with different service options would keep running the old ones.
       if (await Location.hasStartedLocationUpdatesAsync(TASK_NAME)) {
         await Location.stopLocationUpdatesAsync(TASK_NAME)
       }
+      await quietChannel()
       if (mine !== generation) return
       await Location.startLocationUpdatesAsync(TASK_NAME, {
         // Balanced, not Highest. A platform is the unit that matters and
@@ -308,13 +341,18 @@ export async function startSharing(token: string): Promise<void> {
         accuracy: Location.Accuracy.Balanced,
         timeInterval: FIX_INTERVAL_MS,
         distanceInterval: FIX_DISTANCE_M,
-        // No foregroundService, deliberately. That option is what posts the
-        // ongoing "sharing your location" notification, and riders want the
-        // app silent in the background like any other. The cost is Android's:
-        // without a foreground service it batches background fixes — a few an
-        // hour rather than every ten seconds — so the office sees a rider live
-        // while the app is open and coarsely while it is not. Tried with the
-        // notification on 2026-10-23 and taken back off the same day.
+        // The foreground service is what keeps fixes coming with the app in
+        // the background. Without it (tried 2026-10-23) Android batches fixes
+        // to a few an hour and some phones stop them outright, so tracking
+        // died the moment the rider left the app. Android requires the
+        // service to post a notification; quietChannel() below makes it as
+        // quiet as Android allows rather than removing it.
+        foregroundService: {
+          notificationTitle: 'RailServe',
+          notificationBody: 'On shift',
+          notificationColor: '#2457D6',
+          killServiceOnDestroy: false,
+        },
         showsBackgroundLocationIndicator: true,
       })
     }
