@@ -293,8 +293,9 @@ export async function startSharing(token: string): Promise<void> {
       }
     } else {
       // Restart rather than skip when the OS already has the task: it keeps
-      // the options it was started with, so a phone upgraded from a build
-      // without the foreground service would never show its notification.
+      // the options it was started with. A phone upgraded from the build that
+      // ran the foreground service would otherwise keep its notification up;
+      // re-registering without the option makes expo-location stop it.
       if (await Location.hasStartedLocationUpdatesAsync(TASK_NAME)) {
         await Location.stopLocationUpdatesAsync(TASK_NAME)
       }
@@ -307,17 +308,13 @@ export async function startSharing(token: string): Promise<void> {
         accuracy: Location.Accuracy.Balanced,
         timeInterval: FIX_INTERVAL_MS,
         distanceInterval: FIX_DISTANCE_M,
-        // The foreground service is what keeps fixes coming with the screen
-        // off, and its ongoing notification is now where the rider sees that
-        // sharing is on — the in-app indicator is gone from the home screen.
-        // The small icon is the white silhouette set in app.json; without it
-        // Android draws the full-colour app icon as a solid black square.
-        foregroundService: {
-          notificationTitle: 'RailServe is on shift',
-          notificationBody: 'Sharing your location with the office while you deliver.',
-          notificationColor: '#2457D6',
-          killServiceOnDestroy: false,
-        },
+        // No foregroundService, deliberately. That option is what posts the
+        // ongoing "sharing your location" notification, and riders want the
+        // app silent in the background like any other. The cost is Android's:
+        // without a foreground service it batches background fixes — a few an
+        // hour rather than every ten seconds — so the office sees a rider live
+        // while the app is open and coarsely while it is not. Tried with the
+        // notification on 2026-10-23 and taken back off the same day.
         showsBackgroundLocationIndicator: true,
       })
     }
