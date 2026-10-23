@@ -1,5 +1,6 @@
 import React from 'react'
-import { Modal, Pressable, ScrollView, StatusBar, Text, View } from 'react-native'
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { StatusBar } from 'expo-status-bar'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import {
   X,
@@ -74,7 +75,7 @@ export function ProfileModal({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar style="dark" />
 
         {/* Top Modal Header */}
         <View

@@ -11,8 +11,9 @@ import { Button, C, CallButton, Check, Money, Rule, Seat, s, timeIST, untilLabel
  *
  * The passenger's name doubles as the proof, so it is offered as a tick rather
  * than something to spell out: the rider confirms the person in front of them
- * is the person on the order with one tap. Typing is the fallback, for when
- * somebody else at the berth takes the food.
+ * is the person on the order with one tap. There is no free-text name: riders
+ * found the box a distraction at the one moment they are in a hurry, and an
+ * order with no name on it can be marked delivered without one.
  *
  * Photo proof exists in the backend and is deliberately not wired in here yet —
  * it needs an object store configured, and a capture button that always failed
@@ -154,10 +155,9 @@ export function DeliveryScreen({
         </View>
       ) : null}
 
-      {/* Who took it. One tap in the normal case; typing only when it was
-          somebody other than the passenger on the order. */}
+      {/* Who took it: one tap on the passenger's name. */}
       <View style={{ paddingTop: 22 }}>
-        <Text style={s.label}>WHO TOOK THE FOOD?</Text>
+        {passenger ? <Text style={s.label}>WHO TOOK THE FOOD?</Text> : null}
 
         {passenger ? (
           <Pressable
@@ -183,25 +183,16 @@ export function DeliveryScreen({
           </Pressable>
         ) : null}
 
-        <TextInput
-          value={receivedBy === passenger ? '' : receivedBy}
-          onChangeText={setReceivedBy}
-          placeholder={passenger ? 'Or type another name' : 'Name of the person'}
-          placeholderTextColor={C.faint}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="done"
-          style={[s.input, { marginTop: 12 }]}
-        />
-
-        <View style={{ marginTop: 24 }}>
+        <View style={{ marginTop: passenger ? 24 : 0 }}>
           <Button
             label="Delivered"
             tone="success"
             size="hero"
             busy={busy}
-            disabled={!receivedBy.trim()}
-            onPress={() => onDeliver(receivedBy.trim())}
+            // With a name on the order the tick is the proof; without one
+            // there is nothing to confirm against.
+            disabled={Boolean(passenger) && !receivedBy}
+            onPress={() => onDeliver(receivedBy)}
           />
         </View>
       </View>
@@ -220,7 +211,7 @@ export function DeliveryScreen({
             />
             <View style={{ height: 14 }} />
             <Button
-              label="Could not deliver"
+              label="Not delivered"
               tone="danger"
               busy={busy}
               disabled={!reason.trim()}
@@ -232,7 +223,7 @@ export function DeliveryScreen({
         ) : (
           <Pressable onPress={() => setFailOpen(true)} hitSlop={12} style={{ paddingVertical: 12 }}>
             <Text style={{ textAlign: 'center', color: C.muted, fontSize: 15 }}>
-              Could not deliver?
+              Not delivered?
             </Text>
           </Pressable>
         )}

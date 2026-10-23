@@ -1,6 +1,6 @@
 import React from 'react'
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
-import { Store, Send, CheckCircle2 } from 'lucide-react-native'
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Store, Send, CheckCircle2, Search, X } from 'lucide-react-native'
 
 /**
  * Primitives for the rider app.
@@ -143,10 +143,12 @@ export function Seat({ coach, berth, size = 'normal' }: {
  * berth needs the number right then, and going back into a detail screen to
  * find it is the moment the train leaves.
  */
-export function Person({ name, phone, compact }: {
+export function Person({ name, phone, compact, noCall }: {
   name: string | null
   phone: string | null
   compact?: boolean
+  /** The number is masked, so there is nothing to dial. */
+  noCall?: boolean
 }) {
   if (!name && !phone) return null
   return (
@@ -162,7 +164,7 @@ export function Person({ name, phone, compact }: {
           <Text style={{ fontSize: 14, color: C.muted, marginTop: 3 }}>{phone}</Text>
         ) : null}
       </View>
-      {phone ? <CallButton phone={phone} /> : null}
+      {phone && !noCall ? <CallButton phone={phone} /> : null}
     </View>
   )
 }
@@ -405,44 +407,72 @@ export const s = StyleSheet.create({
 })
 
 /**
- * Shown only when location is not getting through because of the phone:
- * the permission was declined or location is switched off.
- *
- * Once the rider has allowed location, the app says nothing about it. Android
- * already shows its own indicator in the status bar, and riders found a second
- * "sharing location" badge on top of that to be clutter. The one case still
- * worth a word is the denied one, because it is the only way a rider can tell
- * why the office keeps ringing to ask where they are, and tapping it opens
- * Settings.
+ * One search field, the same on every tab: order id, passenger name or phone,
+ * coach or train.
  */
-export function SharingIndicator({
-  state,
-  onPress,
+export function SearchBox({
+  value,
+  onChange,
+  onSubmit,
+  placeholder = 'Search phone, order id, name, coach',
 }: {
-  state:
-    | { status: 'off' | 'denied' | 'pending' }
-    | { status: 'sharing'; background: boolean }
-  onPress?: () => void
+  value: string
+  onChange: (v: string) => void
+  onSubmit?: () => void
+  placeholder?: string
 }) {
-  if (state.status !== 'denied') return null
-
-  const label = 'Location off'
-  const fg = C.amber
-
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={label}
-      style={({ pressed }) => [{
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        paddingHorizontal: 10, paddingVertical: 5,
-        opacity: pressed && onPress ? 0.6 : 1,
-      }]}
-    >
-      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: fg }} />
-      <Text style={{ fontSize: 12, fontWeight: '600', color: fg }}>{label}</Text>
-    </Pressable>
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+      backgroundColor: '#FFFFFF', paddingHorizontal: 12, minHeight: 46,
+    }}>
+      <Search size={17} color="#9CA3AF" />
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        onSubmitEditing={onSubmit}
+        placeholder={placeholder}
+        placeholderTextColor="#9CA3AF"
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+        accessibilityLabel="Search orders"
+        style={{ flex: 1, fontSize: 15, color: C.ink, paddingVertical: 10 }}
+      />
+      {value ? (
+        <Pressable onPress={() => onChange('')} hitSlop={10} accessibilityLabel="Clear search">
+          <X size={17} color="#9CA3AF" />
+        </Pressable>
+      ) : null}
+    </View>
   )
+}
+
+/** Client-side match for the live tabs, on the same fields the server searches. */
+export function matchesSearch(
+  o: {
+    externalOrderId?: string | null
+    contactName?: string | null
+    contactPhone?: string | null
+    coach?: string | null
+    berth?: string | null
+  },
+  trainNo: string | null,
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const text = [o.externalOrderId, o.contactName, o.coach, trainNo, o.coach && o.berth ? `${o.coach} ${o.berth}` : null]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  if (text.includes(q)) return true
+  const digits = q.replace(/\D/g, '')
+  return digits.length >= 3 && (o.contactPhone ?? '').replace(/\D/g, '').includes(digits)
+}
+
+/** "₹1,250" — whole rupees, Indian grouping. */
+export function rupees(paise: number | null | undefined): string {
+  return `₹${Math.round((paise ?? 0) / 100).toLocaleString('en-IN')}`
 }

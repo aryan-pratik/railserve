@@ -109,6 +109,20 @@ const DeliverySchema = new Schema(
     proofValue: { type: String, default: null },
     amountCollectedPaise: { type: Number, default: null, min: 0 },
     failureReason: { type: String, default: null },
+    // When the order first closed (delivered, not delivered, cancelled…).
+    // Written once and never moved: a rider's 30-hour correction window and
+    // the point their passenger's number is masked are both measured from
+    // here, so a correction must not restart the clock. Missing on orders that
+    // closed before it existed — see closedAtOf in riderRecords.
+    closedAt: { type: Date, default: null },
+    // The one rider holding this order's cash. agentIds can name several
+    // riders on a bulk handover, and counting the money against each of them
+    // would double the float the store expects back.
+    collectedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // A store manager took this COD cash off the rider. Set together across
+    // every order in one handover; never cleared.
+    codSettledAt: { type: Date, default: null },
+    codSettledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { _id: false },
 )

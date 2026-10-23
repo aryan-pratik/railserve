@@ -1,6 +1,6 @@
 import { API_URL } from './config'
 import { enqueue, loadQueue, removeFromQueue } from './storage'
-import type { HistoryResponse, LocationPing, QueuedMutation, RunsResponse } from './types'
+import type { HistoryQuery, HistoryResponse, LocationPing, QueuedMutation, RunsResponse } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -56,8 +56,14 @@ export async function fetchRuns(token: string): Promise<RunsResponse> {
  * a record to look back at, not something needed on a platform with no signal,
  * and caching it would compete for the storage the write queue depends on.
  */
-export async function fetchHistory(token: string): Promise<HistoryResponse> {
-  return request<HistoryResponse>('/api/mobile/history', token)
+export async function fetchHistory(token: string, query: HistoryQuery = {}): Promise<HistoryResponse> {
+  // v=2: this build understands CANCELLED rows. Older builds draw anything
+  // that is not FAILED as delivered, so the server leaves cancellations out
+  // for them.
+  const params = new URLSearchParams({ v: '2' })
+  if (query.q) params.set('q', query.q)
+  else if (query.date) params.set('date', query.date)
+  return request<HistoryResponse>(`/api/mobile/history?${params.toString()}`, token)
 }
 
 
@@ -85,7 +91,16 @@ export async function registerPushToken(token: string, pushToken: string | null)
   })
 }
 
-export type FlushResult = { synced: number; failed: number; remaining: number; offline: boolean }
+/** A mutation the server refused for good, and why — shown to the rider. */
+export type Rejected = { clientId: string; kind: QueuedMutation['kind']; error: string }
+
+export type FlushResult = {
+  synced: number
+  failed: number
+  remaining: number
+  offline: boolean
+  rejected: Rejected[]
+}
 
 /**
  * Sends the whole queue in one batch and drops everything the server has
@@ -101,10 +116,12 @@ const MAX_BATCH = 100
 
 export async function flushQueue(token: string): Promise<FlushResult> {
   const queue = await loadQueue()
-  if (queue.length === 0) return { synced: 0, failed: 0, remaining: 0, offline: false }
+  if (queue.length === 0) return { synced: 0, failed: 0, remaining: 0, offline: false, rejected: [] }
 
   let synced = 0
   let failed = 0
+  const rejected: Rejected[] = []
+  const kindOf = new Map(queue.map((m) => [m.clientId, m.kind]))
 
   try {
     for (let i = 0; i < queue.length; i += MAX_BATCH) {
@@ -128,12 +145,19 @@ export async function flushQueue(token: string): Promise<FlushResult> {
 
       synced += res.results.filter((r) => r.applied).length
       failed += res.results.filter((r) => !r.applied).length
+      // Dropped for good, so the rider has to hear about it — otherwise a
+      // pickup another rider beat them to just quietly un-happens.
+      for (const r of res.results) {
+        if (!r.applied && r.retryable === false) {
+          rejected.push({ clientId: r.clientId, kind: kindOf.get(r.clientId) ?? 'DISPATCH_ORDER', error: r.error ?? 'Refused' })
+        }
+      }
     }
 
-    return { synced, failed, remaining: (await loadQueue()).length, offline: false }
+    return { synced, failed, remaining: (await loadQueue()).length, offline: false, rejected }
   } catch (err) {
     if (err instanceof OfflineError) {
-      return { synced, failed, remaining: (await loadQueue()).length, offline: true }
+      return { synced, failed, remaining: (await loadQueue()).length, offline: true, rejected }
     }
     throw err
   }

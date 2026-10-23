@@ -2,9 +2,9 @@ import React, { useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, Text, View, Linking } from 'react-native'
 import { Store, Train, Phone, ChevronRight, ChevronDown, Clock, Users } from 'lucide-react-native'
 import type { Run } from '../types'
-import { timeIST, untilLabel, delayLabel } from '../ui'
+import { Check, SearchBox, matchesSearch, timeIST, untilLabel, delayLabel } from '../ui'
 
-/** Assigned and not yet out of the kitchen: cooking, or ready to collect. */
+/** Not yet out of the kitchen: cooking, or ready to collect. */
 const WAITING = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']
 
 const colors = {
@@ -23,26 +23,29 @@ const colors = {
 
 export function HomeScreen({
   runs,
-  onPickedUp,
+  onPickUp,
   refreshing,
   onRefresh,
   busy,
 }: {
   runs: Run[]
-  onPickedUp: (orderId: string) => void
+  onPickUp: (orderIds: string[]) => void
   refreshing: boolean
   onRefresh: () => void
   busy: boolean
 }) {
-  // Everything assigned to this rider that has not left the counter yet. The
-  // server only sends a rider their own orders, so there is nothing here to
-  // choose between: the office decides who carries what, and the rider says
-  // when they have it.
+  const [query, setQuery] = useState('')
+  const [picked, setPicked] = useState<Set<string>>(() => new Set())
+
+  // Everything this rider could collect: what the office gave them (cooking or
+  // ready), plus ready orders nobody was given — the server sends those to
+  // every rider at the outlet, and whoever ticks one first takes it.
   const toPickUp = runs
     .map((r) => ({
       run: r,
       orders: r.orders
         .filter((o) => WAITING.includes(o.status))
+        .filter((o) => matchesSearch(o, r.trainNo, query))
         .sort((a, b) => {
           const coachA = a.coach || ''
           const coachB = b.coach || ''
@@ -75,6 +78,28 @@ export function HomeScreen({
     })
   }
 
+  // Only orders still ready count: one another rider took, or the office
+  // pulled back, drops out of the selection on the next refresh by itself.
+  const readyIds = new Set(
+    runs.flatMap((r) => r.orders.filter((o) => o.status === 'PREPARED').map((o) => o.id)),
+  )
+  const selected = [...picked].filter((id) => readyIds.has(id))
+
+  function togglePick(orderId: string) {
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (next.has(orderId)) next.delete(orderId)
+      else next.add(orderId)
+      return next
+    })
+  }
+
+  function pickUpSelected() {
+    if (selected.length === 0) return
+    onPickUp(selected)
+    setPicked(new Set())
+  }
+
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -96,19 +121,27 @@ export function HomeScreen({
           </View>
           <View style={{ flex: 1, justifyContent: 'center' }}>
             <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary, letterSpacing: 0.8, marginBottom: 3 }}>
-              YOUR ORDERS
+              PICK UP
             </Text>
             <Text style={{ fontSize: 13, fontWeight: '400', color: colors.secondaryText, lineHeight: 18 }}>
-              Assigned to you by the office. Tap Picked up when you collect one from the counter.
+              Your orders, and ready orders nobody has taken yet. Tick the ones you collect, then tap Pick up.
             </Text>
           </View>
         </View>
 
+        <View style={{ marginBottom: 18 }}>
+          <SearchBox value={query} onChange={setQuery} />
+        </View>
+
         {toPickUp.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 80 }}>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>No orders assigned to you</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>
+              {query ? 'No matching orders' : 'Nothing to pick up'}
+            </Text>
             <Text style={{ fontSize: 14, fontWeight: '400', color: colors.secondaryText, marginTop: 8, textAlign: 'center', lineHeight: 20 }}>
-              The office will assign you orders.{'\n'}Pull down to check again.
+              {query
+                ? 'Try another phone number, order id or coach.'
+                : 'Ready orders and orders the office gives you show here.\nPull down to check again.'}
             </Text>
           </View>
         ) : (
@@ -215,15 +248,23 @@ export function HomeScreen({
 
                 {isExpanded && orders.map((o) => {
                   const isReady = o.status === 'PREPARED'
+                  const isOpen = o.assignedToMe === false
+                  const isPicked = picked.has(o.id) && isReady
                   return (
-                    <View
+                    <Pressable
                       key={o.id}
-                      style={{
-                        backgroundColor: colors.card,
-                        borderRadius: 16, borderWidth: 1,
+                      disabled={!isReady || busy}
+                      onPress={() => togglePick(o.id)}
+                      accessibilityRole={isReady ? 'checkbox' : undefined}
+                      accessibilityState={isReady ? { checked: isPicked } : undefined}
+                      accessibilityLabel={`${o.coach ?? ''} ${o.berth ?? ''} ${isReady ? 'ready' : 'being cooked'}`}
+                      style={({ pressed }) => [{
+                        backgroundColor: isPicked ? colors.softBlue : colors.card,
+                        borderRadius: 16, borderWidth: isPicked ? 2 : 1,
                         borderColor: isReady ? colors.primary : colors.border,
-                        padding: 16, marginBottom: 10,
-                      }}
+                        padding: isPicked ? 15 : 16, marginBottom: 10,
+                        opacity: pressed ? 0.85 : 1,
+                      }]}
                     >
                       <View>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -267,30 +308,19 @@ export function HomeScreen({
                       </View>
 
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: isReady ? colors.success : colors.secondaryText }}>
-                          {isReady ? 'Ready at the counter' : 'Being cooked'}
-                        </Text>
-                        {isReady ? (
-                          <Pressable
-                            disabled={busy}
-                            onPress={() => onPickedUp(o.id)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Picked up ${o.coach ?? ''} ${o.berth ?? ''}`}
-                            style={({ pressed }) => [{
-                              backgroundColor: colors.primary,
-                              borderRadius: 10,
-                              minHeight: 40,
-                              paddingHorizontal: 18,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              opacity: busy ? 0.4 : (pressed ? 0.85 : 1),
-                            }]}
-                          >
-                            <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>Picked up</Text>
-                          </Pressable>
-                        ) : null}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: isReady ? colors.success : colors.secondaryText }}>
+                            {isReady ? 'Ready at the counter' : 'Being cooked'}
+                          </Text>
+                          {isOpen ? (
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.price, marginTop: 3 }}>
+                              Open · first rider to pick up takes it
+                            </Text>
+                          ) : null}
+                        </View>
+                        {isReady ? <Check on={isPicked} /> : null}
                       </View>
-                    </View>
+                    </Pressable>
                   )
                 })}
               </View>
@@ -300,6 +330,30 @@ export function HomeScreen({
 
       </ScrollView>
 
+      {/* One tap for everything ticked: a rider at the counter scoops up a
+          train's worth of bags at once, and it is one decision. */}
+      {selected.length > 0 ? (
+        <View style={{
+          paddingHorizontal: 16, paddingVertical: 12,
+          borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.card,
+        }}>
+          <Pressable
+            disabled={busy}
+            onPress={pickUpSelected}
+            accessibilityRole="button"
+            accessibilityLabel={`Pick up ${selected.length} orders`}
+            style={({ pressed }) => [{
+              backgroundColor: colors.primary, borderRadius: 12, minHeight: 52,
+              alignItems: 'center', justifyContent: 'center',
+              opacity: busy ? 0.4 : pressed ? 0.85 : 1,
+            }]}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>
+              Pick up {selected.length} order{selected.length === 1 ? '' : 's'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   )
 }

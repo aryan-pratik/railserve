@@ -74,12 +74,15 @@ describe('assigning riders to one order', () => {
     expect(cleared.delivery.assignedAt).toBeNull()
   })
 
-  it('a riders only sees the order once it is assigned to them', async () => {
-    const id = await newOrder({ status: 'PREPARED' })
+  it('a rider only sees a cooking order once it is assigned to them', async () => {
+    // Still in the kitchen: only an assignment shows it. (Once ready, an order
+    // nobody was given is open to every rider at the outlet — delivery.test.)
+    const id = await newOrder({ status: 'KOT_PRINTED' })
     const rider = ctxFor({ _id: riderA, role: 'DELIVERY_AGENT', restaurantIds: [ganga] })
     expect(await findById(rider, id)).toBeNull()
     await assignRiders({ ctx: telecaller, orderId: id, riderIds: [String(riderA)] })
     expect(await findById(rider, id)).not.toBeNull()
+    await transitionOrder({ ctx: manager, orderId: id, to: 'PREPARED' })
     await transitionOrder({ ctx: rider, orderId: id, to: 'DISPATCHED' })
   })
 

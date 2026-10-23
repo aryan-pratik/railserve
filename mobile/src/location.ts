@@ -291,7 +291,13 @@ export async function startSharing(token: string): Promise<void> {
         }
         watcher = sub
       }
-    } else if (!(await Location.hasStartedLocationUpdatesAsync(TASK_NAME))) {
+    } else {
+      // Restart rather than skip when the OS already has the task: it keeps
+      // the options it was started with, so a phone upgraded from a build
+      // without the foreground service would never show its notification.
+      if (await Location.hasStartedLocationUpdatesAsync(TASK_NAME)) {
+        await Location.stopLocationUpdatesAsync(TASK_NAME)
+      }
       if (mine !== generation) return
       await Location.startLocationUpdatesAsync(TASK_NAME, {
         // Balanced, not Highest. A platform is the unit that matters and
@@ -301,12 +307,17 @@ export async function startSharing(token: string): Promise<void> {
         accuracy: Location.Accuracy.Balanced,
         timeInterval: FIX_INTERVAL_MS,
         distanceInterval: FIX_DISTANCE_M,
-        // No foregroundService. On Android that option is what posts the
-        // "RailServe is sharing your location" notification, and riders found
-        // it noise: once they have granted the permission, the system's own
-        // location indicator in the status bar is all they should see. The
-        // cost is that Android batches background fixes more coarsely while
-        // the app is not on screen; with the app open nothing changes.
+        // The foreground service is what keeps fixes coming with the screen
+        // off, and its ongoing notification is now where the rider sees that
+        // sharing is on — the in-app indicator is gone from the home screen.
+        // The small icon is the white silhouette set in app.json; without it
+        // Android draws the full-colour app icon as a solid black square.
+        foregroundService: {
+          notificationTitle: 'RailServe is on shift',
+          notificationBody: 'Sharing your location with the office while you deliver.',
+          notificationColor: '#2457D6',
+          killServiceOnDestroy: false,
+        },
         showsBackgroundLocationIndicator: true,
       })
     }

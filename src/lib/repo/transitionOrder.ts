@@ -9,6 +9,7 @@ import {
 } from '../orderStatus'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../authContext'
 import { scoped } from './orderRepo'
+import { closedAtOf, correctableUntil, isRiderOutcome, type RiderOutcome } from '../riderRecords'
 
 /**
  * Fields a transition is permitted to write alongside the status change.
@@ -162,6 +163,28 @@ export async function transitionOrder(params: {
         : undefined
       const $addToSet = rider ? { 'delivery.agentIds': rider } : undefined
 
+      // First close only: corrections and the passenger-number mask are
+      // measured from here, so nothing after the first close may move it.
+      if (isTerminal(to) && !current.delivery?.closedAt) $set['delivery.closedAt'] = new Date()
+
+      // Whoever is holding the cash. A telecaller closing it from the phone
+      // hands nothing over, so the first rider already on it keeps the cash.
+      if (to === 'DELIVERED') {
+        $set['delivery.collectedBy'] = rider ?? current.delivery?.agentIds?.[0] ?? null
+      }
+
+      // A rider putting back an order they took off the counter themselves
+      // gives it back to the counter, not just the status: left on agentIds
+      // they would still hold it, and no other rider could take it. An order
+      // the office assigned (assignedAt set) stays theirs.
+      const $pull =
+        from === 'DISPATCHED' &&
+        to === 'PREPARED' &&
+        ctx.role === 'DELIVERY_AGENT' &&
+        !current.delivery?.assignedAt
+          ? { 'delivery.agentIds': ctx.userId }
+          : undefined
+
       // The status precondition is the concurrency guard. Two managers hitting
       // "Mark Prepared" at once: the second matches zero documents.
       const res = await Order.updateOne(
@@ -169,6 +192,7 @@ export async function transitionOrder(params: {
         {
           $set,
           ...($addToSet ? { $addToSet } : {}),
+          ...($pull ? { $pull } : {}),
           $push: {
             events: {
               fromStatus: from,
@@ -352,6 +376,139 @@ export async function flagRatingOrder(params: {
   } finally {
     await session.endSession()
   }
+}
+
+/**
+ * A rider correcting how one of their own finished orders ended: delivered,
+ * not delivered, or cancelled. Taps on a platform get made in a hurry, and the
+ * rider is the one who knows which it really was.
+ *
+ * Outside TRANSITIONS on purpose, like flagRatingOrder: the allow-list
+ * describes the pipeline, and its terminal states have no way out. This is a
+ * correction of the record, bounded by rules the allow-list cannot express:
+ *
+ * - only the rider on the order, and only within 30 hours of its first close
+ * - never once a store manager has taken that order's cash — the money has
+ *   changed hands, and a flip now would leave the handover wrong
+ * - never out of an office cancellation: a cancel the rider did not make is
+ *   not theirs to undo
+ *
+ * `from` is the status the rider saw when they tapped. The app queues this
+ * offline, and a correction replayed after someone else changed the order must
+ * lose rather than silently overwrite them.
+ */
+export async function correctRiderOutcome(params: {
+  ctx: AuthContext
+  orderId: string
+  from: RiderOutcome
+  to: RiderOutcome
+  reason?: string | null
+  receivedBy?: string | null
+  meta?: Record<string, unknown>
+  now?: Date
+}): Promise<OrderDoc> {
+  const { ctx, orderId, from, to, meta = {}, now = new Date() } = params
+  const reason = params.reason?.trim() || null
+  const receivedBy = params.receivedBy?.trim() || null
+
+  if (ctx.role !== 'DELIVERY_AGENT') {
+    throw new ForbiddenError('Only the rider on an order may correct how it ended')
+  }
+  if (!isRiderOutcome(from) || !isRiderOutcome(to) || from === to) {
+    throw new ConflictError('Choose a different outcome')
+  }
+  if (to !== 'DELIVERED' && !reason) {
+    throw new ConflictError('Say why it was not delivered')
+  }
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
+  const _id = new mongoose.Types.ObjectId(orderId)
+
+  const session = await mongoose.startSession()
+  try {
+    let updated: OrderDoc | null = null
+
+    await session.withTransaction(async () => {
+      const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
+      if (!current) throw new NotFoundError('Order not found')
+
+      if (current.status === to) {
+        throw new ConflictError(`Order is already ${to}. Reload.`)
+      }
+      if (current.status !== from) {
+        throw new ConflictError(`Order changed underneath you: it is now ${current.status}. Reload.`)
+      }
+
+      const closedAt = closedAtOf(current)
+      if (!correctableUntil(closedAt, now)) {
+        throw new ForbiddenError('This order closed more than 30 hours ago and can no longer be changed')
+      }
+      if (current.delivery?.codSettledAt) {
+        throw new ForbiddenError('The cash for this order has been handed over, so it can no longer be changed')
+      }
+      if (from === 'CANCELLED' && !wasCancelledBy(current, ctx.userId)) {
+        throw new ForbiddenError('The office cancelled this order, so only the office can change it')
+      }
+
+      const $set: Record<string, unknown> = { status: to }
+      if (!current.delivery?.closedAt && closedAt) $set['delivery.closedAt'] = closedAt
+      if (to === 'DELIVERED') {
+        $set['delivery.deliveredAt'] = now
+        $set['delivery.failureReason'] = null
+        $set['delivery.collectedBy'] = ctx.userId
+        $set['delivery.amountCollectedPaise'] =
+          current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
+        if (receivedBy) {
+          $set['delivery.proofType'] = 'SIGNATURE'
+          $set['delivery.proofValue'] = receivedBy
+        }
+      } else {
+        // Nothing was handed over, so there is no cash, no receiver and no
+        // delivery time to keep.
+        $set['delivery.deliveredAt'] = null
+        $set['delivery.failureReason'] = reason
+        $set['delivery.amountCollectedPaise'] = null
+        $set['delivery.collectedBy'] = null
+        $set['delivery.proofType'] = null
+        $set['delivery.proofValue'] = null
+      }
+
+      const res = await Order.updateOne(
+        scoped(ctx, { _id, status: from }),
+        {
+          $set,
+          $push: {
+            events: {
+              fromStatus: from,
+              toStatus: to,
+              userId: ctx.userId,
+              meta: { ...meta, via: 'rider-correction', reason, receivedBy },
+              createdAt: now,
+            },
+          },
+        },
+        { session },
+      )
+      if (res.matchedCount === 0) {
+        throw new ConflictError(`Order changed underneath you: it is no longer ${from}. Reload and retry.`)
+      }
+
+      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+    })
+
+    return updated!
+  } finally {
+    await session.endSession()
+  }
+}
+
+/** True when the order's latest move into CANCELLED was this rider's own correction. */
+export function wasCancelledBy(
+  order: { events?: { toStatus?: string | null; userId?: unknown; meta?: unknown }[] | null },
+  riderId: mongoose.Types.ObjectId,
+): boolean {
+  const last = [...(order.events ?? [])].reverse().find((e) => e.toStatus === 'CANCELLED')
+  const via = (last?.meta as { via?: string } | null | undefined)?.via
+  return Boolean(last && via === 'rider-correction' && String(last.userId) === String(riderId))
 }
 
 /**

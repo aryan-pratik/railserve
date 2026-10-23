@@ -6,6 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "backgroundColor": "#ffffff",
+    "androidStatusBar": {
+      "barStyle": "dark-content"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.railserve.rider",
@@ -30,14 +34,21 @@
     },
     "scheme": "railserve",
     "plugins": [
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2457D6"
+        }
+      ],
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "RailServe shares your location with the office while you are on shift, so they can see which riders are near a platform when a train is due.",
           "locationAlwaysAndWhenInUsePermission": "RailServe keeps sharing your location while the app is in the background, so the office can still see where you are when your screen is off during a delivery.",
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": true,
+          "androidForegroundServiceIcon": "./assets/notification-icon.png"
         }
       ],
       "expo-task-manager"

@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, Text, View, Linking } from 'react-native'
 import { Train, Phone, ChevronRight, Clock, Users } from 'lucide-react-native'
 import type { Run, RunOrder } from '../types'
-import { timeIST, untilLabel, delayLabel } from '../ui'
+import { SearchBox, matchesSearch, timeIST, untilLabel, delayLabel } from '../ui'
 
 const colors = {
   primary: '#2457D6',
@@ -29,12 +29,15 @@ export function DeliveryTabScreen({
   onRefresh: () => void
   onOpenOrder: (order: RunOrder, run: Run) => void
 }) {
+  const [query, setQuery] = useState('')
+
   // Group active dispatched deliveries by train, sorted by earliest arrival time
   const deliveriesByTrain = runs
     .map((r) => ({
       run: r,
       orders: r.orders
         .filter((o) => o.status === 'DISPATCHED')
+        .filter((o) => matchesSearch(o, r.trainNo, query))
         .sort((a, b) => {
           const coachA = a.coach || ''
           const coachB = b.coach || ''
@@ -75,11 +78,19 @@ export function DeliveryTabScreen({
           DELIVER NOW · {activeDeliveriesCount}
         </Text>
 
+        <View style={{ marginBottom: 16 }}>
+          <SearchBox value={query} onChange={setQuery} />
+        </View>
+
         {deliveriesByTrain.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 80 }}>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>No active deliveries</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>
+              {query ? 'No matching deliveries' : 'No active deliveries'}
+            </Text>
             <Text style={{ fontSize: 14, fontWeight: '400', color: colors.secondaryText, marginTop: 8, textAlign: 'center', lineHeight: 20 }}>
-              Orders assigned to you show in the Orders tab. Once you mark one picked up, it moves here.
+              {query
+                ? 'Try another phone number, order id or coach.'
+                : 'Orders you pick up in the Orders tab move here.'}
             </Text>
           </View>
         ) : (

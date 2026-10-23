@@ -64,6 +64,9 @@ export async function GET(request: Request) {
           externalOrderId: o.externalOrderId,
           orderType: o.orderType,
           status: o.status,
+          // false for a ready order nobody was given: open on the counter to
+          // whichever rider at the outlet takes it first.
+          assignedToMe: (o.delivery.agentIds ?? []).some((id) => String(id) === String(ctx.userId)),
           outletName: outletName.get(String(o.restaurantId)) ?? null,
           coach: o.coach,
           berth: o.berth,

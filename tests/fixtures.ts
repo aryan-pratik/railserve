@@ -124,5 +124,10 @@ export async function assignRider(
   orderId: string | mongoose.Types.ObjectId,
   riderId: mongoose.Types.ObjectId,
 ) {
-  await Order.updateOne({ _id: orderId }, { $addToSet: { 'delivery.agentIds': riderId } })
+  // assignedAt too, as assignRiders writes it: it is what marks the order as
+  // the office's choice rather than one a rider took off the counter.
+  await Order.updateOne(
+    { _id: orderId },
+    { $addToSet: { 'delivery.agentIds': riderId }, $set: { 'delivery.assignedAt': new Date() } },
+  )
 }

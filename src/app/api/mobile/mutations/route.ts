@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { contextFromBearer } from '@/lib/mobile/token'
 import { findById } from '@/lib/repo/orderRepo'
-import { transitionOrder } from '@/lib/repo/transitionOrder'
+import { correctRiderOutcome, transitionOrder } from '@/lib/repo/transitionOrder'
+import { RIDER_OUTCOMES } from '@/lib/riderRecords'
 import { dispatchRun } from '@/lib/repo/runRepo'
 import { ConflictError, ForbiddenError, NotFoundError } from '@/lib/authContext'
 import { rupeesToPaise } from '@/lib/format'
@@ -68,6 +69,20 @@ const Mutation = z.discriminatedUnion('kind', [
     failureReason: z.string().trim().min(1),
     at: z.string().optional(),
   }),
+  z.object({
+    // The rider changing how a finished order ended, within 30 hours. Carries
+    // the status the rider saw, so a correction replayed after the office
+    // changed the order loses instead of overwriting them — reusing
+    // DELIVER_ORDER / FAIL_ORDER for this would not.
+    kind: z.literal('CORRECT_ORDER'),
+    clientId: z.string().min(1),
+    orderId: z.string().min(1),
+    from: z.enum(RIDER_OUTCOMES),
+    to: z.enum(RIDER_OUTCOMES),
+    reason: z.string().trim().optional().nullable(),
+    receivedBy: z.string().trim().optional().nullable(),
+    at: z.string().optional(),
+  }),
 ])
 
 const Body = z.object({ mutations: z.array(Mutation).min(1).max(100) })
@@ -111,6 +126,32 @@ export async function POST(request: Request) {
         continue
       }
 
+      if (m.kind === 'CORRECT_ORDER') {
+        const current = await findById(ctx, m.orderId)
+        if (!current) {
+          results.push({
+            clientId: m.clientId, applied: false, retryable: false,
+            error: 'Order not found or no longer yours.',
+          })
+          continue
+        }
+        if (current.status === m.to) {
+          results.push({ clientId: m.clientId, applied: true, alreadyDone: true })
+          continue
+        }
+        await correctRiderOutcome({
+          ctx,
+          orderId: m.orderId,
+          from: m.from,
+          to: m.to,
+          reason: m.reason,
+          receivedBy: m.receivedBy,
+          meta: { via: 'expo-app', clientId: m.clientId, queuedAt: m.at ?? null },
+        })
+        results.push({ clientId: m.clientId, applied: true })
+        continue
+      }
+
       const target =
         m.kind === 'DELIVER_ORDER'
           ? 'DELIVERED'
@@ -124,7 +165,12 @@ export async function POST(request: Request) {
       if (!current) {
         results.push({
           clientId: m.clientId, applied: false, retryable: false,
-          error: 'Order not found or no longer assigned to you.',
+          // An open order vanishes from a rider's scope the moment another
+          // rider takes it, so for a pickup this is almost always a lost race.
+          error:
+            m.kind === 'DISPATCH_ORDER'
+              ? 'Another rider has already picked this order up.'
+              : 'Order not found or no longer assigned to you.',
         })
         continue
       }
@@ -172,7 +218,10 @@ export async function POST(request: Request) {
         clientId: m.clientId,
         applied: false,
         retryable: !permanent,
-        error: err instanceof Error ? err.message : 'Mutation failed',
+        error:
+          m.kind === 'DISPATCH_ORDER' && err instanceof NotFoundError
+            ? 'Another rider has already picked this order up.'
+            : err instanceof Error ? err.message : 'Mutation failed',
       })
     }
   }

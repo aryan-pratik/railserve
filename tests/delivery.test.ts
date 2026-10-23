@@ -91,15 +91,24 @@ describe('delivery: outlet scope, dispatch, proof', () => {
     expect(await findById(riderB, String(theirs._id))).toBeNull()
   })
 
-  it('an order nobody has been given is invisible to every rider', async () => {
+  it('an order nobody has been given stays hidden while cooking, then opens to riders once ready', async () => {
     const unassigned = (await findMany(admin, { trainNo: '12004', restaurantId: ganga }))[0]
-    for (const o of ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] as const) {
+    for (const o of ['ACCEPTED', 'KOT_PRINTED'] as const) {
       await transitionOrder({ ctx: manager, orderId: String(unassigned._id), to: o })
     }
     expect(await findById(riderA, String(unassigned._id))).toBeNull()
     await expect(
       transitionOrder({ ctx: riderA, orderId: String(unassigned._id), to: 'DISPATCHED' }),
     ).rejects.toBeInstanceOf(NotFoundError)
+
+    // Ready on the counter: any rider at the outlet may take it, and the
+    // first one to do so is the only one who still sees it.
+    await transitionOrder({ ctx: manager, orderId: String(unassigned._id), to: 'PREPARED' })
+    expect(await findById(riderA, String(unassigned._id))).not.toBeNull()
+    expect(await findById(riderB, String(unassigned._id))).not.toBeNull()
+    expect(await findById(outsiderCtx, String(unassigned._id))).toBeNull()
+    await transitionOrder({ ctx: riderB, orderId: String(unassigned._id), to: 'DISPATCHED' })
+    expect(await findById(riderA, String(unassigned._id))).toBeNull()
   })
 
   it('a rider at another station sees none of it', async () => {

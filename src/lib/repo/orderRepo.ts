@@ -27,9 +27,12 @@ import type { OrderSource } from '../orderEnums'
  * - TELECALLER sees every outlet they are attached to, and nothing else.
  *
  * Riders are scoped by assignment: `delivery.agentIds` holds the rider a
- * telecaller, store manager or admin gave the order to, and a rider no longer
- * picks orders off the counter themselves. Doing it here rather than in the
- * app means the rule holds for every rider read and write — a rider holding
+ * telecaller, store manager or admin gave the order to. The one widening is
+ * the counter: a ready (PREPARED) order nobody has been given is open to every
+ * rider at its outlet, so food that is waiting is never stuck waiting for the
+ * office to pick a name. Once a rider takes it they are on agentIds and it
+ * drops out of everyone else's view. Doing it here rather than in the app
+ * means the rule holds for every rider read and write — a rider holding
  * another rider's order id gets a 404 from transitionOrder, not a pickup. The
  * outlet filter stays as well, so an order assigned across stations by mistake
  * still does not leak into the wrong kitchen's phones.
@@ -48,7 +51,13 @@ function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
         : { _id: { $exists: false } }
     case 'DELIVERY_AGENT':
       return ctx.restaurantIds.length > 0
-        ? { restaurantId: { $in: ctx.restaurantIds }, 'delivery.agentIds': ctx.userId }
+        ? {
+            restaurantId: { $in: ctx.restaurantIds },
+            $or: [
+              { 'delivery.agentIds': ctx.userId },
+              { status: 'PREPARED', 'delivery.agentIds.0': { $exists: false } },
+            ],
+          }
         : { _id: { $exists: false } }
   }
 }
@@ -185,7 +194,14 @@ export async function recentCancellations(
         },
       },
     },
-    { $match: { 'alertEvent.createdAt': { $gte: opts.since } } },
+    {
+      $match: {
+        'alertEvent.createdAt': { $gte: opts.since },
+        // A rider re-filing a finished order as cancelled is a correction of
+        // the record, made after the food left: nothing for a kitchen to stop.
+        'alertEvent.meta.via': { $ne: 'rider-correction' },
+      },
+    },
     { $sort: { 'alertEvent.createdAt': -1 } },
     { $limit: opts.limit ?? 20 },
     {

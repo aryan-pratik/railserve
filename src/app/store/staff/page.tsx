@@ -8,6 +8,9 @@ import {
 import { OutletPills, stationToneMap } from '@/components/OutletPills'
 import { StaffFormModal } from '@/app/admin/setup/StaffFormModal'
 import { toggleUserActive } from '@/app/admin/setup/staffActions'
+import { pendingCashByRider } from '@/lib/repo/riderCashRepo'
+import { formatRupees } from '@/lib/format'
+import { CollectCashButton } from './CollectCashButton'
 
 export const metadata = { title: 'Riders · RailServe' }
 
@@ -40,6 +43,26 @@ function ActiveToggle({
 }
 
 const DEFAULT_PAGE_SIZE = 20
+
+function CashCell({
+  riderId, riderName, pending,
+}: {
+  riderId: string
+  riderName: string
+  pending: { paise: number; orders: number; orderIds: string[] } | undefined
+}) {
+  if (!pending || pending.orders === 0) return <span className="text-sm text-faint">₹0</span>
+  const amount = formatRupees(pending.paise)
+  return (
+    <div className="space-y-1.5">
+      <div className="font-semibold whitespace-nowrap tabular-nums text-ink">{amount}</div>
+      <div className="text-xs whitespace-nowrap text-muted">
+        {pending.orders} COD order{pending.orders === 1 ? '' : 's'}
+      </div>
+      <CollectCashButton riderId={riderId} riderName={riderName} orderIds={pending.orderIds} amountLabel={amount} />
+    </div>
+  )
+}
 
 /**
  * A store manager's own riders — a trimmed, outlet-scoped version of
@@ -80,6 +103,10 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
     editId ? User.findById(editId).lean() : undefined,
   ])
 
+  // Cash each rider on this page is carrying for these outlets: delivered COD
+  // not yet handed over. Scoped by the manager's outlets inside the repo.
+  const cash = await pendingCashByRider(ctx, riders.map((u) => u._id))
+
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
     if (p > 1) u.set('page', String(p))
@@ -92,7 +119,7 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
     <div className="space-y-4">
       <PageHeader
         title="Riders"
-        note="The riders who work your outlets. Deactivate a rider you no longer use: there is no delete here."
+        note="The riders who work your outlets, and the COD cash each is holding for you. Collect it when they hand it over and their wallet goes back to zero. Deactivate a rider you no longer use: there is no delete here."
       />
 
       <Card className="overflow-hidden">
@@ -130,6 +157,7 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
               <th className={thClass}>Name</th>
               <th className={`${thClass} hidden lg:table-cell`}>Phone</th>
               <th className={`${thClass} hidden sm:table-cell`}>Outlets</th>
+              <th className={`${thClass} text-right`}>Cash in hand</th>
               <th className={`${thClass} hidden w-px sm:table-cell`}>Status</th>
               <th className={`${thClass} w-px`}><span className="sr-only">Actions</span></th>
             </tr>
@@ -151,6 +179,9 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
                     ) : (
                       <Dash />
                     )}
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-right">
+                    <CashCell riderId={String(u._id)} riderName={u.name} pending={cash.get(String(u._id))} />
                   </td>
                   <td className="hidden px-3 py-2.5 align-top sm:table-cell">
                     <ActiveToggle id={String(u._id)} active={u.active} name={u.name} />
