@@ -19,7 +19,8 @@
  *
  * Two ways to reach the printer, and a device uses exactly one:
  *   PRINTER_QUEUE  the name of a printer already installed on this computer
- *                  (macOS/Linux, `lpstat -p`). Everything one poll returns
+ *                  (macOS/Linux `lpstat -p`; on Windows the name in Printers,
+ *                  sent through win-print.ps1). Everything one poll returns
  *                  goes to that queue as ONE raw job, each ticket followed by
  *                  its own cut. Works over Wi-Fi or USB and needs no IP, so
  *                  prefer it on any computer that can already print.
@@ -41,8 +42,9 @@
  */
 import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
 import { spawn } from 'node:child_process'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import os from 'node:os'
 import path from 'node:path'
 
 // Every line carries the computer's own date and time: the log is what gets
@@ -107,6 +109,15 @@ const POLL_MAX_JOBS = 12
 // request this side has already dropped would never print.
 const POLL_TIMEOUT_MS = (POLL_WAIT_S + 20) * 1000
 
+const IS_WINDOWS = process.platform === 'win32'
+const POWERSHELL = path.join(
+  process.env.SystemRoot || 'C:\\Windows',
+  'System32',
+  'WindowsPowerShell',
+  'v1.0',
+  'powershell.exe',
+)
+
 const where = PRINTER_QUEUE ? `queue ${PRINTER_QUEUE}` : `${PRINTER_HOST}:${PRINTER_PORT}`
 
 function required(name) {
@@ -149,10 +160,10 @@ async function ack(jobId, status, error) {
 }
 
 /** Runs a command, optionally feeding it stdin, and resolves with its stdout. */
-function run(command, args, input) {
+function run(command, args, input, env) {
   return new Promise((resolve, reject) => {
     // lp and lpstat answer in the system language; their wording is parsed below.
-    const child = spawn(command, args, { env: { ...process.env, LC_ALL: 'C' } })
+    const child = spawn(command, args, { env: { ...process.env, LC_ALL: 'C', ...env } })
     let out = ''
     let err = ''
     child.stdout.on('data', (chunk) => (out += chunk))
@@ -160,7 +171,7 @@ function run(command, args, input) {
     child.on('error', reject)
     child.on('close', (code) => {
       if (code === 0) resolve(out)
-      else reject(new Error(`${command} failed: ${(err || out).trim() || `exit ${code}`}`))
+      else reject(new Error(`${path.basename(command)} failed: ${(err || out).trim() || `exit ${code}`}`))
     })
     child.stdin.end(input)
   })
@@ -189,15 +200,52 @@ const FEED_AND_CUT = Buffer.from([0x1d, 0x56, 0x42, 0x00])
  * Kanpur — and a train of four orders is eight tickets.
  */
 async function sendToQueue(bytes, tickets) {
-  const out = await run('lp', ['-d', PRINTER_QUEUE, '-o', 'raw', '-t', 'RailServe KOT'], bytes)
-  const id = /request id is (\S+)/.exec(out)?.[1]
-  if (!id) throw new Error(`lp gave no job id: ${out.trim()}`)
+  let id
+  if (IS_WINDOWS) {
+    id = await windowsSubmit(bytes)
+  } else {
+    const out = await run('lp', ['-d', PRINTER_QUEUE, '-o', 'raw', '-t', 'RailServe KOT'], bytes)
+    id = /request id is (\S+)/.exec(out)?.[1]
+    if (!id) throw new Error(`lp gave no job id: ${out.trim()}`)
+  }
 
   const printed = new Promise((resolve, reject) => {
     inQueue.push({ id, tickets, sentAt: Date.now(), resolve, reject })
   })
   watchQueue()
   return { printed }
+}
+
+/**
+ * Windows has no lp/lpstat/cancel: win-print.ps1, next to this script, does
+ * their part through the Windows print spooler. Each call starts a PowerShell,
+ * a few hundred milliseconds, so the queue is checked less often there.
+ */
+function windowsQueue(action, arg) {
+  const script = path.join(dir, 'win-print.ps1')
+  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, action]
+  if (arg !== undefined) args.push(String(arg))
+  return run(POWERSHELL, args, undefined, { RS_PRINTER: PRINTER_QUEUE })
+}
+
+/** The bytes go through a file: PowerShell 5.1 reads its stdin as text. */
+async function windowsSubmit(bytes) {
+  const file = path.join(os.tmpdir(), `railserve-kot-${process.pid}-${Date.now()}.bin`)
+  writeFileSync(file, bytes)
+  try {
+    const id = (await windowsQueue('submit', file)).trim()
+    if (!/^\d+$/.test(id)) throw new Error(`the print queue gave no job id: ${id}`)
+    return id
+  } finally {
+    rmSync(file, { force: true })
+  }
+}
+
+/** Ids of the jobs on PRINTER_QUEUE that the queue has not finished. */
+async function notCompleted() {
+  if (IS_WINDOWS) return new Set((await windowsQueue('pending')).split(/\r?\n/).filter(Boolean))
+  const waiting = await run('lpstat', ['-W', 'not-completed', '-o', PRINTER_QUEUE])
+  return new Set(waiting.split('\n').map((line) => line.split(/\s/)[0]))
 }
 
 /** Jobs handed to the print queue and not yet printed, oldest first. */
@@ -219,13 +267,12 @@ async function watchQueue() {
   let progressAt = Date.now()
   try {
     while (inQueue.length > 0) {
-      await sleep(250)
+      await sleep(IS_WINDOWS ? 1000 : 250)
       // Only jobs queued before this lpstat ran can be judged by its answer;
       // one queued while it ran would be missing from it, not finished.
       const checking = inQueue.slice()
-      const waiting = await run('lpstat', ['-W', 'not-completed', '-o', PRINTER_QUEUE]).catch(() => null)
-      if (waiting !== null) {
-        const notDone = new Set(waiting.split('\n').map((line) => line.split(/\s/)[0]))
+      const notDone = await notCompleted().catch(() => null)
+      if (notDone !== null) {
         for (const job of checking) {
           if (notDone.has(job.id)) continue
           inQueue.splice(inQueue.indexOf(job), 1)
@@ -240,10 +287,16 @@ async function watchQueue() {
       if (Date.now() - Math.max(progressAt, head.sentAt) < allowed) continue
 
       const stuck = inQueue.splice(0)
-      for (const job of stuck) await run('cancel', [job.id]).catch(() => {})
-      // lpstat's second line is the reason ("The printer is not responding.").
-      const state = await run('lpstat', ['-p', PRINTER_QUEUE]).catch(() => '')
-      const reason = state.trim().split('\n')[1]?.trim() || 'is it switched on?'
+      let reason
+      if (IS_WINDOWS) {
+        for (const job of stuck) await windowsQueue('cancel', job.id).catch(() => {})
+        reason = (await windowsQueue('status').catch(() => '')).trim() || 'is it switched on?'
+      } else {
+        for (const job of stuck) await run('cancel', [job.id]).catch(() => {})
+        // lpstat's second line is the reason ("The printer is not responding.").
+        const state = await run('lpstat', ['-p', PRINTER_QUEUE]).catch(() => '')
+        reason = state.trim().split('\n')[1]?.trim() || 'is it switched on?'
+      }
       const err = new Error(`printer did not take the ticket within ${allowed / 1000}s: ${reason}`)
       for (const job of stuck) job.reject(err)
       progressAt = Date.now()

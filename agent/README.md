@@ -38,6 +38,25 @@ printer's name as a second quoted argument if the Mac has several; pass
 `--uninstall` instead of the token to remove it. Log:
 `~/railserve-print-agent/agent.log`.
 
+## A Windows PC that already prints: one line
+
+Windows 10 or 11 (Node 22, which the agent needs, runs on nothing older).
+Open PowerShell on the PC (Start, type `PowerShell`, Enter) and paste:
+
+```
+[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/aryan-pratik/railserve/main/agent/install-windows.ps1))) "<AGENT_TOKEN>"
+```
+
+Same as the Mac: no admin rights, its own Node and the agent in
+`%USERPROFILE%\railserve-print-agent`, two test tickets that must come out as
+**two separate pieces**, and the agent starts hidden at every login. A printer
+installed on a network (TCP/IP) port is printed to at its IP (`PRINTER_HOST`);
+a USB one goes through the Windows print queue (`PRINTER_QUEUE`, via
+`win-print.ps1`). Add the printer's name, or a network printer's IP, as a
+second quoted argument when the PC has several printers; add `-Uninstall`
+instead of the token to remove it. Log:
+`%USERPROFILE%\railserve-print-agent\agent.log`.
+
 The rest of this file is the manual setup, for any other device.
 
 ## One-time setup per station

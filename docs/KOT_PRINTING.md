@@ -211,6 +211,19 @@ curl -fsSL https://raw.githubusercontent.com/aryan-pratik/railserve/main/agent/i
 - The Mac has to be on, logged in and awake; after a power cut someone must
   log in. Nothing on the board shows that an agent is down.
 
+## One-time agent setup on a Windows PC that already prints (one line)
+Windows 10 or 11. In PowerShell on that PC (no admin needed):
+```
+[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/aryan-pratik/railserve/main/agent/install-windows.ps1))) "<AGENT_TOKEN>"
+```
+- Same steps as the Mac line: own Node in `%USERPROFILE%\railserve-print-agent`,
+  two test tickets that must come out separately, starts hidden at every login
+  (a `HKCU\...\Run` entry), waits for the background copy to reach the server.
+- A printer on a network port is printed to at its IP (`PRINTER_HOST`); a USB
+  printer through the Windows print queue as RAW (`PRINTER_QUEUE`,
+  `agent/win-print.ps1`). Second quoted argument: the printer's name or IP.
+- Remove: `... -Uninstall`. The PC has to be on and logged in, like the Mac.
+
 ## One-time agent setup (per outlet, on one always-on device there)
 For a device with no installed printer (it reaches the printer by IP).
 ```
