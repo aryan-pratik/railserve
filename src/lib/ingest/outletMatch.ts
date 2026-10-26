@@ -126,18 +126,17 @@ export async function matchOutlet(
     .select('name aliases stationCode restaurantId')
     .lean()
 
-  let listingHits = listings.filter(
-    (l) =>
-      normalise(l.name) === wanted || (l.aliases ?? []).some((a) => normalise(a) === wanted),
-  )
   // Same storefront name at two stations is normal — an aggregator uses one
-  // brand across the network. The station picks the right one.
-  if (listingHits.length > 1 && stationCode) {
-    const atStation = listingHits.filter(
-      (l) => l.stationCode.toUpperCase() === stationCode.toUpperCase(),
-    )
-    if (atStation.length === 1) listingHits = atStation
-  }
+  // brand across the network, and a parser that names no outlet (HomeBytes,
+  // FoodOnTrains) files every order under one fixed name. When the mail
+  // carries a station, a storefront at any other station is not a match at
+  // all: if it were, the first CNB order would create a CNB row and every
+  // GAYA order after it would follow that row into CNB's kitchen.
+  const listingHits = listings.filter(
+    (l) =>
+      (normalise(l.name) === wanted || (l.aliases ?? []).some((a) => normalise(a) === wanted)) &&
+      (!stationCode || l.stationCode.toUpperCase() === stationCode.toUpperCase()),
+  )
 
   if (listingHits.length > 1) {
     return {

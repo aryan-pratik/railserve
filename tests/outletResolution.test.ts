@@ -158,6 +158,29 @@ describe('resolving the outlet name in an aggregator mail', () => {
     // With no station there is nothing to prefer, so it refuses rather than guesses.
     expect((await matchOutlet('SHARED', null)).ok).toBe(false)
   })
+
+  // One fixed storefront name for every station (FoodOnTrains, HomeBytes).
+  // The CNB row the first order writes down must not pull a GAYA order —
+  // nor, once mapped, carry it to a CNB kitchen.
+  it('never routes a mail to a storefront at another station', async () => {
+    const gaya = (await makeRestaurant('KHANA KHAZANA', 'GAYA'))._id
+    await Station.create({ _id: 'GAYA', name: 'Gaya Junction', defaultRestaurantId: gaya })
+
+    const cnb = await matchOutlet('FoodOnTrains', 'CNB', 'FOODONTRAINS')
+    expect(cnb.ok && cnb.restaurantId).toBe(String(ganga))
+    await Listing.updateOne({ name: 'FoodOnTrains', stationCode: 'CNB' }, { restaurantId: cosmozin })
+
+    const m = await matchOutlet('FoodOnTrains', 'GAYA', 'FOODONTRAINS')
+    expect(m.ok).toBe(true)
+    if (!m.ok) return
+    expect(m.restaurantId).toBe(String(gaya))
+    expect(m.stationCode).toBe('GAYA')
+    expect(await Listing.countDocuments({ name: 'FoodOnTrains' })).toBe(2)
+
+    // And the mapped CNB row still takes CNB's orders.
+    const again = await matchOutlet('FoodOnTrains', 'CNB', 'FOODONTRAINS')
+    expect(again.ok && again.restaurantId).toBe(String(cosmozin))
+  })
 })
 
 afterAll(async () => {
