@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrivalRecord } from '../src/lib/arrival'
+import { arrivalRecord, rescheduledArrival, runBooking } from '../src/lib/arrival'
 import type { TimingView } from '../src/lib/train/policy'
 
 const booked = new Date('2026-09-21T16:11:00Z') // 9:41 pm IST
@@ -118,5 +118,74 @@ describe('arrivalRecord: an ETA that has gone by', () => {
   it('never calls a confirmed arrival past due', () => {
     const order = { status: 'PREPARED', scheduledArrival: booked }
     expect(arrivalRecord(order, live({ arrived: true } as Partial<TimingView>), at(400)).pastDue).toBe(false)
+  })
+})
+
+describe('rescheduledArrival', () => {
+  const ist = (s: string) => new Date(`${s}+05:30`)
+
+  it('moves a booking the railway timetable puts on the evening before', () => {
+    // 15565 at CNB: booked 00:02 on the 30th, timetabled 23:40 on the 29th.
+    expect(rescheduledArrival(ist('2026-10-30T00:02:00'), ist('2026-10-29T23:40:00')))
+      .toEqual(ist('2026-10-29T23:40:00'))
+  })
+
+  it('moves a booking the timetable puts just past midnight', () => {
+    expect(rescheduledArrival(ist('2026-10-29T23:50:00'), ist('2026-10-30T00:10:00')))
+      .toEqual(ist('2026-10-30T00:10:00'))
+  })
+
+  it('leaves a same-day drift alone, so booked-vs-expected still shows it', () => {
+    expect(rescheduledArrival(ist('2026-10-30T00:02:00'), ist('2026-10-30T00:20:00'))).toBeNull()
+  })
+
+  it('refuses a timetable too far from the booking to be a stale copy of it', () => {
+    expect(rescheduledArrival(ist('2026-10-30T06:30:00'), ist('2026-10-29T23:40:00'))).toBeNull()
+    expect(rescheduledArrival(ist('2026-10-30T00:02:00'), ist('2026-10-29T11:40:00'))).toBeNull()
+  })
+
+  it('still measures an order the railway moved against what was booked', () => {
+    // Moved onto 23:40 on the 29th; the aggregator said 00:02 on the 30th.
+    const r = arrivalRecord(
+      { status: 'RECEIVED', scheduledArrival: ist('2026-10-29T23:40:00'), bookedArrival: ist('2026-10-30T00:02:00') },
+      live({ effectiveArrival: ist('2026-10-30T00:34:00'), scheduledArrival: ist('2026-10-29T23:40:00') }),
+      ist('2026-10-29T23:00:00'),
+    )
+    expect(r.booked).toEqual(ist('2026-10-30T00:02:00'))
+    expect(r.minutesVsBooked).toBe(32)
+  })
+
+  it('shows the moved time, not the booking, when nothing live is known', () => {
+    const r = arrivalRecord(
+      { status: 'RECEIVED', scheduledArrival: ist('2026-10-29T23:40:00'), bookedArrival: ist('2026-10-30T00:02:00') },
+      null,
+    )
+    expect(r.time).toEqual(ist('2026-10-29T23:40:00'))
+  })
+
+  it('has nothing to move without both times', () => {
+    expect(rescheduledArrival(null, ist('2026-10-29T23:40:00'))).toBeNull()
+    expect(rescheduledArrival(ist('2026-10-30T00:02:00'), null)).toBeNull()
+  })
+})
+
+describe('runBooking', () => {
+  const ist = (s: string) => new Date(`${s}+05:30`)
+
+  it('takes the earliest booking that is not long gone', () => {
+    // Last night's 23:40, still open at 8pm, beside tonight's 23:40.
+    const now = ist('2026-10-30T20:00:00')
+    expect(runBooking([ist('2026-10-29T23:40:00'), ist('2026-10-30T23:40:00')], now))
+      .toEqual(ist('2026-10-30T23:40:00'))
+  })
+
+  it('falls back to the earliest when every booking is long gone', () => {
+    const now = ist('2026-10-31T20:00:00')
+    expect(runBooking([ist('2026-10-30T23:40:00'), null, ist('2026-10-29T23:40:00')], now))
+      .toEqual(ist('2026-10-29T23:40:00'))
+  })
+
+  it('has nothing to go on without a booking', () => {
+    expect(runBooking([null, undefined], new Date())).toBeNull()
   })
 })

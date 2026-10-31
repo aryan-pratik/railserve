@@ -147,6 +147,10 @@ const OrderSchema = new Schema(
     // Date drifts across timezones and silently lands on the wrong day.
     serviceDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
     scheduledArrival: { type: Date, default: null },
+    // The aggregator's own stated arrival, kept when the railway's timetable
+    // has since moved scheduledArrival onto another day. Null otherwise —
+    // scheduledArrival is then still exactly what was booked.
+    bookedArrival: { type: Date, default: null },
     // Always SCHEDULED in the MVP — there is no live train polling yet.
     timingSource: { type: String, required: true, enum: TIMING_SOURCES, default: 'SCHEDULED' },
 

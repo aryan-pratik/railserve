@@ -41,6 +41,13 @@ export type TrainStatusReading = {
    */
   startDate?: string | null
   /**
+   * The railway's own timetabled arrival at this station for the run read —
+   * the timetable, not the projection. Used to correct a booking that put the
+   * train on the wrong day (see rescheduledArrival). Optional; providers that
+   * do not publish a timetable leave it out.
+   */
+  timetableAt?: Date | null
+  /**
    * Which upstream actually answered, when a provider can ask more than one.
    * Recorded on the cache row in place of the provider's own name, so a
    * reading served by a fallback says so. Absent means the provider itself.
@@ -91,10 +98,18 @@ export interface TrainStatusProvider {
   /** Human-readable name, recorded on the cache row for debugging. */
   readonly name: string
 
+  /**
+   * `scheduledArrival` is the order's booked arrival, when there is one. The
+   * service date alone can name the wrong run: a train booked in at 00:02 that
+   * the timetable now brings in at 23:40 the evening before is the previous
+   * day's departure, and a provider that can see the timetable uses this to
+   * pick it. Providers that cannot simply ignore it.
+   */
   getStatus(
     trainNo: string,
     serviceDate: string,
     stationCode: string,
+    scheduledArrival?: Date | null,
   ): Promise<TrainStatusReading>
 
   /**
@@ -106,6 +121,7 @@ export interface TrainStatusProvider {
     trainNo: string,
     serviceDate: string,
     stationCode: string,
+    scheduledArrival?: Date | null,
   ): Promise<TrainDetail>
 }
 

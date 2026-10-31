@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { timedByAdmin } from '@/lib/arrival'
 import { requireRole } from '@/lib/session'
 import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
@@ -95,6 +96,15 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
     actors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
   )
   const timing = timingFor(order, timings)
+  // From the timing view rather than the order as loaded: the read above may
+  // just have moved this order onto the railway's day, and this render should
+  // already say so. Only this order went in, so the view is its own.
+  // An admin's own time is shown as theirs, never as a stale booking.
+  const byAdmin = timedByAdmin(order)
+  const scheduledShown = byAdmin ? (order.scheduledArrival ?? null) : (timing.scheduledArrival ?? order.scheduledArrival ?? null)
+  const movedNow =
+    scheduledShown && order.scheduledArrival && scheduledShown.getTime() !== order.scheduledArrival.getTime()
+  const bookedShown = byAdmin ? null : (order.bookedArrival ?? (movedNow ? order.scheduledArrival : null))
   const assigned = order.delivery.agentIds.map(String)
   const riderName = new Map(agents.map((a) => [String(a._id), a.name]))
 
@@ -129,7 +139,24 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             <div className="divide-y divide-line">
               <Row label="Train" value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}` : 'Not specified'} />
               <Row label="Station" value={order.stationCode} />
-              <Row label="Scheduled arrival" value={formatIST(order.scheduledArrival)} />
+              <Row
+                label="Scheduled arrival"
+                value={
+                  bookedShown ? (
+                    <span className="flex flex-wrap items-baseline justify-end gap-x-2">
+                      <span>{formatIST(scheduledShown)}</span>
+                      <span
+                        className="text-xs text-muted"
+                        title="The aggregator booked this train on another day; the railway timetable has it here."
+                      >
+                        booked {formatIST(bookedShown)}
+                      </span>
+                    </span>
+                  ) : (
+                    formatIST(scheduledShown)
+                  )
+                }
+              />
               <Row
                 label="Expected"
                 value={

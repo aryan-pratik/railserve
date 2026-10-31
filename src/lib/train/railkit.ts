@@ -1,4 +1,5 @@
 import { configure, trackTrain } from 'railkit'
+import { SAME_TRAIN_WITHIN_MS } from '../arrival'
 import {
   TrainStatusUnavailable,
   type TrainDetail,
@@ -71,6 +72,13 @@ export type RailKitResponse = {
 }
 
 /**
+ * The feed itself is down, out of quota or refusing the key — as opposed to
+ * answering that a departure has no data. Looking at neighbouring runs cannot
+ * help with this, so it is never retried as one; a dead feed costs one call.
+ */
+class UpstreamUnavailable extends TrainStatusUnavailable {}
+
+/**
  * How many departures back to look for a run that reaches us on a given date.
  *
  * Only ever spent on a station this process has not seen before, and only
@@ -117,6 +125,13 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
 
   private readonly timeoutMs: number
 
+  /**
+   * Departure ('YYYY-MM-DD') settled on for a booking whose service-date run
+   * was the wrong one, keyed train|station|serviceDate. Spares every later
+   * poll the call that would fetch the wrong run first.
+   */
+  private readonly settledRun = new Map<string, string>()
+
   constructor(apiKey: string, opts: { timeoutMs?: number } = {}) {
     // configure() sets module-level state in the SDK rather than returning a
     // client, so there is nothing to hold; doing it here keeps the one call
@@ -130,8 +145,9 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
     trainNo: string,
     serviceDate: string,
     stationCode: string,
+    scheduledArrival?: Date | null,
   ): Promise<TrainStatusReading> {
-    const { body, row } = await this.resolve(trainNo, serviceDate, stationCode)
+    const { body, row } = await this.resolve(trainNo, serviceDate, stationCode, scheduledArrival)
     if (!row) {
       throw new TrainStatusUnavailable(
         `train ${trainNo} does not stop at ${stationCode} on the returned route`,
@@ -142,6 +158,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       etaAt: parseDayTime(row.arrival?.actual ?? row.arrival?.scheduled, body.data?.date),
       delayMinutes: parseDelay(row.arrival?.delay),
       platform: normalisePlatform(row.platform),
+      timetableAt: parseDayTime(row.arrival?.scheduled, body.data?.date),
       // Free — it was already in the payload the ETA came out of. `lastUpdate`
       // is "" until the run starts, which is a real answer ("nothing has
       // happened yet"), not a parse failure.
@@ -150,6 +167,125 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       startDate: parseRunDate(body.data?.date),
       source: this.name,
     }
+  }
+
+  /**
+   * The run serving this order: the one reaching the station on the service
+   * date, unless the order's booked arrival says it is a day either side.
+   *
+   * The service date comes from the order, and the order's booked time can
+   * sit on the other side of midnight from the timetable's. 15565 was booked
+   * into Kanpur at 00:02 on the 30th, but now reaches it at 23:40 the evening
+   * before — so the run "reaching CNB on the 30th" is the NEXT day's train,
+   * and its 23:40 on the 30th was shown as the ETA of a train that had
+   * already been and gone. A run a whole day from what the customer booked is
+   * never the right one, so with a booking in hand the run must match it.
+   */
+  private async resolve(
+    trainNo: string,
+    serviceDate: string,
+    stationCode: string,
+    scheduledArrival?: Date | null,
+  ): Promise<{ body: RailKitResponse; row: RailKitStation | undefined }> {
+    if (!scheduledArrival) return this.resolveByDate(trainNo, serviceDate, stationCode)
+
+    const offsetKey = RailKitTrainStatusProvider.offsetKey(trainNo, stationCode)
+    const bookingKey = `${offsetKey}|${serviceDate}`
+
+    // A run already settled for this booking: ask for it straight away, rather
+    // than spending a call on the service date's run every poll only to
+    // discard it. Re-checked, and forgotten if it no longer matches.
+    const settled = this.settledRun.get(bookingKey)
+    if (settled) {
+      const hit = await this.tryRun(trainNo, settled, stationCode, 0, scheduledArrival)
+      if (hit) return hit
+      this.settledRun.delete(bookingKey)
+    }
+
+    let found: { body: RailKitResponse; row: RailKitStation | undefined } | null = null
+    let failure: unknown = null
+    try {
+      found = await this.resolveByDate(trainNo, serviceDate, stationCode)
+    } catch (err) {
+      if (err instanceof UpstreamUnavailable) throw err
+      failure = err
+    }
+
+    if (found?.row) {
+      const shiftDays = daysFromBooking(found, scheduledArrival)
+      if (shiftDays === null || shiftDays === 0) return found
+      if (Math.abs(shiftDays) > 1) {
+        // Days apart is not a timetable drifting across midnight; it is the
+        // wrong train or a bad booking, and guessing a run would hide that.
+        throw new TrainStatusUnavailable(
+          `the run of ${trainNo} reaching ${stationCode.toUpperCase()} on ${serviceDate} is ` +
+            `timetabled ${Math.abs(shiftDays)} days from the order's booked arrival`,
+        )
+      }
+      const departed = parseRunDate(found.body.data?.date)
+      // fetchFor counts days back from the date it is given: -shiftDays from
+      // this run's own departure is the departure a day either side of it.
+      const neighbour = departed
+        ? await this.tryRun(trainNo, departed, stationCode, -shiftDays, scheduledArrival)
+        : null
+      if (neighbour) return this.settle(bookingKey, neighbour)
+      // Not the run in hand: that is a different day's train, the exact
+      // mistake this check exists to stop. Better no live time at all — the
+      // order then shows its booking, unverified — than another day's.
+      throw new TrainStatusUnavailable(
+        `no run of ${trainNo} reaching ${stationCode.toUpperCase()} matches the order's booked ` +
+          `arrival: the one a day ${shiftDays < 0 ? 'earlier' : 'later'} has no data, or is ` +
+          `timetabled more than ${SAME_TRAIN_WITHIN_MS / 3_600_000}h from it`,
+      )
+    }
+
+    // The service date's own run is missing: a train that does not run that
+    // day, or a departure the feed has not published. The booking can still
+    // name the right run, so try the departures either side of the one the
+    // service date implies, and take only one that matches it.
+    const base = this.dayOffset.get(offsetKey) ?? 0
+    for (const offset of [base + 1, base - 1]) {
+      const hit = await this.tryRun(trainNo, serviceDate, stationCode, offset, scheduledArrival)
+      if (hit) return this.settle(bookingKey, hit)
+    }
+    if (found) return found // no stop here; the caller says so
+    throw failure ?? new TrainStatusUnavailable(`no data for train ${trainNo}`)
+  }
+
+  /**
+   * One departure, kept only if it is the run the booking describes — within
+   * the same window that lets the booking be moved onto it (rescheduledArrival),
+   * so a run is never tracked for an order that will not be moved to match it.
+   */
+  private async tryRun(
+    trainNo: string,
+    date: string,
+    stationCode: string,
+    offsetDays: number,
+    scheduledArrival: Date,
+  ): Promise<{ body: RailKitResponse; row: RailKitStation | undefined } | null> {
+    let run: { body: RailKitResponse; row: RailKitStation | undefined }
+    try {
+      run = await this.fetchFor(trainNo, date, stationCode, offsetDays)
+    } catch (err) {
+      if (err instanceof UpstreamUnavailable) throw err
+      return null
+    }
+    const timetable = parseDayTime(run.row?.arrival?.scheduled, run.body.data?.date)
+    return run.row && timetable && Math.abs(scheduledArrival.getTime() - timetable.getTime()) < SAME_TRAIN_WITHIN_MS
+      ? run
+      : null
+  }
+
+  private settle<T extends { body: RailKitResponse }>(bookingKey: string, run: T): T {
+    const departed = parseRunDate(run.body.data?.date)
+    if (departed) {
+      // Bounded: keys carry a service date, so a long-lived process would
+      // otherwise collect one per affected train per day forever.
+      if (this.settledRun.size >= 500) this.settledRun.clear()
+      this.settledRun.set(bookingKey, departed)
+    }
+    return run
   }
 
   /**
@@ -170,7 +306,7 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
    * this converges on the exact run rather than settling for the run it
    * happened to find.
    */
-  private async resolve(
+  private async resolveByDate(
     trainNo: string,
     serviceDate: string,
     stationCode: string,
@@ -243,8 +379,9 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
     trainNo: string,
     serviceDate: string,
     stationCode: string,
+    scheduledArrival?: Date | null,
   ): Promise<TrainDetail> {
-    const { body, row } = await this.resolve(trainNo, serviceDate, stationCode)
+    const { body, row } = await this.resolve(trainNo, serviceDate, stationCode, scheduledArrival)
     if (!row) {
       throw new TrainStatusUnavailable(
         `train ${trainNo} does not stop at ${stationCode} on the returned route`,
@@ -345,18 +482,36 @@ export class RailKitTrainStatusProvider implements TrainStatusProvider {
       // plan and a broken key are things someone can act on, and a silent
       // fallback to scheduled times looks identical to a train with no data.
       if (/quota|rate ?limit|429/i.test(message)) {
-        throw new TrainStatusUnavailable(
+        throw new UpstreamUnavailable(
           'train API quota exhausted: the RailKit plan is out of requests for this period',
         )
       }
       if (/api key|unauthor|forbidden|401|403/i.test(message)) {
-        throw new TrainStatusUnavailable(
+        throw new UpstreamUnavailable(
           'train API rejected the key: check TRAIN_API_KEY and that the plan covers this endpoint',
         )
       }
-      throw new TrainStatusUnavailable(`train API unreachable: ${message}`)
+      throw new UpstreamUnavailable(`train API unreachable: ${message}`)
     }
   }
+}
+
+/**
+ * Whole days from a run's timetabled arrival here to the order's booking: 0
+ * when the service date's run is the nearest one (within 12h, ties included),
+ * -1 when the booking sits nearer the run a day earlier. Null when the
+ * timetable cannot be read. Only decides whether to look at a neighbour;
+ * tryRun then holds that neighbour to the tighter SAME_TRAIN_WITHIN_MS.
+ */
+function daysFromBooking(
+  run: { body: RailKitResponse; row: RailKitStation | undefined },
+  scheduledArrival: Date,
+): number | null {
+  const timetable = parseDayTime(run.row?.arrival?.scheduled, run.body.data?.date)
+  if (!timetable) return null
+  const diff = scheduledArrival.getTime() - timetable.getTime()
+  if (Math.abs(diff) <= 12 * 3_600_000) return 0
+  return Math.sign(diff) * Math.round(Math.abs(diff) / 86_400_000)
 }
 
 /**

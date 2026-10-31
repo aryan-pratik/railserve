@@ -36,6 +36,10 @@ const TrainStatusSchema = new Schema(
     // beside the train number so staff can tell which day's train this is.
     startDate: { type: String, default: null },
 
+    // The railway's timetabled arrival at this station for the run read. Kept
+    // so a booking the aggregator put on the wrong day can be corrected.
+    timetableAt: { type: Date, default: null },
+
     // Set when the last fetch failed. The previous values are kept — degrading
     // to a known-old ETA beats showing nothing (§8) — but callers must be able
     // to tell the difference.

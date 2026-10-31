@@ -4,6 +4,9 @@ import { type AuthContext, ConflictError, ForbiddenError, NotFoundError } from '
 import { ROLE_LABEL } from '../roles'
 import type { CallNoteView } from '../callNotes'
 import type { OrderSource } from '../orderEnums'
+import { rescheduledArrival, runBooking } from '../arrival'
+import { todayIST } from '../format'
+import { TERMINAL_STATUSES } from '../orderStatus'
 
 /**
  * THE ONLY PLACE Order.find / findOne / aggregate MAY BE CALLED.
@@ -852,13 +855,18 @@ export type ActiveTrainGroup = {
 export async function systemFindActiveTrainGroups(
   serviceDate: string,
   statuses: OrderStatus[],
+  opts: { bookedBefore?: Date; bookedFrom?: Date } = {},
 ): Promise<ActiveTrainGroup[]> {
+  const booked: Record<string, Date> = {}
+  if (opts.bookedBefore) booked.$lt = opts.bookedBefore
+  if (opts.bookedFrom) booked.$gte = opts.bookedFrom
   return Order.aggregate<ActiveTrainGroup>([
     {
       $match: {
         serviceDate,
         status: { $in: statuses },
         trainNo: { $ne: null, $exists: true },
+        ...(Object.keys(booked).length ? { scheduledArrival: { $ne: null, ...booked } } : {}),
       },
     },
     {
@@ -871,6 +879,115 @@ export async function systemFindActiveTrainGroups(
       },
     },
   ])
+}
+
+/** The orders on one train run, as the train-status cache keys them. */
+function onRun(key: { trainNo: string; serviceDate: string; stationCode: string }) {
+  return {
+    trainNo: key.trainNo,
+    serviceDate: key.serviceDate,
+    stationCode: key.stationCode.toUpperCase(),
+  }
+}
+
+/**
+ * The booking one train run is looked up against (see runBooking), from the
+ * open orders on it, or null.
+ *
+ * Every refresh of a run picks its train against this one value, so whichever
+ * screen or order triggers it, the same run is read.
+ */
+export async function systemRunBooking(
+  key: { trainNo: string; serviceDate: string; stationCode: string },
+  now: Date = new Date(),
+): Promise<Date | null> {
+  const open = await Order.find(
+    { ...onRun(key), status: { $nin: TERMINAL_STATUSES }, scheduledArrival: { $ne: null } },
+    'scheduledArrival',
+  ).lean<Pick<OrderDoc, 'scheduledArrival'>[]>()
+  return runBooking(open.map((o) => o.scheduledArrival), now)
+}
+
+/** An admin set this order's arrival by hand; the railway does not overrule them. */
+const NOT_SET_BY_AN_ADMIN = {
+  events: {
+    $not: {
+      $elemMatch: {
+        'meta.action': 'FIELD_EDITED',
+        'meta.field': { $in: ['scheduledArrival', 'serviceDate'] },
+        'meta.via': 'admin-detail',
+      },
+    },
+  },
+}
+
+/**
+ * Moves the open orders on one train run onto the railway's timetabled
+ * arrival, where their booking put the train on another day (see
+ * rescheduledArrival).
+ *
+ * When the train comes the evening BEFORE the booking, and that evening is
+ * still today, the service date moves back with it: that is the day it
+ * reaches the platform, so it is the day's board the kitchen needs it on and
+ * the day the cron polls. Moved the other
+ * way, past midnight, the service date stays — the past-midnight rollover
+ * already keeps last night's open orders on Today, and moving them forward
+ * would drop them off Today while the train is still on its way.
+ *
+ * The aggregator's own time is kept in `bookedArrival`, and each change is
+ * logged on the order as an edit made by nobody, via the railway timetable.
+ * Closed orders and any an admin has re-timed by hand are left alone.
+ * Returns how many orders moved.
+ */
+export async function systemRescheduleArrivals(
+  key: { trainNo: string; serviceDate: string; stationCode: string },
+  timetableAt: Date,
+  now: Date = new Date(),
+): Promise<number> {
+  const orders = await Order.find(
+    {
+      ...onRun(key),
+      status: { $nin: TERMINAL_STATUSES },
+      scheduledArrival: { $ne: null },
+      ...NOT_SET_BY_AN_ADMIN,
+    },
+    'scheduledArrival bookedArrival serviceDate status',
+  ).lean<Pick<OrderDoc, '_id' | 'scheduledArrival' | 'bookedArrival' | 'serviceDate' | 'status'>[]>()
+
+  let moved = 0
+  for (const o of orders) {
+    const from = o.scheduledArrival ?? null
+    const to = rescheduledArrival(from, timetableAt)
+    if (!from || !to) continue
+
+    // Back onto the evening before only while that evening is still today:
+    // moved after midnight, it would land on a date already over — off Today
+    // on the call list and outside the rollover window the moment the train
+    // runs late. Corrected that late, it keeps its date and only its time moves.
+    const toDay = todayIST(to)
+    const toServiceDate = to < from && toDay >= todayIST(now) ? toDay : o.serviceDate
+    const event = (field: string, label: string, was: string, now_: string) => ({
+      fromStatus: o.status,
+      toStatus: o.status,
+      userId: null,
+      meta: { action: 'FIELD_EDITED', field, label, from: was, to: now_, via: 'railway-timetable' },
+      createdAt: now,
+    })
+    const events = [event('scheduledArrival', 'Scheduled arrival', from.toISOString(), to.toISOString())]
+    if (toServiceDate !== o.serviceDate) events.push(event('serviceDate', 'Service date', o.serviceDate, toServiceDate))
+
+    const res = await Order.updateOne(
+      // Guarded on everything just read: a close, or an admin edit, landing
+      // in between wins rather than being silently overwritten by a poll.
+      { _id: o._id, scheduledArrival: from, serviceDate: o.serviceDate, status: o.status, ...NOT_SET_BY_AN_ADMIN },
+      {
+        $set: { scheduledArrival: to, serviceDate: toServiceDate, bookedArrival: o.bookedArrival ?? from },
+        $push: { events: { $each: events } },
+      },
+    )
+    moved += res.modifiedCount
+  }
+  return moved
 }
 
 /**

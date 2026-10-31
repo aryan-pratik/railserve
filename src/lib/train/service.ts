@@ -2,7 +2,9 @@ import { connectDb } from '../db'
 import { TrainStatus, type TrainStatusDoc } from '../models'
 import { getTrainStatusProvider } from './index'
 import { TrainStatusUnavailable, type TrainDetail } from './provider'
-import { buildTimingView, isStale, minutesBetween, type TimingView } from './policy'
+import { buildTimingView, isStale, latchedForRun, minutesBetween, type TimingView } from './policy'
+import { rescheduledArrival, runBooking, timedByAdmin } from '../arrival'
+import { systemRescheduleArrivals, systemRunBooking } from '../repo/orderRepo'
 
 export type TrainKey = { trainNo: string; serviceDate: string; stationCode: string }
 
@@ -23,16 +25,21 @@ export async function refreshTrainStatus(
 ): Promise<TrainStatusDoc> {
   await connectDb()
 
-  const provider = getTrainStatusProvider(() => opts.scheduledArrival ?? null)
+  const now = new Date()
+  // The run is picked against the open bookings on it (runBooking), not
+  // whichever order happened to trigger this refresh: two bookings from
+  // different copies of the timetable would otherwise flip the row between
+  // two trains.
+  const booking = (await systemRunBooking(key, now)) ?? opts.scheduledArrival ?? null
+  const provider = getTrainStatusProvider(() => booking)
   const filter = {
     trainNo: key.trainNo,
     serviceDate: key.serviceDate,
     stationCode: key.stationCode.toUpperCase(),
   }
-  const now = new Date()
 
   try {
-    const reading = await provider.getStatus(key.trainNo, key.serviceDate, key.stationCode)
+    const reading = await provider.getStatus(key.trainNo, key.serviceDate, key.stationCode, booking)
 
     // A reading that carries no arrival time is the feed having nothing to
     // say, not the train having no arrival time — and the two must not be
@@ -63,6 +70,11 @@ export async function refreshTrainStatus(
     const upstream = { providerUpdatedAt: reading.providerUpdatedAt }
     // A property of the run, so never blanked by a provider that omits it.
     const start = reading.startDate ? { startDate: reading.startDate } : {}
+    const timetable = reading.timetableAt ? { timetableAt: reading.timetableAt } : {}
+    // A different train from the one this row last held: its arrival, ETA and
+    // platform are that train's, not this one's, so they are replaced outright
+    // rather than kept or latched.
+    const otherRun = await holdsOtherRun(filter, reading.timetableAt ?? null)
 
     const doc = await TrainStatus.findOneAndUpdate(
       filter,
@@ -72,6 +84,10 @@ export async function refreshTrainStatus(
           ...platform,
           ...upstream,
           ...start,
+          ...timetable,
+          ...(otherRun
+            ? { etaAt: reading.etaAt, delayMinutes: reading.delayMinutes, platform: reading.platform, arrived: reading.arrived }
+            : {}),
           fetchedAt: now,
           ...(learnedSomething ? { lastSuccessAt: now } : {}),
           lastError: null,
@@ -81,10 +97,15 @@ export async function refreshTrainStatus(
         // only ever flip a row from not-arrived to arrived, never back. A
         // provider hiccup reporting arrived:false the moment after a genuine
         // arrival must not put the train back into rotation.
-        $max: { arrived: reading.arrived },
+        ...(otherRun ? {} : { $max: { arrived: reading.arrived } }),
       },
       { upsert: true, returnDocument: 'after' },
     )
+
+    // Only when the run was chosen against a booking: without one the provider
+    // read the service date's run, which may be the very wrong-day train this
+    // would otherwise copy onto the orders.
+    if (reading.timetableAt && booking) await moveOntoTimetable(key, reading.timetableAt, now)
     return doc!
   } catch (err) {
     const message = err instanceof TrainStatusUnavailable ? err.message : 'train status fetch failed'
@@ -113,15 +134,18 @@ export async function refreshTrainStatus(
 export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
   await connectDb()
 
-  const provider = getTrainStatusProvider(() => null)
   const stationCode = key.stationCode.toUpperCase()
-  const filter = { trainNo: key.trainNo, serviceDate: key.serviceDate, stationCode }
+  // Picked against the same booking the board's refreshes use, so a lookup
+  // never writes a different day's train into the row the board reads.
   const now = new Date()
+  const booking = await systemRunBooking({ ...key, stationCode }, now)
+  const provider = getTrainStatusProvider(() => booking)
+  const filter = { trainNo: key.trainNo, serviceDate: key.serviceDate, stationCode }
 
   const detail: TrainDetail = provider.getDetail
-    ? await provider.getDetail(key.trainNo, key.serviceDate, stationCode)
+    ? await provider.getDetail(key.trainNo, key.serviceDate, stationCode, booking)
     : {
-        ...(await provider.getStatus(key.trainNo, key.serviceDate, stationCode)),
+        ...(await provider.getStatus(key.trainNo, key.serviceDate, stationCode, booking)),
         trainNo: key.trainNo,
         trainName: null,
         stationCode,
@@ -136,6 +160,12 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         // spread above, which every provider now supplies.
       }
 
+  // No open order rides this train, so there is no booking to have picked the
+  // run against and nobody reading the row. Writing it anyway could latch the
+  // wrong day's train as arrived before the first order on it comes in.
+  if (!booking) return detail
+  const otherRun = await holdsOtherRun(filter, detail.scheduledArrival)
+
   await TrainStatus.findOneAndUpdate(
     filter,
     {
@@ -145,6 +175,8 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
         platform: detail.platform,
         providerUpdatedAt: detail.providerUpdatedAt,
         ...(detail.startDate ? { startDate: detail.startDate } : {}),
+        ...(detail.scheduledArrival ? { timetableAt: detail.scheduledArrival } : {}),
+        ...(otherRun ? { arrived: detail.arrived } : {}),
         fetchedAt: now,
         lastSuccessAt: now,
         lastError: null,
@@ -152,8 +184,8 @@ export async function lookupTrainDetail(key: TrainKey): Promise<TrainDetail> {
       },
       // Same one-way $max as refreshTrainStatus — an admin's manual lookup
       // should stop the automatic tick from polling this train too, not just
-      // report the answer once.
-      $max: { arrived: detail.arrived },
+      // report the answer once. Replaced instead when it is another run.
+      ...(otherRun ? {} : { $max: { arrived: detail.arrived } }),
     },
     { upsert: true },
   )
@@ -234,6 +266,33 @@ export async function readCachedStatus(key: TrainKey): Promise<TrainStatusDoc | 
 }
 
 /**
+ * True when the row on file was written for a different run of the train —
+ * its timetabled arrival a day or more from the one just read. Rows from
+ * before the timetable was recorded cannot tell, and are treated as the same.
+ */
+async function holdsOtherRun(
+  filter: { trainNo: string; serviceDate: string; stationCode: string },
+  timetableAt: Date | null,
+): Promise<boolean> {
+  if (!timetableAt) return false
+  const prior = await TrainStatus.findOne(filter).select('timetableAt').lean<{ timetableAt?: Date | null }>()
+  return !!prior?.timetableAt && Math.abs(prior.timetableAt.getTime() - timetableAt.getTime()) > 12 * 3_600_000
+}
+
+/**
+ * Moves the run's orders onto the railway's day, where their booking had the
+ * wrong one. Never fails the caller: the reading is already saved and is what
+ * the screens need, and a correction that did not land is retried next read.
+ */
+async function moveOntoTimetable(key: TrainKey, timetableAt: Date, now: Date): Promise<void> {
+  try {
+    await systemRescheduleArrivals(key, timetableAt, now)
+  } catch (err) {
+    console.error('[train] could not move orders onto the railway timetable', err)
+  }
+}
+
+/**
  * Cache-first read that refreshes only when the row has aged past its tier.
  *
  * Ten orders on one train share one row and therefore one provider call (§8).
@@ -248,13 +307,26 @@ export async function getTrainStatus(
   const target = cachedRow?.etaAt ?? opts.scheduledArrival ?? null
   const minutesToArrival = target ? minutesBetween(now, target) : null
 
-  if (
+  const fresh =
     cachedRow &&
-    !isStale(cachedRow.fetchedAt, minutesToArrival, now, cachedRow.arrived, cachedRow.lastError != null)
-  ) {
+    !isStale(
+      cachedRow.fetchedAt,
+      minutesToArrival,
+      now,
+      latchedForRun(cachedRow, opts.scheduledArrival),
+      cachedRow.lastError != null,
+    )
+  if (fresh || opts.allowFetch === false) {
+    // An order that joined a run after its last refresh is moved from the row
+    // already held — a pure check first, so a run with nothing to move costs
+    // no write. The row's timetable came from a run chosen against the
+    // earliest booking, and rescheduledArrival refuses anything far from it.
+    const timetableAt = cachedRow?.timetableAt ?? null
+    if (timetableAt && rescheduledArrival(opts.scheduledArrival ?? null, timetableAt)) {
+      await moveOntoTimetable(key, timetableAt, now)
+    }
     return cachedRow
   }
-  if (opts.allowFetch === false) return cachedRow
 
   return refreshTrainStatus(key, { scheduledArrival: opts.scheduledArrival })
 }
@@ -271,10 +343,11 @@ export async function timingForOrders<
     serviceDate: string
     stationCode: string
     scheduledArrival?: Date | null
+    events?: { meta?: unknown }[] | null
   },
 >(orders: T[], opts: { allowFetch?: boolean } = {}): Promise<Map<string, TimingView>> {
   const now = new Date()
-  const byKey = new Map<string, { key: TrainKey; scheduledArrival: Date | null }>()
+  const byKey = new Map<string, { key: TrainKey; bookings: (Date | null)[]; allByAdmin: boolean }>()
 
   for (const o of orders) {
     if (!o.trainNo) continue
@@ -284,13 +357,18 @@ export async function timingForOrders<
       stationCode: o.stationCode,
     }
     const k = trainCacheKey(key)
-    if (!byKey.has(k)) byKey.set(k, { key, scheduledArrival: o.scheduledArrival ?? null })
+    const group = byKey.get(k) ?? { key, bookings: [], allByAdmin: true }
+    group.bookings.push(o.scheduledArrival ?? null)
+    group.allByAdmin &&= timedByAdmin(o)
+    byKey.set(k, group)
   }
 
   const out = new Map<string, TimingView>()
 
   await Promise.all(
-    [...byKey.entries()].map(async ([k, { key, scheduledArrival }]) => {
+    [...byKey.entries()].map(async ([k, { key, bookings, allByAdmin }]) => {
+      // The same booking every refresh picks the run by (see refreshTrainStatus).
+      const scheduledArrival = runBooking(bookings, now)
       const row = await getTrainStatus(key, {
         scheduledArrival,
         allowFetch: opts.allowFetch,
@@ -298,7 +376,13 @@ export async function timingForOrders<
       out.set(
         k,
         buildTimingView({
-          scheduledArrival,
+          // The railway's day when the booking had the wrong one — the orders
+          // themselves are moved on the next read, and until then (or on a
+          // cache-only read) every screen should still agree with the railway.
+          // Never over a time an admin set by hand.
+          scheduledArrival: allByAdmin
+            ? scheduledArrival
+            : (rescheduledArrival(scheduledArrival, row?.timetableAt ?? null) ?? scheduledArrival),
           reading: row
             ? {
                 etaAt: row.etaAt ?? null,
@@ -306,7 +390,9 @@ export async function timingForOrders<
                 platform: row.platform ?? null,
                 fetchedAt: row.fetchedAt,
                 providerUpdatedAt: row.providerUpdatedAt ?? null,
-                arrived: row.arrived ?? false,
+                // Only this run's arrival: another day's train being gone
+                // says nothing about this one.
+                arrived: latchedForRun(row, scheduledArrival),
                 startDate: row.startDate ?? null,
               }
             : null,

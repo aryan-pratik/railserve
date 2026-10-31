@@ -1,11 +1,19 @@
 import { connectDb } from '../db'
 import { Restaurant, TrainStatus } from '../models'
 import { systemFindActiveTrainGroups, systemRecordLeaveNow } from '../repo/orderRepo'
-import { todayIST } from '../format'
+import { shiftServiceDate, todayIST } from '../format'
+import { inRollover, rolloverCutoff } from '../liveDay'
 import { refreshTrainStatus, readCachedStatus } from '../train/service'
-import { computeDispatchAt, isStale, minutesBetween } from '../train/policy'
+import { computeDispatchAt, isStale, latchedForRun, minutesBetween } from '../train/policy'
 import { env } from '../env'
 import type { OrderStatus } from '../orderStatus'
+
+/**
+ * How far ahead tomorrow's bookings are polled from today. Wider than the
+ * furthest a timetable is allowed to move a booking (6h, rescheduledArrival),
+ * so the move is found while the train is still on its way.
+ */
+const TOMORROW_LOOKAHEAD_HOURS = 12
 
 /** Orders that still have a delivery ahead of them are worth polling for. */
 const ACTIVE_STATUSES: OrderStatus[] = [
@@ -32,10 +40,32 @@ export type PollSummary = {
  */
 export async function runTrainPollingTick(now = new Date()): Promise<PollSummary> {
   await connectDb()
-  const serviceDate = todayIST()
+  const today = todayIST()
+  const tomorrow = shiftServiceDate(today, 1)
 
-  // Plan §8: only poll trains with at least one active order today.
-  const groups = await systemFindActiveTrainGroups(serviceDate, ACTIVE_STATUSES)
+  // Plan §8: only poll trains with at least one active order today — plus
+  // tomorrow's orders booked within the next few hours. A train booked for
+  // 00:02 is on its way tonight, and its timetable may have it in before
+  // midnight (15565 at CNB: booked 00:02 on the 30th, there at 23:40 on the
+  // 29th). Left until the date rolls over, it would be polled only after it
+  // had gone, and its order never moved onto the evening it really belongs to.
+  const groups = [
+    ...(await systemFindActiveTrainGroups(today, ACTIVE_STATUSES)).map((g) => ({ ...g, serviceDate: today })),
+    ...(
+      await systemFindActiveTrainGroups(tomorrow, ACTIVE_STATUSES, {
+        bookedBefore: new Date(now.getTime() + TOMORROW_LOOKAHEAD_HOURS * 3_600_000),
+      })
+    ).map((g) => ({ ...g, serviceDate: tomorrow })),
+    // And past midnight, last night's open orders the live board still
+    // carries (liveDay.ts) — a 23:40 train running late is still coming.
+    ...(inRollover(now)
+      ? (
+          await systemFindActiveTrainGroups(shiftServiceDate(today, -1), ACTIVE_STATUSES, {
+            bookedFrom: rolloverCutoff(now),
+          })
+        ).map((g) => ({ ...g, serviceDate: shiftServiceDate(today, -1) }))
+      : []),
+  ]
 
   const summary: PollSummary = {
     trainsConsidered: groups.length,
@@ -48,7 +78,7 @@ export async function runTrainPollingTick(now = new Date()): Promise<PollSummary
   for (const g of groups) {
     const key = {
       trainNo: g._id.trainNo,
-      serviceDate,
+      serviceDate: g.serviceDate,
       stationCode: g._id.stationCode,
     }
 
@@ -62,7 +92,7 @@ export async function runTrainPollingTick(now = new Date()): Promise<PollSummary
         cachedRow?.fetchedAt ?? null,
         minutesToArrival,
         now,
-        cachedRow?.arrived ?? false,
+        latchedForRun(cachedRow, g.scheduledArrival),
         cachedRow?.lastError != null,
       )
     ) {

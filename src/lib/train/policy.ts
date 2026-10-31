@@ -236,3 +236,21 @@ export function shouldWarnAboutDelay(
   if (delayMinutes === null) return false
   return delayMinutes >= thresholdMinutes
 }
+
+/**
+ * Whether a row's `arrived` latch belongs to the run this booking is on.
+ *
+ * `arrived` is one-way (it stops polling for good), but a row can be read
+ * against a different run later — the bookings on its key changed, and so did
+ * the run they point at. A latch from another day's train must not stop this
+ * one being polled, or show it as already gone. Rows from before the
+ * timetable was recorded, or with no booking to compare, keep their latch.
+ */
+export function latchedForRun(
+  row: { arrived?: boolean | null; timetableAt?: Date | null } | null | undefined,
+  booking: Date | null | undefined,
+): boolean {
+  if (!row?.arrived) return false
+  if (!row.timetableAt || !booking) return true
+  return Math.abs(row.timetableAt.getTime() - booking.getTime()) <= 12 * 3_600_000
+}

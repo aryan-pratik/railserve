@@ -36,19 +36,29 @@ export class FallbackTrainStatusProvider implements TrainStatusProvider {
     this.name = `${primary.name}>${secondary.name}`
   }
 
-  async getStatus(trainNo: string, serviceDate: string, stationCode: string): Promise<TrainStatusReading> {
+  async getStatus(
+    trainNo: string,
+    serviceDate: string,
+    stationCode: string,
+    scheduledArrival?: Date | null,
+  ): Promise<TrainStatusReading> {
     return this.ask(
       `${trainNo}@${stationCode} ${serviceDate}`,
-      (p) => p.getStatus(trainNo, serviceDate, stationCode),
-      () => this.secondary.getStatus(trainNo, serviceDate, stationCode),
+      (p) => p.getStatus(trainNo, serviceDate, stationCode, scheduledArrival),
+      () => this.secondary.getStatus(trainNo, serviceDate, stationCode, scheduledArrival),
     )
   }
 
-  async getDetail(trainNo: string, serviceDate: string, stationCode: string): Promise<TrainDetail> {
+  async getDetail(
+    trainNo: string,
+    serviceDate: string,
+    stationCode: string,
+    scheduledArrival?: Date | null,
+  ): Promise<TrainDetail> {
     return this.ask(
       `${trainNo}@${stationCode} ${serviceDate}`,
-      (p) => p.getDetail(trainNo, serviceDate, stationCode),
-      () => this.secondary.getStatus(trainNo, serviceDate, stationCode),
+      (p) => p.getDetail(trainNo, serviceDate, stationCode, scheduledArrival),
+      () => this.secondary.getStatus(trainNo, serviceDate, stationCode, scheduledArrival),
     )
   }
 

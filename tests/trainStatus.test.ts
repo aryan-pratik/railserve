@@ -1,14 +1,14 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
-import { TrainStatus } from '../src/lib/models'
+import { Order, TrainStatus } from '../src/lib/models'
 import {
-  refreshTrainStatus, readCachedStatus, timingForOrders, timingFor, forceRefreshTrainStatus,
+  refreshTrainStatus, readCachedStatus, timingForOrders, timingFor, forceRefreshTrainStatus, lookupTrainDetail,
 } from '../src/lib/train/service'
 import { runTrainPollingTick } from '../src/lib/queue/trainPolling'
 import { findMany } from '../src/lib/repo/orderRepo'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
 import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
-import { todayIST } from '../src/lib/format'
+import { shiftServiceDate, todayIST } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
 import * as providerFactory from '../src/lib/train'
 import { TrainStatusUnavailable } from '../src/lib/train/provider'
@@ -177,6 +177,211 @@ describe('train status cache', () => {
     })
   })
 
+  describe('a booking the railway timetable puts on another day', () => {
+    // 15565: booked into CNB at 00:02 on the 30th, timetabled 23:40 on the 29th.
+    const RUN = { trainNo: '15565', serviceDate: '2026-10-30', stationCode: 'CNB' }
+    const BOOKED = new Date('2026-10-30T00:02:00+05:30')
+    const TIMETABLE = new Date('2026-10-29T23:40:00+05:30')
+
+    function railway(timetableAt: Date | null = TIMETABLE) {
+      const getStatus = vi.fn(async () => ({
+        etaAt: new Date('2026-10-30T00:34:00+05:30'),
+        delayMinutes: 54,
+        platform: '5',
+        providerUpdatedAt: null,
+        arrived: false,
+        timetableAt,
+      }))
+      vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({ name: 'railkit', getStatus })
+      return getStatus
+    }
+
+    beforeEach(async () => {
+      await Order.deleteMany({ trainNo: { $in: [RUN.trainNo, '12427'] } })
+      // The evening of the 29th, with the train still to come. Only Date is
+      // faked: the database driver's own timers keep running.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-10-29T20:00:00+05:30'))
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('moves the order onto the evening before, keeping what was booked and logging it', async () => {
+      const order = await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      railway()
+
+      const row = await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+      expect(row.timetableAt).toEqual(TIMETABLE)
+
+      const after = await Order.findById(order._id).lean()
+      expect(after!.scheduledArrival).toEqual(TIMETABLE)
+      expect(after!.bookedArrival).toEqual(BOOKED)
+      // The day it reaches the platform, so the 29th's board and polls have it.
+      expect(after!.serviceDate).toBe('2026-10-29')
+      const moves = after!.events.filter((e) => e.meta?.via === 'railway-timetable')
+      expect(moves.map((e) => e.meta)).toEqual([
+        expect.objectContaining({ action: 'FIELD_EDITED', field: 'scheduledArrival', from: BOOKED.toISOString(), to: TIMETABLE.toISOString() }),
+        expect.objectContaining({ action: 'FIELD_EDITED', field: 'serviceDate', from: '2026-10-30', to: '2026-10-29' }),
+      ])
+      expect(moves.every((e) => e.fromStatus === e.toStatus && e.userId === null)).toBe(true)
+    })
+
+    it('keeps the service date when the correction only comes after midnight', async () => {
+      // The 29th is already over: moved there, a still-open order would leave
+      // Today and the rollover window. Its time is corrected; its day stays.
+      vi.setSystemTime(new Date('2026-10-30T08:00:00+05:30'))
+      const order = await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      railway()
+
+      await refreshTrainStatus(RUN)
+      const after = await Order.findById(order._id).lean()
+      expect(after!.scheduledArrival).toEqual(TIMETABLE)
+      expect(after!.serviceDate).toBe(RUN.serviceDate)
+      expect(after!.events.filter((e) => e.meta?.via === 'railway-timetable').map((e) => e.meta?.field))
+        .toEqual(['scheduledArrival'])
+    })
+
+    it('keeps the service date when the train moves past midnight', async () => {
+      // Moving it forward would drop it off Today while the train is coming;
+      // the past-midnight rollover already keeps it there.
+      const run = { ...RUN, serviceDate: '2026-10-29' }
+      const booked = new Date('2026-10-29T23:50:00+05:30')
+      const timetable = new Date('2026-10-30T00:10:00+05:30')
+      const order = await makeOrder({ ...run, scheduledArrival: booked })
+      railway(timetable)
+
+      await refreshTrainStatus(run)
+      const after = await Order.findById(order._id).lean()
+      expect(after!.scheduledArrival).toEqual(timetable)
+      expect(after!.serviceDate).toBe('2026-10-29')
+    })
+
+    it('picks the run against the earliest open booking, whichever order asks', async () => {
+      await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      await makeOrder({ ...RUN, scheduledArrival: new Date('2026-10-30T01:00:00+05:30') })
+      const getStatus = railway()
+
+      await refreshTrainStatus(RUN, { scheduledArrival: new Date('2026-10-30T01:00:00+05:30') })
+      expect(getStatus).toHaveBeenCalledWith(RUN.trainNo, RUN.serviceDate, RUN.stationCode, BOOKED)
+    })
+
+    it('does it once, however many reads follow', async () => {
+      const order = await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      railway()
+
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+      await timingForOrders([{ ...RUN, scheduledArrival: BOOKED }], { allowFetch: false })
+
+      const after = await Order.findById(order._id).lean()
+      expect(after!.events.filter((e) => e.meta?.field === 'scheduledArrival')).toHaveLength(1)
+      expect(after!.bookedArrival).toEqual(BOOKED)
+    })
+
+    it('leaves a same-day booking alone', async () => {
+      const order = await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      railway(new Date('2026-10-30T00:20:00+05:30'))
+
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+      const after = await Order.findById(order._id).lean()
+      expect(after!.scheduledArrival).toEqual(BOOKED)
+      expect(after!.bookedArrival).toBeNull()
+    })
+
+    it('leaves closed orders and an admin\'s own arrival time alone', async () => {
+      const closed = await makeOrder({ ...RUN, scheduledArrival: BOOKED, status: 'DELIVERED' })
+      const byHand = await makeOrder({
+        ...RUN,
+        scheduledArrival: BOOKED,
+        events: [{
+          fromStatus: 'RECEIVED', toStatus: 'RECEIVED', userId: null, createdAt: new Date(),
+          meta: { action: 'FIELD_EDITED', field: 'scheduledArrival', via: 'admin-detail' },
+        }],
+      })
+      railway()
+
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+      for (const id of [closed._id, byHand._id]) {
+        const after = await Order.findById(id).lean()
+        expect(after!.scheduledArrival).toEqual(BOOKED)
+        expect(after!.serviceDate).toBe(RUN.serviceDate)
+      }
+    })
+
+    it('moves an order that joins a run whose reading is still fresh', async () => {
+      await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      railway()
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+
+      // A second booking arrives inside the reading's tier: no fetch is due.
+      const late = await makeOrder({ ...RUN, scheduledArrival: BOOKED })
+      await timingForOrders([late])
+      const after = await Order.findById(late._id).lean()
+      expect(after!.scheduledArrival).toEqual(TIMETABLE)
+    })
+
+    it('shows the railway\'s day on screen even before the order is moved', async () => {
+      railway()
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED }) // no order on the run yet
+      const timings = await timingForOrders([{ ...RUN, scheduledArrival: BOOKED }], { allowFetch: false })
+      expect(timingFor({ ...RUN, scheduledArrival: BOOKED }, timings).scheduledArrival).toEqual(TIMETABLE)
+    })
+
+    it('replaces another day\'s run on the row instead of keeping its arrival', async () => {
+      // Last night's train latched this row arrived; tonight's booking on the
+      // same key must neither inherit that nor be left unpolled by it.
+      vi.setSystemTime(new Date('2026-10-30T20:00:00+05:30'))
+      await TrainStatus.create({
+        ...RUN, etaAt: new Date('2026-10-30T00:34:00+05:30'), arrived: true,
+        // Last asked as that train went by; nothing has polled it since.
+        timetableAt: TIMETABLE,
+        fetchedAt: new Date('2026-10-30T00:40:00+05:30'),
+        lastSuccessAt: new Date('2026-10-30T00:40:00+05:30'),
+      })
+      const tonight = new Date('2026-10-30T23:40:00+05:30')
+      await makeOrder({ ...RUN, scheduledArrival: tonight })
+      const getStatus = vi.fn(async () => ({
+        etaAt: new Date('2026-10-30T23:45:00+05:30'), delayMinutes: 5, platform: null,
+        providerUpdatedAt: null, arrived: false, timetableAt: tonight,
+      }))
+      vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({ name: 'railkit', getStatus })
+
+      const timings = await timingForOrders([{ ...RUN, scheduledArrival: tonight }])
+      expect(getStatus).toHaveBeenCalledTimes(1)
+      const row = await readCachedStatus(RUN)
+      expect(row!.arrived).toBe(false)
+      expect(row!.etaAt).toEqual(new Date('2026-10-30T23:45:00+05:30'))
+      expect(timingFor({ ...RUN, scheduledArrival: tonight }, timings).arrived).toBe(false)
+    })
+
+    it('never shows a time an admin set by hand as the railway\'s', async () => {
+      railway()
+      await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
+      const byHand = {
+        ...RUN,
+        scheduledArrival: BOOKED,
+        events: [{ meta: { action: 'FIELD_EDITED', field: 'scheduledArrival', via: 'admin-detail' } }],
+      }
+      const timings = await timingForOrders([byHand], { allowFetch: false })
+      expect(timingFor(byHand, timings).scheduledArrival).toEqual(BOOKED)
+    })
+
+    it('does not let an admin lookup write a run nobody booked into the cache', async () => {
+      const lookup = { trainNo: '12427', serviceDate: '2026-10-30', stationCode: 'CNB' }
+      vi.spyOn(providerFactory, 'getTrainStatusProvider').mockReturnValue({
+        name: 'railkit',
+        getStatus: async () => ({
+          etaAt: new Date('2026-10-30T23:52:00+05:30'), delayMinutes: 0, platform: '3',
+          providerUpdatedAt: null, arrived: true,
+        }),
+      })
+      const detail = await lookupTrainDetail(lookup)
+      expect(detail.platform).toBe('3')
+      expect(await readCachedStatus(lookup)).toBeNull()
+    })
+  })
+
   it('serves many orders on one train from a single provider call', async () => {
     const spy = vi.spyOn(providerFactory, 'getTrainStatusProvider')
     const orders = Array.from({ length: 10 }, () => ({
@@ -283,6 +488,19 @@ describe('polling worker tick', () => {
       const fired = o.events.filter((e) => (e.meta as Record<string, unknown>)?.action === 'LEAVE_NOW')
       expect(fired).toHaveLength(1)
     }
+  })
+
+  it('polls tomorrow\'s orders booked within the next few hours, not later ones', async () => {
+    const r = await makeRestaurant('NIGHT KITCHEN', 'CNB')
+    const tomorrow = shiftServiceDate(todayIST(), 1)
+    // On its way tonight: the timetable may have it in before midnight.
+    await makeOrder({ restaurantId: r._id, serviceDate: tomorrow, trainNo: '15565', stationCode: 'CNB', scheduledArrival: new Date(Date.now() + 3 * 3_600_000) })
+    // Tomorrow afternoon: nothing to learn yet.
+    await makeOrder({ restaurantId: r._id, serviceDate: tomorrow, trainNo: '12555', stationCode: 'CNB', scheduledArrival: new Date(Date.now() + 20 * 3_600_000) })
+
+    await runTrainPollingTick()
+    expect(await TrainStatus.countDocuments({ trainNo: '15565', serviceDate: tomorrow })).toBe(1)
+    expect(await TrainStatus.countDocuments({ trainNo: '12555' })).toBe(0)
   })
 
   it('never refreshes a train once it has been confirmed arrived, however old the row gets', async () => {

@@ -1,5 +1,6 @@
 import { ORDER_STATUSES, TERMINAL_STATUSES } from './orderStatus'
 import type { TimingView } from './train/policy'
+import { todayIST } from './format'
 
 /** Under this, a time that moved from the booking is rounding noise, not news. */
 export const MOVED_AFTER_MINUTES = 5
@@ -62,6 +63,8 @@ export type ArrivalRecord = {
 type ArrivalOrder = {
   status: string
   scheduledArrival?: Date | null
+  /** Set when the railway timetable moved scheduledArrival; see rescheduledArrival. */
+  bookedArrival?: Date | null
   delivery?: { deliveredAt?: Date | null } | null
 }
 
@@ -78,7 +81,11 @@ export function arrivalRecord(
   timing: TimingView | null,
   now: Date = new Date(),
 ): ArrivalRecord {
-  const booked = order.scheduledArrival ?? null
+  // Shown when nothing live is: the railway-corrected time, if it was moved.
+  const scheduled = order.scheduledArrival ?? null
+  // Measured against: always what the aggregator booked, so a correction onto
+  // the railway's day never hides how far the booking was out.
+  const booked = order.bookedArrival ?? scheduled
   const deliveredAt = order.delivery?.deliveredAt ?? null
 
   if (order.status === 'DELIVERED' && deliveredAt) {
@@ -89,7 +96,7 @@ export function arrivalRecord(
   // in, is a closed record: the booked time is context, and nothing live is
   // worth showing about a train nobody is waiting on any more.
   if (!OPEN.has(order.status)) {
-    return { kind: 'booked', time: booked, certainty: 'context', booked, minutesVsBooked: null, direction: null, checkedMinutesAgo: null, pastDue: false }
+    return { kind: 'booked', time: scheduled, certainty: 'context', booked, minutesVsBooked: null, direction: null, checkedMinutesAgo: null, pastDue: false }
   }
 
   // The railway has confirmed the train reached the station. Checked before
@@ -120,7 +127,7 @@ export function arrivalRecord(
 
   return {
     kind: 'booked',
-    time: booked,
+    time: scheduled,
     certainty: 'unverified',
     booked,
     minutesVsBooked: null,
@@ -138,4 +145,65 @@ function withDeviation(
   const direction =
     Math.abs(minutes) < MOVED_AFTER_MINUTES ? null : minutes > 0 ? 'later' : 'earlier'
   return { ...r, minutesVsBooked: minutes, direction }
+}
+
+/**
+ * Past this, a booking is not merely a stale copy of the timetable. Bookings
+ * on this route run up to about two hours out; one further off than this is
+ * left as booked, so the gap shows on screen for a person to resolve.
+ */
+export const SAME_TRAIN_WITHIN_MS = 6 * 3_600_000
+
+/**
+ * The railway's timetabled arrival, when it moves the booking onto another day.
+ *
+ * Aggregators book against their own copy of the timetable, and it goes out
+ * of date. 15565 was booked into Kanpur at 00:02 on 30 Oct while the railway
+ * had it there at 23:40 on the 29th — the same train, 22 minutes apart, but
+ * on different days. A booking off by minutes on the same day stays as it is:
+ * the gap between booked and expected is worth seeing. One that puts the
+ * train on the wrong day is simply wrong, and every screen that reads it
+ * (the board, the order page, the KOT) shows a date the train never came.
+ *
+ * Null when there is nothing to correct: no booking, no timetable, the same
+ * day already, or too far apart to be the same booking (SAME_TRAIN_WITHIN_MS).
+ */
+export function rescheduledArrival(booked: Date | null, timetable: Date | null): Date | null {
+  if (!booked || !timetable) return null
+  if (Math.abs(timetable.getTime() - booked.getTime()) >= SAME_TRAIN_WITHIN_MS) return null
+  if (todayIST(booked) === todayIST(timetable)) return null
+  return timetable
+}
+
+/**
+ * True when an admin set this order's arrival or service date by hand. The
+ * railway timetable never overrules that, on the record or on screen.
+ */
+export function timedByAdmin(order: { events?: { meta?: unknown }[] | null }): boolean {
+  return (order.events ?? []).some((e) => {
+    const m = (e.meta ?? {}) as Record<string, unknown>
+    return (
+      m.action === 'FIELD_EDITED' &&
+      m.via === 'admin-detail' &&
+      (m.field === 'scheduledArrival' || m.field === 'serviceDate')
+    )
+  })
+}
+
+/** A booking further in the past than this is a train long gone. */
+const GONE_AFTER_MS = 12 * 3_600_000
+
+/**
+ * The booking a train run is looked up against: the earliest one that is not
+ * long gone, or failing that the earliest of all.
+ *
+ * One cache row serves every order on a train, station and service date, and
+ * those can belong to two runs — last night's 23:40, moved onto its real
+ * evening after midnight, beside tonight's 23:40 booked correctly. The
+ * earliest alone would keep the row on last night's train all day for as
+ * long as that order stays open. Null when nothing is booked.
+ */
+export function runBooking(bookings: (Date | null | undefined)[], now: Date): Date | null {
+  const known = bookings.filter((b): b is Date => b instanceof Date).sort((a, b) => a.getTime() - b.getTime())
+  return known.find((b) => b.getTime() >= now.getTime() - GONE_AFTER_MS) ?? known[0] ?? null
 }

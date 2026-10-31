@@ -1,3 +1,4 @@
+import * as policy from '../src/lib/train/policy'
 import { describe, expect, it } from 'vitest'
 import {
   buildTimingView, computeDispatchAt, isStale, minutesBetween, pollIntervalMinutes,
@@ -356,5 +357,24 @@ describe('KOT delay guard (plan §9)', () => {
   it('respects a reconfigured threshold', () => {
     expect(shouldWarnAboutDelay(20, 15)).toBe(true)
     expect(shouldWarnAboutDelay(20, 30)).toBe(false)
+  })
+})
+
+describe('latchedForRun', () => {
+  const { latchedForRun } = policy
+  const ist = (s: string) => new Date(`${s}+05:30`)
+
+  it('keeps the latch for the run it was set on', () => {
+    expect(latchedForRun({ arrived: true, timetableAt: ist('2026-10-29T23:40:00') }, ist('2026-10-30T00:02:00'))).toBe(true)
+  })
+
+  it('ignores a latch from another day\'s run', () => {
+    expect(latchedForRun({ arrived: true, timetableAt: ist('2026-10-29T23:40:00') }, ist('2026-10-30T23:40:00'))).toBe(false)
+  })
+
+  it('keeps a latch it cannot check', () => {
+    expect(latchedForRun({ arrived: true, timetableAt: null }, ist('2026-10-30T23:40:00'))).toBe(true)
+    expect(latchedForRun({ arrived: true, timetableAt: ist('2026-10-29T23:40:00') }, null)).toBe(true)
+    expect(latchedForRun({ arrived: false }, null)).toBe(false)
   })
 })

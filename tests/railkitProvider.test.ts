@@ -291,6 +291,131 @@ describe('RailKitTrainStatusProvider', () => {
     expect(r.etaAt).toEqual(ist('2027-01-01T09:35:00'))
   })
 
+  describe('a booked arrival on the other side of midnight from the timetable', () => {
+    // 15565 was booked into Kanpur at 00:02 on 30 Oct, but its timetable now
+    // has it there at 23:40 the evening before. Each departure reaches CNB the
+    // same day it leaves, so the run "reaching CNB on the 30th" is the next
+    // day's train — and its 23:40 on the 30th was shown as this order's ETA.
+    const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    /** A run leaving on `ddmmyyyy`, reaching CNB `daysLater` on at `hhmm`. */
+    const run = (ddmmyyyy: string, hhmm: string, daysLater: number, actual?: string) => {
+      const [d, m, y] = ddmmyyyy.split('-').map(Number)
+      const at = new Date(Date.UTC(y, m - 1, d + daysLater))
+      const stop = `${String(at.getUTCDate()).padStart(2, '0')}-${MONTH[at.getUTCMonth()]}`
+      const body = structuredClone(RAILKIT_12561) as {
+        data: { date: string; timeline: { stationCode: string; arrival?: unknown }[] }
+      }
+      body.data.date = `${String(d).padStart(2, '0')}-${MONTH[m - 1]}-${y}`
+      const cnb = body.data.timeline.find((s) => s.stationCode === 'CNB')!
+      cnb.arrival = { scheduled: `${hhmm} ${stop}`, actual: actual ?? `${hhmm} ${stop}*`, delay: 'On Time' }
+      return body
+    }
+
+    it('reads the previous evening\'s run, not the next day\'s', async () => {
+      trackTrain.mockImplementation((_t: string, date: string) =>
+        Promise.resolve(date === '29-10-2026' ? run(date, '23:40', 0, '00:34 30-Oct') : run(date, '23:40', 0)),
+      )
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T00:02:00'))
+
+      expect(r.etaAt).toEqual(ist('2026-10-30T00:34:00'))
+      expect(r.startDate).toBe('2026-10-29')
+      // The timetable of the run read, for the order to be moved onto.
+      expect(r.timetableAt).toEqual(ist('2026-10-29T23:40:00'))
+      expect(trackTrain.mock.calls.map((c) => c[1])).toEqual(['30-10-2026', '29-10-2026'])
+    })
+
+    it('reads the next run when the timetable has moved past midnight', async () => {
+      // The reverse: booked 23:50 on the 29th, now timetabled 00:10 on the 30th.
+      trackTrain.mockImplementation((_t: string, date: string) => Promise.resolve(run(date, '00:10', 1)))
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('15565', '2026-10-29', 'CNB', ist('2026-10-29T23:50:00'))
+
+      expect(r.etaAt).toEqual(ist('2026-10-30T00:10:00'))
+    })
+
+    it('asks once when the booked arrival agrees with the timetable', async () => {
+      trackTrain.mockImplementation((_t: string, date: string) => Promise.resolve(run(date, '23:40', 0)))
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('15565', '2026-10-29', 'CNB', ist('2026-10-30T00:02:00'))
+
+      expect(r.etaAt).toEqual(ist('2026-10-29T23:40:00'))
+      expect(trackTrain).toHaveBeenCalledTimes(1)
+    })
+
+    it('never falls back to the next day\'s run when the right one has no data', async () => {
+      trackTrain.mockImplementation((_t: string, date: string) =>
+        Promise.resolve(
+          date === '29-10-2026'
+            ? { success: false, error: 'Train data not available for date: 29-Oct-2026' }
+            : run(date, '23:40', 0),
+        ),
+      )
+      const p = new RailKitTrainStatusProvider('key')
+      await expect(
+        p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T00:02:00')),
+      ).rejects.toBeInstanceOf(TrainStatusUnavailable)
+    })
+
+    it('finds the booked run when the service date has no run at all', async () => {
+      // Not a daily train, or a departure the feed has not published: the
+      // 30th has nothing, and the run the booking names left on the 29th.
+      trackTrain.mockImplementation((_t: string, date: string) =>
+        Promise.resolve(
+          date === '30-10-2026'
+            ? { success: false, error: 'Train data not available for date: 30-Oct-2026' }
+            : run(date, '23:40', 0, '00:34 30-Oct'),
+        ),
+      )
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T00:02:00'))
+      expect(r.etaAt).toEqual(ist('2026-10-30T00:34:00'))
+      expect(r.startDate).toBe('2026-10-29')
+    })
+
+    it('does not search neighbouring runs when the feed itself is down', async () => {
+      trackTrain.mockRejectedValue(new Error('fetch failed'))
+      const p = new RailKitTrainStatusProvider('key')
+      // Calibrate first, so the failure below is the only call made.
+      trackTrain.mockImplementationOnce((_t: string, date: string) => Promise.resolve(run(date, '23:40', 0)))
+      await p.getStatus('15565', '2026-10-29', 'CNB', ist('2026-10-29T23:40:00'))
+
+      trackTrain.mockClear()
+      await expect(p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T23:40:00'))).rejects.toThrow(/unreachable/)
+      expect(trackTrain).toHaveBeenCalledTimes(1)
+    })
+
+    it('takes no neighbour too far from the booking to move it onto', async () => {
+      // Booked 06:00 on the 30th, timetabled 23:40 daily: the 29th's run is
+      // 6h20m off. Tracking it would show a train the order will never be
+      // moved to match, and could latch it arrived.
+      trackTrain.mockImplementation((_t: string, date: string) => Promise.resolve(run(date, '23:40', 0)))
+      const p = new RailKitTrainStatusProvider('key')
+      await expect(
+        p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T06:00:00')),
+      ).rejects.toThrow(/matches the order's booked arrival/)
+    })
+
+    it('goes straight to the settled run on later polls, one call each', async () => {
+      trackTrain.mockImplementation((_t: string, date: string) => Promise.resolve(run(date, '23:40', 0)))
+      const p = new RailKitTrainStatusProvider('key')
+      await p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T00:02:00'))
+
+      trackTrain.mockClear()
+      const r = await p.getStatus('15565', '2026-10-30', 'CNB', ist('2026-10-30T00:02:00'))
+      expect(r.timetableAt).toEqual(ist('2026-10-29T23:40:00'))
+      expect(trackTrain.mock.calls.map((c) => c[1])).toEqual(['29-10-2026'])
+    })
+
+    it('keeps the service date\'s run when there is no booked arrival to check against', async () => {
+      trackTrain.mockImplementation((_t: string, date: string) => Promise.resolve(run(date, '23:40', 0)))
+      const p = new RailKitTrainStatusProvider('key')
+      const r = await p.getStatus('15565', '2026-10-30', 'CNB')
+
+      expect(r.etaAt).toEqual(ist('2026-10-30T23:40:00'))
+    })
+  })
+
   it('reports an upstream error as unavailable rather than throwing raw', async () => {
     trackTrain.mockResolvedValue({ success: false, error: 'train not found' })
     const p = new RailKitTrainStatusProvider('key')
