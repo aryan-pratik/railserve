@@ -62,6 +62,37 @@ const EnvSchema = z.object({
   // server runs elsewhere) — only the outlet's print agent knows it, in its
   // own agent/.env. See agent/README.md.
   PRINT_RENDER_TOKEN: z.string().default(''),
+
+  // FoodOnTrains order status callback (src/lib/aggregators/foodontrains.ts).
+  // The API keys are per outlet, so they live on each Restaurant, not here.
+  FOODONTRAINS_API_URL: z.string().url().default('https://foodontrains.in/api'),
+
+  // WhatsApp chat between a telecaller and a passenger (src/lib/whatsapp).
+  // `simulator` needs no account: every sent message is answered by a fake
+  // passenger a moment later, so the chat screen can be exercised offline.
+  // `msg91` sends through the MSG91 WhatsApp Business API and needs the auth
+  // key and the integrated (business) number. Falls back to the simulator
+  // when the key is blank, the same way the train provider does.
+  WHATSAPP_PROVIDER: z.enum(['simulator', 'msg91']).default('simulator'),
+  MSG91_AUTH_KEY: z.string().default(''),
+  // The WhatsApp Business number MSG91 integrated, digits with country code.
+  MSG91_WHATSAPP_NUMBER: z.string().default(''),
+  MSG91_API_URL: z.string().url().default('https://control.msg91.com/api/v5/whatsapp'),
+  // The WhatsApp Business Account's template namespace, from the MSG91
+  // dashboard. Sent with every template so Meta resolves the name against
+  // the right account; optional, MSG91 fills it in when blank.
+  MSG91_TEMPLATE_NAMESPACE: z.string().default(''),
+  // Shared secret the MSG91 webhook must carry (as an `x-webhook-token`
+  // header or `?token=`) — MSG91 signs nothing, so this is the only check.
+  MSG91_WEBHOOK_TOKEN: z.string().default(''),
+  // Approved utility template that opens a conversation when the passenger
+  // has not written in the last 24 hours. One body variable: the order id.
+  MSG91_OPENER_TEMPLATE: z.string().default(''),
+  MSG91_OPENER_TEMPLATE_LANG: z.string().default('en'),
+  // Which value fills each positional body variable of the opener, in order:
+  // `name` (the passenger), `order` (the order id), `outlet`. Default is the
+  // one-variable "{{1}} = order id" shape.
+  MSG91_OPENER_TEMPLATE_VARS: z.string().default('order'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 })
 

@@ -20,6 +20,8 @@ import {
   Station,
   RiderLocation,
   Listing,
+  WaConversation,
+  WaMessage,
 } from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
@@ -208,6 +210,53 @@ type IndexCreator = {
   }
 }
 
+const WA_CONVERSATION_INDEXES: Spec[] = [
+  {
+    name: 'phone_unique',
+    index: { key: { phone: 1 }, unique: true },
+    why: 'one WhatsApp thread per passenger number; the webhook upserts on it',
+  },
+  {
+    name: 'chat_list',
+    index: { key: { restaurantId: 1, lastMessageAt: -1 } },
+    why: "the telecaller's conversation list: this outlet, newest first",
+  },
+  {
+    name: 'chat_assigned',
+    index: { key: { assignedTo: 1, lastMessageAt: -1 } },
+    why: 'the "Mine" filter on the conversation list',
+  },
+  {
+    name: 'chat_version',
+    index: { key: { updatedAt: -1 } },
+    why: 'the live feed reads the newest change in scope every few seconds',
+  },
+]
+
+const WA_MESSAGE_INDEXES: Spec[] = [
+  {
+    name: 'thread',
+    index: { key: { conversationId: 1, createdAt: -1 } },
+    why: 'one thread, newest page of messages',
+  },
+  {
+    name: 'providerMessageId_unique',
+    // PARTIAL, as gmailMessageId is: a queued message has no wamid yet and
+    // omits the key, so only real provider ids take part.
+    index: {
+      key: { providerMessageId: 1 },
+      unique: true,
+      partialFilterExpression: { providerMessageId: { $type: 'string' } },
+    },
+    why: 'idempotent webhook: a replayed inbound message is a no-op, and a status report finds its message',
+  },
+  {
+    name: 'providerRequestId',
+    index: { key: { providerRequestId: 1 } },
+    why: 'MSG91 status reports arrive by request id before the wamid is known',
+  },
+]
+
 async function ensure(collectionName: string, model: IndexCreator, specs: Spec[]) {
   console.log(`\n${collectionName}`)
   for (const spec of specs) {
@@ -237,6 +286,8 @@ async function main() {
   await ensure('stations', Station, STATION_INDEXES)
   await ensure('riderlocations', RiderLocation, RIDER_LOCATION_INDEXES)
   await ensure('listings', Listing, LISTING_INDEXES)
+  await ensure('waconversations', WaConversation, WA_CONVERSATION_INDEXES)
+  await ensure('wamessages', WaMessage, WA_MESSAGE_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })

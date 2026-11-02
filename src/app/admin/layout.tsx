@@ -3,15 +3,20 @@ import { AdminOrderToaster } from '@/components/AdminOrderToaster'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
+import { countUnread } from '@/lib/repo/whatsappRepo'
 
 export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
   // Coarse gate only — every page still enforces through the scoped repository.
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
 
   // An unparsed order is an order nobody is cooking, so the count rides in the
-  // nav rather than waiting to be discovered on a page nobody opens.
+  // nav rather than waiting to be discovered on a page nobody opens. The same
+  // goes for a passenger waiting on WhatsApp with nobody answering.
   await connectDb()
-  const unparsed = await UnparsedInbox.countDocuments({ resolved: false })
+  const [unparsed, unread] = await Promise.all([
+    UnparsedInbox.countDocuments({ resolved: false }),
+    countUnread(ctx),
+  ])
 
   return (
     <AppShell
@@ -21,6 +26,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/enquiries', label: 'Enquiries', icon: 'enquiries' },
         { href: '/admin/payments', label: 'Payments', icon: 'payments' },
         { href: '/admin/inbox', label: 'Inbox', icon: 'inbox', count: unparsed },
+        { href: '/admin/chat', label: 'WhatsApp', icon: 'chat', count: unread },
         { href: '/admin/riders', label: 'Riders', icon: 'riders' },
         { href: '/admin/trains', label: 'Train status', icon: 'runs' },
         { href: '/admin/analytics', label: 'Analytics', icon: 'analytics' },

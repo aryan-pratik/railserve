@@ -15,6 +15,8 @@ import { CallLog } from '@/components/CallLog'
 import { CallNoteForm } from '@/components/CallNoteForm'
 import { KotNoteForm } from '@/components/KotNoteForm'
 import { IconPhone } from '@/components/Icons'
+import { OpenChatButton } from '@/components/chat/OpenChatButton'
+import { normalisePhone } from '@/lib/whatsapp/phone'
 import { CancelOrderButton } from '../../CancelOrderButton'
 import { OutcomeActionButton } from '../../OutcomeActionButton'
 import { RatingOrderButton } from '../../RatingOrderButton'
@@ -200,13 +202,20 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
           <CardHeader title="Passenger" />
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
             <span className="text-sm text-ink">{order.contactName ?? 'Passenger'}</span>
-            <a
-              href={`tel:${order.contactPhone}`}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-1.5 font-mono text-base font-semibold tabular-nums text-accent underline-offset-2 hover:underline"
-            >
-              <IconPhone size={16} aria-hidden />
-              {order.contactPhone}
-            </a>
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`tel:${order.contactPhone}`}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-1.5 font-mono text-base font-semibold tabular-nums text-accent underline-offset-2 hover:underline"
+              >
+                <IconPhone size={16} aria-hidden />
+                {order.contactPhone}
+              </a>
+              {/* The other way to reach the passenger: opens their WhatsApp
+                  thread, aimed at this order, and goes there. Only for a
+                  number WhatsApp could dial; a masked or partial one gets
+                  the call link alone. */}
+              {normalisePhone(order.contactPhone) ? <OpenChatButton orderId={id} basePath="/calls/chat" /> : null}
+            </div>
           </div>
         </Card>
       ) : (

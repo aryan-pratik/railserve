@@ -18,6 +18,7 @@ import {
   IconPhone,
   IconRiders,
   IconActivity,
+  IconChat,
 } from './Icons'
 
 export type NavItem = {
@@ -41,6 +42,7 @@ const ICONS: Record<string, React.ComponentType<{ size?: number; className?: str
   phone: IconPhone,
   riders: IconRiders,
   activity: IconActivity,
+  chat: IconChat,
 }
 
 const ROOTS = new Set(['/admin', '/store', '/agent', '/calls'])

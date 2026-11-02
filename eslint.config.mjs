@@ -6,17 +6,19 @@ import nextTs from "eslint-config-next/typescript";
  * Plan §2 / §13.2: MongoDB gives no row-level security, so a store manager
  * seeing another outlet's orders is purely a discipline problem in application
  * code. This rule is the enforcement half of that discipline — it fails the
- * build when the Order model is touched outside the scoped repository.
+ * build when the Order model, or a WhatsApp thread or message, is touched
+ * outside the scoped repositories.
  *
  * The repository itself, the transition engine, and scripts are exempt.
  */
 const DIRECT_MODEL_ACCESS =
-  "MemberExpression[object.name='Order']" +
+  "MemberExpression[object.name=/^(Order|WaConversation|WaMessage)$/]" +
   "[property.name=/^(find|findOne|findById|findOneAndUpdate|findByIdAndUpdate|findOneAndDelete|aggregate|updateOne|updateMany|deleteOne|deleteMany|countDocuments|distinct|create|insertMany|bulkWrite|watch)$/]";
 
 const ISOLATION_MESSAGE =
-  "Direct Order model access leaks across outlets. Use lib/repo/orderRepo " +
-  "(scoped reads) or lib/repo/transitionOrder (status writes) instead. " +
+  "Direct model access leaks across outlets. Use lib/repo/orderRepo " +
+  "(scoped reads), lib/repo/transitionOrder (status writes) or " +
+  "lib/repo/whatsappRepo (chat) instead. " +
   "See plan §2 — this is the single biggest risk of the MongoDB stack choice.";
 
 const eslintConfig = defineConfig([
@@ -40,7 +42,7 @@ const eslintConfig = defineConfig([
           paths: [
             {
               name: "@/lib/models",
-              importNames: ["Order"],
+              importNames: ["Order", "WaConversation", "WaMessage"],
               message: ISOLATION_MESSAGE,
             },
           ],

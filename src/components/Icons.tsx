@@ -752,3 +752,32 @@ export function IconActivity({ size = 20, className = '', ...props }: IconProps)
     </svg>
   )
 }
+
+/** Two speech bubbles: a conversation, not a note. */
+export function IconChat({ size = 20, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z" />
+      <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1" />
+    </svg>
+  )
+}
+
+export function IconSend({ size = 16, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <path d="m22 2-7 20-4-9-9-4z" />
+      <path d="M22 2 11 13" />
+    </svg>
+  )
+}
+
+/** Two ticks: delivered or read, as WhatsApp itself draws it. */
+export function IconCheckDouble({ size = 14, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <path d="m18 6-11 11-4-4" />
+      <path d="m22 10-7.5 7.5" />
+    </svg>
+  )
+}

@@ -37,6 +37,10 @@ export default defineConfig({
       TRAIN_API_PROVIDER: 'simulator',
       TRAIN_API_KEY: '',
       TRAIN_API_HOST: '',
+      // The webhook route tests post with this token; the chat tests never
+      // reach a real provider either way.
+      WHATSAPP_PROVIDER: 'simulator',
+      MSG91_WEBHOOK_TOKEN: 'test-webhook-token',
     },
   },
 })

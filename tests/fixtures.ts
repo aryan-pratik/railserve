@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Listing, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User } from '../src/lib/models'
+import { Counter, Listing, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User, WaConversation, WaMessage } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -20,6 +20,8 @@ export async function resetDb() {
     Station.deleteMany({}),
     RiderLocation.deleteMany({}),
     Listing.deleteMany({}),
+    WaConversation.deleteMany({}),
+    WaMessage.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
@@ -32,6 +34,13 @@ export async function resetDb() {
   await Payment.collection.createIndex({ rrn: 1 }, { unique: true, name: 'rrn_unique' })
   // One live position per rider; the ingest path upserts against this.
   await RiderLocation.collection.createIndex({ userId: 1 }, { unique: true, name: 'userId_unique' })
+  // One WhatsApp thread per number, and a replayed webhook must not duplicate
+  // a message: both are enforced by index, so the tests need them in place.
+  await WaConversation.collection.createIndex({ phone: 1 }, { unique: true, name: 'phone_unique' })
+  await WaMessage.collection.createIndex(
+    { providerMessageId: 1 },
+    { unique: true, name: 'providerMessageId_unique', partialFilterExpression: { providerMessageId: { $type: 'string' } } },
+  )
 }
 
 export async function makeRestaurant(name: string, stationCode: string, aliases: string[] = []) {

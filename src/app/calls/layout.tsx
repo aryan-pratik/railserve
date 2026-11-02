@@ -1,11 +1,14 @@
 import { AppShell } from '@/components/AppShell'
 import { requireRole } from '@/lib/session'
+import { connectDb } from '@/lib/db'
+import { countUnread } from '@/lib/repo/whatsappRepo'
 
 /**
  * The telecaller's console.
  *
- * Three nav entries: the live board to work a train, the call list to find
- * one passenger, and Payments — a narrow, view-only exception to what is
+ * Four nav entries: the live board to work a train, the call list to find
+ * one passenger, WhatsApp to answer the one who wrote instead of ringing,
+ * and Payments — a narrow, view-only exception to what is
  * otherwise a deliberately narrow role. A telecaller rings passengers and
  * records the outcomes the rest of the system cannot find out on its own
  * (cancelled, misdelivered, missed, refunded, or flagged as a decoy order),
@@ -19,12 +22,17 @@ import { requireRole } from '@/lib/session'
  */
 export default async function CallsLayout({ children }: LayoutProps<'/calls'>) {
   // Coarse gate only — every page still enforces through the scoped repository.
-  await requireRole('TELECALLER')
+  const ctx = await requireRole('TELECALLER')
+  await connectDb()
+  // Passengers waiting for a reply, on the nav item itself: a telecaller on
+  // the live board should not have to open the chat to learn someone wrote.
+  const unread = await countUnread(ctx)
   return (
     <AppShell
       nav={[
         { href: '/calls/live', label: 'Live board', icon: 'board' },
         { href: '/calls', label: 'Call list', icon: 'phone' },
+        { href: '/calls/chat', label: 'WhatsApp', icon: 'chat', count: unread },
         { href: '/calls/payments', label: 'Payments', icon: 'payments' },
       ]}
     >

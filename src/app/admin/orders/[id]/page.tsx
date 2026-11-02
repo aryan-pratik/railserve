@@ -9,6 +9,8 @@ import { ROLE_LABEL } from '@/lib/roles'
 import { formatIST, formatMoney, formatServiceDate, paiseToRupees, utcToIstLocal } from '@/lib/format'
 import { sourceLabel } from '@/lib/orderEnums'
 import { Card, CardHeader, Dash, PageHeader, PaymentBadge, StatusBadge, TypeBadge } from '@/components/ui'
+import { OpenChatButton } from '@/components/chat/OpenChatButton'
+import { normalisePhone } from '@/lib/whatsapp/phone'
 import { TrainTiming } from '@/components/TrainTiming'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { timingForOrders, timingFor } from '@/lib/train/service'
@@ -181,12 +183,18 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                 label="Contact"
                 value={
                   order.contactPhone ? (
-                    <>
-                      {order.contactName ?? ''}{' '}
-                      <a href={`tel:${order.contactPhone}`} className="font-mono text-accent underline-offset-2 hover:underline">
-                        {order.contactPhone}
-                      </a>
-                    </>
+                    <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                      <span>
+                        {order.contactName ?? ''}{' '}
+                        <a href={`tel:${order.contactPhone}`} className="font-mono text-accent underline-offset-2 hover:underline">
+                          {order.contactPhone}
+                        </a>
+                      </span>
+                      {/* The passenger's WhatsApp thread, aimed at this order. */}
+                      {normalisePhone(order.contactPhone) ? (
+                        <OpenChatButton orderId={id} basePath="/admin/chat" variant="icon" />
+                      ) : null}
+                    </span>
                   ) : (
                     order.contactName ?? null
                   )
