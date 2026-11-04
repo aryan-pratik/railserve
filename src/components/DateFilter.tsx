@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { DayPicker, type DateRange } from 'react-day-picker'
 import 'react-day-picker/style.css'
@@ -42,6 +42,40 @@ const CALENDAR_VARS = {
   '--rdp-nav_button-width': '1.5rem',
   '--rdp-weekday-padding': '0.25rem 0rem',
 } as CSSProperties
+
+/**
+ * A panel hung under its trigger. It opens to the right, as a menu does,
+ * unless that would run past the viewport — the date filter sits at the
+ * right end of a page header, so on a laptop the calendar used to hang off
+ * the edge and cover the figures beside it — in which case it opens to the
+ * left instead. Measured once per open, before paint, so it never flashes
+ * on the wrong side.
+ */
+function Popover({ children, className = '', style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [alignRight, setAlignRight] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // Measure from the trigger, not from a panel already shoved right.
+    const anchor = el.parentElement?.getBoundingClientRect()
+    if (!anchor) return
+    setAlignRight(anchor.left + el.offsetWidth > window.innerWidth - 16)
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      className={`absolute top-full z-50 mt-2 max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-line bg-surface shadow-lg ${
+        alignRight ? 'right-0' : 'left-0'
+      } ${className}`}
+      style={style}
+    >
+      {children}
+    </div>
+  )
+}
 
 /**
  * Today / Yesterday / This month / a chosen month / a chosen range.
@@ -169,7 +203,7 @@ export function DateFilter({
           {monthLabel}
         </button>
         {openPanel === 'month' ? (
-          <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-line bg-surface p-3 shadow-lg">
+          <Popover className="w-64 p-3">
             <div className="mb-2 flex items-center justify-between">
               <IconButton aria-label="Previous year" size="sm" onClick={() => setCursorYear((y) => y - 1)}>
                 <IconChevronLeft size={16} />
@@ -198,7 +232,7 @@ export function DateFilter({
                 )
               })}
             </div>
-          </div>
+          </Popover>
         ) : null}
       </div>
 
@@ -213,10 +247,7 @@ export function DateFilter({
           {rangeLabel}
         </button>
         {openPanel === 'range' ? (
-          <div
-            className="absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-line bg-surface p-2 text-xs shadow-lg"
-            style={CALENDAR_VARS}
-          >
+          <Popover className="p-2 text-xs" style={CALENDAR_VARS}>
             <DayPicker
               mode="range"
               selected={pendingRange}
@@ -249,7 +280,7 @@ export function DateFilter({
                 </Button>
               </div>
             </div>
-          </div>
+          </Popover>
         ) : null}
       </div>
 
