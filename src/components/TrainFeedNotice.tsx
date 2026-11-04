@@ -28,19 +28,19 @@ export function TrainFeedNotice({
 
   if (!health.failing) return null
 
-  const lastGood = health.lastSuccessAt ? ` Last good reading ${formatIST(health.lastSuccessAt)}.` : ''
-  const detail = health.message ? (
-    <span className="mt-1 block text-xs font-normal opacity-80">Provider said: {health.message}</span>
-  ) : null
+  // What the operator needs and nothing more: how much of the board is not
+  // live, what those times are instead, and how old the last live reading
+  // is. The provider's own error text ("timed out after 4000ms") is for
+  // whoever fixes the feed: it stays on the TrainStatus row and comes back
+  // from a train card's "Check now" button, not on every board.
+  const lastGood = health.lastSuccessAt ? ` Last live reading ${formatIST(health.lastSuccessAt)}.` : ''
 
   // Everything is failing: the key, the quota or the vendor, and the whole
   // board cannot be trusted.
   if (health.failingTrains.length >= health.trainsTried) {
     return (
       <Notice tone="danger">
-        <strong>Live train feed is down.</strong> Showing timetable times, which do not account for
-        delays.{lastGood}
-        {detail}
+        <strong>Live train feed is down.</strong> Times are from the timetable.{lastGood}
       </Notice>
     )
   }
@@ -57,8 +57,7 @@ export function TrainFeedNotice({
       <strong>
         No live status for {trains.length} of {health.trainsTried} trains.
       </strong>{' '}
-      Those runs show timetable times, which do not account for delays. The rest of this board is
-      live.{lastGood}
+      Their times are from the timetable.{lastGood}
       {many ? (
         <details className="mt-1 text-xs font-normal">
           <summary className="cursor-pointer underline-offset-2 hover:underline">Which trains</summary>
@@ -67,7 +66,6 @@ export function TrainFeedNotice({
       ) : (
         <span className="mt-1 block font-mono text-xs font-normal">{list}</span>
       )}
-      {detail}
     </Notice>
   )
 }
