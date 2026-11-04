@@ -102,8 +102,8 @@ const CancelRequestSchema = new Schema(
  * status that is not a delivery (see lib/rto.ts), never by hand, so a cancel
  * while the food is out cannot slip past without a return to collect. Closed
  * once, by whoever at the origin outlet takes the bag back; an admin can
- * always do that, a store manager or telecaller only when the admin has let
- * their role (see AppSettings.rtoCollectRoles). Null on every order whose
+ * always do that, a store manager only when an admin has ticked it on their
+ * staff record (see User.canCollectReturns). Null on every order whose
  * food never left the counter, which is almost all of them.
  */
 const ReturnToOriginSchema = new Schema(

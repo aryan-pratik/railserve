@@ -18,6 +18,8 @@ const UserInput = z
     role: z.enum(ROLES),
     restaurantIds: z.array(z.string()).default([]),
     password: z.string().optional(),
+    // A checkbox: present as "true" when ticked, absent otherwise.
+    canCollectReturns: z.literal('true').optional(),
   })
   .superRefine((v, ctx) => {
     // Every scoped role needs at least one outlet: a manager or telecaller
@@ -87,7 +89,7 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Check the form.' }
   }
-  const { id, password, restaurantIds, ...rest } = parsed.data
+  const { id, password, restaurantIds, canCollectReturns, ...rest } = parsed.data
 
   await connectDb()
 
@@ -106,6 +108,10 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
     // Admins are scoped by role, not by outlet, so theirs stays empty — the
     // repository would otherwise narrow them to something meaningless.
     restaurantIds: rest.role === 'ADMIN' ? [] : restaurantIds,
+    // Only an admin grants the counter, and only to a store manager. A
+    // manager editing a rider cannot post it (the box is not rendered), and
+    // a forged post is dropped here; a role change away from manager clears it.
+    canCollectReturns: ctx.role === 'ADMIN' && rest.role === 'STORE_MANAGER' && canCollectReturns === 'true',
   }
   if (password) doc.passwordHash = await bcrypt.hash(password, 10)
 

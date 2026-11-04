@@ -22,16 +22,16 @@ function revalidateAll(orderId: string) {
 
 /**
  * Somebody at the origin outlet has the bag back. The repository holds every
- * rule — the admin's role grant, the outlet scope, one mark per return — and
- * this turns its refusals into a sentence beside the button. The role gate
- * here is only the widest possible set; a rider is refused before the
- * repository is reached, everyone else by it.
+ * rule — the tick on the manager's staff record, the outlet scope, one mark
+ * per return — and this turns its refusals into a sentence beside the
+ * button. The role gate here is only the widest possible set; the
+ * repository decides for each manager.
  */
 export async function markReturnedAction(
   _prev: ReturnActionState,
   formData: FormData,
 ): Promise<ReturnActionState> {
-  const ctx = await requireRole('STORE_MANAGER', 'TELECALLER', 'ADMIN')
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
   const note = String(formData.get('note') ?? '')
   try {

@@ -1,9 +1,7 @@
 import Link from 'next/link'
 import type { AuthContext } from '@/lib/authContext'
-import { listReturns } from '@/lib/repo/rtoRepo'
-import { getRtoCollectRoles } from '@/lib/repo/settingsRepo'
-import { canCollectReturn, rtoReasonLabel, type RtoStatus } from '@/lib/rto'
-import { ROLE_LABEL } from '@/lib/roles'
+import { listReturns, mayCollectReturns } from '@/lib/repo/rtoRepo'
+import { rtoReasonLabel, type RtoStatus } from '@/lib/rto'
 import { formatIST, formatMoney } from '@/lib/format'
 import { readPage, withPage } from '@/lib/pagination'
 import { Card, Dash, EmptyState, PageHeader, Pagination, StatusBadge, Tabs, thClass } from '@/components/ui'
@@ -13,7 +11,8 @@ import { MarkReturnedButton } from '@/components/ReturnToOrigin'
  * Returns to origin, as a list: the bags still out with a rider, and the
  * ones already taken back. One screen shared by the store, the call desk and
  * the admin, each under its own path; the scope on the context decides what
- * each sees, and the admin's role grant decides who gets the button.
+ * each sees, and the tick on the manager's staff record decides who gets
+ * the button.
  */
 export async function ReturnsScreen({
   ctx,
@@ -32,13 +31,12 @@ export async function ReturnsScreen({
   const status: RtoStatus = collected ? 'RETURNED' : 'PENDING'
   const { page, pageSize, skip } = readPage(searchParams)
 
-  const [{ rows, total }, pendingTotal, allowed] = await Promise.all([
+  const [{ rows, total }, pendingTotal, canCollect] = await Promise.all([
     listReturns(ctx, { status, limit: pageSize, skip }),
     collected ? listReturns(ctx, { status: 'PENDING', limit: 1, skip: 0 }).then((r) => r.total) : null,
-    getRtoCollectRoles(),
+    mayCollectReturns(ctx),
   ])
   const pendingCount = pendingTotal ?? total
-  const canCollect = canCollectReturn(ctx.role, allowed)
   const multiOutlet = ctx.role === 'ADMIN' || ctx.restaurantIds.length > 1
 
   const pageHref = (target: { page: number; pageSize: number }) => {
@@ -56,10 +54,10 @@ export async function ReturnsScreen({
           canCollect
             ? 'Orders cancelled or not delivered after a rider took them. The bag comes back to the outlet it left; mark it returned once it is on the counter.'
             : `Orders cancelled or not delivered after a rider took them. The bag comes back to the outlet it left. ${
-                ctx.role === 'TELECALLER' || ctx.role === 'STORE_MANAGER'
-                  ? `${ROLE_LABEL[ctx.role]}s cannot mark a return here unless an admin allows it under Setup → Access.`
-                  : ''
-              }`.trim()
+                ctx.role === 'STORE_MANAGER'
+                  ? 'You are not set up to mark returns: an admin can allow it on your staff record.'
+                  : 'The store manager at that outlet marks it returned.'
+              }`
         }
       />
 

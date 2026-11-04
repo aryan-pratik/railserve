@@ -2,18 +2,17 @@ import mongoose from 'mongoose'
 import { Order, Restaurant, User, type OrderDoc } from '../models'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../authContext'
 import { ROLE_LABEL } from '../roles'
-import { canCollectReturn, RTO_NOTE_MAX, type RtoStatus } from '../rto'
+import { canCollectReturns, RTO_NOTE_MAX, type RtoStatus } from '../rto'
 import { scoped } from './orderRepo'
-import { getRtoCollectRoles } from './settingsRepo'
 
 /**
  * Return to origin: the bag that went out with a rider and is coming back.
  *
  * A return is opened by transitionOrder (never here) and closed here, once,
  * by whoever at the origin outlet takes the bag. Who that may be is the
- * admin's call — see AppSettings.rtoCollectRoles and lib/rto.ts. The outlet
- * itself is enforced by the scope: a manager at another station holding the
- * order id gets a 404, exactly as everywhere else.
+ * admin's call, per store manager — see User.canCollectReturns and
+ * lib/rto.ts. The outlet itself is enforced by the scope: a manager at
+ * another station holding the order id gets a 404, exactly as everywhere else.
  */
 
 function cleanNote(raw: string | null | undefined): string | null {
@@ -23,16 +22,30 @@ function cleanNote(raw: string | null | undefined): string | null {
   return text
 }
 
-/** May this caller collect returns at all, by role? Throws with the reason when not. */
+/**
+ * May this caller collect returns? Read fresh from their staff record, not
+ * from the session: an admin revoking the tick must take effect on the next
+ * click, not the next login.
+ */
+export async function mayCollectReturns(ctx: AuthContext): Promise<boolean> {
+  if (ctx.role === 'ADMIN') return true
+  if (ctx.role !== 'STORE_MANAGER') return false
+  const me = await User.findById(ctx.userId).select('role canCollectReturns').lean()
+  return Boolean(me && canCollectReturns(me))
+}
+
+/** The same question, thrown with the reason when the answer is no. */
 export async function assertMayCollectReturns(ctx: AuthContext): Promise<void> {
-  const allowed = await getRtoCollectRoles()
-  if (canCollectReturn(ctx.role, allowed)) return
+  if (await mayCollectReturns(ctx)) return
   if (ctx.role === 'DELIVERY_AGENT') {
     throw new ForbiddenError('A rider hands the order back; the outlet marks it returned.')
   }
-  throw new ForbiddenError(
-    `${ROLE_LABEL[ctx.role]}s are not allowed to collect returns. An admin can allow it under Setup → Access.`,
-  )
+  if (ctx.role === 'STORE_MANAGER') {
+    throw new ForbiddenError(
+      'You are not set up to collect returns. An admin can allow it on your staff record under Setup → Staff.',
+    )
+  }
+  throw new ForbiddenError(`${ROLE_LABEL[ctx.role]}s do not collect returns; the outlet does.`)
 }
 
 /**

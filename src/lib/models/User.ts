@@ -16,6 +16,11 @@ const UserSchema = new Schema(
     // Unwritten until Phase 3 (FCM). Kept so the mobile app needs no migration.
     fcmToken: { type: String, default: null },
     active: { type: Boolean, default: true },
+    // A store manager an admin has allowed to take returned bags back at the
+    // counter and mark the order returned (see lib/rto.ts). Per person, not
+    // per role: one manager at an outlet owns that counter, the others need
+    // not. Meaningless on any other role; an admin always may.
+    canCollectReturns: { type: Boolean, default: false },
   },
   { timestamps: true, strict: true, strictQuery: true },
 )

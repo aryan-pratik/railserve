@@ -27,25 +27,17 @@ export function opensReturn(from: OrderStatus, to: OrderStatus): boolean {
 }
 
 /**
- * The roles an admin may let collect a return at the counter. A rider is
- * never on this list: they are the one handing the bag back, and the whole
- * point of the mark is that somebody else confirms it arrived. An admin
- * always may.
+ * May this person mark a return as back at the counter?
+ *
+ * An admin always may. A store manager may when an admin has ticked
+ * "collects returns" on their staff record — per person, because one manager
+ * owns the counter at an outlet and the rest need not. Nobody else: a rider
+ * is the one handing the bag over, and the mark is somebody else confirming
+ * it arrived; a telecaller is on the phone, not at the counter.
  */
-export const RTO_COLLECTOR_ROLE_OPTIONS = ['STORE_MANAGER', 'TELECALLER'] as const satisfies readonly Role[]
-export type RtoCollectorRole = (typeof RTO_COLLECTOR_ROLE_OPTIONS)[number]
-
-/** What a fresh install allows: the store manager, who is at the counter. */
-export const DEFAULT_RTO_COLLECT_ROLES: readonly RtoCollectorRole[] = ['STORE_MANAGER']
-
-export function canCollectReturn(role: Role, allowed: readonly string[]): boolean {
-  if (role === 'ADMIN') return true
-  return (RTO_COLLECTOR_ROLE_OPTIONS as readonly string[]).includes(role) && allowed.includes(role)
-}
-
-/** Keeps only the roles that can be granted, each once, in option order. */
-export function normaliseRtoRoles(raw: readonly string[]): RtoCollectorRole[] {
-  return RTO_COLLECTOR_ROLE_OPTIONS.filter((r) => raw.includes(r))
+export function canCollectReturns(user: { role: Role; canCollectReturns?: boolean | null }): boolean {
+  if (user.role === 'ADMIN') return true
+  return user.role === 'STORE_MANAGER' && user.canCollectReturns === true
 }
 
 export const RTO_NOTE_MAX = 500

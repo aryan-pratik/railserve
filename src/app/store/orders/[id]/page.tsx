@@ -15,9 +15,7 @@ import { AssignRidersCard } from '@/components/AssignRiders'
 import { listAssignableRiders } from '@/lib/repo/transitionOrder'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard, RequestCancelButton } from '@/components/CancelRequest'
-import { viewReturn } from '@/lib/repo/rtoRepo'
-import { getRtoCollectRoles } from '@/lib/repo/settingsRepo'
-import { canCollectReturn } from '@/lib/rto'
+import { mayCollectReturns, viewReturn } from '@/lib/repo/rtoRepo'
 import { ReturnToOriginCard } from '@/components/ReturnToOrigin'
 
 export default async function StoreOrderDetail(props: PageProps<'/store/orders/[id]'>) {
@@ -41,12 +39,12 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
   const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
     (v): v is NonNullable<typeof v> => Boolean(v),
   )
-  const [actors, cancelRequest, riders, rto, rtoRoles] = await Promise.all([
+  const [actors, cancelRequest, riders, rto, canCollect] = await Promise.all([
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     viewCancelRequest(order),
     listAssignableRiders(order.restaurantId),
     viewReturn(order),
-    getRtoCollectRoles(),
+    mayCollectReturns(ctx),
   ])
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
   // The call log names the role too: a manager reading a note cares whether it
@@ -104,7 +102,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
           orderId={id}
           externalOrderId={order.externalOrderId}
           info={rto}
-          canCollect={canCollectReturn(ctx.role, rtoRoles)}
+          canCollect={canCollect}
         />
       ) : null}
 

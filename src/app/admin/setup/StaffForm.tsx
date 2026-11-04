@@ -14,6 +14,7 @@ export type StaffValues = {
   phone?: string
   role?: string
   restaurantIds?: string[]
+  canCollectReturns?: boolean
 }
 
 export function StaffForm({
@@ -71,6 +72,27 @@ export function StaffForm({
               </select>
             </Field>
           )}
+
+          {/* Per manager, not per role: one manager owns the counter a bag
+              comes back to. Hidden off the manager role, and never offered
+              where the role is locked (the store's own Riders page). */}
+          {!lockedRole && role === 'STORE_MANAGER' ? (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5 hover:bg-sunken">
+              <input
+                type="checkbox"
+                name="canCollectReturns"
+                value="true"
+                defaultChecked={values.canCollectReturns ?? false}
+                className="mt-0.5 size-4 accent-accent"
+              />
+              <span>
+                <span className="block text-sm font-medium text-ink">Can collect returns (RTO)</span>
+                <span className="block text-xs text-muted">
+                  May mark an order as back at the counter when a rider brings it back cancelled or undelivered.
+                </span>
+              </span>
+            </label>
+          ) : null}
 
           <Field label={values.id ? 'New password' : 'Initial password'} htmlFor="password"
             hint={values.id ? 'Leave blank to keep their current password.' : undefined}>

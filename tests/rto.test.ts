@@ -1,27 +1,29 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
-import { AppSettings } from '../src/lib/models'
+import { User } from '../src/lib/models'
 import { findById } from '../src/lib/repo/orderRepo'
 import { correctRiderOutcome, transitionOrder } from '../src/lib/repo/transitionOrder'
 import {
   countPendingReturns,
   listReturns,
   markReturnedToOrigin,
+  mayCollectReturns,
   viewReturn,
 } from '../src/lib/repo/rtoRepo'
-import { getRtoCollectRoles, setRtoCollectRoles } from '../src/lib/repo/settingsRepo'
-import { canCollectReturn, normaliseRtoRoles, opensReturn } from '../src/lib/rto'
+import { canCollectReturns, opensReturn } from '../src/lib/rto'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
 import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 /**
  * Return to origin: an order cancelled or not delivered after a rider took
  * it has to come back to the outlet it left, and someone at that counter
- * marks it returned. Who may do that is the admin's call.
+ * marks it returned. Which manager may do that is a tick on their staff
+ * record, set by an admin.
  */
 describe('return to origin', () => {
   let manager: AuthContext
+  let untickedManager: AuthContext
   let otherManager: AuthContext
   let telecaller: AuthContext
   let admin: AuthContext
@@ -33,21 +35,24 @@ describe('return to origin', () => {
     ganga = (await makeRestaurant('HOTEL GANGA GALAXY', 'CNB'))._id
     const annapurna = (await makeRestaurant('SHREE ANNAPURNA', 'PRYJ'))._id
 
-    manager = ctxFor(await makeUser('STORE_MANAGER', '9200000001', ganga))
-    otherManager = ctxFor(await makeUser('STORE_MANAGER', '9200000002', annapurna))
+    manager = ctxFor(await allowedManager('9200000001', ganga))
+    untickedManager = ctxFor(await makeUser('STORE_MANAGER', '9200000007', ganga))
+    otherManager = ctxFor(await allowedManager('9200000002', annapurna))
     telecaller = ctxFor(await makeUser('TELECALLER', '9200000003', ganga))
     admin = ctxFor(await makeUser('ADMIN', '9200000004'))
     rider = ctxFor(await makeUser('DELIVERY_AGENT', '9200000005', ganga))
   })
 
-  beforeEach(async () => {
-    // Back to the defaults between tests: a grant made in one must not leak.
-    await AppSettings.deleteMany({})
-  })
-
   afterAll(async () => {
     await disconnectDb()
   })
+
+  /** A store manager an admin has ticked "collects returns" for. */
+  async function allowedManager(phone: string, outlet: mongoose.Types.ObjectId) {
+    const u = await makeUser('STORE_MANAGER', phone, outlet)
+    await User.updateOne({ _id: u._id }, { $set: { canCollectReturns: true } })
+    return u
+  }
 
   /** An order in the rider's hands, exactly as the pipeline gets it there. */
   async function dispatchedOrder() {
@@ -138,32 +143,36 @@ describe('return to origin', () => {
     expect((await findById(admin, id))!.delivery.rto!.status).toBe('PENDING')
   })
 
-  it('lets only the roles the admin has granted collect; the admin always can', async () => {
-    expect(await getRtoCollectRoles()).toEqual(['STORE_MANAGER'])
-    expect(canCollectReturn('ADMIN', [])).toBe(true)
-    expect(canCollectReturn('DELIVERY_AGENT', ['DELIVERY_AGENT'])).toBe(false)
-    expect(normaliseRtoRoles(['TELECALLER', 'ADMIN', 'bogus', 'TELECALLER'])).toEqual(['TELECALLER'])
+  it('lets only a manager an admin has ticked collect; the admin always can', async () => {
+    expect(canCollectReturns({ role: 'ADMIN' })).toBe(true)
+    expect(canCollectReturns({ role: 'STORE_MANAGER', canCollectReturns: true })).toBe(true)
+    expect(canCollectReturns({ role: 'STORE_MANAGER', canCollectReturns: false })).toBe(false)
+    expect(canCollectReturns({ role: 'STORE_MANAGER' })).toBe(false)
+    expect(canCollectReturns({ role: 'TELECALLER', canCollectReturns: true })).toBe(false)
+    expect(canCollectReturns({ role: 'DELIVERY_AGENT', canCollectReturns: true })).toBe(false)
+
+    expect(await mayCollectReturns(manager)).toBe(true)
+    expect(await mayCollectReturns(untickedManager)).toBe(false)
+    expect(await mayCollectReturns(telecaller)).toBe(false)
+    expect(await mayCollectReturns(admin)).toBe(true)
 
     const id = await dispatchedOrder()
     await transitionOrder({ ctx: rider, orderId: id, to: 'FAILED', apply: { failureReason: 'Late' } })
 
-    // The default grant: a telecaller is refused, a manager is not.
+    // Same outlet, no tick: refused, with the bag still out.
+    await expect(markReturnedToOrigin({ ctx: untickedManager, orderId: id })).rejects.toBeInstanceOf(ForbiddenError)
     await expect(markReturnedToOrigin({ ctx: telecaller, orderId: id })).rejects.toBeInstanceOf(ForbiddenError)
+    expect((await findById(admin, id))!.delivery.rto!.status).toBe('PENDING')
 
-    await expect(setRtoCollectRoles(manager, ['TELECALLER'])).rejects.toBeInstanceOf(ForbiddenError)
-    expect(await setRtoCollectRoles(admin, ['TELECALLER'])).toEqual(['TELECALLER'])
-    expect(await getRtoCollectRoles()).toEqual(['TELECALLER'])
-
-    // The grant moved: now the manager is refused and the telecaller is not.
-    await expect(markReturnedToOrigin({ ctx: manager, orderId: id })).rejects.toBeInstanceOf(ForbiddenError)
-    await markReturnedToOrigin({ ctx: telecaller, orderId: id })
+    // The tick is read fresh, so granting it takes effect on the next click.
+    await User.updateOne({ _id: untickedManager.userId }, { $set: { canCollectReturns: true } })
+    await markReturnedToOrigin({ ctx: untickedManager, orderId: id })
     expect((await findById(admin, id))!.delivery.rto!.status).toBe('RETURNED')
+    await User.updateOne({ _id: untickedManager.userId }, { $set: { canCollectReturns: false } })
 
-    // Nobody granted at all: still the admin.
-    expect(await setRtoCollectRoles(admin, [])).toEqual([])
+    // Nobody ticked at all: still the admin.
     const another = await dispatchedOrder()
     await transitionOrder({ ctx: rider, orderId: another, to: 'FAILED', apply: { failureReason: 'Late' } })
-    await expect(markReturnedToOrigin({ ctx: manager, orderId: another })).rejects.toBeInstanceOf(ForbiddenError)
     await markReturnedToOrigin({ ctx: admin, orderId: another })
   })
 
@@ -171,8 +180,8 @@ describe('return to origin', () => {
     await resetDb()
     ganga = (await makeRestaurant('HOTEL GANGA GALAXY', 'CNB'))._id
     const annapurna = (await makeRestaurant('SHREE ANNAPURNA', 'PRYJ'))._id
-    manager = ctxFor(await makeUser('STORE_MANAGER', '9200000001', ganga))
-    otherManager = ctxFor(await makeUser('STORE_MANAGER', '9200000002', annapurna))
+    manager = ctxFor(await allowedManager('9200000001', ganga))
+    otherManager = ctxFor(await allowedManager('9200000002', annapurna))
     admin = ctxFor(await makeUser('ADMIN', '9200000004'))
     rider = ctxFor(await makeUser('DELIVERY_AGENT', '9200000005', ganga))
 

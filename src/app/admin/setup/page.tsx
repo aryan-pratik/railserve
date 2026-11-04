@@ -18,8 +18,6 @@ import { AggregatorRow } from './AggregatorRow'
 import { AggregatorsCell } from './AggregatorsCell'
 import { StationDefaultForm } from './StationDefaultForm'
 import { SenderAllowlist } from './SenderAllowlist'
-import { RtoAccessForm } from './RtoAccessForm'
-import { getRtoCollectRoles } from '@/lib/repo/settingsRepo'
 
 export const metadata = { title: 'Setup · RailServe' }
 
@@ -57,6 +55,20 @@ function ActiveToggle({
 
 const DEFAULT_PAGE_SIZE = 20
 
+/** The role, and for a manager allowed to take bags back, that too. */
+function roleCell(u: { role: string; canCollectReturns?: boolean | null }) {
+  const label = ROLE_LABEL[u.role as keyof typeof ROLE_LABEL] ?? u.role
+  if (u.role !== 'STORE_MANAGER' || !u.canCollectReturns) return label
+  return (
+    <>
+      {label}
+      <span className="ml-1.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">
+        collects returns
+      </span>
+    </>
+  )
+}
+
 export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   await requireRole('ADMIN')
   const sp = await props.searchParams
@@ -64,7 +76,6 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   const tab = one(sp.tab)
   const staff = tab === 'staff'
   const aggregators = tab === 'aggregators'
-  const access = tab === 'access'
   const editId = one(sp.edit) || undefined
 
   const pageParam = Number.parseInt(one(sp.page), 10)
@@ -96,7 +107,6 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   const allowedSenders = aggregators
     ? ((await IngestState.findOne({ _id: GMAIL_STATE_ID }).select('allowedSenders').lean())?.allowedSenders ?? [])
     : []
-  const rtoRoles = access ? await getRtoCollectRoles() : []
   const listingOrderCounts = new Map<string, number>()
   if (aggregators && ctx) {
     for (const l of listings) {
@@ -166,9 +176,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
       <PageHeader
         title="Setup"
         note={
-          access
-            ? 'What each role is allowed to do beyond its own console. Everything here is enforced in the repository, not just hidden on a screen.'
-            : aggregators
+          aggregators
             ? 'The names our kitchens trade under on each ordering platform, and which kitchen cooks for each. These are not outlets of ours — they are how an outlet appears to Zoop, Yatri Bhojan and the rest.'
             : 'Outlets are our own kitchens, one per station per brand. The platforms that send us orders live under Aggregators. Deactivate anything that has been used; delete only works on rows nothing points at.'
         }
@@ -177,16 +185,13 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
       <Tabs
         label="Setup"
         tabs={[
-          { href: '/admin/setup', label: 'Outlets', count: kitchens.filter((o) => o.active).length, active: !staff && !aggregators && !access },
+          { href: '/admin/setup', label: 'Outlets', count: kitchens.filter((o) => o.active).length, active: !staff && !aggregators },
           { href: '/admin/setup?tab=aggregators', label: 'Aggregators', active: aggregators },
           { href: '/admin/setup?tab=staff', label: 'Staff', active: staff },
-          { href: '/admin/setup?tab=access', label: 'Access', active: access },
         ]}
       />
 
-      {access ? (
-        <RtoAccessForm allowed={rtoRoles} />
-      ) : aggregators ? (
+      {aggregators ? (
         <div className="space-y-4">
           <SenderAllowlist senders={[...allowedSenders].sort()} />
 
@@ -280,6 +285,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                           phone: editingUser.phone,
                           role: editingUser.role,
                           restaurantIds: editingUser.restaurantIds.map(String),
+                          canCollectReturns: editingUser.canCollectReturns ?? false,
                         }
                       : undefined
                   }
@@ -309,7 +315,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                       <td className="px-3 py-2.5 align-top">
                         <div className="font-medium text-ink [overflow-wrap:anywhere]">{u.name}</div>
                         <div className="font-mono text-xs tabular-nums text-muted lg:hidden">{u.phone}</div>
-                        <div className="text-xs text-muted sm:hidden">{ROLE_LABEL[u.role] ?? u.role}</div>
+                        <div className="text-xs text-muted sm:hidden">{roleCell(u)}</div>
                         {u.restaurantIds.length > 0 ? (
                           <div className="mt-1.5 sm:hidden">
                             <OutletPills ids={u.restaurantIds.map(String)} outletById={outletById} stationTone={stationTone} />
@@ -317,7 +323,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                         ) : null}
                       </td>
                       <td className="hidden px-3 py-2.5 align-top font-mono whitespace-nowrap tabular-nums text-muted lg:table-cell">{u.phone}</td>
-                      <td className="hidden px-3 py-2.5 align-top whitespace-nowrap text-muted sm:table-cell">{ROLE_LABEL[u.role] ?? u.role}</td>
+                      <td className="hidden px-3 py-2.5 align-top whitespace-nowrap text-muted sm:table-cell">{roleCell(u)}</td>
                       <td className="hidden px-3 py-2.5 align-top text-muted sm:table-cell">
                         {u.restaurantIds.length > 0
                           ? <OutletPills ids={u.restaurantIds.map(String)} outletById={outletById} stationTone={stationTone} />
