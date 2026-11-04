@@ -2,6 +2,7 @@ import { AppShell } from '@/components/AppShell'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { countUnread } from '@/lib/repo/whatsappRepo'
+import { countPendingReturns } from '@/lib/repo/rtoRepo'
 
 /**
  * The telecaller's console.
@@ -26,7 +27,7 @@ export default async function CallsLayout({ children }: LayoutProps<'/calls'>) {
   await connectDb()
   // Passengers waiting for a reply, on the nav item itself: a telecaller on
   // the live board should not have to open the chat to learn someone wrote.
-  const unread = await countUnread(ctx)
+  const [unread, returns] = await Promise.all([countUnread(ctx), countPendingReturns(ctx)])
   return (
     <AppShell
       nav={[
@@ -34,6 +35,7 @@ export default async function CallsLayout({ children }: LayoutProps<'/calls'>) {
         { href: '/calls', label: 'Call list', icon: 'phone' },
         { href: '/calls/chat', label: 'WhatsApp', icon: 'chat', count: unread },
         { href: '/calls/payments', label: 'Payments', icon: 'payments' },
+        { href: '/calls/returns', label: 'Returns', icon: 'bag', count: returns },
       ]}
     >
       {children}

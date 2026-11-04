@@ -28,6 +28,8 @@ import { ORDER_EDIT_FIELDS } from '@/lib/orderEditFields'
 import { adminNextStatusOptions } from '../../statusOptions'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
+import { viewReturn } from '@/lib/repo/rtoRepo'
+import { ReturnToOriginCard } from '@/components/ReturnToOrigin'
 
 /** Statuses an order can only be in if its KOT has already been sent once. */
 const PRINTED_STATUSES = ['KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'FAILED']
@@ -59,7 +61,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   // from the same query as the people who acted.
   const riderIdsInLog = order.events.flatMap((e) => {
     const m = (e.meta ?? {}) as Record<string, unknown>
-    return [m.agentIds, m.fromAgentIds].flatMap((v) => (Array.isArray(v) ? v.map(String) : []))
+    return [m.agentIds, m.fromAgentIds, m.riderIds].flatMap((v) => (Array.isArray(v) ? v.map(String) : []))
   })
   const actorIds = [
     ...order.events.map((e) => e.userId),
@@ -67,12 +69,13 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
     ...riderIdsInLog.filter((id) => /^[0-9a-f]{24}$/i.test(id)),
   ].filter((v): v is NonNullable<typeof v> => Boolean(v))
 
-  const [outlets, agents, actors, timings, cancelRequest] = await Promise.all([
+  const [outlets, agents, actors, timings, cancelRequest, rto] = await Promise.all([
     Restaurant.find().select('name stationCode stationName').sort({ name: 1 }).lean(),
     User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone').sort({ name: 1 }).lean(),
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     timingForOrders([order]),
     viewCancelRequest(order),
+    viewReturn(order),
   ])
   const outlet = order.restaurantId
     ? (outlets.find((o) => o._id.equals(order.restaurantId!)) ?? null)
@@ -132,6 +135,16 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          {rto ? (
+            <ReturnToOriginCard
+              orderId={String(order._id)}
+              externalOrderId={order.externalOrderId}
+              info={rto}
+              canCollect
+              outletName={outlet ? `${outlet.name} · ${outlet.stationCode}` : null}
+            />
+          ) : null}
+
           {cancelRequest ? (
             <CancelRequestCard orderId={String(order._id)} request={cancelRequest} canDecide />
           ) : null}

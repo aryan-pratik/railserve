@@ -22,6 +22,8 @@ import { forceRefreshOrderTrain } from './orders/[id]/actions'
 import type { QueryFilter } from 'mongoose'
 import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
 import { PendingCancelRequests } from '@/components/CancelRequest'
+import { countPendingReturns } from '@/lib/repo/rtoRepo'
+import { ReturnsNotice } from '@/components/ReturnToOrigin'
 
 export const metadata = { title: 'Orders · RailServe' }
 
@@ -96,7 +98,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
 
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
-  const [outlets, stationDocs, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests, statusesInUse] = await Promise.all([
+  const [outlets, stationDocs, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests, statusesInUse, pendingReturns] = await Promise.all([
     Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
     Station.find({}).select('name').lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
@@ -116,6 +118,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     listPendingCancelRequests(ctx),
     // Custom statuses an admin has typed in stay selectable once they exist.
     distinctStatuses(ctx),
+    countPendingReturns(ctx),
   ])
   const statusOptions = [
     ...ORDER_STATUSES,
@@ -245,6 +248,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
       ) : null}
 
       <PendingCancelRequests rows={cancelRequests} orderBasePath="/admin/orders" />
+      <ReturnsNotice count={pendingReturns} href="/admin/returns" />
 
       <OrdersToolbar
         tabs={TABS.map((t) => ({

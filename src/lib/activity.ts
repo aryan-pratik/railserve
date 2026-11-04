@@ -93,6 +93,7 @@ export const ACTIVITY_KINDS = [
   'ASSIGN',
   'CANCEL_REQUEST',
   'CASH',
+  'RETURN',
   'CALL_NOTE',
   'ALERT',
 ] as const
@@ -105,6 +106,7 @@ export const KIND_LABEL: Record<ActivityKind, string> = {
   ASSIGN: 'Rider assigned',
   CANCEL_REQUEST: 'Cancel request',
   CASH: 'Cash handover',
+  RETURN: 'Return to outlet',
   CALL_NOTE: 'Call note',
   ALERT: 'Leave-now alert',
 }
@@ -116,6 +118,7 @@ export const KIND_PARAM: Record<ActivityKind, string> = {
   ASSIGN: 'assign',
   CANCEL_REQUEST: 'cancel-request',
   CASH: 'cash',
+  RETURN: 'return',
   CALL_NOTE: 'call-note',
   ALERT: 'alert',
 }
@@ -130,6 +133,7 @@ export const KIND_ACTIONS = {
   ASSIGN: ['ASSIGN_AGENTS', 'ASSIGN_RIDERS'],
   CANCEL_REQUEST: ['CANCEL_REQUESTED', 'CANCEL_REFUSED'],
   CASH: ['COD_SETTLED'],
+  RETURN: ['RTO_RETURNED'],
   ALERT: ['LEAVE_NOW'],
 } as const satisfies Partial<Record<ActivityKind, readonly string[]>>
 

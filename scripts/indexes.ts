@@ -65,6 +65,16 @@ const ORDER_INDEXES: Spec[] = [
     why: "a delivery agent's assigned runs for today",
   },
   {
+    name: 'rto_pending',
+    // Partial: almost no order ever has a return, so the index holds only the
+    // handful that do, and the returns list and nav badge never scan.
+    index: {
+      key: { 'delivery.rto.status': 1, restaurantId: 1, 'delivery.rto.openedAt': 1 },
+      partialFilterExpression: { 'delivery.rto.status': { $exists: true } },
+    },
+    why: 'the returns list and its badge: bags still out with a rider, per outlet',
+  },
+  {
     name: 'activity_events',
     index: { key: { 'events.createdAt': -1 } },
     why: 'the admin activity log: every order event in a date range',

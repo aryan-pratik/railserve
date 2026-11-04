@@ -27,6 +27,8 @@ import { StoreRunActions } from './StoreRunActions'
 import { forceRefreshOrderTrain } from './actions'
 import { RefreshTrainButton } from '@/components/RefreshTrainButton'
 import { RunSelection } from '@/components/RunSelection'
+import { countPendingReturns } from '@/lib/repo/rtoRepo'
+import { ReturnsNotice } from '@/components/ReturnToOrigin'
 
 export const metadata = { title: 'Kitchen board · RailServe' }
 
@@ -87,7 +89,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
 
   await connectDb()
   // Everything that does not depend on the runs goes out in the same round trip.
-  const [board, todayCount, yesterdayCount, upcomingCount, riderDocs] = await Promise.all([
+  const [board, todayCount, yesterdayCount, upcomingCount, riderDocs, pendingReturns] = await Promise.all([
     loadRunBoard(ctx, mode, { statuses: statusFilter?.statuses, now }),
     // Exactly what each tab lists (board.ts): Today carries last night's
     // still-due open orders past midnight, and Yesterday leaves those out, so
@@ -103,6 +105,9 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       .select('name')
       .sort({ name: 1 })
       .lean(),
+    // Independent of every filter on this board, like the feed notice: a bag
+    // on its way back is news whichever day or status is being looked at.
+    countPendingReturns(ctx),
   ])
   const { runs, timings, outletName } = board
   const renderedAt = board.loadedAt.toISOString()
@@ -249,6 +254,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
 
       <StaleNotice renderedAt={renderedAt} />
       <TrainFeedNotice simulated={isSimulatedProvider()} health={board.feedHealth} />
+      <ReturnsNotice count={pendingReturns} href="/store/returns" />
 
       {sorted.length === 0 ? (
         statusFilter ? (

@@ -7,6 +7,8 @@ import {
   closedAtOf, correctableUntil, escapeRegex, istDayRange, maskPhone, RIDER_RECENT_WINDOW_MS,
 } from '@/lib/riderRecords'
 import { preflight, withCors } from '@/lib/mobile/cors'
+import { connectDb } from '@/lib/db'
+import { Restaurant } from '@/lib/models'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,6 +111,18 @@ export async function GET(request: Request) {
     lastSettlementFor(ctx, ctx.userId),
   ])
 
+  // Where a bag still in the rider's hands has to go back to. Looked up only
+  // for orders with a return open, which is a handful at most.
+  const returnOutletIds = [...new Set(
+    orders.filter((o) => o.delivery?.rto && o.restaurantId).map((o) => String(o.restaurantId)),
+  )]
+  let outletName = new Map<string, string>()
+  if (returnOutletIds.length > 0) {
+    await connectDb()
+    const outlets = await Restaurant.find({ _id: { $in: returnOutletIds } }).select('name stationCode').lean()
+    outletName = new Map(outlets.map((r) => [String(r._id), `${r.name} · ${r.stationCode}`]))
+  }
+
   const rows = orders
     .map((o) => {
       const closedAt = closedAtOf(o)
@@ -140,6 +154,15 @@ export async function GET(request: Request) {
         failureReason: o.delivery.failureReason ?? null,
         codSettledAt: o.delivery.codSettledAt?.toISOString() ?? null,
         editableUntil: editable ? openUntil!.toISOString() : null,
+        // Null for almost every order: only one cancelled or failed after the
+        // rider took it has a bag to bring back.
+        rto: o.delivery.rto
+          ? {
+              status: o.delivery.rto.status,
+              returnTo: o.restaurantId ? (outletName.get(String(o.restaurantId)) ?? null) : null,
+              returnedAt: o.delivery.rto.returnedAt?.toISOString() ?? null,
+            }
+          : null,
       }
     })
     .sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? ''))

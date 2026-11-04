@@ -8,6 +8,9 @@ import { BackLink, Card, CardHeader, Dash, SourceBadge, StatusBadge, TypeBadge }
 import { IconPhone } from '@/components/Icons'
 import { CallLog } from '@/components/CallLog'
 import { DeliverForm, FailForm, TakeOrderButton } from '../../AgentActions'
+import { connectDb } from '@/lib/db'
+import { Restaurant } from '@/lib/models'
+import { rtoReasonLabel } from '@/lib/rto'
 
 /**
  * A rider needs what the note says, not who at the desk typed it, and this
@@ -27,6 +30,16 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
   if (!order) notFound()
 
   const photoEnabled = isProofStorageConfigured()
+
+  // The one lookup this page makes beyond the order: where to take the bag
+  // back to, which only matters once a return is open.
+  const rto = order.delivery?.rto ?? null
+  let returnTo: string | null = null
+  if (rto && order.restaurantId) {
+    await connectDb()
+    const outlet = await Restaurant.findById(order.restaurantId).select('name stationCode').lean()
+    returnTo = outlet ? `${outlet.name} · ${outlet.stationCode}` : null
+  }
 
   const cod = order.paymentMode === 'COD'
   const kitchen = order.items.filter((i) => !i.isPacking)
@@ -126,6 +139,35 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
         <Card>
           <CardHeader title="Call log" />
           <CallLog orderId={id} notes={viewCallNotes(ctx, order.callLog, EMPTY_LABELS)} />
+        </Card>
+      ) : null}
+
+      {/* The bag is still in the rider's hands and has to go back to the
+          counter it left. Above the outcome, because it is the thing to do
+          next; a closed card below says only what already happened. */}
+      {rto ? (
+        <Card
+          className={`p-4 ring-1 ring-inset ${
+            rto.status === 'PENDING' ? 'bg-amber-50 ring-amber-200' : 'bg-emerald-50 ring-emerald-200'
+          }`}
+        >
+          {rto.status === 'PENDING' ? (
+            <>
+              <div className="text-sm font-semibold text-amber-900">
+                Bring this order back{returnTo ? ` to ${returnTo}` : ' to the outlet'}
+              </div>
+              <div className="mt-1 text-sm text-amber-900/80">
+                {rtoReasonLabel(rto.reason)}. Hand the bag to the counter; they will mark it returned.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-semibold text-emerald-800">Returned to the outlet</div>
+              <div className="mt-1 text-sm text-emerald-900/80">
+                Taken back at {formatIST(rto.returnedAt)}{rto.note ? ` · “${rto.note}”` : ''}
+              </div>
+            </>
+          )}
         </Card>
       ) : null}
 

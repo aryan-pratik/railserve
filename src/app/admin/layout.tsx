@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
 import { countUnread } from '@/lib/repo/whatsappRepo'
+import { countPendingReturns } from '@/lib/repo/rtoRepo'
 
 export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
   // Coarse gate only — every page still enforces through the scoped repository.
@@ -13,9 +14,10 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
   // nav rather than waiting to be discovered on a page nobody opens. The same
   // goes for a passenger waiting on WhatsApp with nobody answering.
   await connectDb()
-  const [unparsed, unread] = await Promise.all([
+  const [unparsed, unread, returns] = await Promise.all([
     UnparsedInbox.countDocuments({ resolved: false }),
     countUnread(ctx),
+    countPendingReturns(ctx),
   ])
 
   return (
@@ -28,6 +30,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/inbox', label: 'Inbox', icon: 'inbox', count: unparsed },
         { href: '/admin/chat', label: 'WhatsApp', icon: 'chat', count: unread },
         { href: '/admin/riders', label: 'Riders', icon: 'riders' },
+        { href: '/admin/returns', label: 'Returns', icon: 'bag', count: returns },
         { href: '/admin/trains', label: 'Train status', icon: 'runs' },
         { href: '/admin/analytics', label: 'Analytics', icon: 'analytics' },
         { href: '/admin/activity', label: 'Activity log', icon: 'activity' },

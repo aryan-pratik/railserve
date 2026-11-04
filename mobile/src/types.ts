@@ -93,6 +93,11 @@ export type HistoryOrder = {
   codSettledAt?: string | null
   /** Until when the rider may still change how it ended; null once they can't. */
   editableUntil?: string | null
+  /**
+   * The bag has to go back to the outlet it left (cancelled or not delivered
+   * after pickup). PENDING until the counter marks it returned.
+   */
+  rto?: { status: 'PENDING' | 'RETURNED'; returnTo: string | null; returnedAt: string | null } | null
 }
 
 export type HistoryQuery = { date?: string; q?: string }

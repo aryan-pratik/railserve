@@ -7,6 +7,7 @@ import {
   PROOF_TYPES,
   TIMING_SOURCES,
 } from '../orderEnums'
+import { RTO_STATUSES } from '../rto'
 
 const OrderItemSchema = new Schema(
   {
@@ -94,6 +95,31 @@ const CancelRequestSchema = new Schema(
   { _id: false },
 )
 
+/**
+ * Return to origin: the bag left the counter with a rider and is coming back.
+ *
+ * Opened by transitionOrder the moment an order leaves DISPATCHED for a
+ * status that is not a delivery (see lib/rto.ts), never by hand, so a cancel
+ * while the food is out cannot slip past without a return to collect. Closed
+ * once, by whoever at the origin outlet takes the bag back; an admin can
+ * always do that, a store manager or telecaller only when the admin has let
+ * their role (see AppSettings.rtoCollectRoles). Null on every order whose
+ * food never left the counter, which is almost all of them.
+ */
+const ReturnToOriginSchema = new Schema(
+  {
+    status: { type: String, required: true, enum: RTO_STATUSES },
+    openedAt: { type: Date, required: true },
+    // The status that sent it back: CANCELLED, FAILED or MISSED_DELIVERY.
+    reason: { type: String, required: true },
+    returnedAt: { type: Date, default: null },
+    returnedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // What came back, when it is not everything: "two of three thalis".
+    note: { type: String, default: null, trim: true, maxlength: 500 },
+  },
+  { _id: false },
+)
+
 const DeliverySchema = new Schema(
   {
     // Written null in the MVP; runs are derived from
@@ -123,6 +149,7 @@ const DeliverySchema = new Schema(
     // every order in one handover; never cleared.
     codSettledAt: { type: Date, default: null },
     codSettledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    rto: { type: ReturnToOriginSchema, default: null },
   },
   { _id: false },
 )

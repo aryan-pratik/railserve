@@ -18,6 +18,8 @@ import { AggregatorRow } from './AggregatorRow'
 import { AggregatorsCell } from './AggregatorsCell'
 import { StationDefaultForm } from './StationDefaultForm'
 import { SenderAllowlist } from './SenderAllowlist'
+import { RtoAccessForm } from './RtoAccessForm'
+import { getRtoCollectRoles } from '@/lib/repo/settingsRepo'
 
 export const metadata = { title: 'Setup · RailServe' }
 
@@ -62,6 +64,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   const tab = one(sp.tab)
   const staff = tab === 'staff'
   const aggregators = tab === 'aggregators'
+  const access = tab === 'access'
   const editId = one(sp.edit) || undefined
 
   const pageParam = Number.parseInt(one(sp.page), 10)
@@ -93,6 +96,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   const allowedSenders = aggregators
     ? ((await IngestState.findOne({ _id: GMAIL_STATE_ID }).select('allowedSenders').lean())?.allowedSenders ?? [])
     : []
+  const rtoRoles = access ? await getRtoCollectRoles() : []
   const listingOrderCounts = new Map<string, number>()
   if (aggregators && ctx) {
     for (const l of listings) {
@@ -162,7 +166,9 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
       <PageHeader
         title="Setup"
         note={
-          aggregators
+          access
+            ? 'What each role is allowed to do beyond its own console. Everything here is enforced in the repository, not just hidden on a screen.'
+            : aggregators
             ? 'The names our kitchens trade under on each ordering platform, and which kitchen cooks for each. These are not outlets of ours — they are how an outlet appears to Zoop, Yatri Bhojan and the rest.'
             : 'Outlets are our own kitchens, one per station per brand. The platforms that send us orders live under Aggregators. Deactivate anything that has been used; delete only works on rows nothing points at.'
         }
@@ -171,13 +177,16 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
       <Tabs
         label="Setup"
         tabs={[
-          { href: '/admin/setup', label: 'Outlets', count: kitchens.filter((o) => o.active).length, active: !staff && !aggregators },
+          { href: '/admin/setup', label: 'Outlets', count: kitchens.filter((o) => o.active).length, active: !staff && !aggregators && !access },
           { href: '/admin/setup?tab=aggregators', label: 'Aggregators', active: aggregators },
           { href: '/admin/setup?tab=staff', label: 'Staff', active: staff },
+          { href: '/admin/setup?tab=access', label: 'Access', active: access },
         ]}
       />
 
-      {aggregators ? (
+      {access ? (
+        <RtoAccessForm allowed={rtoRoles} />
+      ) : aggregators ? (
         <div className="space-y-4">
           <SenderAllowlist senders={[...allowedSenders].sort()} />
 

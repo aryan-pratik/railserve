@@ -293,6 +293,16 @@ function HistoryRow({
           <Text style={{ fontSize: 14, color: C.red, marginTop: 8, lineHeight: 20 }}>{o.failureReason}</Text>
         ) : null}
 
+        {o.rto?.status === 'PENDING' ? (
+          <Text style={{ fontSize: 14, color: C.accent, marginTop: 8, fontWeight: '700', lineHeight: 20 }}>
+            Bring the bag back{o.rto.returnTo ? ` to ${o.rto.returnTo}` : ' to the outlet'}
+          </Text>
+        ) : o.rto?.status === 'RETURNED' ? (
+          <Text style={{ fontSize: 13, color: C.green, marginTop: 5, fontWeight: '600' }}>
+            Returned to the outlet{o.rto.returnedAt ? ` · ${whenLabel(o.rto.returnedAt)}` : ''}
+          </Text>
+        ) : null}
+
         {o.editableUntil ? (
           <Pressable onPress={onEdit} hitSlop={8} style={{ marginTop: 12, alignSelf: 'flex-start' }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent }}>

@@ -10,6 +10,7 @@ import {
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../authContext'
 import { scoped } from './orderRepo'
 import { closedAtOf, correctableUntil, isRiderOutcome, type RiderOutcome } from '../riderRecords'
+import { opensReturn } from '../rto'
 
 /**
  * Fields a transition is permitted to write alongside the status change.
@@ -172,6 +173,12 @@ export async function transitionOrder(params: {
       if (to === 'DELIVERED') {
         $set['delivery.collectedBy'] = rider ?? current.delivery?.agentIds?.[0] ?? null
       }
+
+      // Food that left the counter and is not being delivered has to come
+      // back to it. Opened on the status change itself, never by hand, so no
+      // cancel or failure of an order in a rider's hands can slip past
+      // without a return for the origin outlet to collect (see lib/rto.ts).
+      if (opensReturn(from, to)) $set['delivery.rto'] = openReturn(to)
 
       // A rider putting back an order they took off the counter themselves
       // gives it back to the counter, not just the status: left on agentIds
@@ -449,9 +456,19 @@ export async function correctRiderOutcome(params: {
         throw new ForbiddenError('The office cancelled this order, so only the office can change it')
       }
 
+      // The store has the bag back: it cannot now have been delivered as
+      // well. The rider has to take the correction to the counter instead.
+      if (to === 'DELIVERED' && current.delivery?.rto?.status === 'RETURNED') {
+        throw new ForbiddenError(
+          'The store has already taken this order back, so it cannot be marked delivered',
+        )
+      }
+
       const $set: Record<string, unknown> = { status: to }
       if (!current.delivery?.closedAt && closedAt) $set['delivery.closedAt'] = closedAt
       if (to === 'DELIVERED') {
+        // Delivered after all: there is nothing to bring back.
+        if (current.delivery?.rto) $set['delivery.rto'] = null
         $set['delivery.deliveredAt'] = now
         $set['delivery.failureReason'] = null
         $set['delivery.collectedBy'] = ctx.userId
@@ -470,6 +487,10 @@ export async function correctRiderOutcome(params: {
         $set['delivery.collectedBy'] = null
         $set['delivery.proofType'] = null
         $set['delivery.proofValue'] = null
+        // "Delivered" turning out to be "not delivered" means the rider still
+        // has the bag, so it has to come back. A return already open stays as
+        // it is: the bag was always coming back, only the reason changed.
+        if (from === 'DELIVERED' && !current.delivery?.rto) $set['delivery.rto'] = openReturn(to, now)
       }
 
       const res = await Order.updateOne(
@@ -499,6 +520,11 @@ export async function correctRiderOutcome(params: {
   } finally {
     await session.endSession()
   }
+}
+
+/** A fresh return to origin, waiting for the outlet to take the bag back. */
+function openReturn(reason: OrderStatus, at: Date = new Date()) {
+  return { status: 'PENDING', openedAt: at, reason, returnedAt: null, returnedBy: null, note: null }
 }
 
 /** True when the order's latest move into CANCELLED was this rider's own correction. */

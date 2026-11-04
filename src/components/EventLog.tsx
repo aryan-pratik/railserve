@@ -81,6 +81,17 @@ function changeDetail(meta: Record<string, unknown>, names?: Map<string, string>
         </span>
       )
     }
+    case 'RTO_RETURNED': {
+      const riders = Array.isArray(meta.riderIds) && meta.riderIds.length > 0 && names
+        ? meta.riderIds.map((id) => names.get(String(id)) ?? 'Unknown rider').join(', ')
+        : 'the rider'
+      return (
+        <span className="text-ink">
+          Bag taken back from {riders} at the outlet
+          {str(meta.note) ? ` · ${str(meta.note)}` : ''}
+        </span>
+      )
+    }
     case 'LEAVE_NOW': {
       const parts = [
         str(meta.trainNo) ? `Train ${meta.trainNo}` : null,

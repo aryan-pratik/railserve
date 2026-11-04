@@ -130,6 +130,7 @@ function kindMatch(kind: ActivityKind): Record<string, unknown> | null {
       }
     case 'ASSIGN':
     case 'CASH':
+    case 'RETURN':
     case 'ALERT':
       return { ...sideEvent, 'e.meta.action': { $in: [...KIND_ACTIONS[kind]] } }
     case 'EDIT':

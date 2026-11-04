@@ -24,6 +24,10 @@ import { DeliveredButton } from '../../DeliveredButton'
 import { markMisdelivery, markMissedDelivery, markNotDelivered, markRefunded } from '../../actions'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
+import { viewReturn } from '@/lib/repo/rtoRepo'
+import { getRtoCollectRoles } from '@/lib/repo/settingsRepo'
+import { canCollectReturn } from '@/lib/rto'
+import { ReturnToOriginCard } from '@/components/ReturnToOrigin'
 import { AssignRidersCard } from '@/components/AssignRiders'
 import { listAssignableRiders } from '@/lib/repo/transitionOrder'
 
@@ -45,10 +49,12 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
 
   await connectDb()
   // Live arrival, cache-only, for the same reasons as the call list.
-  const [timings, cancelRequest, riders] = await Promise.all([
+  const [timings, cancelRequest, riders, rto, rtoRoles] = await Promise.all([
     timingForOrders([order], { allowFetch: false }),
     viewCancelRequest(order),
     listAssignableRiders(order.restaurantId),
+    viewReturn(order),
+    getRtoCollectRoles(),
   ])
   // Both logs draw their authors from one query — $in dedupes server-side, so
   // widening the id list costs no extra round trip.
@@ -184,6 +190,15 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
           </div>
         }
       />
+
+      {rto ? (
+        <ReturnToOriginCard
+          orderId={id}
+          externalOrderId={order.externalOrderId}
+          info={rto}
+          canCollect={canCollectReturn(ctx.role, rtoRoles)}
+        />
+      ) : null}
 
       {cancelRequest ? (
         <CancelRequestCard orderId={id} request={cancelRequest} canDecide />
