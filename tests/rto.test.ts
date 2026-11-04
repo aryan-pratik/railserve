@@ -237,15 +237,15 @@ describe('return to origin', () => {
       expect((await findById(admin, id))!.delivery.rto).toMatchObject({ status: 'PENDING', reason: 'FAILED' })
     })
 
-    it('keeps an open return when only the reason changes', async () => {
+    it("opens a return as not delivered when the rider's word is 'cancelled'", async () => {
       const id = await dispatchedOrder()
-      await transitionOrder({ ctx: rider, orderId: id, to: 'FAILED', apply: { failureReason: 'x' } })
-      const before = (await findById(admin, id))!.delivery.rto!
+      await transitionOrder({ ctx: rider, orderId: id, to: 'DELIVERED', apply: { proofType: 'SIGNATURE', proofValue: 'P' } })
 
-      await correctRiderOutcome({ ctx: rider, orderId: id, from: 'FAILED', to: 'CANCELLED', reason: 'Passenger cancelled' })
-      const after = (await findById(admin, id))!.delivery.rto!
-      expect(after.status).toBe('PENDING')
-      expect(after.openedAt.getTime()).toBe(before.openedAt.getTime())
+      await correctRiderOutcome({ ctx: rider, orderId: id, from: 'DELIVERED', to: 'CANCELLED', reason: 'Passenger refused' })
+      const order = (await findById(admin, id))!
+      // CANCELLED is the office's status; the rider's cancel is a failed delivery.
+      expect(order.status).toBe('FAILED')
+      expect(order.delivery.rto).toMatchObject({ status: 'PENDING', reason: 'FAILED' })
     })
 
     it('refuses "delivered" once the outlet has the bag back', async () => {

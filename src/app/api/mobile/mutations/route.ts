@@ -135,7 +135,10 @@ export async function POST(request: Request) {
           })
           continue
         }
-        if (current.status === m.to) {
+        // A rider's "cancelled" is written as FAILED (see correctRiderOutcome),
+        // so a replay must compare against what will actually be written.
+        const target = m.to === 'CANCELLED' ? 'FAILED' : m.to
+        if (current.status === target) {
           results.push({ clientId: m.clientId, applied: true, alreadyDone: true })
           continue
         }

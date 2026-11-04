@@ -149,16 +149,28 @@ describe('rider self-service: pickup, correction, cash', () => {
     expect(o.events.at(-1)!.meta).toMatchObject({ via: 'rider-correction' })
   })
 
-  it('a rider can cancel within the window, and undo only their own cancel', async () => {
+  it("a rider's cancel is recorded as not delivered, never as cancelled", async () => {
     const id = await delivered(riderA)
     await expect(
       correctRiderOutcome({ ctx: riderA, orderId: id, from: 'DELIVERED', to: 'CANCELLED' }),
     ).rejects.toBeInstanceOf(ConflictError)
     await correctRiderOutcome({ ctx: riderA, orderId: id, from: 'DELIVERED', to: 'CANCELLED', reason: 'Passenger refused' })
-    await correctRiderOutcome({ ctx: riderA, orderId: id, from: 'CANCELLED', to: 'DELIVERED' })
-    expect((await findById(riderA, id))!.status).toBe('DELIVERED')
+    let o = (await findById(riderA, id))!
+    // CANCELLED is the office's status. The rider's word is kept in the log.
+    expect(o.status).toBe('FAILED')
+    expect(o.delivery.failureReason).toBe('Passenger refused')
+    expect(o.events.at(-1)!.meta).toMatchObject({ via: 'rider-correction', requestedOutcome: 'CANCELLED' })
 
-    // A rider's own cancel is a correction of the record, not a kitchen alert.
+    // "Cancel" an order already not delivered: nothing to write.
+    await expect(
+      correctRiderOutcome({ ctx: riderA, orderId: id, from: 'FAILED', to: 'CANCELLED', reason: 'x' }),
+    ).rejects.toBeInstanceOf(ConflictError)
+
+    await correctRiderOutcome({ ctx: riderA, orderId: id, from: 'FAILED', to: 'DELIVERED' })
+    o = (await findById(riderA, id))!
+    expect(o.status).toBe('DELIVERED')
+
+    // Not a kitchen alert either: no cancellation happened.
     await correctRiderOutcome({ ctx: riderA, orderId: id, from: 'DELIVERED', to: 'CANCELLED', reason: 'Refused' })
     const alerts = await recentCancellations(manager, { serviceDate: todayIST(), since: new Date(Date.now() - 60_000) })
     expect(alerts.map((a) => a.id)).not.toContain(id)
@@ -274,9 +286,12 @@ describe('rider self-service: pickup, correction, cash', () => {
     const byPhone = await get('?v=2&q=90000 111')
     expect(byPhone.orders[0]).toMatchObject({ id: ancient, contactPhone: '900••••111' })
 
-    // Older app builds draw any non-FAILED row as delivered: no cancellations for them.
-    const cancelled = await delivered(riderA)
-    await correctRiderOutcome({ ctx: riderA, orderId: cancelled, from: 'DELIVERED', to: 'CANCELLED', reason: 'Refused' })
+    // Older app builds draw any non-FAILED row as delivered: no cancellations
+    // for them. Only the office produces one, so that is how it is made here.
+    const cancelledOrder = await ready()
+    const cancelled = String(cancelledOrder._id)
+    await transitionOrder({ ctx: riderA, orderId: cancelled, to: 'DISPATCHED' })
+    await transitionOrder({ ctx: telecaller, orderId: cancelled, to: 'CANCELLED' })
     expect((await get()).orders.map((o: { id: string }) => o.id)).toContain(cancelled)
     expect((await get('')).orders.map((o: { id: string }) => o.id)).not.toContain(cancelled)
 

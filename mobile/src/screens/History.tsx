@@ -252,7 +252,10 @@ function HistoryRow({
   const [to, setTo] = useState<Outcome | null>(null)
   const [reason, setReason] = useState('')
   const tone = o.status === 'DELIVERED' ? C.green : C.red
-  const choices = (['DELIVERED', 'FAILED', 'CANCELLED'] as const).filter((c) => c !== o.status)
+  // Delivered or not delivered: "cancelled" is the office's word for an order
+  // it stopped, so a rider is never offered it. A passenger refusing at the
+  // door is "not delivered", with the reason.
+  const choices = (['DELIVERED', 'FAILED'] as const).filter((c) => c !== o.status)
   const at = o.closedAt ?? o.deliveredAt
 
   return (

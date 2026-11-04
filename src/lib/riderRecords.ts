@@ -10,7 +10,13 @@ export const RIDER_CORRECTION_WINDOW_MS = 30 * 60 * 60 * 1000
 /** How far back the rider's Done tab reaches when no date is picked. */
 export const RIDER_RECENT_WINDOW_MS = 48 * 60 * 60 * 1000
 
-/** The outcomes a rider may move a closed order between. */
+/**
+ * The closed statuses a rider's correction speaks of. CANCELLED is here only
+ * because a rider can *see* one (the office cancelled while the bag was in
+ * their hands) and name it as the status they are correcting from. A rider
+ * never produces it: "cancelled" from a rider is recorded as FAILED, since
+ * CANCELLED means the office stopped the order — see correctRiderOutcome.
+ */
 export const RIDER_OUTCOMES = ['DELIVERED', 'FAILED', 'CANCELLED'] as const
 export type RiderOutcome = (typeof RIDER_OUTCOMES)[number]
 

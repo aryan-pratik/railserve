@@ -399,6 +399,11 @@ export async function flagRatingOrder(params: {
  *   changed hands, and a flip now would leave the handover wrong
  * - never out of an office cancellation: a cancel the rider did not make is
  *   not theirs to undo
+ * - never *into* CANCELLED: that status means the office stopped the order.
+ *   A rider saying "cancelled" (the passenger refused it at the door) is the
+ *   rider failing to deliver, and is recorded as FAILED with their reason.
+ *   Older app builds still offer the word, so it is mapped here rather than
+ *   refused, or their queued correction would be dropped.
  *
  * `from` is the status the rider saw when they tapped. The app queues this
  * offline, and a correction replayed after someone else changed the order must
@@ -414,15 +419,20 @@ export async function correctRiderOutcome(params: {
   meta?: Record<string, unknown>
   now?: Date
 }): Promise<OrderDoc> {
-  const { ctx, orderId, from, to, meta = {}, now = new Date() } = params
+  const { ctx, orderId, from, meta = {}, now = new Date() } = params
+  const to: RiderOutcome = params.to === 'CANCELLED' ? 'FAILED' : params.to
   const reason = params.reason?.trim() || null
   const receivedBy = params.receivedBy?.trim() || null
 
   if (ctx.role !== 'DELIVERY_AGENT') {
     throw new ForbiddenError('Only the rider on an order may correct how it ended')
   }
-  if (!isRiderOutcome(from) || !isRiderOutcome(to) || from === to) {
-    throw new ConflictError('Choose a different outcome')
+  if (!isRiderOutcome(from) || !isRiderOutcome(params.to) || from === to) {
+    throw new ConflictError(
+      params.to !== to
+        ? 'A rider records a cancellation as not delivered, which this order already is'
+        : 'Choose a different outcome',
+    )
   }
   if (to !== 'DELIVERED' && !reason) {
     throw new ConflictError('Say why it was not delivered')
@@ -502,7 +512,14 @@ export async function correctRiderOutcome(params: {
               fromStatus: from,
               toStatus: to,
               userId: ctx.userId,
-              meta: { ...meta, via: 'rider-correction', reason, receivedBy },
+              meta: {
+                ...meta,
+                via: 'rider-correction',
+                reason,
+                receivedBy,
+                // What the rider actually tapped, when it was not the status written.
+                ...(params.to !== to ? { requestedOutcome: params.to } : {}),
+              },
               createdAt: now,
             },
           },
