@@ -24,7 +24,8 @@ export async function GET(request: Request) {
   await requireRole('ADMIN')
   const url = new URL(request.url)
 
-  const mode = url.searchParams.get('mode') || 'all'
+  // Matches the screen's default, so a bare link exports what it shows.
+  const mode = url.searchParams.get('mode') || 'today'
   const month = url.searchParams.get('month') ?? ''
   const rawFrom = url.searchParams.get('from') ?? ''
   const rawTo = url.searchParams.get('to') ?? ''

@@ -100,7 +100,8 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
   const bucketParam = one(sp.status)
   const bucket = bucketParam in BUCKETS ? (bucketParam as Bucket) : null
   const orderTerm = one(sp.order).trim()
-  const mode = (one(sp.mode) || 'all') as DateFilterMode
+  // Opens on today, like every other dated screen.
+  const mode = (one(sp.mode) || 'today') as DateFilterMode
   const month = one(sp.month)
   const rawFrom = one(sp.from)
   const rawTo = one(sp.to)
@@ -156,7 +157,7 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
     tab: tab === 'log' ? 'log' : '',
     status: bucket ?? '',
     order: tab === 'log' ? orderTerm : '',
-    mode: mode === 'all' ? '' : mode,
+    mode: mode === 'today' ? '' : mode,
     month: mode === 'custom-month' ? month : '',
     from: mode === 'range' ? rawFrom : '',
     to: mode === 'range' ? rawTo : '',

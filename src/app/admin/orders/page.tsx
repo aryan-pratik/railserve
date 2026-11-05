@@ -1,19 +1,21 @@
 import { requireRole } from '@/lib/session'
 import { countByPaymentMode, countOrders, distinctStatuses, findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
-import { Restaurant } from '@/lib/models'
+import { Restaurant, Station } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { callNoteRow } from '@/lib/orderView'
 import { AdminOrdersTable } from './AdminOrdersTable'
-import { IconDownload, IconPlus } from '@/components/Icons'
+import { IconDownload, IconPlus, IconSearch } from '@/components/Icons'
 import {
   Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Pagination, Tabs,
   PAGE_SIZE_OPTIONS, inputClass, statusLabel,
 } from '@/components/ui'
 import { DateFilter } from '@/components/DateFilter'
+import { StationMultiSelect } from '@/components/StationMultiSelect'
 import { QueryForm } from '@/components/QueryForm'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { NO_RIDER, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
+import { orderSearchClause, parseStations } from '@/lib/repo/orderSearch'
 import type { QueryFilter } from 'mongoose'
 
 /**
@@ -31,11 +33,6 @@ export const metadata = { title: 'All orders · RailServe' }
 
 const DEFAULT_PAGE_SIZE = 20
 
-/** Escapes regex metacharacters so a typed order id is matched literally. */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 /**
  * Lookup across every outlet.
  *
@@ -47,15 +44,20 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const sp = await props.searchParams
 
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
+  const many = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [v] : [])
   const outlet = one(sp.outlet)
+  const stations = parseStations(many(sp.station))
   const status = one(sp.status)
-  const mode = (one(sp.mode) || 'all') as DateFilterMode
+  // Opens on today, like every other dated screen; "All time" is one click.
+  const mode = (one(sp.mode) || 'today') as DateFilterMode
   const month = one(sp.month)
   const rawFrom = one(sp.from)
   const rawTo = one(sp.to)
   const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const train = one(sp.train)
-  const orderId = one(sp.orderId)
+  // One box that searches everything. `orderId` is what the box used to be
+  // called, so links bookmarked before then still find their order.
+  const q = (one(sp.q) || one(sp.orderId)).trim()
   const payment = one(sp.payment)
   // Dropped when it is neither an id nor NO_RIDER, so links never carry junk.
   const byRider = riderClause(one(sp.rider))
@@ -73,6 +75,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   // taken from everything except it.
   const base: QueryFilter<Record<string, unknown>> = {}
   if (outlet) base.restaurantId = outlet
+  if (stations.length) base.stationCode = { $in: stations }
   if (status) base.status = status
   if (dateFrom || dateTo) {
     const range: Record<string, string> = {}
@@ -81,16 +84,19 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     base.serviceDate = range
   }
   if (train) base.trainNo = train.toUpperCase()
-  // Aggregator subjects write ids as "#6004807"; stored ids carry no '#'.
-  const orderIdTerm = orderId.replace(/^\s*#\s*/, '')
-  if (orderIdTerm) base.externalOrderId = { $regex: escapeRegExp(orderIdTerm), $options: 'i' }
   if (byRider) Object.assign(base, byRider)
+
+  await connectDb()
+  // Resolved before any query runs, so the list, its count and the payment
+  // tab counts all read the very same filter.
+  const search = await orderSearchClause(q)
+  if (search) Object.assign(base, search)
 
   const filter = payment ? { ...base, paymentMode: payment } : base
 
-  await connectDb()
-  const [outlets, orders, paymentCounts, statusesInUse, totalCount, riders] = await Promise.all([
-    Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
+  const [outlets, stationDocs, orders, paymentCounts, statusesInUse, totalCount, riders] = await Promise.all([
+    Restaurant.find({}).select('name stationCode stationName').sort({ name: 1 }).lean(),
+    Station.find({}).select('name').lean(),
     findMany(ctx, filter, { sort: { createdAt: -1 }, limit: pageSize, skip: (page - 1) * pageSize }),
     countByPaymentMode(ctx, base),
     distinctStatuses(ctx),
@@ -106,16 +112,31 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const statusOptions = [...ORDER_STATUSES, ...customStatuses]
 
   const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
-  const hasFilters = Boolean(outlet || status || dateFrom || dateTo || train || orderId || payment || rider)
+
+  // Every station an outlet sits at, plus any already picked so a selection
+  // never silently drops out of the list. Named from the station record,
+  // falling back to whatever an outlet calls it.
+  const stationName = new Map<string, string>()
+  for (const o of outlets) if (o.stationName && !stationName.has(o.stationCode)) stationName.set(o.stationCode, o.stationName)
+  for (const s of stationDocs) if (s.name) stationName.set(String(s._id), s.name)
+  const stationOptions = [...new Set([...outlets.map((o) => o.stationCode), ...stations])]
+    .sort()
+    .map((code) => ({ code, name: stationName.get(code) ?? null }))
+
+  // Today is the default, not a filter someone set.
+  const hasFilters = Boolean(
+    outlet || stations.length || status || mode !== 'today' || train || q || payment || rider,
+  )
 
   // Every link and the export carry the filters already in play.
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment, rider, ...over,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, q, payment, rider, ...over,
     })) {
       if (v) u.set(k, v)
     }
+    for (const s of stations) u.append('station', s)
     return u.toString()
   }
 
@@ -138,10 +159,11 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, orderId, payment, rider,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, q, payment, rider,
     })) {
       if (v) u.set(k, v)
     }
+    for (const s of stations) u.append('station', s)
     if (p > 1) u.set('page', String(p))
     if (ps !== DEFAULT_PAGE_SIZE) u.set('pageSize', String(ps))
     const qs = u.toString()
@@ -153,7 +175,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <PageHeader
         title="All orders"
         note={`${totalCount} order${totalCount === 1 ? '' : 's'}${
-          hasFilters ? ' matching these filters' : ' across all outlets'
+          hasFilters ? ' matching these filters' : ' today, across all outlets'
         }.`}
         action={
           <>
@@ -172,9 +194,17 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-6">
+        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
+          <div className="relative sm:col-span-2">
+            <IconSearch size={15} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+            <input name="q" type="search" defaultValue={q}
+              placeholder="Search orders: ID, passenger, phone, train, seat, aggregator, outlet, rider…"
+              autoComplete="off" spellCheck={false}
+              className={`${inputClass} pl-9`} aria-label="Search orders" />
+          </div>
+          <StationMultiSelect name="station" options={stationOptions} defaultSelected={stations} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
             <option value="">All outlets</option>
             {outlets.map((o) => (
@@ -192,9 +222,6 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
             autoComplete="off" spellCheck={false}
             className={`${inputClass} font-mono`} aria-label="Train number" />
-          <input name="orderId" defaultValue={orderId} placeholder="Order ID"
-            autoComplete="off" spellCheck={false}
-            className={`${inputClass} font-mono`} aria-label="Order ID" />
           <select name="rider" defaultValue={rider} className={inputClass} aria-label="Rider">
             <option value="">Any rider</option>
             <option value={NO_RIDER}>No rider yet</option>
@@ -208,7 +235,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
-          <div className="sm:col-span-2 lg:col-span-6">
+          <div className="sm:col-span-2 lg:col-span-4">
             <Field label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
             </Field>
@@ -241,7 +268,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
         showRider
         statusOptions={statusOptions}
         emptyNote={
-          hasFilters
+          q && mode !== 'all'
+            ? 'Nothing matches in these dates. The search reads the date filter too: try All time.'
+            : hasFilters
             ? 'Nothing matches these filters. Try clearing them.'
             : 'Orders arriving by email appear here automatically.'
         }

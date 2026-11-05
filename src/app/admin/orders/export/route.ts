@@ -7,6 +7,7 @@ import { formatIST, paiseToRupees } from '@/lib/format'
 import { sourceLabel } from '@/lib/orderEnums'
 import { resolveDateRange } from '@/lib/dateFilter'
 import { riderClause, riderNamesFor } from '@/lib/repo/riderFilter'
+import { orderSearchClause, parseStations } from '@/lib/repo/orderSearch'
 import type { QueryFilter } from 'mongoose'
 
 export const dynamic = 'force-dynamic'
@@ -55,11 +56,13 @@ export async function GET(request: Request) {
   const rawTo = url.searchParams.get('to') || legacyDate
   const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const outlet = url.searchParams.get('outlet') ?? ''
-  const station = url.searchParams.get('station') ?? ''
+  // Repeatable: /admin/orders filters by any number of stations at once.
+  const stations = parseStations(url.searchParams.getAll('station'))
   const status = url.searchParams.get('status') ?? ''
   const train = url.searchParams.get('train') ?? ''
   const payment = url.searchParams.get('payment') ?? ''
   const rider = url.searchParams.get('rider') ?? ''
+  const q = (url.searchParams.get('q') || url.searchParams.get('orderId') || '').trim()
 
   const tab = url.searchParams.get('tab') ?? ''
   const statuses = status
@@ -75,11 +78,16 @@ export async function GET(request: Request) {
   }
   if (statuses) filter.status = { $in: statuses }
   if (outlet) filter.restaurantId = outlet
-  if (station) filter.stationCode = station.toUpperCase()
+  if (stations.length) filter.stationCode = stations.length === 1 ? stations[0] : { $in: stations }
   if (train) filter.trainNo = train.toUpperCase()
   if (payment) filter.paymentMode = payment
   const byRider = riderClause(rider)
   if (byRider) Object.assign(filter, byRider)
+
+  await connectDb()
+  // The same search the page runs, so the file holds exactly the rows listed.
+  const search = await orderSearchClause(q)
+  if (search) Object.assign(filter, search)
 
   const [orders, outlets] = await Promise.all([
     // A history export spanning every service date needs far more headroom
