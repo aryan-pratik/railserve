@@ -34,9 +34,9 @@ export async function PaymentsScreen({
   searchParams: SearchParams
 }) {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
-  // A ledger opens on everything, not on today: the common reason to come
-  // here is "did a payment from this person ever arrive".
-  const mode = (one(searchParams.mode) || 'all') as DateFilterMode
+  // Opens on today, like every other dated screen. "Did a payment from this
+  // person ever arrive" is one click away on All time.
+  const mode = (one(searchParams.mode) || 'today') as DateFilterMode
   const month = one(searchParams.month)
   const rawFrom = one(searchParams.from)
   const rawTo = one(searchParams.to)
@@ -55,7 +55,7 @@ export async function PaymentsScreen({
   ])
 
   const ranged = Boolean(from || to)
-  const hasFilters = Boolean(ranged || q)
+  const hasFilters = Boolean(mode !== 'today' || q)
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries({ mode, month, from: rawFrom, to: rawTo, q })) {
     if (v) params.set(k, v)

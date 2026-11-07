@@ -2,13 +2,14 @@ import { requireRole } from '@/lib/session'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
-import { formatDateRange, shiftServiceDate, todayIST } from '@/lib/format'
+import { formatDateRange, todayIST } from '@/lib/format'
 import { callNoteRow } from '@/lib/orderView'
 import { OrdersTable } from '@/components/OrdersTable'
 import { QueryForm } from '@/components/QueryForm'
 import { Button, Card, Field, PageHeader, Pagination, inputClass } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
 import { NO_RIDER, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
+import { orderSearchClause } from '@/lib/repo/orderSearch'
 
 export const metadata = { title: 'Order history · RailServe' }
 
@@ -23,24 +24,21 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
   const sp = await props.searchParams
 
   const to = typeof sp.to === 'string' && sp.to ? sp.to : todayIST()
-  const from = typeof sp.from === 'string' && sp.from ? sp.from : shiftServiceDate(to, -7)
+  // Opens on today, like every other dated screen.
+  const from = typeof sp.from === 'string' && sp.from ? sp.from : to
   const q = typeof sp.q === 'string' ? sp.q.trim() : ''
   const rider = typeof sp.rider === 'string' ? sp.rider : ''
   const { page, pageSize, skip } = readPage(sp)
 
   const filter: Record<string, unknown> = { serviceDate: { $gte: from, $lte: to } }
-  if (q) {
-    // Order id, train number or phone: the things anyone actually has to hand.
-    // Escaped, so a typed "(" or "+" is matched literally rather than failing
-    // the whole page as an invalid regex.
-    // Aggregator subjects write ids as "#6004807"; stored ids carry no '#'.
-    const rx = { $regex: q.replace(/^\s*#\s*/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
-    filter.$or = [{ externalOrderId: rx }, { trainNo: rx }, { contactPhone: rx }]
-  }
   const byRider = riderClause(rider)
   if (byRider) Object.assign(filter, byRider)
 
   await connectDb()
+  // The same search as the admin's All orders: id, passenger, phone, train,
+  // seat, aggregator, outlet, rider. Still inside this caller's scope.
+  const search = await orderSearchClause(q)
+  if (search) Object.assign(filter, search)
   const multiOutlet = ctx.restaurantIds.length > 1 || ctx.role === 'ADMIN'
   // Paged, not capped: findMany used to stop at its default 200 silently, and
   // the header then reported 200 as if it were the whole range.
@@ -74,7 +72,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
               name="q"
               type="search"
               defaultValue={q}
-              placeholder="Order id, train number or phone"
+              placeholder="Order ID, passenger, phone, train, seat…"
               autoComplete="off"
               spellCheck={false}
               className={inputClass}
