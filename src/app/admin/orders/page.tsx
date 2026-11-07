@@ -194,16 +194,19 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
-          <div className="relative sm:col-span-2">
+          <div className="relative sm:col-span-2 lg:col-span-4">
             <IconSearch size={15} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input name="q" type="search" defaultValue={q}
               placeholder="Search orders: ID, passenger, phone, train, seat, aggregator, outlet, rider…"
               autoComplete="off" spellCheck={false}
               className={`${inputClass} pl-9`} aria-label="Search orders" />
           </div>
+          <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
+            autoComplete="off" spellCheck={false}
+            className={`${inputClass} font-mono`} aria-label="Train number" />
           <StationMultiSelect name="station" options={stationOptions} defaultSelected={stations} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
             <option value="">All outlets</option>
@@ -219,9 +222,6 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
-          <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
-            autoComplete="off" spellCheck={false}
-            className={`${inputClass} font-mono`} aria-label="Train number" />
           <select name="rider" defaultValue={rider} className={inputClass} aria-label="Rider">
             <option value="">Any rider</option>
             <option value={NO_RIDER}>No rider yet</option>
@@ -235,7 +235,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2 lg:col-span-5">
             <Field label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
             </Field>
