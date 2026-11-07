@@ -35,6 +35,7 @@ export function getWhatsAppProvider(): WhatsAppProvider {
           providerMessageId,
           kind: 'TEXT',
           text,
+          button: null,
           mediaUrl: null,
           mediaCaption: null,
           at: new Date(),
@@ -47,7 +48,7 @@ export function getWhatsAppProvider(): WhatsAppProvider {
   return cached
 }
 
-export const OPENER_VARS = ['name', 'order', 'outlet'] as const
+export const OPENER_VARS = ['name', 'order', 'amount', 'station', 'train', 'seat', 'outlet'] as const
 export type OpenerVar = (typeof OPENER_VARS)[number]
 
 export type OpenerTemplate = { name: string; language: string; vars: OpenerVar[] }

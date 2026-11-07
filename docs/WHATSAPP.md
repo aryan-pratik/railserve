@@ -49,7 +49,10 @@ repository talks to the `WhatsAppProvider` interface in
    `MSG91_OPENER_TEMPLATE_LANG`, default `en`). `MSG91_OPENER_TEMPLATE_VARS`
    says what fills each body variable in order, from `name`, `order` and
    `outlet` — e.g. `name,order` for "Hi {{1}}, … your order {{2}} …". The
-   `support_chat_opener` template created on 2026-11-02 uses exactly that. Without it the "Send opener
+   `order_confirmation` card (2026-11-02) uses `name,order,amount,station,train,seat`
+   and carries two quick-reply buttons, *Confirm* and *Feedback/Complaint*; a tap
+   on either arrives through the webhook as a message with the button's label,
+   which also opens the 24-hour window. Without it the "Send opener
    template" button is disabled and a thread can only be answered, never
    started.
 4. `npm run indexes` after deploying — the two new collections have unique

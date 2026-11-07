@@ -70,7 +70,7 @@ describe('POST /api/whatsapp/webhook', () => {
   it('applies a status report to the message it names', async () => {
     const r = await recordInbound({
       type: 'inbound', phone: '919811111114', customerName: null, providerMessageId: 'wamid.in.s1', kind: 'TEXT',
-      text: 'hi', mediaUrl: null, mediaCaption: null, at: new Date(),
+      text: 'hi', button: null, mediaUrl: null, mediaCaption: null, at: new Date(),
     })
     await WaMessage.create({
       conversationId: r.conversationId, direction: 'OUT', kind: 'TEXT', text: 'On its way', status: 'SENT',

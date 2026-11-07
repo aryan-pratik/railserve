@@ -2,6 +2,7 @@ import mongoose, { type QueryFilter } from 'mongoose'
 import {
   Order,
   Restaurant,
+  Station,
   User,
   WaConversation,
   WaMessage,
@@ -12,6 +13,7 @@ import {
 import { type AuthContext, ConflictError, ForbiddenError, NotFoundError } from '../authContext'
 import { findByIdOrThrow } from './orderRepo'
 import { normalisePhone, phoneTail } from '../whatsapp/phone'
+import { paiseToRupees, seatText } from '../format'
 import { sessionWindow } from '../whatsapp/session'
 import { renderTemplateBody } from '../whatsapp/template'
 import type { WhatsAppProvider } from '../whatsapp/provider'
@@ -367,24 +369,35 @@ export async function sendText(
  * The approved template that opens (or reopens) a conversation. Allowed at
  * any time; this is the only thing that is.
  */
+export type OpenerVarName = 'name' | 'order' | 'amount' | 'station' | 'train' | 'seat' | 'outlet'
+
 export async function sendOpenerTemplate(
   ctx: AuthContext,
   conversationId: string,
   provider: WhatsAppProvider,
-  template: { name: string; language: string; vars?: readonly ('name' | 'order' | 'outlet')[] },
+  template: { name: string; language: string; vars?: readonly OpenerVarName[] },
 ): Promise<string> {
   const c = await findConversationOrThrow(ctx, conversationId)
   if (!template.name) throw new ConflictError('No opener template is configured')
 
   // Through the caller's scope, like linkedOrder: an unclaimed thread may
-  // point at another outlet's order, whose id is not this caller's to send.
+  // point at another outlet's order, whose details are not this caller's to send.
   const order = await linkedOrder(ctx, c)
+  const [outlet, station] = await Promise.all([
+    c.restaurantId ? Restaurant.findById(c.restaurantId).select('name stationName').lean() : null,
+    order?.stationCode ? Station.findById(order.stationCode).select('name').lean() : null,
+  ])
   const orderRef = order?.externalOrderId ?? ''
-  const outlet = c.restaurantId ? await Restaurant.findById(c.restaurantId).select('name').lean() : null
-  const fill: Record<'name' | 'order' | 'outlet', string> = {
-    // A template variable may not be empty, so a nameless passenger gets a word.
+  const stationName = station?.name ?? outlet?.stationName ?? null
+  // A template variable may not be empty, so every slot has a word to fall
+  // back on; the passenger reads "-" rather than a hole in the sentence.
+  const fill: Record<OpenerVarName, string> = {
     name: c.customerName?.trim() || 'there',
-    order: orderRef || 'with us',
+    order: orderRef || '-',
+    amount: order?.amountPaise != null ? paiseToRupees(order.amountPaise).replace(/\.00$/, '') : '-',
+    station: order?.stationCode ? (stationName ? `${stationName}-${order.stationCode}` : order.stationCode) : '-',
+    train: order?.trainNo ? (order.trainName ? `${order.trainName}-${order.trainNo}` : order.trainNo) : '-',
+    seat: order ? (order.handoverPoint ? `Handover: ${order.handoverPoint}` : seatText(order).replace(' ', '-')) : '-',
     outlet: outlet?.name ?? 'our outlet',
   }
   const bodyValues = (template.vars ?? ['order']).map((v) => fill[v])

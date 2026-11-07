@@ -19,6 +19,8 @@ export type InboundEvent = {
   providerMessageId: string
   kind: 'TEXT' | 'MEDIA' | 'OTHER'
   text: string | null
+  /** The quick-reply button or list option the passenger tapped, if that is what this is. */
+  button: string | null
   mediaUrl: string | null
   mediaCaption: string | null
   /** WhatsApp's own word for the attachment (image, video, audio, document…). */
@@ -128,7 +130,12 @@ function parseInbound(body: Json, phone: string, messages: unknown): InboundEven
         ? str((content as Json).text) ?? str(((content as Json).body as Json | undefined)?.text)
         : null
   const metaText = first && first.text && typeof first.text === 'object' ? str((first.text as Json).body) : null
-  const text = str(body.text) ?? metaText ?? textFromContent
+
+  // A tap on a template's quick-reply button, or on an interactive reply or
+  // list option, arrives as its own message type with the label in a
+  // different place for each. The label is what the telecaller should read.
+  const button = buttonLabel(body, first)
+  const text = str(body.text) ?? metaText ?? textFromContent ?? button
 
   const media = MEDIA_TYPES.has(contentType)
   const mediaUrl = media ? str(body.url) ?? str((first?.[contentType] as Json | undefined)?.link) : null
@@ -149,13 +156,43 @@ function parseInbound(body: Json, phone: string, messages: unknown): InboundEven
     phone,
     customerName,
     providerMessageId,
-    kind: contentType === 'text' ? 'TEXT' : media ? 'MEDIA' : 'OTHER',
+    kind: contentType === 'text' || button ? 'TEXT' : media ? 'MEDIA' : 'OTHER',
     text,
+    button,
     mediaUrl,
     mediaCaption,
     mediaType: media ? contentType : null,
     at: when(body),
   }
+}
+
+function buttonLabel(body: Json, first: Json | null): string | null {
+  // New webhook: `button` is the label, or a JSON string {text, payload}.
+  const raw = nested(body.button)
+  if (typeof raw === 'string' && raw.trim()) return raw.trim()
+  if (raw && typeof raw === 'object') {
+    const b = raw as Json
+    const t = str(b.text) ?? str(b.title) ?? str(b.payload)
+    if (t) return t
+  }
+  // Interactive replies: {type: 'button_reply'|'list_reply', button_reply: {title}, list_reply: {title}}.
+  const inter = nested(body.interactive) ?? first?.interactive
+  if (inter && typeof inter === 'object') {
+    const i = inter as Json
+    for (const k of ['button_reply', 'list_reply']) {
+      const r = i[k]
+      if (r && typeof r === 'object') {
+        const t = str((r as Json).title) ?? str((r as Json).id)
+        if (t) return t
+      }
+    }
+  }
+  // Raw Meta message: {type: 'button', button: {text, payload}}.
+  if (first?.button && typeof first.button === 'object') {
+    const t = str((first.button as Json).text) ?? str((first.button as Json).payload)
+    if (t) return t
+  }
+  return null
 }
 
 function parseStatus(body: Json): StatusEvent | null {

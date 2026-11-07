@@ -42,7 +42,14 @@ export class SimulatedWhatsAppProvider implements WhatsAppProvider {
 
   /** A plausible body, so the thread shows a filled-in message offline too. */
   async templateBody(name: string): Promise<string | null> {
-    return `Hi {{1}}, this is the support team about your order {{2}}. Reply to this message and we will help you right away. (${name})`
+    // The same shape as the real order-confirmation card, so a dev thread
+    // shows what a passenger would read; the name is appended for honesty.
+    return (
+      '*Order Confirmation*\nHello *{{1}}*,\n\nHere are the details of your order:\n' +
+      '- Order ID: {{2}}\n- Amount: {{3}}\n- Station Name: {{4}}\n- Train Name: {{5}}\n- Coach/Berth: {{6}}\n\n' +
+      'Please tap on the confirm button to receive live updates for your order. Let me know if you need any further assistance.' +
+      ` (${name})`
+    )
   }
 
   async sendTemplate(send: TemplateSend): Promise<SendResult> {

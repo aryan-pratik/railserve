@@ -89,9 +89,10 @@ const EnvSchema = z.object({
   // has not written in the last 24 hours. One body variable: the order id.
   MSG91_OPENER_TEMPLATE: z.string().default(''),
   MSG91_OPENER_TEMPLATE_LANG: z.string().default('en'),
-  // Which value fills each positional body variable of the opener, in order:
-  // `name` (the passenger), `order` (the order id), `outlet`. Default is the
-  // one-variable "{{1}} = order id" shape.
+  // Which value fills each positional body variable of the opener, in order,
+  // from: name, order, amount, station, train, seat, outlet. Default is the
+  // one-variable "{{1}} = order id" shape; the order-confirmation card uses
+  // "name,order,amount,station,train,seat".
   MSG91_OPENER_TEMPLATE_VARS: z.string().default('order'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 })

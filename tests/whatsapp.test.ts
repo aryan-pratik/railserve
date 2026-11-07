@@ -27,7 +27,7 @@ import { Msg91Provider, extractBody } from '../src/lib/whatsapp/msg91'
 import { renderTemplateBody } from '../src/lib/whatsapp/template'
 import { SimulatedWhatsAppProvider } from '../src/lib/whatsapp/simulator'
 import { WhatsAppSendError, type SendResult, type TemplateSend, type WhatsAppProvider } from '../src/lib/whatsapp/provider'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeStation, makeUser, resetDb } from './fixtures'
 
 /* ── pure ─────────────────────────────────────────────────────────────────── */
 
@@ -103,6 +103,15 @@ describe('MSG91 webhook parser', () => {
   it('reads an inbound image with its caption', () => {
     const ev = parseMsg91Webhook({ ...inboundNew, contentType: 'image', text: '', caption: 'my seat', url: 'https://cdn.example/x.jpg', messages: '' , direction: '0' })
     expect(ev).toMatchObject({ type: 'inbound', kind: 'MEDIA', mediaUrl: 'https://cdn.example/x.jpg', mediaCaption: 'my seat' })
+  })
+
+  it('reads a quick-reply button tap as the passenger saying the button label', () => {
+    const tap = parseMsg91Webhook({ ...inboundNew, contentType: 'button', text: '', button: 'Confirm', messages: '[{"from":"917748847990","id":"wamid.BTN1","timestamp":"1756115753","type":"button","button":{"text":"Confirm","payload":"Confirm"}}]' })
+    expect(tap).toMatchObject({ type: 'inbound', kind: 'TEXT', text: 'Confirm', button: 'Confirm', providerMessageId: 'wamid.BTN1' })
+    const asJson = parseMsg91Webhook({ ...inboundNew, contentType: 'button', text: '', button: '{"text":"Feedback/Complaint","payload":"fb"}', messages: '' , direction: '0', uuid: 'wamid.BTN2' })
+    expect(asJson).toMatchObject({ kind: 'TEXT', text: 'Feedback/Complaint', button: 'Feedback/Complaint' })
+    const inter = parseMsg91Webhook({ ...inboundNew, contentType: 'interactive', text: '', interactive: '{"type":"button_reply","button_reply":{"id":"c1","title":"Confirm"}}', messages: '', direction: '0', uuid: 'wamid.BTN3' })
+    expect(inter).toMatchObject({ kind: 'TEXT', text: 'Confirm', button: 'Confirm' })
   })
 
   it('reads an outbound status report from the new shape', () => {
@@ -286,7 +295,7 @@ class FakeProvider implements WhatsAppProvider {
 }
 
 function inbound(phone: string, text: string, id = `wamid.in.${Math.random().toString(36).slice(2)}`, at = new Date()): InboundEvent {
-  return { type: 'inbound', phone, customerName: null, providerMessageId: id, kind: 'TEXT', text, mediaUrl: null, mediaCaption: null, at }
+  return { type: 'inbound', phone, customerName: null, providerMessageId: id, kind: 'TEXT', text, button: null, mediaUrl: null, mediaCaption: null, at }
 }
 
 describe('whatsapp chat', () => {
@@ -526,6 +535,25 @@ describe('whatsapp chat', () => {
       // A two-variable opener: passenger name, then order id, in the configured order.
       await sendOpenerTemplate(telecaller, id2, fake, { name: 'support_chat_opener', language: 'en', vars: ['name', 'order'] })
       expect(fake.templates[1].bodyValues).toEqual(['Test Passenger', 'FT-OPENER-1'])
+      // The order-confirmation card: every variable filled from the order, none empty.
+      const station = await makeStation('CNB', { name: 'KANPUR CENTRAL' })
+      void station
+      const card = await makeOrder({
+        restaurantId: ganga, contactPhone: phone(), externalOrderId: 'FT-CARD-1', amountPaise: 41900,
+        stationCode: 'CNB', trainNo: '13350', trainName: 'PNBE SGRL EXP', coach: 'S3', berth: '56', contactName: 'Aman',
+      })
+      const id3 = await openConversationForOrder(telecaller, String(card._id))
+      await sendOpenerTemplate(telecaller, id3, fake, { name: 'order_confirmation', language: 'en', vars: ['name', 'order', 'amount', 'station', 'train', 'seat'] })
+      expect(fake.templates[2].bodyValues).toEqual(['Aman', 'FT-CARD-1', '419', 'KANPUR CENTRAL-CNB', 'PNBE SGRL EXP-13350', 'S3-56'])
+      // A bare order still fills every slot with something.
+      const bare = await makeOrder({ restaurantId: ganga, contactPhone: phone(), amountPaise: null, trainNo: null, coach: null, berth: null, rawSeat: null, contactName: null, stationCode: 'PRYJ' })
+      const id4 = await openConversationForOrder(telecaller, String(bare._id))
+      await sendOpenerTemplate(telecaller, id4, fake, { name: 'order_confirmation', language: 'en', vars: ['name', 'order', 'amount', 'station', 'train', 'seat'] })
+      expect(fake.templates[3].bodyValues.every((v) => v.length > 0)).toBe(true)
+      const [, , amount, stationVar, train, seat] = fake.templates[3].bodyValues
+      expect([amount, train, seat]).toEqual(['-', '-', '-'])
+      // No Station row for PRYJ: the outlet's own station name stands in, code last.
+      expect(stationVar.endsWith('-PRYJ')).toBe(true)
       const [m] = await listMessages(telecaller, id2)
       expect(m).toMatchObject({ direction: 'OUT', kind: 'TEMPLATE', templateName: 'order_update', status: 'SENT' })
     })
@@ -540,7 +568,7 @@ describe('whatsapp chat', () => {
       expect(c!.restaurantId).toBeNull()
       expect(c!.orderId).not.toBeNull()
       await sendOpenerTemplate(telecaller, r.conversationId, fake, { name: 'order_update', language: 'en' })
-      expect(fake.templates[0].bodyValues).toEqual(['with us'])
+      expect(fake.templates[0].bodyValues).toEqual(['-'])
     })
 
     it('does not steal a thread a colleague already holds when replying', async () => {
