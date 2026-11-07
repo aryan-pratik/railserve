@@ -17,7 +17,7 @@ import { ActivityList } from '@/components/ActivityList'
 import { DateFilter } from '@/components/DateFilter'
 import { IconPhone } from '@/components/Icons'
 import {
-  ButtonLink, Card, Dash, EmptyState, Field, PageHeader, Pagination, PaymentBadge, Stat, StatStrip,
+  ButtonLink, Card, Dash, EmptyState, InlineField, PageHeader, Pagination, PaymentBadge, Stat, StatStrip,
   StatusBadge, Tabs, focusRing, segmentClass, segmentedClass, thClass,
 } from '@/components/ui'
 
@@ -227,9 +227,9 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
       </StatStrip>
 
       <Card className="p-3">
-        <Field label="Date">
+        <InlineField label="Date">
           <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll autoSubmit />
-        </Field>
+        </InlineField>
       </Card>
 
       <Tabs

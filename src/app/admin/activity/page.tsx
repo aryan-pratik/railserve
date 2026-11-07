@@ -13,7 +13,7 @@ import { ROLE_LABEL, type Role } from '@/lib/roles'
 import { ActivityList } from '@/components/ActivityList'
 import { DateFilter } from '@/components/DateFilter'
 import { QueryForm } from '@/components/QueryForm'
-import { Button, ButtonLink, Card, Field, PageHeader, Pagination, Tabs, inputClass } from '@/components/ui'
+import { Button, ButtonLink, Card, InlineField, PageHeader, Pagination, Tabs, inputClass } from '@/components/ui'
 
 export const metadata = { title: 'Activity log · RailServe' }
 
@@ -142,7 +142,7 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
           </select>
           <input name="orderId" defaultValue={orderId} placeholder="Order ID"
             autoComplete="off" spellCheck={false}
-            className={`${inputClass} font-mono`} aria-label="Order ID" />
+            className={`${inputClass} font-mono placeholder:font-sans`} aria-label="Order ID" />
           <div className="flex gap-2">
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {narrowed ? (
@@ -152,9 +152,9 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
             ) : null}
           </div>
           <div className="sm:col-span-2 lg:col-span-5">
-            <Field label="Date">
+            <InlineField label="Date">
               <DateFilter mode={mode === 'all' ? 'today' : mode} month={month} from={rawFrom} to={rawTo} />
-            </Field>
+            </InlineField>
           </div>
         </QueryForm>
       </Card>

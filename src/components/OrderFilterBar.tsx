@@ -1,5 +1,5 @@
 import { IconSearch } from '@/components/Icons'
-import { Button, ButtonLink, Field, inputClass, statusLabel } from '@/components/ui'
+import { Button, ButtonLink, InlineField, inputClass, statusLabel } from '@/components/ui'
 import { DateFilter } from '@/components/DateFilter'
 import { StationMultiSelect } from '@/components/StationMultiSelect'
 import { QueryForm } from '@/components/QueryForm'
@@ -41,7 +41,7 @@ export function OrderFilterBar({
       </div>
       <input name="train" defaultValue={f.train} placeholder="Train number" inputMode="numeric"
         autoComplete="off" spellCheck={false}
-        className={`${inputClass} font-mono`} aria-label="Train number" />
+        className={`${inputClass} font-mono placeholder:font-sans`} aria-label="Train number" />
       <StationMultiSelect name="station" options={options.stations} defaultSelected={f.stations} />
       <select name="outlet" defaultValue={f.outlet} className={inputClass} aria-label="Outlet">
         <option value="">All outlets</option>
@@ -79,14 +79,14 @@ export function OrderFilterBar({
         ) : null}
       </div>
       <div className="sm:col-span-2 lg:col-span-6">
-        <Field label="Date">
+        <InlineField label="Date">
           {/* Keyed so it shows the range the list was read with (a search on
               the default view reads All time), and only carried once picked,
               so a search typed on the default view is not pinned to it. */}
           <DateFilter key={`${f.mode}|${f.month}|${f.from}|${f.to}`}
             mode={f.mode} month={f.month} from={f.from} to={f.to} allowAll
             carryUnchanged={f.modeSet} />
-        </Field>
+        </InlineField>
       </div>
     </QueryForm>
   )
