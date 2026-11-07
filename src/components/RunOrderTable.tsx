@@ -47,7 +47,7 @@ export type RunTableOrder = {
 /** Everything shown in a row, as plain text for pasting elsewhere. */
 function orderDetailsText(o: RunTableOrder, trainText?: string): string {
   const seat = o.handoverPoint
-    ? `Handover: ${o.handoverPoint}`
+    ? `${o.orderType === 'LOCAL' ? 'Deliver to' : 'Handover'}: ${o.handoverPoint}`
     : seatText(o)
   const items = o.pax ? `${o.pax} pax thali` : o.itemNames.join(', ') || 'No items'
   const lines = [
@@ -217,7 +217,7 @@ export function RunOrderTable({
               <td className="whitespace-nowrap px-3 py-2.5">
                 {o.handoverPoint ? (
                   <span className="inline-block max-w-[12rem] truncate text-xs font-medium text-fuchsia-700" title={o.handoverPoint}>
-                    Handover: {o.handoverPoint}
+                    {o.orderType === 'LOCAL' ? 'Deliver to' : 'Handover'}: {o.handoverPoint}
                   </span>
                 ) : (
                   <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />

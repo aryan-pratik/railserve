@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareCoach, groupIntoRuns, parseRunKey, runKeyFor, sortRunsByUrgency, NO_TRAIN } from '../src/lib/runs'
+import { compareCoach, groupIntoRuns, parseRunKey, runKeyFor, runTrainLabel, sortRunsByUrgency, LOCAL_RUN, NO_TRAIN } from '../src/lib/runs'
 
 const mk = (over: Record<string, unknown> = {}) => ({
   _id: Math.random().toString(36).slice(2),
@@ -16,13 +16,26 @@ const mk = (over: Record<string, unknown> = {}) => ({
 describe('run keys', () => {
   it('round-trips', () => {
     const id = { trainNo: '12506', serviceDate: '2026-08-27', stationCode: 'CNB' }
-    expect(parseRunKey(runKeyFor(id))).toEqual(id)
+    expect(parseRunKey(runKeyFor(id))).toEqual({ ...id, local: false })
   })
 
   it('represents a missing train number without losing the run', () => {
     const key = runKeyFor({ trainNo: null, serviceDate: '2026-08-27', stationCode: 'CNB' })
     expect(key).toContain(NO_TRAIN)
     expect(parseRunKey(key)?.trainNo).toBeNull()
+  })
+
+  it('gives local orders their own run, apart from train orders missing a number', () => {
+    const local = runKeyFor({ orderType: 'LOCAL', trainNo: null, serviceDate: '2026-08-27', stationCode: 'CNB' })
+    const noTrain = runKeyFor({ orderType: 'RETAIL', trainNo: null, serviceDate: '2026-08-27', stationCode: 'CNB' })
+    expect(local).toContain(LOCAL_RUN)
+    expect(local).not.toBe(noTrain)
+    expect(parseRunKey(local)).toEqual({ trainNo: null, serviceDate: '2026-08-27', stationCode: 'CNB', local: true })
+  })
+
+  it('keeps a local order off a train run even if a train number slipped in', () => {
+    const key = runKeyFor({ orderType: 'LOCAL', trainNo: '12506', serviceDate: '2026-08-27', stationCode: 'CNB' })
+    expect(key.startsWith(LOCAL_RUN)).toBe(true)
   })
 
   it('rejects malformed keys rather than producing a bogus run', () => {
@@ -150,5 +163,23 @@ describe('urgency ordering', () => {
     }
     const sorted = sortRunsByUrgency(runs, (r) => eta[r.trainNo!] ?? null, now)
     expect(sorted.map((r) => r.trainNo)).toEqual(['12506', '12312'])
+  })
+})
+
+describe('local runs', () => {
+  it('groups local orders into one run per station and day, with no train', () => {
+    const runs = groupIntoRuns([
+      mk({ orderType: 'RETAIL' }),
+      mk({ orderType: 'LOCAL', trainNo: null, trainName: null, coach: null, scheduledArrival: null }),
+      mk({ orderType: 'LOCAL', trainNo: null, trainName: null, coach: null, scheduledArrival: null }),
+      mk({ orderType: 'RETAIL', trainNo: null, coach: null }),
+    ])
+    expect(runs).toHaveLength(3)
+    const local = runs.find((r) => r.local)!
+    expect(local.orders).toHaveLength(2)
+    expect(local.trainNo).toBeNull()
+    expect(local.trainName).toBeNull()
+    expect(runTrainLabel(local)).toBe('Local')
+    expect(runs.filter((r) => !r.local).map(runTrainLabel).sort()).toEqual(['12506', 'No train no.'])
   })
 })

@@ -158,6 +158,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     const t = timingFor(run.orders[0], timings)
     return {
       key: run.key,
+      local: run.local,
       trainNo: run.trainNo,
       trainName: run.trainName,
       stationCode: run.stationCode,

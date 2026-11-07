@@ -250,7 +250,7 @@ export function OrderModal({
                   </p>
                 ) : null}
                 <Row
-                  label={detail.handoverPoint ? 'Handover' : 'Seat'}
+                  label={detail.handoverPoint ? (detail.orderType === 'LOCAL' ? 'Deliver to' : 'Handover') : 'Seat'}
                   value={detail.handoverPoint ?? detail.seat ?? null}
                   mono={!detail.handoverPoint}
                 />

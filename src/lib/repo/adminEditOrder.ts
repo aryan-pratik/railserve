@@ -129,6 +129,47 @@ async function inTransaction<T>(fn: (session: mongoose.ClientSession) => Promise
 
 export type FieldChange = { field: string; label: string; from: unknown; to: unknown }
 
+/** The fields that only mean something on a train; a local order has none of them. */
+const TRAIN_FIELDS = ['trainNo', 'trainName', 'scheduledArrival', 'coach', 'berth', 'rawSeat'] as const
+
+const isEmpty = (v: unknown) => v === null || v === undefined || v === ''
+
+/**
+ * Keeps a local order free of train details.
+ *
+ * Turning an order into LOCAL clears its train fields in the same save (each
+ * logged like any other edit), since a leftover train number would keep it on
+ * that train's run and KOT. On an order that is already local, setting a
+ * train field is refused: change the type first.
+ */
+function localTrainFields(
+  changes: [EditableField, unknown][],
+  row: Record<string, unknown>,
+  defs: Map<string, EditableField>,
+): [EditableField, unknown][] {
+  const typeChange = changes.find(([d]) => d.key === 'orderType')
+  const finalType = typeChange ? typeChange[1] : row.orderType
+  if (finalType !== 'LOCAL') return changes
+
+  const isTrainField = (key: string) => (TRAIN_FIELDS as readonly string[]).includes(key)
+  if (!typeChange) {
+    const bad = changes.find(([d, v]) => isTrainField(d.key) && !isEmpty(v))
+    if (bad) {
+      throw new FieldValidationError(
+        `A local order has no train, so ${bad[0].label.toLowerCase()} cannot be set. Change the order type first.`,
+      )
+    }
+    return changes
+  }
+
+  const kept = changes.filter(([d]) => !isTrainField(d.key))
+  for (const key of TRAIN_FIELDS) {
+    const def = defs.get(key)
+    if (def && !isEmpty(row[key])) kept.push([def, null])
+  }
+  return kept
+}
+
 /**
  * Applies the fields in `input` that differ from what is stored, and logs one
  * event per field changed. Keys that are not editable are refused outright
@@ -167,7 +208,11 @@ export async function adminEditOrder(
       if (!current) throw new NotFoundError('Order not found')
       const row = current as unknown as Record<string, unknown>
 
-      const changes = parsed.filter(([def, value]) => !sameValue(row[def.key], value))
+      const changes = localTrainFields(
+        parsed.filter(([def, value]) => !sameValue(row[def.key], value)),
+        row,
+        defs,
+      )
       if (changes.length === 0) return []
 
       // The unique index is the real guard (the catch below); this is the same

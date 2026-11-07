@@ -4,7 +4,7 @@ import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { formatIST, paiseToRupees } from '@/lib/format'
-import { sourceLabel } from '@/lib/orderEnums'
+import { ORDER_TYPES, sourceLabel } from '@/lib/orderEnums'
 import { resolveDateRange } from '@/lib/dateFilter'
 import { riderClause, riderNamesFor } from '@/lib/repo/riderFilter'
 import { orderSearchClause, parseStations } from '@/lib/repo/orderSearch'
@@ -60,6 +60,8 @@ export async function GET(request: Request) {
   const stations = parseStations(url.searchParams.getAll('station'))
   const status = url.searchParams.get('status') ?? ''
   const train = url.searchParams.get('train') ?? ''
+  const rawType = url.searchParams.get('type') ?? ''
+  const type = (ORDER_TYPES as readonly string[]).includes(rawType) ? rawType : ''
   const payment = url.searchParams.get('payment') ?? ''
   const rider = url.searchParams.get('rider') ?? ''
   const q = (url.searchParams.get('q') || url.searchParams.get('orderId') || '').trim()
@@ -80,6 +82,7 @@ export async function GET(request: Request) {
   if (outlet) filter.restaurantId = outlet
   if (stations.length) filter.stationCode = stations.length === 1 ? stations[0] : { $in: stations }
   if (train) filter.trainNo = train.toUpperCase()
+  if (type) filter.orderType = type
   if (payment) filter.paymentMode = payment
   const byRider = riderClause(rider)
   if (byRider) Object.assign(filter, byRider)

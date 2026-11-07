@@ -64,7 +64,9 @@ export function OrderCard({
 
       <div className="grid gap-4 p-4 sm:grid-cols-2">
         <div className="space-y-1 text-sm">
-          {order.trainNo ? (
+          {order.orderType === 'LOCAL' ? (
+            <div className="font-medium text-ink">Local order</div>
+          ) : order.trainNo ? (
             <div>
               <span className="font-mono font-semibold tabular-nums text-ink">{order.trainNo}</span>{' '}
               <span className="text-muted">{order.trainName}</span>
@@ -73,7 +75,9 @@ export function OrderCard({
             <div className="text-faint">No train number</div>
           )}
           <div className="text-muted">
-            {order.orderType === 'BULK' ? (
+            {order.orderType === 'LOCAL' ? (
+              <>Deliver to <span className="font-medium text-ink">{order.handoverPoint ?? <Dash />}</span></>
+            ) : order.orderType === 'BULK' ? (
               <>
                 <span className="font-medium tabular-nums text-ink">{order.pax} pax</span>
                 {order.handoverPoint ? ` · ${order.handoverPoint}` : ''}
@@ -84,7 +88,9 @@ export function OrderCard({
           </div>
           {timing ?? (
             <div className="text-xs tabular-nums text-faint">
-              {order.scheduledArrival ? `Arrives ${formatIST(order.scheduledArrival)}` : 'Arrival time unknown'}
+              {order.orderType === 'LOCAL'
+                ? order.readyBy ? `Ready by ${formatIST(order.readyBy)}` : 'No ready-by time'
+                : order.scheduledArrival ? `Arrives ${formatIST(order.scheduledArrival)}` : 'Arrival time unknown'}
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
+import { runTrainLabel } from '@/lib/runs'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { KotTickets } from '@/components/KotTicket'
@@ -42,7 +43,7 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
         <div className="flex items-center gap-3">
           <span className="text-xs text-faint">
             {orders.length} order{orders.length === 1 ? '' : 's'} ·{' '}
-            {run.trainNo ?? 'no train no.'}
+            {runTrainLabel(run)}
           </span>
           {reprintable > 0 ? (
             <PrintButton

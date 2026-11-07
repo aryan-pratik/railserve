@@ -4,9 +4,14 @@ import { ORDER_TYPES, PAYMENT_MODES } from '../orderEnums'
 /**
  * Shape of the admin manual-entry form.
  *
- * Bulk and retail share one schema and diverge in refinement rather than in two
- * separate schemas, because they are the same order with different required
- * fields — and they merge into one pipeline immediately after creation.
+ * Bulk, retail and local share one schema and diverge in refinement rather
+ * than in separate schemas, because they are the same order with different
+ * required fields — and they merge into one pipeline immediately after
+ * creation.
+ *
+ * Local orders (a stall at the station, a counter pickup) never board a train:
+ * they take items like retail, need somewhere to go instead of a seat, and
+ * must not demand a train number.
  */
 export const ManualOrderInput = z
   .object({
@@ -65,8 +70,16 @@ export const ManualOrderInput = z
           message: 'Handover point is required for bulk',
         })
       }
-    } else if (v.items.filter((i) => !i.isPacking).length === 0) {
+      return
+    }
+    if (v.items.filter((i) => !i.isPacking).length === 0) {
       ctx.addIssue({ code: 'custom', path: ['items'], message: 'Add at least one item' })
+    }
+    if (v.orderType === 'LOCAL' && !v.handoverPoint) {
+      ctx.addIssue({
+        code: 'custom', path: ['handoverPoint'],
+        message: 'Say where a local order goes (stall, platform, counter pickup)',
+      })
     }
   })
 

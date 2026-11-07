@@ -59,11 +59,18 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
         </div>
 
         <div className="mt-3 flex items-start gap-3">
-          <div className="rounded-lg bg-ink px-3 py-2 font-mono text-2xl font-bold leading-none tabular-nums text-white">
-            {order.coach ?? '?'}
-          </div>
+          {order.orderType === 'LOCAL' ? null : (
+            <div className="rounded-lg bg-ink px-3 py-2 font-mono text-2xl font-bold leading-none tabular-nums text-white">
+              {order.coach ?? '?'}
+            </div>
+          )}
           <div className="text-sm">
-            {order.orderType === 'BULK' ? (
+            {order.orderType === 'LOCAL' ? (
+              <>
+                <div className="font-semibold text-ink">Deliver to</div>
+                <div className="text-muted">{order.handoverPoint ?? order.stationCode}</div>
+              </>
+            ) : order.orderType === 'BULK' ? (
               <>
                 <div className="font-semibold text-ink">{order.pax} pax</div>
                 <div className="text-muted">{order.handoverPoint}</div>

@@ -8,6 +8,7 @@ import { UrgencyRail } from './UrgencyRail'
 import { Card, CoachChip, StatusBadge, TypeBadge, focusRingInset } from './ui'
 import { IconChevronDown } from './Icons'
 import { CopyButton } from './CopyButton'
+import { runTrainLabel } from '@/lib/runs'
 import { urgencyBand, type UrgencyBand } from '@/lib/urgency'
 
 /** A header band tinted by urgency, so a board can be scanned by colour before it is read. */
@@ -47,6 +48,8 @@ export type RunOrderRow = {
 
 export type RunCardData = {
   key: string
+  /** A run of local orders, which has no train to name. */
+  local?: boolean
   trainNo?: Maybe<string>
   trainName?: Maybe<string>
   stationCode: string
@@ -56,6 +59,7 @@ export type RunCardData = {
 
 /** The train-level facts every run card carries, whoever is looking at it. */
 export type RunHeaderData = {
+  local?: boolean
   trainNo?: Maybe<string>
   trainName?: Maybe<string>
   stationCode: string
@@ -127,7 +131,7 @@ export function TrainRunFrame({
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="font-mono text-lg font-bold tabular-nums tracking-tight text-ink">
-            {run.trainNo ?? 'No train no.'}
+            {runTrainLabel(run)}
           </span>
           <TrainStartDate date={run.timing.startDate} />
           <span className="truncate text-sm font-medium text-muted">{run.trainName}</span>
@@ -237,7 +241,7 @@ export function TrainRunFrame({
  */
 function orderDetailsText(o: RunOrderRow, run: RunHeaderData): string {
   const seat = o.handoverPoint
-    ? `Handover: ${o.handoverPoint}`
+    ? `${o.orderType === 'LOCAL' ? 'Deliver to' : 'Handover'}: ${o.handoverPoint}`
     : seatText(o)
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,
@@ -250,7 +254,9 @@ function orderDetailsText(o: RunOrderRow, run: RunHeaderData): string {
         ? `Payment: ${o.paymentMode}`
         : null,
     `Status: ${o.status}`,
-    `Train: ${run.trainNo ?? 'No train no.'} ${run.trainName ?? ''} · ${run.stationCode}`.trim(),
+    run.local
+      ? `Local · ${run.stationCode}`
+      : `Train: ${runTrainLabel(run)} ${run.trainName ?? ''} · ${run.stationCode}`.trim(),
   ]
   return lines.filter((l): l is string => Boolean(l)).join('\n')
 }
@@ -288,7 +294,7 @@ export function TrainRunCard({
       codTotal={codTotal}
       footer={footer}
       refreshAction={refreshAction}
-      copyText={`${run.trainNo ?? 'No train no.'} ${run.trainName ?? ''} · ${run.stationCode}`.trim()}
+      copyText={`${runTrainLabel(run)} ${run.trainName ?? ''} · ${run.stationCode}`.trim()}
     >
       {run.orders.map((o) => {
         // The name block keeps a minimum width, so on a phone the
@@ -297,7 +303,9 @@ export function TrainRunCard({
           <div className="group flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
             <div className="w-20 shrink-0">
               {o.handoverPoint ? (
-                <span className="text-xs font-semibold text-fuchsia-700">Handover</span>
+                <span className="text-xs font-semibold text-fuchsia-700">
+                  {o.orderType === 'LOCAL' ? 'Deliver to' : 'Handover'}
+                </span>
               ) : (
                 <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
               )}

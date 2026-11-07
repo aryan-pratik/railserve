@@ -9,7 +9,7 @@ export type OrderItem = {
 export type RunOrder = {
   id: string
   externalOrderId: string
-  orderType: 'RETAIL' | 'BULK'
+  orderType: 'RETAIL' | 'BULK' | 'LOCAL'
   status: string
   /**
    * false for a ready order nobody was given — open on the counter to any
@@ -48,6 +48,8 @@ export type Timing = {
 
 export type Run = {
   key: string
+  /** A run of local orders (no train). Optional: older servers omit it. */
+  local?: boolean
   trainNo: string | null
   trainName: string | null
   stationCode: string

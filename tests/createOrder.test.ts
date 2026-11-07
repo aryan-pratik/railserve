@@ -143,6 +143,40 @@ describe('createManualOrder', () => {
     expect(r.success).toBe(false)
   })
 
+  it('creates a local order with no train, seat or arrival, delivered where it says', async () => {
+    const o = await createManualOrder(
+      admin,
+      ManualOrderInput.parse({
+        orderType: 'LOCAL',
+        restaurantId: outletId,
+        serviceDate: '2026-08-27',
+        handoverPoint: 'Tea stall, platform 1',
+        readyBy: '2026-08-27T13:00',
+        contactName: 'Stall owner',
+        // Posted by a stale form: must not put the order on a train.
+        trainNo: '12506',
+        coach: 'B5',
+        berth: '37',
+        scheduledArrival: '2026-08-27T13:25',
+        items: [{ name: 'Samosa', qty: 20, priceRupees: '10', isPacking: false }],
+      }),
+    )
+    expect(o.orderType).toBe('LOCAL')
+    expect(o.status).toBe('RECEIVED')
+    expect(o.trainNo).toBeNull()
+    expect(o.trainName).toBeNull()
+    expect(o.scheduledArrival).toBeNull()
+    expect(o.coach).toBeNull()
+    expect(o.berth).toBeNull()
+    expect(o.rawSeat).toBeNull()
+    expect(o.handoverPoint).toBe('Tea stall, platform 1')
+    expect(o.stationCode).toBe('CNB')
+    // 13:00 IST is 07:30 UTC.
+    expect(o.readyBy?.toISOString()).toBe('2026-08-27T07:30:00.000Z')
+    expect(o.items).toHaveLength(1)
+    expect(o.items[0].qty).toBe(20)
+  })
+
   it('the created order is visible to its own outlet manager and nobody else', async () => {
     const o = await createManualOrder(admin, retail())
     expect(await findById(manager, String(o._id))).not.toBeNull()

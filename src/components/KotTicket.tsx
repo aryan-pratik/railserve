@@ -45,6 +45,8 @@ export type KotOrder = {
   handoverPoint?: Maybe<string>
   pax?: Maybe<number>
   scheduledArrival?: Maybe<Date>
+  /** When the kitchen must have it done. Printed for local orders, which have no arrival. */
+  readyBy?: Maybe<Date>
   contactName?: Maybe<string>
   contactPhone?: Maybe<string>
   notes?: Maybe<string>
@@ -90,6 +92,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
   const kitchen = order.items.filter((i) => !i.isPacking)
   const packing = order.items.filter((i) => i.isPacking)
   const isBulk = order.orderType === 'BULK'
+  const isLocal = order.orderType === 'LOCAL'
 
   return (
     <div className={TICKET_CLASS}>
@@ -119,11 +122,18 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
 
       <Rule />
 
-      <Line
-        label="Train"
-        value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}`.trim() : 'NOT SPECIFIED'}
-      />
-      {isBulk ? (
+      {isLocal ? (
+        <>
+          <Line label="Local" value={order.handoverPoint ?? '-'} />
+          <Line label="Ready" value={formatTimeIST(order.readyBy)} />
+        </>
+      ) : (
+        <Line
+          label="Train"
+          value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}`.trim() : 'NOT SPECIFIED'}
+        />
+      )}
+      {isLocal ? null : isBulk ? (
         <>
           <Line label="Pax" value={String(order.pax ?? '-')} />
           <Line label="Handover" value={order.handoverPoint ?? '-'} />
@@ -131,7 +141,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
       ) : (
         <Line label="Seat" value={order.rawSeat ?? '-'} />
       )}
-      <Line label="Arrives" value={formatTimeIST(order.scheduledArrival)} />
+      {isLocal ? null : <Line label="Arrives" value={formatTimeIST(order.scheduledArrival)} />}
       <Line label="Name" value={order.contactName ?? '-'} />
       <Line label="Phone" value={order.contactPhone ?? '-'} />
 
@@ -236,6 +246,7 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
 export function KotSlip({ order }: { order: KotOrder }) {
   const food = order.items.filter((i) => !i.isPacking)
   const isBulk = order.orderType === 'BULK'
+  const isLocal = order.orderType === 'LOCAL'
 
   return (
     <div className={TICKET_CLASS}>
@@ -243,8 +254,12 @@ export function KotSlip({ order }: { order: KotOrder }) {
 
       <Rule />
 
-      <Line label="Train" value={order.trainNo ?? 'NOT SPECIFIED'} />
-      {isBulk ? (
+      {isLocal ? (
+        <Line label="Local" value={order.handoverPoint ?? '-'} />
+      ) : (
+        <Line label="Train" value={order.trainNo ?? 'NOT SPECIFIED'} />
+      )}
+      {isLocal ? null : isBulk ? (
         <Line label="Handover" value={order.handoverPoint ?? '-'} />
       ) : (
         <Line label="Seat" value={order.rawSeat ?? '-'} />

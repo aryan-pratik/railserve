@@ -4,6 +4,7 @@ import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { countOrders } from '@/lib/repo/orderRepo'
 import { LIVE_STATUSES } from '@/lib/repo/runRepo'
+import { runTrainLabel } from '@/lib/runs'
 import { formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
 import { callBoardRow } from '@/lib/orderView'
 import { loadRunBoard, todayBoardFilter, yesterdayBoardFilter, type BoardMode } from '@/lib/board'
@@ -273,6 +274,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
                 ) : null}
                 <TrainRunFrame
                   run={{
+                    local: run.local,
                     trainNo: run.trainNo,
                     trainName: run.trainName,
                     stationCode: run.stationCode,
@@ -283,7 +285,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
                   // Open while there is someone left to ring, or while the
                   // person is searching and needs to see what matched.
                   collapsible={{ open: filtered || called < rows.length }}
-                  copyText={`${run.trainNo ?? 'No train no.'} ${run.trainName ?? ''} · ${run.stationCode}`.trim()}
+                  copyText={`${runTrainLabel(run)} ${run.trainName ?? ''} · ${run.stationCode}`.trim()}
                   headerNote={<RunSummary counts={counts} called={called} total={rows.length} />}
                 >
                   {rows.map((row) => (

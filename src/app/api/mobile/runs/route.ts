@@ -45,6 +45,7 @@ export async function GET(request: Request) {
 
       return {
         key: run.key,
+        local: run.local,
         trainNo: run.trainNo,
         trainName: run.trainName,
         stationCode: run.stationCode,

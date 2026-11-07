@@ -167,7 +167,7 @@ export function HomeScreen({
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <View style={{ flex: 1, marginRight: 8 }}>
                         <Text style={{ fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>
-                          {run.trainNo ?? '—'}
+                          {run.local ? 'Local' : (run.trainNo ?? '—')}
                         </Text>
                         <Text style={{ fontSize: 14, color: colors.text, marginTop: 3, textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.2 }}>
                           {run.trainName}

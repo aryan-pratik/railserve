@@ -58,7 +58,7 @@ export function DeliveryScreen({
       {/* Where to go. The biggest thing on the screen, because it is the only
           thing that matters while walking a platform. */}
       <View style={{ paddingTop: 12, paddingBottom: 24 }}>
-        <Text style={s.label}>{order.handoverPoint ? 'HAND OVER AT' : 'COACH · SEAT'}</Text>
+        <Text style={s.label}>{order.orderType === 'LOCAL' ? 'DELIVER TO' : order.handoverPoint ? 'HAND OVER AT' : 'COACH · SEAT'}</Text>
         <View style={{ marginTop: 10 }}>
           {order.handoverPoint ? (
             <Text style={s.h1}>{order.handoverPoint}</Text>

@@ -8,7 +8,7 @@ import { warmTrainStatus } from '../train/service'
 /**
  * Creates a manual order. The MVP's only inlet.
  *
- * Enters at RECEIVED for both retail and bulk: the ENQUIRY -> QUOTED head of
+ * Enters at RECEIVED for retail, bulk and local alike: the ENQUIRY -> QUOTED head of
  * the bulk pipeline exists in the status machine and is tested, but no UI drives
  * it until the paste-to-parse form arrives. `source` is MANUAL and `rawPayload`
  * is null, so a later Gmail or WhatsApp ingestion writes the same document shape
@@ -37,6 +37,10 @@ export async function createManualOrder(ctx: AuthContext, input: ManualOrderInpu
   }
 
   const isBulk = input.orderType === 'BULK'
+  // A local order never boards a train, so every train field is dropped even
+  // if the form posted one: a stray train number would put it on that train's
+  // run, its KOT and its rider's walk.
+  const isLocal = input.orderType === 'LOCAL'
 
   // Plan §7: bulk creates ONE item with qty = pax and the whole menu in `spec`.
   // Do not shred a thali into eleven rows of qty 75.
@@ -79,18 +83,20 @@ export async function createManualOrder(ctx: AuthContext, input: ManualOrderInpu
     restaurantId: restaurant._id,
     stationCode: restaurant.stationCode,
 
-    trainNo: input.trainNo || null,
-    trainName: input.trainName || null,
+    trainNo: isLocal ? null : input.trainNo || null,
+    trainName: isLocal ? null : input.trainName || null,
     serviceDate: input.serviceDate,
-    scheduledArrival: istLocalToUtc(input.scheduledArrival ?? ''),
+    scheduledArrival: isLocal ? null : istLocalToUtc(input.scheduledArrival ?? ''),
     // No live tracking in the MVP — every order is on its scheduled time.
     timingSource: 'SCHEDULED',
 
-    coach: isBulk ? null : input.coach || null,
-    berth: isBulk ? null : input.berth || null,
+    coach: isBulk || isLocal ? null : input.coach || null,
+    berth: isBulk || isLocal ? null : input.berth || null,
     rawSeat:
-      !isBulk && input.coach ? `${input.coach}${input.berth ? `-${input.berth}` : ''}` : null,
-    handoverPoint: isBulk ? input.handoverPoint || null : null,
+      !isBulk && !isLocal && input.coach
+        ? `${input.coach}${input.berth ? `-${input.berth}` : ''}`
+        : null,
+    handoverPoint: isBulk || isLocal ? input.handoverPoint || null : null,
 
     contactName: input.contactName || null,
     contactPhone: input.contactPhone || null,

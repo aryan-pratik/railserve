@@ -121,6 +121,9 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
     tone: (o.danger ? 'danger' : 'primary') as 'primary' | 'danger',
   }))
 
+  // A local order never boards a train: no train, arrival or seat to show.
+  const isLocal = order.orderType === 'LOCAL'
+
   const kitchenItems = order.items.filter((i) => !i.isPacking)
   const packingItems = order.items.filter((i) => i.isPacking)
 
@@ -150,47 +153,57 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           ) : null}
 
           <Card>
-            <CardHeader title="Journey" />
+            <CardHeader title={isLocal ? 'Delivery' : 'Journey'} />
             <div className="divide-y divide-line">
-              <Row label="Train" value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}` : 'Not specified'} />
-              <Row label="Station" value={order.stationCode} />
-              <Row
-                label="Scheduled arrival"
-                value={
-                  bookedShown ? (
-                    <span className="flex flex-wrap items-baseline justify-end gap-x-2">
-                      <span>{formatIST(scheduledShown)}</span>
-                      <span
-                        className="text-xs text-muted"
-                        title="The aggregator booked this train on another day; the railway timetable has it here."
-                      >
-                        booked {formatIST(bookedShown)}
-                      </span>
-                    </span>
-                  ) : (
-                    formatIST(scheduledShown)
-                  )
-                }
-              />
-              <Row
-                label="Expected"
-                value={
-                  <span className="flex flex-wrap items-center justify-end gap-1.5">
-                    <TrainTiming timing={timing} />
-                    {order.trainNo ? (
-                      <RefreshTrainButton orderId={String(order._id)} action={forceRefreshOrderTrain} />
-                    ) : null}
-                  </span>
-                }
-              />
-              {order.orderType === 'BULK' ? (
+              {isLocal ? (
                 <>
-                  <Row label="Pax" value={order.pax} />
-                  <Row label="Handover point" value={order.handoverPoint} />
+                  <Row label="Station" value={order.stationCode} />
+                  <Row label="Deliver to" value={order.handoverPoint} />
                   <Row label="Ready by" value={formatIST(order.readyBy)} />
                 </>
               ) : (
-                <Row label="Seat" value={order.rawSeat ? <span className="font-mono">{order.rawSeat}</span> : null} />
+                <>
+                  <Row label="Train" value={order.trainNo ? `${order.trainNo} ${order.trainName ?? ''}` : 'Not specified'} />
+                  <Row label="Station" value={order.stationCode} />
+                  <Row
+                    label="Scheduled arrival"
+                    value={
+                      bookedShown ? (
+                        <span className="flex flex-wrap items-baseline justify-end gap-x-2">
+                          <span>{formatIST(scheduledShown)}</span>
+                          <span
+                            className="text-xs text-muted"
+                            title="The aggregator booked this train on another day; the railway timetable has it here."
+                          >
+                            booked {formatIST(bookedShown)}
+                          </span>
+                        </span>
+                      ) : (
+                        formatIST(scheduledShown)
+                      )
+                    }
+                  />
+                  <Row
+                    label="Expected"
+                    value={
+                      <span className="flex flex-wrap items-center justify-end gap-1.5">
+                        <TrainTiming timing={timing} />
+                        {order.trainNo ? (
+                          <RefreshTrainButton orderId={String(order._id)} action={forceRefreshOrderTrain} />
+                        ) : null}
+                      </span>
+                    }
+                  />
+                  {order.orderType === 'BULK' ? (
+                    <>
+                      <Row label="Pax" value={order.pax} />
+                      <Row label="Handover point" value={order.handoverPoint} />
+                      <Row label="Ready by" value={formatIST(order.readyBy)} />
+                    </>
+                  ) : (
+                    <Row label="Seat" value={order.rawSeat ? <span className="font-mono">{order.rawSeat}</span> : null} />
+                  )}
+                </>
               )}
               <Row
                 label="Contact"

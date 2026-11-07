@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react'
 import { Button, Card, CardHeader, Field, FormNote, inputClass, textareaClass } from '@/components/ui'
 import { IconPlus } from '@/components/Icons'
 import { PACKING_CHOICES } from '@/lib/validation/order'
+import { ORDER_TYPES, ORDER_TYPE_LABEL, type OrderType } from '@/lib/orderEnums'
 
 export type ComposerState = { error?: string; ok?: string }
 
@@ -36,9 +37,12 @@ export function OrderComposer({
   const [pasteState, paste, pasting] = useActionState(pasteAction, initial)
   const [createState, create, creating] = useActionState(createAction, initial)
 
-  const [orderType, setOrderType] = useState<'RETAIL' | 'BULK'>('RETAIL')
+  const [orderType, setOrderType] = useState<OrderType>('RETAIL')
   const [rows, setRows] = useState(1)
   const isBulk = orderType === 'BULK'
+  // A local order (a stall, a counter pickup) never boards a train, so the
+  // train fields are not shown at all rather than left optional.
+  const isLocal = orderType === 'LOCAL'
 
   return (
     <div className="space-y-5">
@@ -78,7 +82,7 @@ export function OrderComposer({
           <div className="grid gap-4 p-4 sm:grid-cols-2">
             <Field label="Type">
               <div className="flex gap-2">
-                {(['RETAIL', 'BULK'] as const).map((t) => (
+                {ORDER_TYPES.map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -89,7 +93,7 @@ export function OrderComposer({
                         : 'border-line-strong bg-surface text-muted hover:bg-sunken'
                     }`}
                   >
-                    {t === 'RETAIL' ? 'Retail' : 'Bulk'}
+                    {ORDER_TYPE_LABEL[t]}
                   </button>
                 ))}
               </div>
@@ -108,27 +112,44 @@ export function OrderComposer({
                 required className={inputClass} />
             </Field>
 
-            <Field label="Arrives at" htmlFor="scheduledArrival" hint="Scheduled time at the station.">
-              <input id="scheduledArrival" name="scheduledArrival" type="datetime-local"
-                className={inputClass} />
-            </Field>
+            {isLocal ? null : (
+              <>
+                <Field label="Arrives at" htmlFor="scheduledArrival" hint="Scheduled time at the station.">
+                  <input id="scheduledArrival" name="scheduledArrival" type="datetime-local"
+                    className={inputClass} />
+                </Field>
 
-            <Field label="Train number" htmlFor="trainNo" hint="Enables live tracking.">
-              <input id="trainNo" name="trainNo" inputMode="numeric" placeholder="12561"
-                className={`${inputClass} font-mono`} />
-            </Field>
+                <Field label="Train number" htmlFor="trainNo" hint="Enables live tracking.">
+                  <input id="trainNo" name="trainNo" inputMode="numeric" placeholder="12561"
+                    className={`${inputClass} font-mono`} />
+                </Field>
 
-            <Field label="Train name" htmlFor="trainName">
-              <input id="trainName" name="trainName" placeholder="SWATANTRA S EXP"
-                className={inputClass} />
-            </Field>
+                <Field label="Train name" htmlFor="trainName">
+                  <input id="trainName" name="trainName" placeholder="SWATANTRA S EXP"
+                    className={inputClass} />
+                </Field>
+              </>
+            )}
           </div>
         </Card>
 
         <Card>
-          <CardHeader title={isBulk ? 'Handover' : 'Passenger'} />
+          <CardHeader title={isBulk ? 'Handover' : isLocal ? 'Delivery' : 'Passenger'} />
           <div className="grid gap-4 p-4 sm:grid-cols-2">
-            {isBulk ? (
+            {isLocal ? (
+              <>
+                <div className="sm:col-span-2">
+                  <Field label="Deliver to" htmlFor="handoverPoint"
+                    hint="Where it goes. For example: tea stall, platform 3, or counter pickup.">
+                    <input id="handoverPoint" name="handoverPoint" required className={inputClass} />
+                  </Field>
+                </div>
+                <Field label="Ready by" htmlFor="readyBy" hint="When the kitchen must have it done.">
+                  <input id="readyBy" name="readyBy" type="datetime-local" className={inputClass} />
+                </Field>
+                <div className="hidden sm:block" />
+              </>
+            ) : isBulk ? (
               <>
                 <Field label="Pax" htmlFor="pax">
                   <input id="pax" name="pax" type="number" min={1} className={inputClass} />

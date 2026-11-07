@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { TrainStartDate } from '@/components/TrainStartDate'
 import { requireRole } from '@/lib/session'
 import { findRuns } from '@/lib/repo/runRepo'
+import { runTrainLabel } from '@/lib/runs'
 import { timingForOrders, timingFor, trainFeedHealth } from '@/lib/train/service'
 import { todayIST, formatServiceDate } from '@/lib/format'
 import { Card, EmptyState, PageHeader } from '@/components/ui'
@@ -49,7 +50,7 @@ export default async function AgentRunsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="font-mono text-lg font-bold tabular-nums text-ink">
-                        {run.trainNo ?? 'No train no.'}
+                        {runTrainLabel(run)}
                       </span>
                       <TrainStartDate date={timing.startDate} />
                       <span className="text-sm text-muted">{run.trainName}</span>
