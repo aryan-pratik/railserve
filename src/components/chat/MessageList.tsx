@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { formatTimeIST } from '@/lib/format'
 import { IconAlert, IconCheck, IconCheckDouble } from '@/components/Icons'
 import { Spinner, focusRing } from '@/components/ui'
-import { AttachmentModal, previewKind, type PreviewKind } from './AttachmentModal'
+import { AttachmentModal, previewKind, type Attachment, type PreviewKind } from './AttachmentModal'
 import type { MessageView } from './chatView'
 
 /**
@@ -46,6 +46,31 @@ export function MessageList({
     return [...older, ...initial.filter((m) => !olderIds.has(m.id))]
   }, [older, initial])
   const last = all.at(-1)
+
+  // Every attachment in the loaded thread, so the viewer can step through
+  // them in order. Tracked by id: older pages prepended while it is open do
+  // not shift which one is showing.
+  const attachments = useMemo<Attachment[]>(
+    () =>
+      all.flatMap((m) =>
+        m.kind === 'MEDIA' && m.mediaUrl
+          ? [{
+              id: m.id,
+              url: m.mediaUrl,
+              kind: previewKind(m.mediaType, m.mediaUrl, m.mediaCaption),
+              caption: m.mediaCaption ?? m.text,
+              at: m.at,
+              out: m.direction === 'OUT',
+              sender: m.sender ?? null,
+            }]
+          : [],
+      ),
+    [all],
+  )
+  const [viewing, setViewing] = useState<string | null>(null)
+  const viewingIndex = viewing ? attachments.findIndex((a) => a.id === viewing) : -1
+  const onViewIndex = useCallback((i: number) => setViewing(attachments[i]?.id ?? null), [attachments])
+  const closeViewer = useCallback(() => setViewing(null), [])
   const lastKey = last ? `${last.id}:${last.status}` : 'none'
 
   // Pin to the bottom on open and whenever a line lands while already there.
@@ -110,29 +135,34 @@ export function MessageList({
   }
 
   return (
-    <ol
-      ref={listRef}
-      onScroll={onScroll}
-      aria-live="polite"
-      className="flex-1 space-y-1 overflow-y-auto bg-canvas px-3 py-3 sm:px-5 [overscroll-behavior:contain] [scrollbar-width:thin]"
-    >
-      <li ref={topRef} aria-hidden className="flex h-6 items-center justify-center text-[11px] text-faint">
-        {loading ? <Spinner size={13} className="text-faint" /> : hasOlder ? null : all.length > 20 ? 'Start of the conversation' : null}
-      </li>
-      {all.map((m, i) => {
-        const day = dayKey(m.at)
-        const prev = all[i - 1]
-        const newDay = !prev || dayKey(prev.at) !== day
-        // Consecutive lines from the same side group tighter, like speech.
-        const sameSide = prev && !newDay && prev.direction === m.direction
-        return (
-          <li key={m.id} className={sameSide ? '' : 'pt-2'}>
-            {newDay ? <DayDivider at={m.at} /> : null}
-            <Bubble m={m} tail={!sameSide} />
-          </li>
-        )
-      })}
-    </ol>
+    <>
+      <ol
+        ref={listRef}
+        onScroll={onScroll}
+        aria-live="polite"
+        className="flex-1 space-y-1 overflow-y-auto bg-canvas px-3 py-3 sm:px-5 [overscroll-behavior:contain] [scrollbar-width:thin]"
+      >
+        <li ref={topRef} aria-hidden className="flex h-6 items-center justify-center text-[11px] text-faint">
+          {loading ? <Spinner size={13} className="text-faint" /> : hasOlder ? null : all.length > 20 ? 'Start of the conversation' : null}
+        </li>
+        {all.map((m, i) => {
+          const day = dayKey(m.at)
+          const prev = all[i - 1]
+          const newDay = !prev || dayKey(prev.at) !== day
+          // Consecutive lines from the same side group tighter, like speech.
+          const sameSide = prev && !newDay && prev.direction === m.direction
+          return (
+            <li key={m.id} className={sameSide ? '' : 'pt-2'}>
+              {newDay ? <DayDivider at={m.at} /> : null}
+              <Bubble m={m} tail={!sameSide} onOpen={setViewing} />
+            </li>
+          )
+        })}
+      </ol>
+      {viewingIndex >= 0 ? (
+        <AttachmentModal items={attachments} index={viewingIndex} onIndex={onViewIndex} onClose={closeViewer} />
+      ) : null}
+    </>
   )
 }
 
@@ -167,7 +197,7 @@ function DayDivider({ at }: { at: string }) {
   )
 }
 
-function Bubble({ m, tail }: { m: MessageView; tail: boolean }) {
+function Bubble({ m, tail, onOpen }: { m: MessageView; tail: boolean; onOpen: (id: string) => void }) {
   const out = m.direction === 'OUT'
   const failed = m.status === 'FAILED'
   // The first bubble of a run gets a squared corner on its speaker's side,
@@ -191,7 +221,7 @@ function Bubble({ m, tail }: { m: MessageView; tail: boolean }) {
         ) : null}
 
         {m.kind === 'MEDIA' ? (
-          <Media m={m} />
+          <Media m={m} onOpen={onOpen} />
         ) : (
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
             {m.text ? formatWhatsApp(m.text) : <span className="italic text-muted">Unsupported message</span>}
@@ -209,9 +239,8 @@ function Bubble({ m, tail }: { m: MessageView; tail: boolean }) {
   )
 }
 
-function Media({ m }: { m: MessageView }) {
+function Media({ m, onOpen }: { m: MessageView; onOpen: (id: string) => void }) {
   const caption = m.mediaCaption ?? m.text
-  const [open, setOpen] = useState(false)
   // A thumbnail that will not load drops back to a plain button.
   const [thumbFailed, setThumbFailed] = useState(false)
   if (!m.mediaUrl) {
@@ -228,7 +257,7 @@ function Media({ m }: { m: MessageView }) {
     <div>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => onOpen(m.id)}
         className={
           thumb
             ? `-mx-1.5 mt-0.5 block overflow-hidden rounded-xl ${focusRing}`
@@ -249,14 +278,6 @@ function Media({ m }: { m: MessageView }) {
         )}
       </button>
       {caption ? <p className="mt-0.5 whitespace-pre-wrap">{caption}</p> : null}
-      {open ? (
-        <AttachmentModal
-          url={m.mediaUrl}
-          kind={thumbFailed && kind === 'image' ? 'pdf' : kind}
-          caption={caption}
-          onClose={() => setOpen(false)}
-        />
-      ) : null}
     </div>
   )
 }

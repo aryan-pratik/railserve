@@ -781,3 +781,34 @@ export function IconCheckDouble({ size = 14, className = '', ...props }: IconPro
     </svg>
   )
 }
+
+export function IconZoomIn({ size = 16, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
+      <path d="M11 8v6" />
+      <path d="M8 11h6" />
+    </svg>
+  )
+}
+
+export function IconZoomOut({ size = 16, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
+      <path d="M8 11h6" />
+    </svg>
+  )
+}
+
+export function IconExternal({ size = 16, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <path d="M14 4h6v6" />
+      <path d="m20 4-9 9" />
+      <path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />
+    </svg>
+  )
+}
