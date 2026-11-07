@@ -21,6 +21,8 @@ export type InboundEvent = {
   text: string | null
   mediaUrl: string | null
   mediaCaption: string | null
+  /** WhatsApp's own word for the attachment (image, video, audio, document…). */
+  mediaType?: string | null
   at: Date
 }
 
@@ -151,6 +153,7 @@ function parseInbound(body: Json, phone: string, messages: unknown): InboundEven
     text,
     mediaUrl,
     mediaCaption,
+    mediaType: media ? contentType : null,
     at: when(body),
   }
 }

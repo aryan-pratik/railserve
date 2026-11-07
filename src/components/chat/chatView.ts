@@ -14,6 +14,8 @@ export type MessageView = {
   text: string | null
   mediaUrl: string | null
   mediaCaption: string | null
+  /** image, video, audio, document… when the provider said; null on older lines. */
+  mediaType: string | null
   templateName: string | null
   status: 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'RECEIVED'
   failReason: string | null
@@ -31,6 +33,7 @@ export function toMessageView(m: WaMessageDoc, senderName: (id: string) => strin
     text: m.text ?? null,
     mediaUrl: m.mediaUrl ?? null,
     mediaCaption: m.mediaCaption ?? null,
+    mediaType: m.mediaType ?? null,
     templateName: m.templateName ?? null,
     status: m.status,
     failReason: m.failReason ?? null,

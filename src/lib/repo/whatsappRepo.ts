@@ -483,6 +483,7 @@ export async function recordInbound(
       text: ev.text,
       mediaUrl: ev.mediaUrl,
       mediaCaption: ev.mediaCaption,
+      mediaType: ev.mediaType ?? null,
       status: 'RECEIVED',
       statusAt: ev.at,
       providerMessageId: ev.providerMessageId,
