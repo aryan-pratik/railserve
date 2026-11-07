@@ -8,7 +8,7 @@ import { callNoteRow } from '@/lib/orderView'
 import { AdminOrdersTable } from './AdminOrdersTable'
 import { IconDownload, IconPlus, IconSearch } from '@/components/Icons'
 import {
-  Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Pagination, Tabs,
+  Button, ButtonAnchor, ButtonLink, Card, InlineField, PageHeader, Pagination, Tabs,
   PAGE_SIZE_OPTIONS, inputClass, statusLabel,
 } from '@/components/ui'
 import { DateFilter } from '@/components/DateFilter'
@@ -210,7 +210,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           </div>
           <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
             autoComplete="off" spellCheck={false}
-            className={`${inputClass} font-mono`} aria-label="Train number" />
+            className={`${inputClass} font-mono placeholder:font-sans`} aria-label="Train number" />
           <StationMultiSelect name="station" options={stationOptions} defaultSelected={stations} />
           <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
             <option value="">All outlets</option>
@@ -246,9 +246,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
           <div className="sm:col-span-2 lg:col-span-6">
-            <Field label="Date">
+            <InlineField label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
-            </Field>
+            </InlineField>
           </div>
         </QueryForm>
       </Card>

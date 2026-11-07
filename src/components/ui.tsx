@@ -329,7 +329,7 @@ export const editInputClass =
 export const inputBase =
   'h-9 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink outline-none ' +
   'placeholder:text-faint disabled:bg-sunken disabled:text-faint ' +
-  'focus:border-accent focus:ring-2 focus:ring-accent'
+  'focus:border-accent focus:ring-2 focus:ring-accent [select&]:select-chevron'
 
 /** The same, filling its column: for forms laid out in a grid. */
 export const inputClass = `w-full ${inputBase}`
@@ -385,10 +385,27 @@ export const segmentedClass =
 
 export function segmentClass(active: boolean) {
   return (
-    'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap ' +
+    // 30px inside the 2px padding and 1px border: 36px overall, the height of
+    // every input and md button, so a segmented control lines up with the
+    // fields beside it instead of sitting a few pixels short.
+    'inline-flex h-[30px] items-center gap-1.5 rounded-md px-3 text-[13px] font-medium whitespace-nowrap ' +
     `transition-colors ${focusRing} ${
       active ? 'bg-surface text-ink font-semibold shadow-2xs' : 'text-muted hover:text-ink'
     }`
+  )
+}
+
+/**
+ * A filter row's label, set beside its control rather than above it, so a
+ * date filter under a grid of selects starts on the same left edge and the
+ * same baseline as everything else in the card.
+ */
+export function InlineField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted">{label}</span>
+      {children}
+    </div>
   )
 }
 
@@ -657,13 +674,20 @@ export function Tabs({
   action?: ReactNode
 }) {
   return (
-    <nav aria-label={label} className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line">
+    // items-end, not items-center: when the controls on the right are taller
+    // than a tab, centring lifted every tab's underline off the rule below it.
+    <nav aria-label={label} className="flex flex-wrap items-end gap-x-1 gap-y-2 border-b border-line">
+      {/* One line that scrolls sideways on a phone, rather than wrapping a
+          tab onto a second row under the others. The strip, not each tab,
+          overlaps the rule by a pixel, so the scroller does not clip the
+          active underline. */}
+      <div className="-mb-px flex min-w-0 max-w-full gap-x-1 overflow-x-auto [scrollbar-width:none]">
       {tabs.map((t) => (
         <Link
           key={t.href}
           href={t.href}
           aria-current={t.active ? 'page' : undefined}
-          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${focusRingInset} ${
+          className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${focusRingInset} ${
             t.active
               ? 'border-accent text-accent'
               : 'border-transparent text-muted hover:border-line-strong hover:text-ink'
@@ -682,7 +706,8 @@ export function Tabs({
           <LinkHint />
         </Link>
       ))}
-      {action ? <div className="ml-auto flex flex-wrap items-center gap-2 pb-1.5">{action}</div> : null}
+      </div>
+      {action ? <div className="ml-auto flex flex-wrap items-center gap-2 pb-1">{action}</div> : null}
     </nav>
   )
 }

@@ -23,10 +23,10 @@ export default async function TrainStatusPage() {
   const stations = [...new Set(outlets.map((o) => o.stationCode.toUpperCase()))].sort()
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         title="Train status"
-        note="Live arrival, delay and platform for any train at any station. Each check also refreshes what the store and rider boards show for that train."
+        note="Live arrival, delay and platform for any train at any station. A check also refreshes the times the kitchen and rider boards show."
       />
       <TrainLookupForm stations={stations} today={todayIST()} />
     </div>

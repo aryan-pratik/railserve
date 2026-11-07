@@ -111,3 +111,18 @@ h2, h3 { letter-spacing: -0.01em; }
   /* Each ticket in a batch print starts its own page. */
   .kot + .kot { break-before: page; }
 }
+
+/*
+ * A native select's own arrow sits flush against the border and its text a
+ * pixel lower than an input's, so a row of selects beside a text field or the
+ * station picker never quite lined up. inputBase applies this to selects only:
+ * the same chevron the custom dropdowns draw, at the same inset.
+ */
+@utility select-chevron {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235f6a7b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 14px 14px;
+  padding-right: 2.25rem;
+}
