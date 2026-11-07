@@ -3,6 +3,7 @@ import { TrainStartDate } from '@/components/TrainStartDate'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
+import { runTrainLabel } from '@/lib/runs'
 import { formatMoney, formatServiceDate } from '@/lib/format'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { computeDispatchAt } from '@/lib/train/policy'
@@ -48,7 +49,7 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
 
       <Card className="p-4">
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-mono text-2xl font-bold tabular-nums text-ink">{run.trainNo ?? 'No train no.'}</span>
+          <span className="font-mono text-2xl font-bold tabular-nums text-ink">{runTrainLabel(run)}</span>
           <TrainStartDate date={timing.startDate} />
           <span className="text-muted">{run.trainName}</span>
         </div>
@@ -97,7 +98,7 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
                     {/* Coach is the thing the agent navigates by, so it leads. */}
                     <div className="w-16 shrink-0 text-center">
                       <div className="rounded-lg bg-ink px-2 py-1.5 font-mono text-lg font-bold leading-none tabular-nums text-white">
-                        {o.coach ?? '?'}
+                        {o.orderType === 'LOCAL' ? 'LOC' : (o.coach ?? '?')}
                       </div>
                       {o.berth ? <div className="mt-1 text-xs font-medium tabular-nums text-muted">berth {o.berth}</div> : null}
                     </div>
@@ -111,7 +112,9 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
                       <div className="mt-1 truncate text-sm text-muted">
                         {o.orderType === 'BULK'
                           ? `${o.pax} pax · ${o.handoverPoint ?? 'handover'}`
-                          : (o.contactName ?? 'Passenger')}
+                          : o.orderType === 'LOCAL'
+                            ? `${o.handoverPoint ?? 'Local'}${o.contactName ? ` · ${o.contactName}` : ''}`
+                            : (o.contactName ?? 'Passenger')}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <span className={`rounded px-2 py-1 text-sm font-bold tabular-nums ${cod ? 'bg-amber-100 text-amber-900' : 'bg-sunken text-muted'}`}>

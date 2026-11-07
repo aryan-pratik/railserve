@@ -163,6 +163,34 @@ describe('admin order edits', () => {
       expect(await edits(id)).toHaveLength(11)
     })
 
+    it('clears the train details, logged, when an order becomes local', async () => {
+      const id = await newOrder({
+        trainNo: '12506', trainName: 'NORTH EAST EXP', coach: 'B5', berth: '37', rawSeat: 'B5-37',
+        scheduledArrival: new Date('2026-08-27T07:55:00Z'),
+      })
+      // The edit form posts every field, so the old train number comes along.
+      await adminEditOrder(admin, id, { orderType: 'LOCAL', trainNo: '12506', handoverPoint: 'Stall 4' })
+      const o = await load(id)
+      expect(o.orderType).toBe('LOCAL')
+      expect(o.trainNo).toBeNull()
+      expect(o.trainName).toBeNull()
+      expect(o.coach).toBeNull()
+      expect(o.berth).toBeNull()
+      expect(o.rawSeat).toBeNull()
+      expect(o.scheduledArrival).toBeNull()
+      expect(o.handoverPoint).toBe('Stall 4')
+      const fields = (await edits(id)).map((e) => (e.meta as Record<string, unknown>).field)
+      expect(fields).toEqual(expect.arrayContaining(['orderType', 'trainNo', 'coach', 'scheduledArrival']))
+    })
+
+    it('refuses a train number on an order that is already local', async () => {
+      const id = await newOrder({ orderType: 'LOCAL', handoverPoint: 'Stall 4' })
+      await expect(adminEditOrder(admin, id, { trainNo: '12506' })).rejects.toBeInstanceOf(FieldValidationError)
+      // Moving it back to a train order takes the train number in the same save.
+      await adminEditOrder(admin, id, { orderType: 'RETAIL', trainNo: '12506' })
+      expect((await load(id)).trainNo).toBe('12506')
+    })
+
     it('refuses bad values with a message, writing nothing', async () => {
       const id = await newOrder()
       const bad: Record<string, string>[] = [

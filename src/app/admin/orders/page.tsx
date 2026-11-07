@@ -3,6 +3,7 @@ import { countByPaymentMode, countOrders, distinctStatuses, findMany } from '@/l
 import { connectDb } from '@/lib/db'
 import { Restaurant, Station } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
+import { ORDER_TYPES, ORDER_TYPE_LABEL } from '@/lib/orderEnums'
 import { callNoteRow } from '@/lib/orderView'
 import { AdminOrdersTable } from './AdminOrdersTable'
 import { IconDownload, IconPlus, IconSearch } from '@/components/Icons'
@@ -55,6 +56,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const rawTo = one(sp.to)
   const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
   const train = one(sp.train)
+  // Unknown values are dropped, so a stale link cannot filter to nothing.
+  const type = (ORDER_TYPES as readonly string[]).includes(one(sp.type)) ? one(sp.type) : ''
   // One box that searches everything. `orderId` is what the box used to be
   // called, so links bookmarked before then still find their order.
   const q = (one(sp.q) || one(sp.orderId)).trim()
@@ -84,6 +87,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     base.serviceDate = range
   }
   if (train) base.trainNo = train.toUpperCase()
+  if (type) base.orderType = type
   if (byRider) Object.assign(base, byRider)
 
   await connectDb()
@@ -125,14 +129,14 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
 
   // Today is the default, not a filter someone set.
   const hasFilters = Boolean(
-    outlet || stations.length || status || mode !== 'today' || train || q || payment || rider,
+    outlet || stations.length || status || mode !== 'today' || train || type || q || payment || rider,
   )
 
   // Every link and the export carry the filters already in play.
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, q, payment, rider, ...over,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider, ...over,
     })) {
       if (v) u.set(k, v)
     }
@@ -159,7 +163,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, q, payment, rider,
+      outlet, status, mode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider,
     })) {
       if (v) u.set(k, v)
     }
@@ -194,7 +198,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="payment" value={payment} />
           <div className="relative sm:col-span-2">
@@ -222,6 +226,12 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
             autoComplete="off" spellCheck={false}
             className={`${inputClass} font-mono`} aria-label="Train number" />
+          <select name="type" defaultValue={type} className={inputClass} aria-label="Order type">
+            <option value="">Any type</option>
+            {ORDER_TYPES.map((t) => (
+              <option key={t} value={t}>{ORDER_TYPE_LABEL[t]}</option>
+            ))}
+          </select>
           <select name="rider" defaultValue={rider} className={inputClass} aria-label="Rider">
             <option value="">Any rider</option>
             <option value={NO_RIDER}>No rider yet</option>
@@ -235,7 +245,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
           </div>
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2 lg:col-span-5">
             <Field label="Date">
               <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
             </Field>

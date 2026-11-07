@@ -21,7 +21,7 @@ import { CancelOrderButton } from './CancelOrderButton'
  */
 function orderDetailsText(o: CallBoardRowData): string {
   const seat = o.handoverPoint
-    ? `Handover: ${o.handoverPoint}`
+    ? `${o.orderType === 'LOCAL' ? 'Deliver to' : 'Handover'}: ${o.handoverPoint}`
     : seatText(o)
   const lines = [
     `Order ${o.externalOrderId} (${o.orderType})`,
@@ -91,7 +91,9 @@ export function CallBoardRow({
 
         <div className="w-20 shrink-0">
           {o.handoverPoint ? (
-            <span className="text-xs font-semibold text-fuchsia-700">Handover</span>
+            <span className="text-xs font-semibold text-fuchsia-700">
+                {o.orderType === 'LOCAL' ? 'Deliver to' : 'Handover'}
+                </span>
           ) : (
             <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
           )}

@@ -4,7 +4,7 @@ import { countOrders } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { timingFor } from '@/lib/train/service'
-import { sortRunsByUrgency } from '@/lib/runs'
+import { runTrainLabel, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate, formatTimeIST, shiftServiceDate } from '@/lib/format'
 import { loadRunBoard, todayBoardFilter, yesterdayBoardFilter, type BoardMode } from '@/lib/board'
 import { callNoteRow, foodItemLabels } from '@/lib/orderView'
@@ -148,6 +148,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
 
     return {
       key: run.key,
+      local: run.local,
       trainNo: run.trainNo,
       trainName: run.trainName,
       stationCode: run.stationCode,
@@ -288,7 +289,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
                 itemCount={card.itemCount}
                 codTotal={card.codTotal}
                 body="plain"
-                copyText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''} · ${card.stationCode}`.trim()}
+                copyText={`${runTrainLabel(card)} ${card.trainName ?? ''} · ${card.stationCode}`.trim()}
                 refreshAction={
                   card.orders[0] ? (
                     <RefreshTrainButton orderId={card.orders[0].id} action={forceRefreshOrderTrain} />
@@ -309,7 +310,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
                 <RunOrderTable
                   orders={card.orders}
                   showOutlet={multiOutlet}
-                  trainText={`${card.trainNo ?? 'No train no.'} ${card.trainName ?? ''}`.trim()}
+                  trainText={`${runTrainLabel(card)} ${card.trainName ?? ''}`.trim()}
                 />
               </TrainRunFrame>
             </RunSelection>

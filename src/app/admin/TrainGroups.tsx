@@ -6,6 +6,7 @@ import { useNowMs } from '@/components/useNow'
 import { Card, focusRingInset } from '@/components/ui'
 import { IconChevronDown } from '@/components/Icons'
 import { CopyButton } from '@/components/CopyButton'
+import { runTrainLabel } from '@/lib/runs'
 import { RunOrderTable, type RunTableOrder } from '@/components/RunOrderTable'
 import { OrderModal, type OrderPreview } from './OrderModal'
 import { RefreshTrainButton, type RefreshTrainState } from '@/components/RefreshTrainButton'
@@ -23,6 +24,8 @@ export type GroupOrder = RunTableOrder
 
 export type TrainGroup = {
   key: string
+  /** A run of local orders, which has no train to name. */
+  local?: boolean
   trainNo: string | null
   trainName: string | null
   stationCode: string
@@ -61,7 +64,7 @@ function lateLabel(mins: number): string {
 }
 
 function trainLabel(g: TrainGroup): string {
-  return `${g.trainNo ?? 'No train no.'} ${g.trainName ?? ''}`.trim()
+  return `${runTrainLabel(g)} ${g.trainName ?? ''}`.trim()
 }
 
 /** Everything shown in the train header, as plain text for pasting elsewhere. */
@@ -161,7 +164,7 @@ export function TrainGroups({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className="font-mono text-base font-bold tabular-nums text-ink">
-                            {g.trainNo ?? 'No train no.'}
+                            {runTrainLabel(g)}
                           </span>
                           <TrainStartDate date={g.startDate} />
                           <span className="truncate text-sm font-medium text-muted">{g.trainName}</span>

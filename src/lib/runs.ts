@@ -9,6 +9,13 @@
 
 export const NO_TRAIN = 'NOTRAIN'
 
+/**
+ * Local orders (stall, counter, platform) never board a train, so they get a
+ * run of their own per station and day rather than joining the "no train
+ * number" run, which holds train orders whose number is simply missing.
+ */
+export const LOCAL_RUN = 'LOCAL'
+
 /** `~` is URL-unreserved and cannot appear in a train no, ISO date or station code. */
 const SEP = '~'
 
@@ -17,6 +24,7 @@ export type RunIdentity = {
   trainNo: string | null
   serviceDate: string
   stationCode: string
+  local: boolean
 }
 
 /**
@@ -26,12 +34,14 @@ export type RunIdentity = {
  */
 export type RunKeyInput = {
   trainNo?: string | null
+  orderType?: string | null
   serviceDate: string
   stationCode: string
 }
 
 export function runKeyFor(o: RunKeyInput): string {
-  return [o.trainNo || NO_TRAIN, o.serviceDate, o.stationCode].join(SEP)
+  const head = o.orderType === 'LOCAL' ? LOCAL_RUN : o.trainNo || NO_TRAIN
+  return [head, o.serviceDate, o.stationCode].join(SEP)
 }
 
 export function parseRunKey(key: string): RunIdentity | null {
@@ -40,10 +50,12 @@ export function parseRunKey(key: string): RunIdentity | null {
   const [trainNo, serviceDate, stationCode] = parts
   if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) return null
   if (!stationCode) return null
+  const local = trainNo === LOCAL_RUN
   return {
-    trainNo: trainNo === NO_TRAIN ? null : trainNo,
+    trainNo: trainNo === NO_TRAIN || local ? null : trainNo,
     serviceDate,
     stationCode,
+    local,
   }
 }
 
@@ -84,6 +96,8 @@ export type RunOrder = RunKeyInput & {
 
 export type Run<T extends RunOrder> = {
   key: string
+  /** A run of local orders: no train, delivered at or near the station. */
+  local: boolean
   trainNo: string | null
   trainName: string | null
   serviceDate: string
@@ -177,10 +191,12 @@ export function groupIntoRuns<T extends RunOrder>(orders: T[]): Run<T>[] {
       .filter((d): d is Date => Boolean(d))
       .sort((a, b) => a.getTime() - b.getTime())
 
+    const local = list[0].orderType === 'LOCAL'
     runs.push({
       key,
-      trainNo: list[0].trainNo ?? null,
-      trainName: list.find((o) => o.trainName)?.trainName ?? null,
+      local,
+      trainNo: local ? null : list[0].trainNo ?? null,
+      trainName: local ? null : list.find((o) => o.trainName)?.trainName ?? null,
       serviceDate: list[0].serviceDate,
       stationCode: list[0].stationCode,
       scheduledArrival: arrivals[0] ?? null,
@@ -192,4 +208,13 @@ export function groupIntoRuns<T extends RunOrder>(orders: T[]): Run<T>[] {
   runs.sort((a, b) => byArrival(a.scheduledArrival, b.scheduledArrival))
 
   return runs
+}
+
+/**
+ * What a run is called on a header: its train number, "Local" for a run of
+ * local orders, or a plain admission that the number is missing.
+ */
+export function runTrainLabel(run: { local?: boolean; trainNo?: string | null }): string {
+  if (run.local) return 'Local'
+  return run.trainNo ?? 'No train no.'
 }

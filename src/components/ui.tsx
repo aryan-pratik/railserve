@@ -455,14 +455,27 @@ export function StatusBadge({ status }: { status: string }) {
   )
 }
 
-/** Bulk orders behave differently enough (pax, handover, thali spec) to flag. */
+/**
+ * Bulk orders behave differently enough (pax, handover, thali spec) to flag,
+ * and so do local ones (no train at all). Retail is the default and goes
+ * unmarked.
+ */
 export function TypeBadge({ type }: { type: string }) {
-  if (type !== 'BULK') return null
-  return (
-    <span className="inline-flex rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide ring-1 ring-inset bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200">
-      BULK
-    </span>
-  )
+  if (type === 'BULK') {
+    return (
+      <span className="inline-flex rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide ring-1 ring-inset bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200">
+        BULK
+      </span>
+    )
+  }
+  if (type === 'LOCAL') {
+    return (
+      <span className="inline-flex rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide ring-1 ring-inset bg-teal-100 text-teal-800 ring-teal-200">
+        LOCAL
+      </span>
+    )
+  }
+  return null
 }
 
 /**
