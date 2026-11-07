@@ -140,6 +140,19 @@ const UNPARSED_INBOX_INDEXES: Spec[] = [
     why: 'admin inbox: what still needs attention, newest first',
   },
   {
+    name: 'open_rows_by_reason',
+    index: { key: { resolved: 1, reason: 1, createdAt: -1 } },
+    why: 'admin inbox: the reason filter and its counts, at hundreds of open rows',
+  },
+  {
+    name: 'bulk_action',
+    index: {
+      key: { bulkActionId: 1 },
+      partialFilterExpression: { bulkActionId: { $type: 'string' } },
+    },
+    why: 'undoing one bulk dismiss reopens exactly that batch',
+  },
+  {
     name: 'gmailMessageId',
     index: {
       key: { gmailMessageId: 1 },

@@ -32,9 +32,23 @@ export function PasteEmailForm() {
   )
 }
 
-export function ResolveForm({ id, body }: { id: string; body: string }) {
+export function ResolveForm({
+  id,
+  body,
+  initiallyOpen = false,
+  onClose,
+}: {
+  id: string
+  body: string
+  initiallyOpen?: boolean
+  onClose?: () => void
+}) {
   const [state, action, pending] = useActionState(resolveUnparsed, initial)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
+  const close = () => {
+    setOpen(false)
+    onClose?.()
+  }
 
   // Closed, this is one of two buttons on the row; open, it takes the full
   // width so the raw email is editable at the width it was written.
@@ -54,7 +68,7 @@ export function ResolveForm({ id, body }: { id: string; body: string }) {
         className={`${textareaClass} font-mono text-xs`} />
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" pending={pending}>Re-ingest</Button>
-        <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button type="button" variant="secondary" size="sm" onClick={close}>Cancel</Button>
         <FormNote state={state} />
       </div>
     </form>

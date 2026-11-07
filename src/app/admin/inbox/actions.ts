@@ -1,15 +1,20 @@
 'use server'
 
-import type { Types } from 'mongoose'
+import mongoose from 'mongoose'
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { UnparsedInbox } from '@/lib/models'
-import { findMany } from '@/lib/repo/orderRepo'
-import { ingestEmail, PARSERS, createOrderFromParsed } from '@/lib/ingest'
+import { ingestEmail } from '@/lib/ingest'
 import { toParseableText } from '@/lib/ingest/gmail/client'
-import { PAYMENT_PARSERS, recordPayment } from '@/lib/ingest/payments'
-import { matchOutlet } from '@/lib/ingest/outletMatch'
+import { BULK_REINGEST_LIMIT, readInboxFilter } from '@/lib/inbox'
+import {
+  dismissInboxRows,
+  reingestInboxRow,
+  reingestInboxRows,
+  reopenInboxRows,
+  type InboxTarget,
+} from '@/lib/repo/inboxRepo'
 
 export type InboxState = { error?: string; ok?: string }
 
@@ -50,12 +55,21 @@ export async function ingestPastedEmail(
   }
 }
 
+/** Every screen a closed inbox row can change. */
+function revalidateAfterInbox() {
+  revalidatePath('/admin/inbox')
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/admin/orders')
+  revalidatePath('/admin/payments')
+  revalidatePath('/store')
+  revalidatePath('/store/payments')
+}
+
 /**
  * Resolve an unparsed row by correcting it and re-ingesting (plan §10).
  *
  * The admin supplies the corrected body; it goes through the same parser as a
- * real email, so a fix here is a fix to real data, not a hand-built order that
- * skipped every check.
+ * real email. See reingestInboxRow.
  */
 export async function resolveUnparsed(
   _prev: InboxState,
@@ -64,127 +78,71 @@ export async function resolveUnparsed(
   const ctx = await requireRole('ADMIN')
   const id = String(formData.get('id') ?? '')
   const correctedBody = String(formData.get('body') ?? '').trim()
+  const result = await reingestInboxRow(ctx, id, correctedBody)
+  if (result.ok) revalidateAfterInbox()
+  return result
+}
 
+/** The stored body of one row, fetched when the row is opened rather than with the page. */
+export async function loadInboxBody(id: string): Promise<{ body: string; text: string } | null> {
+  await requireRole('ADMIN')
+  if (!mongoose.isValidObjectId(id)) return null
   await connectDb()
-  const row = await UnparsedInbox.findById(id)
-  if (!row) return { error: 'That inbox row no longer exists.' }
-  if (!correctedBody) return { error: 'The corrected email body cannot be empty.' }
-
-  const receivedAt =
-    (row.rawPayload as { receivedAt?: Date })?.receivedAt instanceof Date
-      ? (row.rawPayload as { receivedAt: Date }).receivedAt
-      : new Date()
-
-  // A bank alert that landed here means the template changed and the payment
-  // was never recorded. Correcting it must produce the payment, not fail with
-  // "no parser recognises this" — the same fix path, for the same reason.
-  // The stored body of a row that failed on markup IS that markup, so the
-  // parsers get text; the raw payload below keeps what the admin submitted.
-  const text = toParseableText(correctedBody)
-
-  const paymentParser = PAYMENT_PARSERS.find((p) => p.matches(text))
-  if (paymentParser) {
-    return resolveAsPayment(paymentParser, text, receivedAt, id, ctx.userId)
-  }
-
-  const parser = PARSERS.find((p) => p.matches(text))
-  if (!parser) return { error: 'No parser recognises this email.' }
-
-  const parsed = parser.parse(text, receivedAt)
-  if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
-
-  const outlet = await matchOutlet(parsed.order.outletName, parsed.order.stationCode, parsed.order.source)
-  if (!outlet.ok) {
-    return { error: `Outlet still unresolved: ${outlet.detail}. Add it, or add an alias, under Outlets.` }
-  }
-
-  const created = await createOrderFromParsed(
-    parsed.order,
-    outlet,
-    { body: correctedBody, resolvedFromInbox: id, receivedAt },
-    null,
-  )
-
-  // An order that already exists — recovered some other way, or entered by
-  // hand — is still the order this row was about, so the row points at it
-  // rather than closing with no link. externalOrderId is unique across orders.
-  const orderId =
-    created.status === 'CREATED'
-      ? created.orderId
-      : (await findMany(ctx, { externalOrderId: created.externalOrderId }, { limit: 1 }))[0]?._id ?? null
-
-  await UnparsedInbox.updateOne(
-    { _id: id },
-    {
-      $set: {
-        resolved: true,
-        resolvedAt: new Date(),
-        resolvedById: ctx.userId,
-        resolvedOrderId: orderId,
-      },
-    },
-  )
-
-  revalidatePath('/admin/inbox')
-  revalidatePath('/admin/orders')
-  revalidatePath('/store')
-
-  return {
-    ok:
-      created.status === 'CREATED'
-        ? `Resolved: created order ${created.externalOrderId}.`
-        : `Resolved: order ${created.externalOrderId} already existed.`,
-  }
+  const row = await UnparsedInbox.findById(id).select('rawPayload').lean()
+  if (!row) return null
+  const body = (row.rawPayload as { body?: string } | null)?.body ?? ''
+  return { body, text: toParseableText(body) }
 }
 
-/**
- * The payment half of resolveUnparsed: record the credit and close the row.
- *
- * `resolvedOrderId` stays null — a payment is not an order, and pointing that
- * field at one would break every link that reads it as an order id.
- */
-async function resolveAsPayment(
-  parser: (typeof PAYMENT_PARSERS)[number],
-  correctedBody: string,
-  receivedAt: Date,
-  inboxId: string,
-  userId: Types.ObjectId,
-): Promise<InboxState> {
-  const parsed = parser.parse(correctedBody, receivedAt)
-  if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
+export type BulkInput =
+  | { ids: string[] }
+  /** The page's own query string: "every row matching what I am looking at". */
+  | { query: string }
 
-  const recorded = await recordPayment(
-    parsed.payment,
-    { body: correctedBody, resolvedFromInbox: inboxId, receivedAt },
-    null,
-    receivedAt,
-  )
-
-  await UnparsedInbox.updateOne(
-    { _id: inboxId },
-    { $set: { resolved: true, resolvedAt: new Date(), resolvedById: userId } },
-  )
-
-  revalidatePath('/admin/inbox')
-  revalidatePath('/admin/payments')
-  revalidatePath('/store/payments')
-
-  return {
-    ok:
-      recorded.status === 'CREATED'
-        ? `Resolved: recorded payment ${recorded.rrn}.`
-        : `Resolved: payment ${recorded.rrn} already existed.`,
-  }
+function toTarget(input: BulkInput): InboxTarget {
+  if ('ids' in input) return { ids: input.ids.slice(0, 500) }
+  return { filter: readInboxFilter(new URLSearchParams(input.query)) }
 }
 
-/** Dismiss a row that is not an order at all (a newsletter, a bounce). */
-export async function dismissUnparsed(formData: FormData) {
+export type BulkState = { ok?: string; error?: string; undo?: string | null }
+
+/** Dismiss one row, or many, as not an order (a newsletter, a bounce). */
+export async function dismissInbox(input: BulkInput): Promise<BulkState> {
   const ctx = await requireRole('ADMIN')
-  const id = String(formData.get('id') ?? '')
-  await connectDb()
-  await UnparsedInbox.updateOne(
-    { _id: id },
-    { $set: { resolved: true, resolvedAt: new Date(), resolvedById: ctx.userId } },
-  )
-  revalidatePath('/admin/inbox')
+  try {
+    const r = await dismissInboxRows(ctx, toTarget(input))
+    revalidateAfterInbox()
+    if (r.count === 0) return { error: 'Nothing to dismiss: those rows were already closed.' }
+    return { ok: `Dismissed ${r.count} email${r.count === 1 ? '' : 's'}.`, undo: r.bulkActionId }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Dismiss failed.' }
+  }
+}
+
+/** Re-run rows through the parsers as they are. */
+export async function reingestInbox(input: BulkInput): Promise<BulkState> {
+  const ctx = await requireRole('ADMIN')
+  try {
+    const r = await reingestInboxRows(ctx, toTarget(input))
+    revalidateAfterInbox()
+    const parts = [`Re-ingested ${r.resolved} of ${r.resolved + r.failed}.`]
+    if (r.failed) parts.push(`${r.failed} still fail${r.failed === 1 ? 's' : ''}${r.errors.length ? ` (${r.errors.join('; ')})` : ''}.`)
+    if (r.remaining) parts.push(`${r.remaining} more match; run it again for the next ${BULK_REINGEST_LIMIT}.`)
+    return r.resolved > 0 ? { ok: parts.join(' ') } : { error: parts.join(' ') }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Re-ingest failed.' }
+  }
+}
+
+/** Put dismissed rows back in Needs attention: an undo, or a change of mind. */
+export async function reopenInbox(input: BulkInput | { bulkActionId: string }): Promise<BulkState> {
+  const ctx = await requireRole('ADMIN')
+  try {
+    const n = await reopenInboxRows(ctx, 'bulkActionId' in input ? input : toTarget(input))
+    revalidateAfterInbox()
+    if (n === 0) return { error: 'Nothing to reopen: only dismissed rows can be reopened.' }
+    return { ok: `Moved ${n} email${n === 1 ? '' : 's'} back to Needs attention.` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Reopen failed.' }
+  }
 }
