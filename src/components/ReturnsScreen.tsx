@@ -4,8 +4,13 @@ import { listReturns, mayCollectReturns } from '@/lib/repo/rtoRepo'
 import { rtoReasonLabel, type RtoStatus } from '@/lib/rto'
 import { formatIST, formatMoney } from '@/lib/format'
 import { readPage, withPage } from '@/lib/pagination'
+import { connectDb } from '@/lib/db'
 import { Card, Dash, EmptyState, PageHeader, Pagination, StatusBadge, Tabs, thClass } from '@/components/ui'
 import { MarkReturnedButton } from '@/components/ReturnToOrigin'
+import { OrderFilterBar } from '@/components/OrderFilterBar'
+import {
+  hasOrderFilters, orderFilterClause, orderFilterOptions, orderFilterParams, readOrderFilters,
+} from '@/lib/repo/orderFilters'
 
 /**
  * Returns to origin, as a list: the bags still out with a rider, and the
@@ -31,16 +36,32 @@ export async function ReturnsScreen({
   const status: RtoStatus = collected ? 'RETURNED' : 'PENDING'
   const { page, pageSize, skip } = readPage(searchParams)
 
-  const [{ rows, total }, pendingTotal, canCollect] = await Promise.all([
-    listReturns(ctx, { status, limit: pageSize, skip }),
-    collected ? listReturns(ctx, { status: 'PENDING', limit: 1, skip: 0 }).then((r) => r.total) : null,
+  // The same filter bar as All orders. Opens on all time, not today: a bag
+  // still out from yesterday is exactly the one that must not drop off.
+  const filters = readOrderFilters(searchParams, { defaultMode: 'all' })
+  const filtered = hasOrderFilters(filters)
+  await connectDb()
+  const where = await orderFilterClause(filters)
+
+  const [{ rows, total }, pendingTotal, canCollect, options] = await Promise.all([
+    listReturns(ctx, { status, limit: pageSize, skip, where }),
+    collected ? listReturns(ctx, { status: 'PENDING', limit: 1, skip: 0, where }).then((r) => r.total) : null,
     mayCollectReturns(ctx),
+    orderFilterOptions(ctx, filters.stations),
   ])
   const pendingCount = pendingTotal ?? total
   const multiOutlet = ctx.role === 'ADMIN' || ctx.restaurantIds.length > 1
 
+  // Tabs and the pager carry the filters in play.
+  const tabHref = (tab: string) => {
+    const u = orderFilterParams(filters)
+    if (tab) u.set('tab', tab)
+    const qs = u.toString()
+    return qs ? `${basePath}?${qs}` : basePath
+  }
+
   const pageHref = (target: { page: number; pageSize: number }) => {
-    const u = new URLSearchParams()
+    const u = orderFilterParams(filters)
     if (collected) u.set('tab', 'collected')
     const qs = withPage(u, target).toString()
     return qs ? `${basePath}?${qs}` : basePath
@@ -64,16 +85,30 @@ export async function ReturnsScreen({
       <Tabs
         label="Returns"
         tabs={[
-          { href: basePath, label: 'To collect', count: pendingCount, active: !collected },
-          { href: `${basePath}?tab=collected`, label: 'Collected', active: collected },
+          { href: tabHref(''), label: 'To collect', count: pendingCount, active: !collected },
+          { href: tabHref('collected'), label: 'Collected', active: collected },
         ]}
       />
 
+      <Card className="p-3">
+        {/* The tabs own this value; without it, filtering would drop it. */}
+        <OrderFilterBar
+          action={basePath}
+          filters={filters}
+          options={options}
+          hidden={{ tab: collected ? 'collected' : '' }}
+        />
+      </Card>
+
       {rows.length === 0 ? (
         <EmptyState
-          title={collected ? 'Nothing collected yet' : 'Nothing to collect'}
+          title={
+            filtered ? 'Nothing matches these filters' : collected ? 'Nothing collected yet' : 'Nothing to collect'
+          }
           note={
-            collected
+            filtered
+              ? 'Try clearing them, or widen the dates.'
+              : collected
               ? 'Returns marked as back at the counter will be listed here.'
               : 'When a rider cannot deliver an order, or it is cancelled on the way, it shows up here until the outlet takes the bag back.'
           }

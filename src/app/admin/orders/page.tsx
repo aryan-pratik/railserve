@@ -1,22 +1,15 @@
 import { requireRole } from '@/lib/session'
-import { countByPaymentMode, countOrders, distinctStatuses, findMany } from '@/lib/repo/orderRepo'
+import { countByPaymentMode, countOrders, findMany } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
-import { Restaurant, Station } from '@/lib/models'
-import { ORDER_STATUSES } from '@/lib/orderStatus'
-import { ORDER_TYPES, ORDER_TYPE_LABEL } from '@/lib/orderEnums'
 import { callNoteRow } from '@/lib/orderView'
 import { AdminOrdersTable } from './AdminOrdersTable'
-import { IconDownload, IconPlus, IconSearch } from '@/components/Icons'
+import { IconDownload, IconPlus } from '@/components/Icons'
+import { ButtonAnchor, ButtonLink, Card, PageHeader, Pagination, Tabs, PAGE_SIZE_OPTIONS } from '@/components/ui'
+import { OrderFilterBar } from '@/components/OrderFilterBar'
+import { riderNamesFor } from '@/lib/repo/riderFilter'
 import {
-  Button, ButtonAnchor, ButtonLink, Card, Field, PageHeader, Pagination, Tabs,
-  PAGE_SIZE_OPTIONS, inputClass, statusLabel,
-} from '@/components/ui'
-import { DateFilter } from '@/components/DateFilter'
-import { StationMultiSelect } from '@/components/StationMultiSelect'
-import { QueryForm } from '@/components/QueryForm'
-import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
-import { NO_RIDER, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
-import { orderSearchClause, parseStations } from '@/lib/repo/orderSearch'
+  hasOrderFilters, orderFilterClause, orderFilterOptions, orderFilterParams, readOrderFilters,
+} from '@/lib/repo/orderFilters'
 import type { QueryFilter } from 'mongoose'
 
 /**
@@ -45,30 +38,10 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const sp = await props.searchParams
 
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
-  const many = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [v] : [])
-  const outlet = one(sp.outlet)
-  const stations = parseStations(many(sp.station))
-  const status = one(sp.status)
-  // One box that searches everything. `orderId` is what the box used to be
-  // called, so links bookmarked before then still find their order.
-  const q = (one(sp.q) || one(sp.orderId)).trim()
   // Opens on today, like every other dated screen; "All time" is one click.
-  // A search with no date picked looks across all time: an order is searched
-  // for because it is not on today's list, and finding nothing for an order
-  // placed yesterday read as the search being broken.
-  const rawMode = one(sp.mode)
-  const mode = (rawMode || (q ? 'all' : 'today')) as DateFilterMode
-  const month = one(sp.month)
-  const rawFrom = one(sp.from)
-  const rawTo = one(sp.to)
-  const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
-  const train = one(sp.train)
-  // Unknown values are dropped, so a stale link cannot filter to nothing.
-  const type = (ORDER_TYPES as readonly string[]).includes(one(sp.type)) ? one(sp.type) : ''
+  const filters = readOrderFilters(sp, { defaultMode: 'today' })
+  const { q, mode } = filters
   const payment = one(sp.payment)
-  // Dropped when it is neither an id nor NO_RIDER, so links never carry junk.
-  const byRider = riderClause(one(sp.rider))
-  const rider = byRider ? one(sp.rider) : ''
 
   const pageParam = Number.parseInt(one(sp.page), 10)
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
@@ -79,72 +52,31 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
 
   // Filters are additive on top of the caller's scope, never instead of it.
   // Payment is layered on last and kept separable, because the tab counts are
-  // taken from everything except it.
-  const base: QueryFilter<Record<string, unknown>> = {}
-  if (outlet) base.restaurantId = outlet
-  if (stations.length) base.stationCode = { $in: stations }
-  if (status) base.status = status
-  if (dateFrom || dateTo) {
-    const range: Record<string, string> = {}
-    if (dateFrom) range.$gte = dateFrom
-    if (dateTo) range.$lte = dateTo
-    base.serviceDate = range
-  }
-  if (train) base.trainNo = train.toUpperCase()
-  if (type) base.orderType = type
-  if (byRider) Object.assign(base, byRider)
-
+  // taken from everything except it. Resolved before any query runs, so the
+  // list, its count and the payment tab counts all read the very same filter.
   await connectDb()
-  // Resolved before any query runs, so the list, its count and the payment
-  // tab counts all read the very same filter.
-  const search = await orderSearchClause(q)
-  if (search) Object.assign(base, search)
+  const base: QueryFilter<Record<string, unknown>> = await orderFilterClause(filters)
 
   const filter = payment ? { ...base, paymentMode: payment } : base
 
-  const [outlets, stationDocs, orders, paymentCounts, statusesInUse, totalCount, riders] = await Promise.all([
-    Restaurant.find({}).select('name stationCode stationName').sort({ name: 1 }).lean(),
-    Station.find({}).select('name').lean(),
+  const [options, orders, paymentCounts, totalCount] = await Promise.all([
+    orderFilterOptions(ctx, filters.stations),
     findMany(ctx, filter, { sort: { createdAt: -1 }, limit: pageSize, skip: (page - 1) * pageSize }),
     countByPaymentMode(ctx, base),
-    distinctStatuses(ctx),
     countOrders(ctx, filter),
-    riderOptions(ctx),
   ])
   const riderName = await riderNamesFor(orders)
-
-  // Custom statuses an admin has typed in stay selectable once they exist.
-  const customStatuses = statusesInUse
-    .filter((s) => !(ORDER_STATUSES as readonly string[]).includes(s))
-    .sort()
-  const statusOptions = [...ORDER_STATUSES, ...customStatuses]
-
-  const outletName = new Map(outlets.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
-
-  // Every station an outlet sits at, plus any already picked so a selection
-  // never silently drops out of the list. Named from the station record,
-  // falling back to whatever an outlet calls it.
-  const stationName = new Map<string, string>()
-  for (const o of outlets) if (o.stationName && !stationName.has(o.stationCode)) stationName.set(o.stationCode, o.stationName)
-  for (const s of stationDocs) if (s.name) stationName.set(String(s._id), s.name)
-  const stationOptions = [...new Set([...outlets.map((o) => o.stationCode), ...stations])]
-    .sort()
-    .map((code) => ({ code, name: stationName.get(code) ?? null }))
+  const statusOptions = options.statuses
+  const outletName = new Map(options.outlets.map((o) => [o.id, `${o.name} · ${o.stationCode}`]))
 
   // Today is the default, not a filter someone set.
-  const hasFilters = Boolean(
-    outlet || stations.length || status || mode !== 'today' || train || type || q || payment || rider,
-  )
+  const hasFilters = hasOrderFilters(filters) || Boolean(payment)
 
   // Every link and the export carry the filters already in play.
-  const query = (over: Record<string, string>) => {
-    const u = new URLSearchParams()
-    for (const [k, v] of Object.entries({
-      outlet, status, mode: rawMode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider, ...over,
-    })) {
-      if (v) u.set(k, v)
-    }
-    for (const s of stations) u.append('station', s)
+  const query = (over: { payment?: string }) => {
+    const u = orderFilterParams(filters)
+    const p = over.payment ?? payment
+    if (p) u.set('payment', p)
     return u.toString()
   }
 
@@ -160,18 +92,16 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     }
   })
 
-  const exportHref = `/admin/orders/export?range=all&${query({ mode })}`
+  // The export reads a missing mode as all time, so it always gets one.
+  const exportQs = new URLSearchParams(query({}))
+  exportQs.set('range', 'all')
+  exportQs.set('mode', mode)
+  const exportHref = `/admin/orders/export?${exportQs}`
 
   // Separate from `query()`: a filter change should always land back on page
   // 1, but the pager itself needs to carry the current page/size forward.
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
-    const u = new URLSearchParams()
-    for (const [k, v] of Object.entries({
-      outlet, status, mode: rawMode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider,
-    })) {
-      if (v) u.set(k, v)
-    }
-    for (const s of stations) u.append('station', s)
+    const u = new URLSearchParams(query({}))
     if (p > 1) u.set('page', String(p))
     if (ps !== DEFAULT_PAGE_SIZE) u.set('pageSize', String(ps))
     const qs = u.toString()
@@ -202,63 +132,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
       <Tabs label="Payment mode" tabs={paymentTabs} />
 
       <Card className="p-3">
-        <QueryForm action="/admin/orders" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-6">
-          {/* The tabs own this value; without it, filtering would drop it. */}
-          <input type="hidden" name="payment" value={payment} />
-          <div className="relative sm:col-span-2 lg:col-span-5">
-            <IconSearch size={15} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <input name="q" type="search" defaultValue={q}
-              placeholder="Search orders: ID, passenger, phone, train, seat, aggregator, outlet, rider…"
-              autoComplete="off" spellCheck={false}
-              className={`${inputClass} pl-9`} aria-label="Search orders" />
-          </div>
-          <input name="train" defaultValue={train} placeholder="Train number" inputMode="numeric"
-            autoComplete="off" spellCheck={false}
-            className={`${inputClass} font-mono`} aria-label="Train number" />
-          <StationMultiSelect name="station" options={stationOptions} defaultSelected={stations} />
-          <select name="outlet" defaultValue={outlet} className={inputClass} aria-label="Outlet">
-            <option value="">All outlets</option>
-            {outlets.map((o) => (
-              <option key={String(o._id)} value={String(o._id)}>
-                {o.name} · {o.stationCode}
-              </option>
-            ))}
-          </select>
-          <select name="status" defaultValue={status} className={inputClass} aria-label="Status">
-            <option value="">Any status</option>
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>{statusLabel(s)}</option>
-            ))}
-          </select>
-          <select name="type" defaultValue={type} className={inputClass} aria-label="Order type">
-            <option value="">Any type</option>
-            {ORDER_TYPES.map((t) => (
-              <option key={t} value={t}>{ORDER_TYPE_LABEL[t]}</option>
-            ))}
-          </select>
-          <select name="rider" defaultValue={rider} className={inputClass} aria-label="Rider">
-            <option value="">Any rider</option>
-            <option value={NO_RIDER}>No rider yet</option>
-            {riders.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}{r.active ? '' : ' (inactive)'}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
-            {hasFilters ? <ButtonLink href="/admin/orders" variant="ghost">Clear</ButtonLink> : null}
-          </div>
-          <div className="sm:col-span-2 lg:col-span-6">
-            <Field label="Date">
-              {/* Keyed so it shows the range the list was read with: a search on
-                  the default view switches it to All time. */}
-              <DateFilter key={`${mode}|${month}|${rawFrom}|${rawTo}`}
-                mode={mode} month={month} from={rawFrom} to={rawTo} allowAll
-                carryUnchanged={Boolean(rawMode)} />
-            </Field>
-          </div>
-        </QueryForm>
+        {/* The tabs own payment; without it, filtering would drop it. */}
+        <OrderFilterBar action="/admin/orders" filters={filters} options={options} hidden={{ payment }} />
       </Card>
 
       <AdminOrdersTable
