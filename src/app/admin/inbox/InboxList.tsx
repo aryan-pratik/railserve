@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { IconChevronRight, IconClose, IconRefresh, IconTrash } from '@/components/Icons'
+import { IconChevronLeft, IconChevronRight, IconClose, IconRefresh, IconTrash } from '@/components/Icons'
+import { Modal } from '@/components/Modal'
 import { Button, ButtonLink, IconButton, focusRing, focusRingInset } from '@/components/ui'
 import { BULK_REINGEST_LIMIT, REASON_LABEL, type InboxReason, type InboxResolution } from '@/lib/inbox'
 import { ResolveForm } from './InboxForms'
@@ -45,7 +46,8 @@ const ACTION_FN: Record<Action, (input: BulkInput) => Promise<BulkState>> = {
  * The inbox as a dense, selectable list.
  *
  * Each email is one row — reason, sender, subject and a line of the body —
- * that opens in place to show the raw email and its actions. Rows can be
+ * that opens in a modal showing the raw email and its actions, with prev/next
+ * to walk the page without closing it. Rows can be
  * ticked one by one, shift-clicked as a range, all on the page, or every row
  * matching the filters, and the bar that appears acts on all of them at once
  * behind a confirmation that names the count. A dismiss can be undone from
@@ -68,7 +70,9 @@ export function InboxList({
 }) {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [allMatching, setAllMatching] = useState(false)
-  const [open, setOpen] = useState<Set<string>>(new Set())
+  // The email in the modal, by id, with its index as a fallback: when an
+  // action closes it, the modal moves on to the row that took its place.
+  const [viewing, setViewing] = useState<{ id: string; index: number } | null>(null)
   const [confirm, setConfirm] = useState<{ action: Action; input: BulkInput; count: number } | null>(null)
   const [toast, setToast] = useState<BulkState | null>(null)
   const [pending, start] = useTransition()
@@ -83,6 +87,46 @@ export function InboxList({
   const count = allMatching ? total : selected.size
   const active = count > 0
 
+  const viewIndex = !viewing || rows.length === 0
+    ? -1
+    : ids.includes(viewing.id) ? ids.indexOf(viewing.id) : Math.min(viewing.index, rows.length - 1)
+  const viewRow = viewIndex >= 0 ? rows[viewIndex] : null
+
+  // Pin the fallback to its id, so rows arriving above it later don't shift
+  // the modal onto a different email. Adjusted during render, React's
+  // pattern for state derived from props.
+  if (viewing && viewRow && viewRow.id !== viewing.id) setViewing({ id: viewRow.id, index: viewIndex })
+  else if (viewing && !viewRow) setViewing(null)
+
+  const show = useCallback(
+    (index: number) => {
+      if (index >= 0 && index < ids.length) setViewing({ id: ids[index], index })
+    },
+    [ids],
+  )
+
+  const closeView = useCallback(() => {
+    const id = viewing?.id
+    setViewing(null)
+    // Land on the row last viewed, not the one the modal was opened from.
+    if (id) requestAnimationFrame(() => document.getElementById(`inbox-row-${id}`)?.focus())
+  }, [viewing])
+
+  useEffect(() => {
+    if (!viewRow) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'ArrowLeft' || e.key === 'k') show(viewIndex - 1)
+      else if (e.key === 'ArrowRight' || e.key === 'j') show(viewIndex + 1)
+      else return
+      e.preventDefault()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [viewRow, viewIndex, show])
+
   const clear = useCallback(() => {
     setPicked(new Set())
     setAllMatching(false)
@@ -92,11 +136,11 @@ export function InboxList({
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirm) clear()
+      if (e.key === 'Escape' && !confirm && !viewRow) clear()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [active, confirm, clear])
+  }, [active, confirm, viewRow, clear])
 
   useEffect(() => {
     if (!toast) return
@@ -128,15 +172,6 @@ export function InboxList({
   function togglePage() {
     setAllMatching(false)
     setPicked(allOnPage ? new Set() : new Set(ids))
-  }
-
-  function toggleOpen(id: string) {
-    setOpen((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
   }
 
   function ask(action: Action, only?: string) {
@@ -230,16 +265,29 @@ export function InboxList({
             key={row.id}
             row={row}
             selected={allMatching || selected.has(row.id)}
-            open={open.has(row.id)}
+            viewing={viewRow?.id === row.id}
             busy={pending}
             onSelect={(shift) => toggleRow(index, shift)}
-            onToggle={() => toggleOpen(row.id)}
+            onOpen={() => show(index)}
             onAction={(action) => ask(action, row.id)}
           />
         ))}
       </ul>
 
       <div className="border-t border-line">{pager}</div>
+
+      {viewRow ? (
+        <InboxModal
+          row={viewRow}
+          index={viewIndex}
+          count={rows.length}
+          busy={pending}
+          onPrev={() => show(viewIndex - 1)}
+          onNext={() => show(viewIndex + 1)}
+          onClose={closeView}
+          onAction={(action) => ask(action, viewRow.id)}
+        />
+      ) : null}
 
       {confirm ? (
         <ConfirmDialog
@@ -289,7 +337,7 @@ export function InboxList({
       {toast ? (
         <div
           role="status"
-          className={`fixed bottom-4 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2.5 text-sm shadow-lg ${
+          className={`fixed bottom-4 left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2.5 text-sm shadow-lg ${
             toast.error ? 'bg-red-700 text-white' : 'bg-ink text-surface'
           }`}
         >
@@ -351,26 +399,25 @@ function Checkbox({
 function InboxRow({
   row,
   selected,
-  open,
+  viewing,
   busy,
   onSelect,
-  onToggle,
+  onOpen,
   onAction,
 }: {
   row: InboxRowView
   selected: boolean
-  open: boolean
+  viewing: boolean
   busy: boolean
   onSelect: (shift: boolean) => void
-  onToggle: () => void
+  onOpen: () => void
   onAction: (action: Action) => void
 }) {
   const sender = row.senderName || row.senderAddress || row.sourceLabel
-  const title = row.subject || row.detail || '(no subject)'
-  const panelId = `inbox-row-${row.id}`
+  const title = emailTitle(row)
 
   return (
-    <li className={`group/row ${selected ? 'bg-accent-soft/50' : open ? 'bg-sunken/40' : ''}`}>
+    <li className={`group/row ${selected ? 'bg-accent-soft/50' : viewing ? 'bg-sunken/40' : 'hover:bg-sunken/30'}`}>
       <div className="flex items-start gap-3 px-3 py-2 sm:items-center">
         <div className="pt-0.5 sm:pt-0">
           <Checkbox checked={selected} onChange={onSelect} label={`Select: ${title}`} />
@@ -378,9 +425,9 @@ function InboxRow({
 
         <button
           type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          aria-controls={panelId}
+          id={`inbox-row-${row.id}`}
+          onClick={onOpen}
+          aria-haspopup="dialog"
           className={`grid min-w-0 flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-0.5 rounded-md py-1 text-left sm:grid-cols-[8.5rem_minmax(0,13rem)_1fr_7.5rem] ${focusRingInset}`}
         >
           <span
@@ -425,14 +472,62 @@ function InboxRow({
               <IconTrash size={15} />
             </IconButton>
           ) : null}
-          <IconButton size="sm" aria-label={open ? 'Collapse' : 'Expand'} onClick={onToggle}>
-            <IconChevronRight size={16} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+          <IconButton size="sm" aria-label="Open email" aria-haspopup="dialog" tabIndex={-1} onClick={onOpen}>
+            <IconChevronRight size={16} />
           </IconButton>
         </div>
       </div>
-
-      {open ? <InboxDetail id={panelId} row={row} busy={busy} onAction={onAction} /> : null}
     </li>
+  )
+}
+
+function emailTitle(row: InboxRowView): string {
+  return row.subject || row.detail || '(no subject)'
+}
+
+function InboxModal({
+  row,
+  index,
+  count,
+  busy,
+  onPrev,
+  onNext,
+  onClose,
+  onAction,
+}: {
+  row: InboxRowView
+  index: number
+  count: number
+  busy: boolean
+  onPrev: () => void
+  onNext: () => void
+  onClose: () => void
+  onAction: (action: Action) => void
+}) {
+  return (
+    <Modal
+      titleId="inbox-email-title"
+      title={<span className="line-clamp-2">{emailTitle(row)}</span>}
+      onClose={onClose}
+      maxWidthClassName="max-w-3xl"
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-sunken/30 px-5 py-2">
+        <span className="text-xs text-muted tabular-nums">
+          {index + 1} of {count} on this page
+          <span className="hidden sm:inline text-faint"> · ← → to move, Esc to close</span>
+        </span>
+        <div className="flex items-center gap-1">
+          <IconButton size="sm" aria-label="Previous email" disabled={index <= 0} onClick={onPrev}>
+            <IconChevronLeft size={16} />
+          </IconButton>
+          <IconButton size="sm" aria-label="Next email" disabled={index >= count - 1} onClick={onNext}>
+            <IconChevronRight size={16} />
+          </IconButton>
+        </div>
+      </div>
+      {/* Keyed so the body, the HTML toggle and the correction form start over per email. */}
+      <InboxDetail key={row.id} row={row} busy={busy} onAction={onAction} />
+    </Modal>
   )
 }
 
@@ -444,12 +539,10 @@ function resolutionShort(row: InboxRowView): string {
 }
 
 function InboxDetail({
-  id,
   row,
   busy,
   onAction,
 }: {
-  id: string
   row: InboxRowView
   busy: boolean
   onAction: (action: Action) => void
@@ -494,7 +587,7 @@ function InboxDetail({
   }
 
   return (
-    <div id={id} className="space-y-3 border-t border-line/70 bg-sunken/30 px-4 py-3 sm:pl-14">
+    <div className="space-y-4 px-5 py-4">
       <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1 text-sm">
         {meta.map((m) => (
           <div key={m.label} className="contents">
@@ -535,7 +628,7 @@ function InboxDetail({
               </button>
             ) : null}
           </div>
-          <pre className="max-h-80 overflow-auto rounded-lg border border-line bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted">
+          <pre className="max-h-[50vh] overflow-auto rounded-lg border border-line bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted">
             {raw === 'loading' ? 'Loading…' : raw === null ? 'This email is no longer in the inbox.' : shown || '(empty body)'}
           </pre>
         </div>
