@@ -35,6 +35,9 @@ const WaMessageSchema = new Schema(
     // and whatever caption or filename came with it.
     mediaUrl: { type: String, default: null },
     mediaCaption: { type: String, default: null },
+    // WhatsApp's word for it (image, video, audio, document, sticker,
+    // voice), so the thread knows how to preview it. Absent on older lines.
+    mediaType: { type: String, default: null },
     templateName: { type: String, default: null },
 
     status: { type: String, required: true, enum: WA_STATUSES },

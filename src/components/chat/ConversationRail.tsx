@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { formatIST, formatTimeIST } from '@/lib/format'
 import { IconCheck, IconCheckDouble } from '@/components/Icons'
@@ -16,7 +16,22 @@ import { initialsOf, RAIL_PAGE, type ConversationRowView } from './chatView'
  * page, the fresh first page arrives as new props; rather than drop what was
  * scrolled to, the rail refetches as many rows as it already holds, so the
  * list updates in place and the scroll position stays where it was.
+ *
+ * Opening a thread is a navigation to /…/chat/[id], and a new [id] is a new
+ * page segment, so React mounts a brand-new rail: back at the top, with only
+ * the first page loaded. That is what used to throw the reader back to the
+ * first chat every time they opened one further down. The rail therefore
+ * keeps what it had loaded and how far it was scrolled in `memory`, keyed by
+ * console and filter, and a fresh mount starts from there instead.
  */
+
+type RailMemory = { rows: ConversationRowView[]; hasMore: boolean; scrollTop: number }
+
+// Module scope, so it outlives the remount but not a reload: a reload should
+// land on a fresh list. Keyed by console and search/filter, since a rail
+// scrolled under one filter says nothing about another.
+const memory = new Map<string, RailMemory>()
+
 export function ConversationRail({
   initial,
   initialHasMore,
@@ -34,8 +49,16 @@ export function ConversationRail({
   /** Appended to every thread link so the filters survive the navigation. */
   threadHrefSuffix: string
 }) {
-  const [rows, setRows] = useState(initial)
-  const [hasMore, setHasMore] = useState(initialHasMore)
+  const memoryKey = `${basePath}?${query}`
+  // What this rail had before the navigation remounted it, if anything.
+  // Read once, at mount: after that the rail's own state is the truth.
+  const [remembered] = useState(() => {
+    const m = memory.get(memoryKey)
+    return m && m.rows.length > initial.length ? m : null
+  })
+  const [rows, setRows] = useState(remembered?.rows ?? initial)
+  const [hasMore, setHasMore] = useState(remembered?.hasMore ?? initialHasMore)
+  const listRef = useRef<HTMLOListElement>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -46,6 +69,34 @@ export function ConversationRail({
   useEffect(() => {
     rowsRef.current = rows
   }, [rows])
+
+  useEffect(() => {
+    const prev = memory.get(memoryKey)
+    memory.set(memoryKey, { rows, hasMore, scrollTop: prev?.scrollTop ?? 0 })
+  }, [memoryKey, rows, hasMore])
+
+  // Before paint, put the list back where the reader left it, then make sure
+  // the open thread's row is on screen (it is, after a click; it may not be
+  // after a deep link or a reload).
+  useLayoutEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    el.scrollTop = memory.get(memoryKey)?.scrollTop ?? 0
+    const row = activeId ? el.querySelector<HTMLElement>(`[data-id="${CSS.escape(activeId)}"]`) : null
+    if (!row) return
+    // The list is `relative`, so a row's offsetTop is measured from it.
+    const top = row.offsetTop
+    if (top < el.scrollTop) el.scrollTop = top
+    else if (top + row.offsetHeight > el.scrollTop + el.clientHeight) el.scrollTop = top + row.offsetHeight - el.clientHeight
+    // Mount only: once open, the reader's own scrolling is not ours to move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function onScroll() {
+    const el = listRef.current
+    const m = memory.get(memoryKey)
+    if (el && m) m.scrollTop = el.scrollTop
+  }
 
   const url = useCallback(
     (skip: number, limit: number) =>
@@ -116,13 +167,17 @@ export function ConversationRail({
   const today = formatIST(new Date()).split(',')[0]
 
   return (
-    <ol className="min-h-0 flex-1 overflow-y-auto [overscroll-behavior:contain] [scrollbar-width:thin]">
+    <ol
+      ref={listRef}
+      onScroll={onScroll}
+      className="relative min-h-0 flex-1 overflow-y-auto [overscroll-behavior:contain] [scrollbar-width:thin]"
+    >
       {rows.map((c) => {
         const active = c.id === activeId
         const unread = c.unread > 0
         const day = formatIST(c.at).split(',')[0]
         return (
-          <li key={c.id} className="group">
+          <li key={c.id} data-id={c.id} className="group">
             <Link
               href={`${basePath}/${c.id}${threadHrefSuffix}`}
               aria-current={active ? 'page' : undefined}

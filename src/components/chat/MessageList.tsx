@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { formatTimeIST } from '@/lib/format'
 import { IconAlert, IconCheck, IconCheckDouble } from '@/components/Icons'
-import { Spinner } from '@/components/ui'
+import { Spinner, focusRing } from '@/components/ui'
+import { AttachmentModal, previewKind, type PreviewKind } from './AttachmentModal'
 import type { MessageView } from './chatView'
 
 /**
@@ -210,18 +211,62 @@ function Bubble({ m, tail }: { m: MessageView; tail: boolean }) {
 
 function Media({ m }: { m: MessageView }) {
   const caption = m.mediaCaption ?? m.text
+  const [open, setOpen] = useState(false)
+  // A thumbnail that will not load drops back to a plain button.
+  const [thumbFailed, setThumbFailed] = useState(false)
+  if (!m.mediaUrl) {
+    return (
+      <div>
+        <span className="italic text-muted">Attachment</span>
+        {caption ? <p className="mt-0.5 whitespace-pre-wrap">{caption}</p> : null}
+      </div>
+    )
+  }
+  const kind = previewKind(m.mediaType, m.mediaUrl, m.mediaCaption)
+  const thumb = kind === 'image' && !thumbFailed
   return (
     <div>
-      {m.mediaUrl ? (
-        <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="font-medium text-accent underline-offset-2 hover:underline">
-          Open attachment
-        </a>
-      ) : (
-        <span className="italic text-muted">Attachment</span>
-      )}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={
+          thumb
+            ? `-mx-1.5 mt-0.5 block overflow-hidden rounded-xl ${focusRing}`
+            : `font-medium text-accent underline-offset-2 hover:underline ${focusRing} rounded`
+        }
+      >
+        {thumb ? (
+          // eslint-disable-next-line @next/next/no-img-element -- a provider URL on any host
+          <img
+            src={m.mediaUrl}
+            alt={caption ?? 'Photo'}
+            loading="lazy"
+            onError={() => setThumbFailed(true)}
+            className="max-h-64 w-auto max-w-full object-cover"
+          />
+        ) : (
+          ATTACHMENT_LABEL[kind]
+        )}
+      </button>
       {caption ? <p className="mt-0.5 whitespace-pre-wrap">{caption}</p> : null}
+      {open ? (
+        <AttachmentModal
+          url={m.mediaUrl}
+          kind={thumbFailed && kind === 'image' ? 'pdf' : kind}
+          caption={caption}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </div>
   )
+}
+
+const ATTACHMENT_LABEL: Record<PreviewKind, string> = {
+  image: 'View photo',
+  video: 'Play video',
+  audio: 'Play voice note',
+  pdf: 'View document',
+  file: 'View attachment',
 }
 
 /** One tick sent, two delivered, two in accent read: WhatsApp's own grammar, which every telecaller already reads. */
