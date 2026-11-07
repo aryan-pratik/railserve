@@ -1,65 +1,138 @@
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { UnparsedInbox } from '@/lib/models'
+import { UnparsedInbox, User } from '@/lib/models'
 import { formatIST } from '@/lib/format'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
-import { Button, ButtonLink, Card, EmptyState, Notice, PageHeader, Tabs, Pagination } from '@/components/ui'
+import { toParseableText } from '@/lib/ingest/gmail/client'
+import { sourceLabel } from '@/lib/orderEnums'
+import {
+  INBOX_REASONS,
+  REASON_LABEL,
+  inboxFilterParams,
+  inboxQuery,
+  isFiltered,
+  previewOf,
+  readInboxFilter,
+  splitSender,
+  type InboxReason,
+} from '@/lib/inbox'
+import { EmptyState, Notice, PageHeader, Tabs, Pagination } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
-import { IconChevronRight } from '@/components/Icons'
-import { PasteEmailForm, ResolveForm } from './InboxForms'
-import { dismissUnparsed } from './actions'
+import { PasteEmailForm } from './InboxForms'
+import { InboxFilters } from './InboxFilters'
+import { InboxList, type InboxRowView } from './InboxList'
 
 export const metadata = { title: 'Inbox · RailServe' }
-
-const REASON_LABEL: Record<string, string> = {
-  UNKNOWN_OUTLET: 'Outlet not recognised',
-  MISSING_FIELD: 'Required field missing',
-  PARSE_FAILED: 'Could not parse',
-}
-
-const REASON_STYLE: Record<string, string> = {
-  UNKNOWN_OUTLET: 'bg-amber-100 text-amber-900 ring-amber-200',
-  MISSING_FIELD: 'bg-orange-100 text-orange-900 ring-orange-200',
-  PARSE_FAILED: 'bg-red-100 text-red-800 ring-red-200',
-}
-
-/** The severity tint: a wash across the card header, readable down a stack of ten. */
-const REASON_TINT: Record<string, string> = {
-  UNKNOWN_OUTLET: 'bg-amber-50/70',
-  MISSING_FIELD: 'bg-orange-50/70',
-  PARSE_FAILED: 'bg-red-50/70',
-}
 
 export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
   await requireRole('ADMIN')
   const sp = await props.searchParams
-  const showResolved = (Array.isArray(sp.show) ? sp.show[0] : sp.show) === 'resolved'
+  const filter = readInboxFilter(sp)
   const { page, pageSize, skip } = readPage(sp)
+  const query = inboxQuery(filter)
 
   await connectDb()
   // Paged, not capped: this stopped at 100 silently, which on a bad day is
   // exactly when an admin needs to see the 101st broken email.
-  const [rows, total, openCount, ingest] = await Promise.all([
-    UnparsedInbox.find({ resolved: showResolved }).sort({ createdAt: -1 }).skip(skip).limit(pageSize).lean(),
-    UnparsedInbox.countDocuments({ resolved: showResolved }),
+  const [rows, total, openCount, reasonCounts, sources, senders, ingest] = await Promise.all([
+    UnparsedInbox.find(query).sort({ createdAt: -1 }).skip(skip).limit(pageSize).lean(),
+    UnparsedInbox.countDocuments(query),
     UnparsedInbox.countDocuments({ resolved: false }),
+    // Per reason, under every other filter: the chips say what clicking one
+    // would leave, not what the whole inbox holds.
+    UnparsedInbox.aggregate<{ _id: string; n: number }>([
+      { $match: inboxQuery(filter, 'reason') },
+      { $group: { _id: '$reason', n: { $sum: 1 } } },
+    ]),
+    UnparsedInbox.distinct('source', { resolved: filter.resolved }),
+    UnparsedInbox.aggregate<{ _id: string | null; n: number }>([
+      { $match: { resolved: filter.resolved } },
+      { $group: { _id: '$rawPayload.from', n: { $sum: 1 } } },
+      { $sort: { n: -1 } },
+      { $limit: 200 },
+    ]),
     // A lapsed Gmail watch stops ingestion outright and raises no error
     // anywhere; this page is where ingestion health belongs.
     checkIngestStaleness(),
   ])
 
+  const byReason = new Map(reasonCounts.map((r) => [r._id, r.n]))
+  const reasonTotal = reasonCounts.reduce((sum, r) => sum + r.n, 0)
+
+  // One entry per address, however many display names it was sent under.
+  const senderCounts = new Map<string, { label: string; n: number }>()
+  for (const s of senders) {
+    const { name, address } = splitSender(s._id)
+    if (!address) continue
+    const cur = senderCounts.get(address)
+    if (cur) cur.n += s.n
+    else senderCounts.set(address, { label: name ? `${name} <${address}>` : address, n: s.n })
+  }
+  const senderOptions = [...senderCounts]
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, 40)
+    .map(([value, { label, n }]) => ({ value, label: `${label} (${n})` }))
+
+  const resolverIds = [...new Set(rows.map((r) => r.resolvedById).filter(Boolean).map(String))]
+  const resolvers = resolverIds.length
+    ? new Map(
+        (await User.find({ _id: { $in: resolverIds } }).select('name').lean()).map((u) => [String(u._id), u.name]),
+      )
+    : new Map<string, string>()
+
+  const view: InboxRowView[] = rows.map((row) => {
+    const payload = (row.rawPayload ?? {}) as { body?: string; subject?: string | null; from?: string | null }
+    const body = payload.body ?? ''
+    const sender = splitSender(payload.from)
+    return {
+      id: String(row._id),
+      reason: row.reason as InboxReason,
+      source: row.source,
+      sourceLabel: row.source === 'UNKNOWN' ? 'Unknown sender' : sourceLabel(row.source),
+      subject: payload.subject?.trim() || null,
+      senderName: sender.name || null,
+      senderAddress: sender.address || null,
+      preview: previewOf(toParseableText(body)),
+      detail: row.detail ?? null,
+      externalOrderId: row.externalOrderId ?? null,
+      gmailMessageId: row.gmailMessageId ?? null,
+      partial: summarizePartial(row.partial),
+      createdAt: formatIST(row.createdAt),
+      createdAtIso: row.createdAt ? new Date(row.createdAt).toISOString() : null,
+      resolved: Boolean(row.resolved),
+      resolvedAt: row.resolvedAt ? formatIST(row.resolvedAt) : null,
+      resolvedBy: row.resolvedById ? (resolvers.get(String(row.resolvedById)) ?? 'A removed user') : null,
+      resolution: (row.resolution as InboxRowView['resolution']) ?? (row.resolvedOrderId ? 'ORDER' : null),
+      resolvedOrderId: row.resolvedOrderId ? String(row.resolvedOrderId) : null,
+      bulkActionCount: row.bulkActionCount ?? null,
+    }
+  })
+
+  const params = inboxFilterParams(filter)
+  const href = (u: URLSearchParams) => {
+    const s = u.toString()
+    return s ? `/admin/inbox?${s}` : '/admin/inbox'
+  }
+  const withReason = (reason: InboxReason | null) => {
+    const u = new URLSearchParams(params)
+    if (reason) u.set('reason', reason)
+    else u.delete('reason')
+    return href(u)
+  }
+  const filtered = isFiltered(filter)
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="Inbox"
-        note="Emails that could not become orders. Nothing here was discarded. This is the net that catches an aggregator changing its template."
+        note="Emails that could not become orders. Nothing here was discarded: this is the net that catches an aggregator changing its template."
       />
 
       <Tabs
         label="Inbox"
         tabs={[
-          { href: '/admin/inbox', label: 'Needs attention', count: openCount, active: !showResolved },
-          { href: '/admin/inbox?show=resolved', label: 'Resolved', active: showResolved },
+          { href: '/admin/inbox', label: 'Needs attention', count: openCount, active: !filter.resolved },
+          { href: '/admin/inbox?show=resolved', label: 'Resolved', active: filter.resolved },
         ]}
       />
 
@@ -69,94 +142,100 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
         </Notice>
       ) : null}
 
-      {!showResolved && openCount > 0 ? (
+      {!filter.resolved && openCount > 0 && !filtered ? (
         <Notice tone="danger">
-          {openCount} email{openCount === 1 ? '' : 's'} did not become an order. That is food nobody is cooking. Correct or dismiss each one.
+          {openCount} email{openCount === 1 ? '' : 's'} did not become an order. Re-ingest the ones that are orders;
+          select the rest and dismiss them together.
         </Notice>
       ) : null}
 
-      {rows.length === 0 ? (
+      <InboxFilters
+        key={params.toString()}
+        filter={filter}
+        sources={sources
+          .filter((s): s is string => typeof s === 'string')
+          .sort()
+          .map((s) => ({ value: s, label: s === 'UNKNOWN' ? 'Unknown (no parser)' : sourceLabel(s) }))}
+        senders={senderOptions}
+        reasons={[
+          { href: withReason(null), label: 'All', count: reasonTotal, active: !filter.reason },
+          ...INBOX_REASONS.map((r) => ({
+            href: withReason(r),
+            label: REASON_LABEL[r],
+            count: byReason.get(r) ?? 0,
+            active: filter.reason === r,
+            reason: r,
+          })),
+        ]}
+      />
+
+      {view.length === 0 ? (
         <EmptyState
-          title={showResolved ? 'Nothing resolved yet' : 'Nothing needs attention'}
+          title={
+            filtered
+              ? 'No emails match these filters'
+              : filter.resolved
+                ? 'Nothing resolved yet'
+                : 'Nothing needs attention'
+          }
           note={
-            showResolved
-              ? 'Rows you correct or dismiss appear here.'
-              : 'A rising count here is how a broken parser announces itself.'
+            filtered
+              ? 'Clear a filter to see more.'
+              : filter.resolved
+                ? 'Rows you correct or dismiss appear here.'
+                : 'A rising count here is how a broken parser announces itself.'
           }
         />
       ) : (
-        <div className="space-y-3">
-          {rows.map((row) => {
-            const body = (row.rawPayload as { body?: string })?.body ?? ''
-            return (
-              <Card key={String(row._id)}>
-                <div
-                  className={`flex flex-wrap items-center gap-2 rounded-t-xl border-b border-line px-4 py-2.5 ${
-                    row.resolved ? 'bg-emerald-50/70' : (REASON_TINT[row.reason] ?? 'bg-sunken/50')
-                  }`}
-                >
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
-                      REASON_STYLE[row.reason] ?? 'bg-sunken text-muted ring-line-strong'
-                    }`}
-                  >
-                    {REASON_LABEL[row.reason] ?? row.reason}
-                  </span>
-                  <span className="text-sm font-medium text-ink">{row.source}</span>
-                  {row.externalOrderId ? (
-                    <span className="font-mono text-sm tabular-nums text-muted">#{row.externalOrderId}</span>
-                  ) : null}
-                  <span className="ml-auto text-xs tabular-nums text-faint">{formatIST(row.createdAt)}</span>
-                </div>
-
-                <div className="space-y-3 px-4 py-3">
-                  <p className="text-sm text-muted text-pretty">{row.detail}</p>
-
-                  <details className="group text-sm">
-                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
-                      <IconChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />
-                      Raw email
-                    </summary>
-                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-sunken/60 p-3 font-mono text-xs leading-relaxed text-muted">{body}</pre>
-                  </details>
-
-                  {row.resolved ? (
-                    <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-emerald-700">
-                      Resolved {formatIST(row.resolvedAt)}
-                      {row.resolvedOrderId ? (
-                        <ButtonLink href={`/admin/orders/${String(row.resolvedOrderId)}`} size="sm">View order</ButtonLink>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-start gap-2">
-                      <ResolveForm id={String(row._id)} body={body} />
-                      <form action={dismissUnparsed}>
-                        <input type="hidden" name="id" value={String(row._id)} />
-                        <Button type="submit" variant="secondary" size="sm">Dismiss as not an order</Button>
-                      </form>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            )
-          })}
-          <div className="rounded-xl border border-line bg-surface">
+        <InboxList
+          key={`${params.toString()}|${page}|${pageSize}`}
+          rows={view}
+          total={total}
+          resolved={filter.resolved}
+          query={params.toString()}
+          pager={
             <Pagination
               page={page}
               pageSize={pageSize}
               total={total}
-              buildHref={(target) => {
-                const u = new URLSearchParams()
-                if (showResolved) u.set('show', 'resolved')
-                const s = withPage(u, target).toString()
-                return s ? `/admin/inbox?${s}` : '/admin/inbox'
-              }}
+              buildHref={(target) => href(withPage(params, target))}
             />
-          </div>
-        </div>
+          }
+        />
       )}
 
       <PasteEmailForm />
     </div>
   )
+}
+
+/** What the parser did understand, as label/value pairs for the expanded row. */
+function summarizePartial(partial: unknown): { label: string; value: string }[] {
+  if (!partial || typeof partial !== 'object') return []
+  const p = partial as Record<string, unknown>
+  const out: { label: string; value: string }[] = []
+  const add = (label: string, v: unknown) => {
+    if (v === null || v === undefined || v === '') return
+    if (typeof v === 'object') return
+    out.push({ label, value: String(v) })
+  }
+  add('Order id', p.externalOrderId)
+  add('Outlet', p.outletName)
+  add('Station', p.stationCode ?? p.stationName)
+  add('Train', [p.trainNo, p.trainName].filter(Boolean).join(' ') || null)
+  add('Passenger', p.contactName)
+  add('Phone', p.contactPhone)
+  add('Seat', [p.coach, p.berth].filter(Boolean).join(' / ') || p.rawSeat || null)
+  add('Amount', typeof p.amountPaise === 'number' ? `₹${(p.amountPaise / 100).toFixed(2)}` : null)
+  add('Payment', p.paymentMode)
+  if (Array.isArray(p.items) && p.items.length) {
+    add(
+      'Items',
+      (p.items as { name?: string; qty?: number }[])
+        .slice(0, 6)
+        .map((i) => `${i.qty ?? 1} × ${i.name ?? '?'}`)
+        .join(', ') + (p.items.length > 6 ? ` +${p.items.length - 6} more` : ''),
+    )
+  }
+  return out
 }
