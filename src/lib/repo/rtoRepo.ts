@@ -172,9 +172,15 @@ export type ReturnRow = {
  */
 export async function listReturns(
   ctx: AuthContext,
-  opts: { status: RtoStatus; limit: number; skip: number },
+  opts: {
+    status: RtoStatus
+    limit: number
+    skip: number
+    /** More conditions on the order, from the filter bar. Never widens the scope. */
+    where?: Record<string, unknown>
+  },
 ): Promise<{ rows: ReturnRow[]; total: number }> {
-  const filter = scoped(ctx, { 'delivery.rto.status': opts.status })
+  const filter = scoped(ctx, { ...(opts.where ?? {}), 'delivery.rto.status': opts.status })
   const sort: Record<string, 1 | -1> =
     opts.status === 'PENDING' ? { 'delivery.rto.openedAt': 1 } : { 'delivery.rto.returnedAt': -1 }
   const [orders, total] = await Promise.all([

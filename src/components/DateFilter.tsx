@@ -97,6 +97,7 @@ export function DateFilter({
   to: initialTo,
   allowAll = false,
   autoSubmit = false,
+  carryUnchanged = true,
 }: {
   mode: DateFilterMode
   month: string
@@ -106,6 +107,12 @@ export function DateFilter({
   allowAll?: boolean
   /** Pushes the selection into the URL as soon as it is complete. */
   autoSubmit?: boolean
+  /**
+   * False leaves the hidden inputs out until someone picks a date, so the
+   * page's own default applies. All orders uses it so a search typed on the
+   * default view looks across all time instead of only today.
+   */
+  carryUnchanged?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -116,6 +123,7 @@ export function DateFilter({
   const [month, setMonth] = useState(initialMonth)
   const [from, setFrom] = useState(initialFrom)
   const [to, setTo] = useState(initialTo)
+  const [touched, setTouched] = useState(false)
   const [openPanel, setOpenPanel] = useState<'month' | 'range' | null>(null)
   const [cursorYear, setCursorYear] = useState(
     () => Number((initialMonth || String(new Date().getFullYear())).slice(0, 4)),
@@ -144,6 +152,7 @@ export function DateFilter({
     const nextMonth = next.month ?? ''
     const nextFrom = next.from ?? ''
     const nextTo = next.to ?? ''
+    setTouched(true)
     setMode(next.mode)
     setMonth(nextMonth)
     setFrom(nextFrom)
@@ -286,10 +295,14 @@ export function DateFilter({
 
       {/* Carried by whichever form this sits in, so a submit from a field
           beside it keeps the date selection. */}
-      <input type="hidden" name="mode" value={mode} readOnly />
-      {month ? <input type="hidden" name="month" value={month} readOnly /> : null}
-      {from ? <input type="hidden" name="from" value={from} readOnly /> : null}
-      {to ? <input type="hidden" name="to" value={to} readOnly /> : null}
+      {carryUnchanged || touched ? (
+        <>
+          <input type="hidden" name="mode" value={mode} readOnly />
+          {month ? <input type="hidden" name="month" value={month} readOnly /> : null}
+          {from ? <input type="hidden" name="from" value={from} readOnly /> : null}
+          {to ? <input type="hidden" name="to" value={to} readOnly /> : null}
+        </>
+      ) : null}
     </div>
   )
 }
