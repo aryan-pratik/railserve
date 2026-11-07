@@ -49,8 +49,15 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const outlet = one(sp.outlet)
   const stations = parseStations(many(sp.station))
   const status = one(sp.status)
+  // One box that searches everything. `orderId` is what the box used to be
+  // called, so links bookmarked before then still find their order.
+  const q = (one(sp.q) || one(sp.orderId)).trim()
   // Opens on today, like every other dated screen; "All time" is one click.
-  const mode = (one(sp.mode) || 'today') as DateFilterMode
+  // A search with no date picked looks across all time: an order is searched
+  // for because it is not on today's list, and finding nothing for an order
+  // placed yesterday read as the search being broken.
+  const rawMode = one(sp.mode)
+  const mode = (rawMode || (q ? 'all' : 'today')) as DateFilterMode
   const month = one(sp.month)
   const rawFrom = one(sp.from)
   const rawTo = one(sp.to)
@@ -58,9 +65,6 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const train = one(sp.train)
   // Unknown values are dropped, so a stale link cannot filter to nothing.
   const type = (ORDER_TYPES as readonly string[]).includes(one(sp.type)) ? one(sp.type) : ''
-  // One box that searches everything. `orderId` is what the box used to be
-  // called, so links bookmarked before then still find their order.
-  const q = (one(sp.q) || one(sp.orderId)).trim()
   const payment = one(sp.payment)
   // Dropped when it is neither an id nor NO_RIDER, so links never carry junk.
   const byRider = riderClause(one(sp.rider))
@@ -136,7 +140,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   const query = (over: Record<string, string>) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider, ...over,
+      outlet, status, mode: rawMode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider, ...over,
     })) {
       if (v) u.set(k, v)
     }
@@ -156,14 +160,14 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     }
   })
 
-  const exportHref = `/admin/orders/export?range=all&${query({})}`
+  const exportHref = `/admin/orders/export?range=all&${query({ mode })}`
 
   // Separate from `query()`: a filter change should always land back on page
   // 1, but the pager itself needs to carry the current page/size forward.
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
     for (const [k, v] of Object.entries({
-      outlet, status, mode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider,
+      outlet, status, mode: rawMode, month, from: rawFrom, to: rawTo, train, type, q, payment, rider,
     })) {
       if (v) u.set(k, v)
     }
@@ -247,7 +251,11 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           </div>
           <div className="sm:col-span-2 lg:col-span-6">
             <Field label="Date">
-              <DateFilter mode={mode} month={month} from={rawFrom} to={rawTo} allowAll />
+              {/* Keyed so it shows the range the list was read with: a search on
+                  the default view switches it to All time. */}
+              <DateFilter key={`${mode}|${month}|${rawFrom}|${rawTo}`}
+                mode={mode} month={month} from={rawFrom} to={rawTo} allowAll
+                carryUnchanged={Boolean(rawMode)} />
             </Field>
           </div>
         </QueryForm>
