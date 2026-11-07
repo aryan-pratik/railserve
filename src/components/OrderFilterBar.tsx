@@ -80,7 +80,12 @@ export function OrderFilterBar({
       </div>
       <div className="sm:col-span-2 lg:col-span-6">
         <Field label="Date">
-          <DateFilter mode={f.mode} month={f.month} from={f.from} to={f.to} allowAll />
+          {/* Keyed so it shows the range the list was read with (a search on
+              the default view reads All time), and only carried once picked,
+              so a search typed on the default view is not pinned to it. */}
+          <DateFilter key={`${f.mode}|${f.month}|${f.from}|${f.to}`}
+            mode={f.mode} month={f.month} from={f.from} to={f.to} allowAll
+            carryUnchanged={f.modeSet} />
         </Field>
       </div>
     </QueryForm>

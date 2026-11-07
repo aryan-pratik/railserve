@@ -23,6 +23,18 @@ describe('order filter bar', () => {
     expect(orderFilterParams(returns).toString()).toBe('')
   })
 
+  it('searches all time unless a date was picked', () => {
+    const searched = readOrderFilters({ q: 'rahul' }, { defaultMode: 'today' })
+    expect(searched.mode).toBe('all')
+    expect(searched.modeSet).toBe(false)
+    // Links leave the implied mode out, so clearing the search lands on today.
+    expect(orderFilterParams(searched).toString()).toBe('q=rahul')
+
+    const picked = readOrderFilters({ q: 'rahul', mode: 'today' }, { defaultMode: 'today' })
+    expect(picked.mode).toBe('today')
+    expect(orderFilterParams(picked).get('mode')).toBe('today')
+  })
+
   it('drops junk type and rider values instead of filtering to nothing', () => {
     const f = readOrderFilters({ type: 'NOPE', rider: 'not-an-id' }, { defaultMode: 'all' })
     expect(f.type).toBe('')

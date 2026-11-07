@@ -30,6 +30,17 @@ export type OrderFilters = {
   to: string
   /** The date mode this screen opens on, so it does not count as a filter. */
   defaultMode: DateFilterMode
+  /** Whether the URL picked a date mode, rather than the default applying. */
+  modeSet: boolean
+}
+
+/**
+ * The date mode that applies when none is picked. A search looks across all
+ * time: an order is searched for because it is not on today's list, and
+ * finding nothing for one placed yesterday read as the search being broken.
+ */
+function impliedMode(q: string, defaultMode: DateFilterMode): DateFilterMode {
+  return q ? 'all' : defaultMode
 }
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
@@ -39,10 +50,12 @@ const many = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [
 export function readOrderFilters(sp: Params, opts: { defaultMode: DateFilterMode }): OrderFilters {
   const rawType = one(sp.type)
   const rawRider = one(sp.rider)
+  // `orderId` is what the search box used to be called, so links
+  // bookmarked before then still find their order.
+  const q = (one(sp.q) || one(sp.orderId)).trim()
+  const rawMode = one(sp.mode)
   return {
-    // `orderId` is what the search box used to be called, so links
-    // bookmarked before then still find their order.
-    q: (one(sp.q) || one(sp.orderId)).trim(),
+    q,
     train: one(sp.train).trim(),
     stations: parseStations(many(sp.station)),
     outlet: one(sp.outlet),
@@ -51,11 +64,12 @@ export function readOrderFilters(sp: Params, opts: { defaultMode: DateFilterMode
     type: (ORDER_TYPES as readonly string[]).includes(rawType) ? rawType : '',
     // Dropped when it is neither an id nor NO_RIDER, so links never carry junk.
     rider: riderClause(rawRider) ? rawRider : '',
-    mode: (one(sp.mode) || opts.defaultMode) as DateFilterMode,
+    mode: (rawMode || impliedMode(q, opts.defaultMode)) as DateFilterMode,
     month: one(sp.month),
     from: one(sp.from),
     to: one(sp.to),
     defaultMode: opts.defaultMode,
+    modeSet: Boolean(rawMode),
   }
 }
 
@@ -69,14 +83,15 @@ export function hasOrderFilters(f: OrderFilters): boolean {
 /**
  * The filters as query params, for links that must carry them: tabs, the
  * pager, the export. The date mode is only written when it differs from
- * the screen's default.
+ * what the screen would apply on its own, so a search left on the default
+ * keeps searching all time and drops back to the default once cleared.
  */
 export function orderFilterParams(f: OrderFilters): URLSearchParams {
   const u = new URLSearchParams()
   const pairs: [string, string][] = [
     ['outlet', f.outlet],
     ['status', f.status],
-    ['mode', f.mode !== f.defaultMode ? f.mode : ''],
+    ['mode', f.mode !== impliedMode(f.q, f.defaultMode) ? f.mode : ''],
     ['month', f.month],
     ['from', f.from],
     ['to', f.to],
