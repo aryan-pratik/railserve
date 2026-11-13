@@ -11,6 +11,11 @@ export type RunOrder = {
   externalOrderId: string
   orderType: 'RETAIL' | 'BULK' | 'LOCAL'
   status: string
+  /** What the rider has to do, in the server's words. Optional: older servers omit it. */
+  riderStatus?: string
+  riderStatusLabel?: string
+  /** The booking's date, which is not always today's (see the Orders tab). */
+  serviceDate?: string
   /**
    * false for a ready order nobody was given — open on the counter to any
    * rider at the outlet. Optional: a server older than the app omits it, and
@@ -91,8 +96,12 @@ export type HistoryOrder = {
   receivedBy: string | null
   amountCollectedPaise: number | null
   failureReason: string | null
-  /** The store manager has taken this order's cash. */
+  /** Somebody authorised has received this order's cash, and who. */
   codSettledAt?: string | null
+  codReceivedBy?: string | null
+  /** Why it reads as cancelled when the office recorded something more specific. */
+  statusDetail?: string | null
+  riderStatusLabel?: string
   /** Until when the rider may still change how it ended; null once they can't. */
   editableUntil?: string | null
   /**
@@ -104,10 +113,62 @@ export type HistoryOrder = {
 
 export type HistoryQuery = { date?: string; q?: string }
 
+/**
+ * A period's figures as the server counted them, from the same ledger the
+ * office's Riders page reads. The app shows these as sent and never adds the
+ * rows up itself, so the two screens cannot disagree.
+ */
+export type RiderDay = {
+  done: number
+  delivered: number
+  notDelivered: number
+  cancelled: number
+  codOrders: number
+  codPaise: number
+  prepaidOrders: number
+  deliveredPaise: number
+  amountPaise: number
+}
+
+/** One handover of cash, and who received it. */
+export type Collection = {
+  id: string
+  at: string
+  paise: number
+  orders: number
+  receivedBy: string | null
+  receivedAs: string | null
+}
+
+export type TeamMember = {
+  id: string
+  name: string
+  phone: string
+  active: boolean
+  isLead: boolean
+  day: RiderDay
+  now: { inHand: number; waiting: number; trains: string[]; inHandCodPaise: number }
+  due: { paise: number; orders: number; orderIds: string[] }
+  lastCollection: { at: string; paise: number; orders: number; receivedBy: string | null } | null
+}
+
+export type TeamResponse = {
+  fetchedAt: string
+  day: string
+  lead: { id: string; name: string; phone: string; canReceiveCash: boolean }
+  members: TeamMember[]
+}
+
 export type HistoryResponse = {
   fetchedAt: string
   view?: { kind: 'recent' | 'date' | 'search'; date?: string; q?: string }
   orders: HistoryOrder[]
+  /** The period in view, counted by the server. Null for a search; absent on older servers. */
+  summary?: RiderDay | null
+  /** The reporting day in progress (3 am to 3 am), whatever period is in view. */
+  today?: RiderDay & { day: string }
+  /** Every handover, newest first. */
+  collections?: Collection[]
   /** COD the rider is holding for the store, across every day not yet handed over. */
   wallet?: {
     pendingPaise: number

@@ -1,6 +1,8 @@
 import { API_URL } from './config'
 import { enqueue, loadQueue, removeFromQueue } from './storage'
-import type { HistoryQuery, HistoryResponse, LocationPing, QueuedMutation, RunsResponse } from './types'
+import type {
+  HistoryQuery, HistoryResponse, LocationPing, QueuedMutation, RunsResponse, TeamResponse,
+} from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -40,7 +42,7 @@ async function request<T>(path: string, token: string | null, init?: RequestInit
 }
 
 export async function login(phone: string, password: string) {
-  return request<{ token: string; expiresAt: string; user: { id: string; name: string; phone: string } }>(
+  return request<{ token: string; expiresAt: string; user: { id: string; name: string; phone: string; isTeamLead?: boolean } }>(
     '/api/mobile/login',
     null,
     { method: 'POST', body: JSON.stringify({ phone, password }) },
@@ -57,15 +59,33 @@ export async function fetchRuns(token: string): Promise<RunsResponse> {
  * and caching it would compete for the storage the write queue depends on.
  */
 export async function fetchHistory(token: string, query: HistoryQuery = {}): Promise<HistoryResponse> {
-  // v=2: this build understands CANCELLED rows. Older builds draw anything
-  // that is not FAILED as delivered, so the server leaves cancellations out
-  // for them.
-  const params = new URLSearchParams({ v: '2' })
+  // v=3: this build reads the server's own summary and understands every
+  // closing status (folded to delivered / not delivered / cancelled, with the
+  // detail beside it). v=2 builds knew CANCELLED only; older ones draw
+  // anything that is not FAILED as delivered, so the server leaves the rest
+  // out for them.
+  const params = new URLSearchParams({ v: '3' })
   if (query.q) params.set('q', query.q)
   else if (query.date) params.set('date', query.date)
   return request<HistoryResponse>(`/api/mobile/history?${params.toString()}`, token)
 }
 
+
+/** A team leader's riders and their day. Rejects with 403 for a rider who leads nobody. */
+export async function fetchTeam(token: string): Promise<TeamResponse> {
+  return request<TeamResponse>('/api/mobile/team', token)
+}
+
+/**
+ * A team leader marks a rider's cash as received. Sent at once and never
+ * queued: money is only received against the list the leader is looking at.
+ */
+export async function receiveTeamCash(token: string, riderId: string, orderIds: string[]) {
+  return request<{ ok: boolean; orders: number; paise: number }>('/api/mobile/team', token, {
+    method: 'POST',
+    body: JSON.stringify({ riderId, orderIds }),
+  })
+}
 
 /**
  * Hand a batch of positions to the server.

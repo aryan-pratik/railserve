@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, Text, TextInput, View } from 'react-native'
+import { KeyboardScroll, useRevealOnFocus } from '../keyboard'
 import type { Run, RunOrder } from '../types'
 import { Button, C, CallButton, Check, Money, Rule, Seat, s, timeIST, untilLabel, delayLabel } from '../ui'
 
@@ -47,7 +48,9 @@ export function DeliveryScreen({
   const passenger = order.contactName?.trim() || ''
 
   return (
-    <ScrollView
+    // KeyboardScroll, not a plain ScrollView: the reason box is the last
+    // thing on the screen, and the keyboard used to open on top of it.
+    <KeyboardScroll
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 56 }}
     >
@@ -199,27 +202,13 @@ export function DeliveryScreen({
 
       <View style={{ marginTop: 28 }}>
         {failOpen ? (
-          <>
-            <Text style={s.label}>WHAT HAPPENED?</Text>
-            <TextInput
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Passenger not at seat"
-              placeholderTextColor={C.faint}
-              multiline
-              style={[s.input, { minHeight: 90, textAlignVertical: 'top', marginTop: 12 }]}
-            />
-            <View style={{ height: 14 }} />
-            <Button
-              label="Not delivered"
-              tone="danger"
-              busy={busy}
-              disabled={!reason.trim()}
-              onPress={() => onFail(reason.trim())}
-            />
-            <View style={{ height: 10 }} />
-            <Button label="Cancel" tone="ghost" onPress={() => setFailOpen(false)} />
-          </>
+          <ReasonForm
+            reason={reason}
+            onChange={setReason}
+            busy={busy}
+            onSubmit={() => onFail(reason.trim())}
+            onCancel={() => setFailOpen(false)}
+          />
         ) : (
           <Pressable onPress={() => setFailOpen(true)} hitSlop={12} style={{ paddingVertical: 12 }}>
             <Text style={{ textAlign: 'center', color: C.muted, fontSize: 15 }}>
@@ -228,6 +217,43 @@ export function DeliveryScreen({
           </Pressable>
         )}
       </View>
-    </ScrollView>
+    </KeyboardScroll>
+  )
+}
+
+/**
+ * Why it was not delivered. The box and its two buttons are measured as one
+ * block, so opening the keyboard brings "Not delivered" into view with the
+ * box rather than leaving it underneath. The box opens focused: the rider
+ * tapped "Not delivered?" to type, so the keyboard should already be there.
+ */
+function ReasonForm({
+  reason, onChange, busy, onSubmit, onCancel,
+}: {
+  reason: string
+  onChange: (v: string) => void
+  busy: boolean
+  onSubmit: () => void
+  onCancel: () => void
+}) {
+  const field = useRevealOnFocus()
+  return (
+    <View ref={field.ref} collapsable={false}>
+      <Text style={s.label}>WHAT HAPPENED?</Text>
+      <TextInput
+        value={reason}
+        onChangeText={onChange}
+        onFocus={field.onFocus}
+        autoFocus
+        placeholder="Passenger not at seat"
+        placeholderTextColor={C.faint}
+        multiline
+        style={[s.input, { minHeight: 90, textAlignVertical: 'top', marginTop: 12 }]}
+      />
+      <View style={{ height: 14 }} />
+      <Button label="Not delivered" tone="danger" busy={busy} disabled={!reason.trim()} onPress={onSubmit} />
+      <View style={{ height: 10 }} />
+      <Button label="Cancel" tone="ghost" onPress={onCancel} />
+    </View>
   )
 }

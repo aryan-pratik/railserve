@@ -172,6 +172,13 @@ export function HomeScreen({
                         <Text style={{ fontSize: 14, color: colors.text, marginTop: 3, textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.2 }}>
                           {run.trainName}
                         </Text>
+                        {otherDay(run.serviceDate) ? (
+                          // Assigned work is shown whatever its booking date:
+                          // last night's late train, tomorrow's first one.
+                          <Text style={{ fontSize: 12, color: '#B45309', marginTop: 3, fontWeight: '700' }}>
+                            {otherDay(run.serviceDate)}
+                          </Text>
+                        ) : null}
                       </View>
                       <View style={{
                         backgroundColor: isHere ? colors.successBg : '#FFFFFF',
@@ -356,4 +363,15 @@ export function HomeScreen({
       ) : null}
     </View>
   )
+}
+
+/** "Booked for 11 Nov" when a run's booking date is not today's; null when it is. */
+function otherDay(serviceDate: string | undefined): string | null {
+  if (!serviceDate) return null
+  const today = new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10)
+  if (serviceDate === today) return null
+  const label = new Date(`${serviceDate}T12:00:00+05:30`).toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short',
+  })
+  return `Booked for ${label}`
 }

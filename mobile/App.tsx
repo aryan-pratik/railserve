@@ -404,7 +404,11 @@ function AppShell() {
         }}
       >
         <Pressable
-          onPress={() => setProfileVisible(true)}
+          onPress={() => {
+            setProfileVisible(true)
+            // The profile's figures for today come with the history response.
+            if (token) void loadHistory(token, historyQuery)
+          }}
           style={({ pressed }) => [{
             flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 10,
             opacity: pressed ? 0.7 : 1,
@@ -531,7 +535,9 @@ function AppShell() {
         user={user}
         stationCode={data?.runs[0]?.stationCode}
         serviceDate={data?.serviceDate}
-        history={history?.orders ?? []}
+        today={history?.today ?? null}
+        cashWithYouPaise={history?.wallet?.pendingPaise ?? null}
+        token={token}
         offline={offline}
         queueSize={queueSize}
         onSignOut={async () => {
