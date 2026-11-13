@@ -1,12 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
-import { Order, UnparsedInbox } from '../src/lib/models'
+import { Order, Restaurant, Station, UnparsedInbox } from '../src/lib/models'
 import { ingestEmail } from '../src/lib/ingest'
 import { createOrderFromPaste } from '../src/lib/ingest/paste'
 import { ctxFor, makeRestaurant, makeUser, resetDb } from './fixtures'
 import type { AuthContext } from '../src/lib/authContext'
 import * as fx from './fixtures/yatriRestro'
 import * as relfoodFx from './fixtures/relfood'
+import * as notifyFx from './fixtures/orderNotification'
 
 /**
  * Pasting an order is the fast path for both roles: an aggregator message
@@ -71,6 +72,30 @@ describe('paste-to-create', () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.detail).toMatch(/1192186 is already in the system/)
     expect(await Order.countDocuments({ source: 'RELFOOD' })).toBe(1)
+  })
+
+  // The "New Order Notification" message names no outlet: it routes through
+  // the station's default kitchen, by mail or by paste, and the IRCTC id keeps
+  // the second copy from becoming a second order.
+  it('creates a pasted New Order Notification at the station default, and dedupes the mailed copy', async () => {
+    const g = await Restaurant.findOne({ name: 'HOTEL GANGA GALAXY' })
+    await Station.create({ _id: 'CNB', name: 'Kanpur Central', defaultRestaurantId: g!._id })
+
+    const r = await createOrderFromPaste(admin, notifyFx.SAMPLE_ESCAPED)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.externalOrderId).toBe('2504099482')
+      expect(r.outletName).toBe('HOTEL GANGA GALAXY')
+    }
+
+    const mailed = await ingestEmail({ body: notifyFx.SAMPLE, receivedAt: new Date('2026-11-13T05:00:00Z') })
+    expect(mailed.status).toBe('DUPLICATE')
+
+    const order = await Order.findOne({ externalOrderId: '2504099482' }).lean()
+    expect(order).toMatchObject({
+      source: 'NOTIFICATION', stationCode: 'CNB', trainNo: '05094', coach: 'A2', berth: '39',
+      contactName: 'Jitu Singh', amountPaise: 19700, paymentMode: 'PREPAID',
+    })
   })
 
   it('explains an unrecognised paste rather than filing it', async () => {

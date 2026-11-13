@@ -7,7 +7,7 @@
  * `timers/promises`). Keeping the vocabulary free of the ODM lets both sides
  * share one source of truth.
  */
-export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'OLF', 'YATRIBHOJAN', 'RAJBHOG', 'ZOOP', 'BROTHERBYTE', 'HOMEBYTES', 'RAILRESTRO', 'RELFOOD', 'FOODONTRAINS', 'MANUAL'] as const
+export const ORDER_SOURCES = ['YATRIRESTRO', 'DAILYYATRI', 'OLF', 'YATRIBHOJAN', 'RAJBHOG', 'ZOOP', 'BROTHERBYTE', 'HOMEBYTES', 'RAILRESTRO', 'RELFOOD', 'FOODONTRAINS', 'NOTIFICATION', 'MANUAL'] as const
 /**
  * RETAIL is one passenger on a train, BULK is a group handover to a train, and
  * LOCAL is an order that never boards a train at all: a stall at the station,
@@ -60,6 +60,8 @@ export const SOURCE_LABEL: Record<OrderSource, string> = {
   RAILRESTRO: 'RailRestro',
   RELFOOD: 'RelFood',
   FOODONTRAINS: 'FoodOnTrains',
+  // The "New Order Notification" message, which names no vendor.
+  NOTIFICATION: 'Order notification',
   MANUAL: 'Entered by hand',
 }
 
