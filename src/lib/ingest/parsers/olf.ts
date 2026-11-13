@@ -1,5 +1,5 @@
 import type { OrderParser, ParseResult, ParsedOrder } from '../types'
-import { looksLikePhone, normalisePaymentMode, rupeeStringToPaise, stripEmoji } from './shared'
+import { STATION_CODES, looksLikePhone, normalisePaymentMode, rupeeStringToPaise, stripEmoji } from './shared'
 
 /**
  * OLF parser.
@@ -29,14 +29,11 @@ import { looksLikePhone, normalisePaymentMode, rupeeStringToPaise, stripEmoji } 
  * The vendor's own field name is "Birth No" — a typo for "Berth", kept as-is
  * in the regex below since it is what actually arrives.
  *
- * OLF gives only a station name, never a code. Extend this map as new
- * stations are seen; an unmapped station fails closed into MISSING_FIELD
- * rather than guessing a code (same rule matchOutlet applies to outlet names).
+ * OLF gives only a station name, never a code. It is looked up in the
+ * shared STATION_CODES table; an unmapped station fails closed into
+ * MISSING_FIELD rather than guessing a code (same rule matchOutlet applies to
+ * outlet names).
  */
-const STATION_CODES: Record<string, string> = {
-  'KANPUR CENTRAL': 'CNB',
-  'PRAYAGRAJ JN': 'PRYJ',
-}
 
 export class OlfParser implements OrderParser {
   readonly source = 'OLF' as const

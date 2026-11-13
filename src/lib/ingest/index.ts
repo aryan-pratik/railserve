@@ -14,6 +14,7 @@ import { HomeBytesParser } from './parsers/homebytes'
 import { RailRestroParser } from './parsers/railrestro'
 import { RelFoodParser, RelFoodWhatsAppParser } from './parsers/relfood'
 import { FoodOnTrainsParser } from './parsers/foodontrains'
+import { OrderNotificationParser } from './parsers/orderNotification'
 import { matchOutlet } from './outletMatch'
 import { isAllowedSender, senderAddress } from './senders'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
@@ -33,7 +34,9 @@ export const PARSERS: OrderParser[] = [
   new RailRestroParser(),
   new RelFoodParser(),
   new FoodOnTrainsParser(),
-  // Matches on shape alone — the message names no vendor — so it stays last.
+  // These two match on shape alone — neither message names its vendor — so
+  // they stay last, behind every parser that keys on a vendor's name.
+  new OrderNotificationParser(),
   new RelFoodWhatsAppParser(),
 ]
 
