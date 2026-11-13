@@ -226,7 +226,7 @@ describe('the admin board', () => {
     expect(other.work.carrying).toBe(0)
   })
 
-  it('counts a shared handover once in the day’s totals but against each rider', async () => {
+  it('counts a shared handover once: in the day’s totals and for one rider', async () => {
     const day = '2026-09-28'
     await makeOrder({
       serviceDate: day,
@@ -253,8 +253,9 @@ describe('the admin board', () => {
     expect(row.work.stations.sort()).toEqual(['CNB', 'PRYJ'])
 
     const other = board.riders.find((r) => r.id === String(silent))!
-    expect(other.work).toMatchObject({ orders: 1, codOrders: 1, codPaise: 50000, amountPaise: 50000 })
-    expect(other.work.stations).toEqual(['CNB'])
+    // A closed order is one rider's. With no carrier or cash holder on an
+    // older order, that is the first rider it was given to.
+    expect(other.work).toMatchObject({ orders: 0, codOrders: 0, codPaise: 0, amountPaise: 0 })
   })
 
   it('puts the riders who need looking at first', async () => {

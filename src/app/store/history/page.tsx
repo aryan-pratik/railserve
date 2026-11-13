@@ -8,7 +8,7 @@ import { OrdersTable } from '@/components/OrdersTable'
 import { QueryForm } from '@/components/QueryForm'
 import { Button, Card, Field, PageHeader, Pagination, inputClass } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
-import { NO_RIDER, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
+import { NO_RIDER, andClause, riderClause, riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
 import { orderSearchClause } from '@/lib/repo/orderSearch'
 
 export const metadata = { title: 'Order history · RailServe' }
@@ -32,13 +32,13 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
 
   const filter: Record<string, unknown> = { serviceDate: { $gte: from, $lte: to } }
   const byRider = riderClause(rider)
-  if (byRider) Object.assign(filter, byRider)
+  andClause(filter, byRider)
 
   await connectDb()
   // The same search as the admin's All orders: id, passenger, phone, train,
   // seat, aggregator, outlet, rider. Still inside this caller's scope.
   const search = await orderSearchClause(q)
-  if (search) Object.assign(filter, search)
+  andClause(filter, search)
   const multiOutlet = ctx.restaurantIds.length > 1 || ctx.role === 'ADMIN'
   // Paged, not capped: findMany used to stop at its default 200 silently, and
   // the header then reported 200 as if it were the whole range.

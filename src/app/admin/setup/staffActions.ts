@@ -231,6 +231,8 @@ export async function deleteUser(_prev: DeleteState, formData: FormData): Promis
     }
   }
 
+  // A deleted team leader leaves no team behind them.
+  await User.updateMany({ teamLeadId: id }, { $set: { teamLeadId: null } })
   await User.deleteOne({ _id: id })
   revalidatePath('/admin/setup')
   revalidatePath('/store/staff')

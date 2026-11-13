@@ -341,6 +341,9 @@ function AppShell() {
       prev
         ? {
           ...prev,
+          // The server's totals no longer match the rows; the screen adds
+          // the rows up until the next reload brings fresh ones.
+          summary: null,
           orders: prev.orders.map((h) =>
             h.id === o.id
               ? {

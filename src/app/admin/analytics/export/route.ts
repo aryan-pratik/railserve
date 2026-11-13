@@ -114,8 +114,11 @@ export async function GET(request: Request) {
       o.status,
       OUTCOME_LABEL[outcomeOf(o.status)],
       OVERALL_LABEL[overallStatus(o.status)],
-      // The day the order closed in, as the rider pages count it. Blank while open.
-      o.delivery?.closedAt ? opsDayOf(o.delivery.closedAt) : '',
+      // The day the order closed in, by the same fallbacks the rider pages
+      // count with (closedBetween). Blank while open.
+      overallStatus(o.status) === 'PROCESSING'
+        ? ''
+        : opsDayOf(o.delivery?.closedAt ?? o.delivery?.deliveredAt ?? o.updatedAt),
       o.orderType,
       sourceLabel(o.source),
       outletName.get(String(o.restaurantId)) ?? '',

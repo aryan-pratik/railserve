@@ -70,7 +70,8 @@ describe('order filter bar', () => {
       trainNo: '12345A',
       orderType: 'LOCAL',
       serviceDate: { $gte: '2026-11-01', $lte: '2026-11-05' },
-      'delivery.agentIds.0': { $exists: false },
+      // Under $and, so a search added beside it cannot replace it.
+      $and: [{ 'delivery.agentIds.0': { $exists: false } }],
     })
   })
 

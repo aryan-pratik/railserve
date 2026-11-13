@@ -130,12 +130,12 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
   const riderIds = riders.map((u) => u._id)
   const [cash, collections, me] = await Promise.all([
     pendingCashByRider(ctx, riderIds),
-    collectionHistory(ctx, riderIds, { limit: 200 }),
+    collectionHistory(ctx, riderIds, { latestPerRider: true }),
     User.findById(ctx.userId).select('role isTeamLead canReceiveCash').lean(),
   ])
   const receivers = await receiversOf(collections)
   const mayReceive = canReceiveCash({ role: ctx.role, canReceiveCash: me?.canReceiveCash, isTeamLead: me?.isTeamLead })
-  // Newest first, so the first one seen per rider is their latest.
+  // One row per rider: their latest handover.
   const lastOf = new Map<string, { at: string; paise: number; receivedBy: string | null }>()
   for (const c of collections) {
     if (!lastOf.has(c.riderId)) {

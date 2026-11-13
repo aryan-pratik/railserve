@@ -16,7 +16,9 @@
  *      them carried it.
  *   7. Orders sitting in a status the reports cannot classify.
  *
- * With --apply it writes exactly one thing: `delivery.pickedUpBy` on orders
+ * With --apply it writes two things, neither of which touches updatedAt:
+ * `delivery.closedAt` on orders closed before that was recorded (from the
+ * delivery time, else the closing event), and `delivery.pickedUpBy` on orders
  * that left the counter before that field existed, where the carrier is not
  * in doubt (one rider assigned, or cash already charged to one of them, or
  * the handover event names them). Ambiguous orders are listed and left alone.
@@ -31,7 +33,7 @@
 import mongoose from 'mongoose'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Order, User } from '../src/lib/models'
-import { ORDER_STATUSES } from '../src/lib/orderStatus'
+import { ORDER_STATUSES, TERMINAL_STATUSES } from '../src/lib/orderStatus'
 import { todayIST } from '../src/lib/format'
 import { opsDayOf } from '../src/lib/opsDay'
 
@@ -57,7 +59,7 @@ type Row = {
     deliveredAt?: Date | null
     rto?: { status?: string } | null
   }
-  events?: { toStatus?: string; userId?: mongoose.Types.ObjectId; meta?: Record<string, unknown> }[]
+  events?: { toStatus?: string; userId?: mongoose.Types.ObjectId; meta?: Record<string, unknown>; createdAt?: Date }[]
 }
 
 const LIVE = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED']
@@ -97,7 +99,7 @@ async function main() {
   // scripts/ is outside the lint rule that keeps app code on orderRepo: this
   // is an audit across every outlet, which is exactly what scoping prevents.
   const orders = await Order.find({ createdAt: { $gte: since } })
-    .select('externalOrderId status serviceDate restaurantId paymentMode amountPaise delivery events.toStatus events.userId events.meta')
+    .select('externalOrderId status serviceDate restaurantId paymentMode amountPaise delivery events.toStatus events.userId events.meta events.createdAt')
     .lean<Row[]>()
   console.log(`${orders.length} orders read`)
 
@@ -112,6 +114,7 @@ async function main() {
   const ambiguous: string[] = []
   const oddStatus: string[] = []
   const backfill: { _id: mongoose.Types.ObjectId; rider: mongoose.Types.ObjectId }[] = []
+  const closeTimes: { _id: mongoose.Types.ObjectId; at: Date }[] = []
   let cashDiffPaise = 0
 
   for (const o of orders) {
@@ -148,6 +151,17 @@ async function main() {
       oddStatus.push(label(o))
     }
 
+    // Closed before the close time was recorded. The ledger guesses these
+    // from updatedAt, which any later write moves; the delivery time or the
+    // closing event is the real answer.
+    if ((TERMINAL_STATUSES as readonly string[]).includes(o.status) && !d.closedAt) {
+      const closing = (o.events ?? []).find(
+        (e) => e.toStatus && (TERMINAL_STATUSES as readonly string[]).includes(e.toStatus) && e.createdAt,
+      )
+      const at = d.deliveredAt ?? closing?.createdAt
+      if (at) closeTimes.push({ _id: o._id, at: new Date(at) })
+    }
+
     const left = Boolean(d.dispatchedAt) || o.status === 'DISPATCHED' || o.status === 'DELIVERED'
     if (left && !d.pickedUpBy && agents.length > 0) {
       const rider = carrierOf(o, riders)
@@ -168,7 +182,22 @@ async function main() {
   section('6. Several riders, carrier unknown', ambiguous)
   section('7. Status the reports cannot classify', oddStatus)
 
-  console.log(`\nCarrier can be filled in on ${backfill.length} older orders.`)
+  console.log(`\nClose time can be filled in on ${closeTimes.length} older orders.`)
+  if (APPLY && closeTimes.length > 0) {
+    const res = await Order.bulkWrite(
+      closeTimes.map((c) => ({
+        updateOne: {
+          filter: { _id: c._id, 'delivery.closedAt': null },
+          update: { $set: { 'delivery.closedAt': c.at } },
+          timestamps: false,
+        },
+      })),
+      { ordered: false },
+    )
+    console.log(`Wrote the close time on ${res.modifiedCount}.`)
+  }
+
+  console.log(`Carrier can be filled in on ${backfill.length} older orders.`)
   if (APPLY && backfill.length > 0) {
     const res = await Order.bulkWrite(
       backfill.map((b) => ({
@@ -177,6 +206,10 @@ async function main() {
           // what the app wrote.
           filter: { _id: b._id, 'delivery.pickedUpBy': null },
           update: { $set: { 'delivery.pickedUpBy': b.rider } },
+          // A backfill is not an edit. The ledger falls back to updatedAt
+          // for old orders with no close time, so bumping it would move
+          // them into today's figures.
+          timestamps: false,
         },
       })),
       { ordered: false },

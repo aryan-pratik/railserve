@@ -7,7 +7,8 @@ import {
   adminOverrideStatus, assignAgents, assignRiders, correctRiderOutcome, transitionOrder,
 } from '../src/lib/repo/transitionOrder'
 import { collectionHistory, pendingCashFor, settleRiderCash } from '../src/lib/repo/riderCashRepo'
-import { riderDays, opsSpan } from '../src/lib/repo/riderLedgerRepo'
+import { riderDays, ridersDayTotal, opsSpan } from '../src/lib/repo/riderLedgerRepo'
+import { andClause, riderClause } from '../src/lib/repo/riderFilter'
 import { riderBoard } from '../src/lib/repo/riderLocationRepo'
 import { markReturnedToOrigin } from '../src/lib/repo/rtoRepo'
 import { setTeam, teamView } from '../src/lib/repo/teamRepo'
@@ -185,7 +186,8 @@ describe('rider record: one source for the app and the office', () => {
       await assignRiders({ ctx: manager, orderId: o, riderIds: [String(aId)] })
       await transitionOrder({ ctx: a, orderId: o, to: 'DISPATCHED' })
       await assignRiders({ ctx: manager, orderId: o, riderIds: [String(bId)] })
-      expect((await get(o)).delivery.pickedUpBy).toBeNull()
+      // One rider named on an order already out: that rider has it now.
+      expect(String((await get(o)).delivery.pickedUpBy)).toBe(String(bId))
       expect(await findById(a, o)).toBeNull()
       expect(await findById(b, o)).not.toBeNull()
     })
@@ -462,6 +464,152 @@ describe('rider record: one source for the app and the office', () => {
       await User.updateOne({ _id: managerId }, { $set: { canReceiveCash: true } })
       const r = await settleRiderCash({ ctx: manager, riderId: String(bId), orderIds: [o] })
       expect(r.orders).toBe(1)
+    })
+  })
+
+  describe('a closed order belongs to one rider', () => {
+    const pair = async (n: number) => {
+      const x = await makeUser('DELIVERY_AGENT', `94100000${n}1`, outlet)
+      const y = await makeUser('DELIVERY_AGENT', `94100000${n}2`, outlet)
+      return { x, y, cx: ctxFor(x), cy: ctxFor(y) }
+    }
+    const today = () => opsDayRange(opsDayOf())!
+
+    it('is counted once when the office closes it without a pickup', async () => {
+      const { x, y } = await pair(1)
+      const o = String((await ready({ amountPaise: 50000 }))._id)
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(x._id), String(y._id)] })
+      await transitionOrder({ ctx: telecaller, orderId: o, to: 'DELIVERED' })
+
+      // The rider charged with the cash is the rider whose delivery it is.
+      const after = await get(o)
+      expect(String(after.delivery.collectedBy)).toBe(String(x._id))
+      expect(String(after.delivery.pickedUpBy)).toBe(String(x._id))
+
+      const days = await riderDays(admin, [x._id, y._id], today())
+      expect(days.get(String(x._id))).toMatchObject({ delivered: 1, codPaise: 50000 })
+      expect(days.get(String(y._id))).toBeUndefined()
+      // The riders' rows add up to the headline.
+      expect(await ridersDayTotal(admin, [x._id, y._id], today())).toMatchObject({ delivered: 1, codPaise: 50000 })
+      expect((await history(issueMobileToken(y).token)).orders).toHaveLength(0)
+    })
+
+    it('is counted once for an older order with no carrier or cash holder recorded', async () => {
+      const { x, y } = await pair(2)
+      const at = new Date()
+      await makeOrder({
+        restaurantId: outlet, status: 'FAILED', serviceDate: todayIST(),
+        delivery: { agentIds: [x._id, y._id], dispatchedAt: at, closedAt: at },
+      })
+      const days = await riderDays(admin, [x._id, y._id], today())
+      expect(days.get(String(x._id))).toMatchObject({ done: 1, notDelivered: 1 })
+      expect(days.get(String(y._id))).toBeUndefined()
+      expect((await history(issueMobileToken(x).token)).orders).toHaveLength(1)
+      expect((await history(issueMobileToken(y).token)).orders).toHaveLength(0)
+    })
+
+    it('goes to whoever closes it after a mid-run handover to several riders', async () => {
+      const { x, y, cy } = await pair(3)
+      const o = String((await ready())._id)
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(aId)] })
+      await transitionOrder({ ctx: a, orderId: o, to: 'DISPATCHED' })
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(x._id), String(y._id)] })
+      expect((await get(o)).delivery.pickedUpBy).toBeNull()
+
+      await transitionOrder({ ctx: cy, orderId: o, to: 'DELIVERED' })
+      const after = await get(o)
+      expect(String(after.delivery.pickedUpBy)).toBe(String(y._id))
+      expect(String(after.delivery.collectedBy)).toBe(String(y._id))
+      const days = await riderDays(admin, [x._id, y._id], today())
+      expect(days.get(String(y._id))).toMatchObject({ delivered: 1 })
+      expect(days.get(String(x._id))).toBeUndefined()
+    })
+
+    it('is nobody\'s work when it is cancelled after being put back on the counter', async () => {
+      const { x, y, cx } = await pair(4)
+      const o = String((await ready())._id)
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(x._id), String(y._id)] })
+      await transitionOrder({ ctx: cx, orderId: o, to: 'DISPATCHED' })
+      await transitionOrder({ ctx: cx, orderId: o, to: 'PREPARED' })
+      expect((await get(o)).delivery.dispatchedAt).toBeNull()
+      await transitionOrder({ ctx: telecaller, orderId: o, to: 'CANCELLED' })
+      const days = await riderDays(admin, [x._id, y._id], today())
+      expect(days.size).toBe(0)
+    })
+  })
+
+  describe('an order an admin puts back in play', () => {
+    it('drops its old close time and its old return, and closes afresh', async () => {
+      const o = String((await ready({ amountPaise: 80000 }))._id)
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(aId)] })
+      await transitionOrder({ ctx: a, orderId: o, to: 'DISPATCHED' })
+      await transitionOrder({ ctx: a, orderId: o, to: 'FAILED', apply: { failureReason: 'train left' } })
+      // As if that happened on an earlier day.
+      const earlier = new Date(Date.now() - 3 * 86_400_000)
+      await Order.updateOne({ _id: o }, { $set: { 'delivery.closedAt': earlier } })
+
+      const reopened = await adminOverrideStatus({ ctx: admin, orderId: o, to: 'DISPATCHED' })
+      expect(reopened.delivery.closedAt).toBeNull()
+      expect(reopened.delivery.rto).toBeNull()
+      expect(reopened.delivery.failureReason).toBeNull()
+      expect(String(reopened.delivery.pickedUpBy)).toBe(String(aId))
+
+      await transitionOrder({ ctx: a, orderId: o, to: 'DELIVERED' })
+      const after = await get(o)
+      expect(after.delivery.rto).toBeNull()
+      // Counted on the day it was really delivered.
+      expect(opsDayOf(after.delivery.closedAt!)).toBe(opsDayOf())
+    })
+
+    it('goes back to every rider it was offered to when overridden to ready', async () => {
+      const o = String((await ready())._id)
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(aId), String(bId)] })
+      await transitionOrder({ ctx: a, orderId: o, to: 'DISPATCHED' })
+      expect(await findById(b, o)).toBeNull()
+      const back = await adminOverrideStatus({ ctx: admin, orderId: o, to: 'PREPARED' })
+      expect(back.delivery.pickedUpBy).toBeNull()
+      expect(back.delivery.dispatchedAt).toBeNull()
+      expect(back.delivery.rto ?? null).toBeNull()
+      expect(await findById(b, o)).not.toBeNull()
+    })
+  })
+
+  describe('reading the records', () => {
+    it('keeps the rider filter when a search is added to it', async () => {
+      const filter: Record<string, unknown> = { serviceDate: todayIST() }
+      andClause(filter, riderClause(String(aId)))
+      andClause(filter, { $or: [{ trainNo: '12878' }] })
+      andClause(filter, null)
+      expect(filter.$and).toHaveLength(2)
+      expect(filter.$or).toBeUndefined()
+      const found = await Order.find(filter).select('delivery.pickedUpBy delivery.agentIds').lean()
+      expect(found.length).toBeGreaterThan(0)
+      for (const f of found) {
+        const mine = String(f.delivery?.pickedUpBy ?? '') === String(aId) ||
+          (!f.delivery?.pickedUpBy && (f.delivery?.agentIds ?? []).map(String).includes(String(aId)))
+        expect(mine).toBe(true)
+      }
+    })
+
+    it('finds each rider\'s latest handover however many newer ones others have made', async () => {
+      const c = await makeUser('DELIVERY_AGENT', '9410000091', outlet)
+      const old = new Date(Date.now() - 20 * 86_400_000)
+      await makeOrder({
+        restaurantId: outlet, status: 'DELIVERED', paymentMode: 'COD', amountPaise: 12300,
+        delivery: {
+          agentIds: [c._id], pickedUpBy: c._id, collectedBy: c._id, amountCollectedPaise: 12300,
+          deliveredAt: old, closedAt: old, codSettledAt: old, codSettledBy: managerId,
+        },
+      })
+      // The newest handover overall belongs to someone else, and a limit of
+      // one would return only that.
+      const capped = await collectionHistory(admin, [aId, bId, c._id], { limit: 1 })
+      expect(capped.map((x) => x.riderId)).not.toContain(String(c._id))
+      const latest = await collectionHistory(admin, [aId, bId, c._id], { latestPerRider: true })
+      const mine = latest.filter((x) => x.riderId === String(c._id))
+      expect(mine).toHaveLength(1)
+      expect(mine[0].paise).toBe(12300)
+      expect(new Set(latest.map((x) => x.riderId)).size).toBe(latest.length)
     })
   })
 })

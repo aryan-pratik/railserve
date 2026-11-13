@@ -4,7 +4,7 @@ import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { ORDER_TYPES } from '@/lib/orderEnums'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { distinctStatuses } from './orderRepo'
-import { riderClause, riderOptions, type RiderOption } from './riderFilter'
+import { andClause, riderClause, riderOptions, type RiderOption } from './riderFilter'
 import { orderSearchClause, parseStations } from './orderSearch'
 
 /**
@@ -125,9 +125,9 @@ export async function orderFilterClause(f: OrderFilters): Promise<Record<string,
   if (f.train) clause.trainNo = f.train.toUpperCase()
   if (f.type) clause.orderType = f.type
   const byRider = riderClause(f.rider)
-  if (byRider) Object.assign(clause, byRider)
+  andClause(clause, byRider)
   const search = await orderSearchClause(f.q)
-  if (search) Object.assign(clause, search)
+  andClause(clause, search)
   return clause
 }
 

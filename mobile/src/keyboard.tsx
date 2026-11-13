@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Keyboard, Platform, ScrollView, View, type ScrollViewProps } from 'react-native'
 
 /**
@@ -24,7 +24,8 @@ import { Keyboard, Platform, ScrollView, View, type ScrollViewProps } from 'reac
 
 type Measurable = { measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void }
 
-const RevealContext = createContext<(node: Measurable | null) => void>(() => {})
+type Reveal = { reveal: (node: Measurable | null) => void; forget: (node: Measurable | null) => void }
+const RevealContext = createContext<Reveal>({ reveal: () => {}, forget: () => {} })
 
 /** Space kept between a focused field and the keyboard, so its button shows too. */
 const BREATHING_ROOM = 96
@@ -48,6 +49,11 @@ export function KeyboardScroll({ children, contentContainerStyle, onScroll, ...p
     })
   }, [])
 
+  const forget = useCallback((node: Measurable | null) => {
+    if (focused.current === node) focused.current = null
+  }, [])
+  const context = useMemo(() => ({ reveal, forget }), [reveal, forget])
+
   useEffect(() => {
     // iOS announces the keyboard before it moves, Android only after.
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
@@ -63,8 +69,10 @@ export function KeyboardScroll({ children, contentContainerStyle, onScroll, ...p
       })
     })
     const hide = Keyboard.addListener(hideEvent, () => {
+      // The field keeps its place as the target: on Android the keyboard can
+      // be dismissed while the field stays focused, and tapping it again
+      // opens the keyboard with no new focus event. It is forgotten on blur.
       keyboardTop.current = null
-      focused.current = null
       setPad(0)
     })
     return () => {
@@ -75,7 +83,7 @@ export function KeyboardScroll({ children, contentContainerStyle, onScroll, ...p
 
   return (
     <View ref={frame} style={{ flex: 1 }} collapsable={false}>
-      <RevealContext.Provider value={reveal}>
+      <RevealContext.Provider value={context}>
         <ScrollView
           ref={scroll}
           keyboardShouldPersistTaps="handled"
@@ -95,16 +103,17 @@ export function KeyboardScroll({ children, contentContainerStyle, onScroll, ...p
 }
 
 /**
- * For a text field inside a KeyboardScroll: spread `ref` and `onFocus` onto
- * the field's wrapper View and TextInput. The wrapper is what gets measured,
+ * For a text field inside a KeyboardScroll: put `ref` on the field's wrapper
+ * View, and `onFocus` and `onBlur` on the TextInput. The wrapper is what gets measured,
  * so it can include the buttons that belong with the field.
  */
 export function useRevealOnFocus() {
-  const reveal = useContext(RevealContext)
+  const { reveal, forget } = useContext(RevealContext)
   const ref = useRef<View>(null)
   const onFocus = useCallback(() => {
     // A beat, so a field that has only just been shown has been laid out.
     setTimeout(() => reveal(ref.current), 60)
   }, [reveal])
-  return { ref, onFocus }
+  const onBlur = useCallback(() => forget(ref.current), [forget])
+  return { ref, onFocus, onBlur }
 }

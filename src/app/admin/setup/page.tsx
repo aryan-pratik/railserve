@@ -290,7 +290,12 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                 <StaffFormModal
                   key={editId ?? 'new'}
                   editId={editId}
-                  teamLeads={leads.filter((l) => l.active !== false).map((l) => ({ id: String(l._id), name: l.name }))}
+                  // Inactive leaders stay in the list, marked: a picker without
+                  // a rider's current leader would save "No team" on any edit.
+                  teamLeads={leads.map((l) => ({
+                    id: String(l._id),
+                    name: l.active !== false ? l.name : `${l.name} (inactive)`,
+                  }))}
                   outlets={outlets
                     // An outlet a manager already holds must stay selectable even if
                     // it was deactivated after the fact.

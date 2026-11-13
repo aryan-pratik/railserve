@@ -221,11 +221,13 @@ export type Collection = {
  * in it with the same time, receiver and id, so the batches read straight
  * back. Handovers made before the id existed group by rider and stamp, which
  * identifies them just as well since a handover writes one instant.
+ *
+ * `latestPerRider` returns one row per rider, their most recent handover.
  */
 export async function collectionHistory(
   ctx: AuthContext,
   riderIds: (string | mongoose.Types.ObjectId)[],
-  opts: { from?: Date; to?: Date; limit?: number } = {},
+  opts: { from?: Date; to?: Date; limit?: number; latestPerRider?: boolean } = {},
 ): Promise<Collection[]> {
   const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
   if (ids.length === 0) return []
@@ -263,7 +265,16 @@ export async function collectionHistory(
       },
     },
     { $sort: { '_id.at': -1 } },
-    { $limit: opts.limit ?? 50 },
+    // One global limit would drop exactly the rider worth chasing: the one
+    // whose last handover is older than everyone else's recent ones. For
+    // "when did each last hand in", keep each rider's newest and no limit.
+    ...(opts.latestPerRider
+      ? [
+          { $group: { _id: '$_id.rider', last: { $first: '$$ROOT' } } },
+          { $replaceRoot: { newRoot: '$last' } },
+          { $sort: { '_id.at': -1 as const } },
+        ]
+      : [{ $limit: opts.limit ?? 50 }]),
   ])
   return rows.map((r) => ({
     id: r._id.sid ?? `${r._id.rider}-${r._id.at.getTime()}`,

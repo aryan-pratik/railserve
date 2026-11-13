@@ -220,7 +220,10 @@ export function ProfileModal({
             </Text>
           </View>
 
-          {token && user.isTeamLead !== false ? <TeamSection token={token} active={visible} /> : null}
+          {/* Not gated on the flag saved at login: an admin can make a rider a
+              team leader at any time, and the server's 403 hides this for
+              everyone else. */}
+          {token ? <TeamSection token={token} active={visible} /> : null}
 
           {/* Station & Shift Details */}
           <Text

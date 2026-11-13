@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { contextFromBearer } from '@/lib/mobile/token'
-import { findMany, onRiderRecord } from '@/lib/repo/orderRepo'
+import { findMany, onClosedRecord } from '@/lib/repo/orderRepo'
 import { wasCancelledBy, wasClosedBy } from '@/lib/repo/transitionOrder'
 import { collectionHistory, lastSettlementFor, pendingCashFor, receiversOf } from '@/lib/repo/riderCashRepo'
 import { closedBetween, riderDays, riderDoneFilter, NO_RIDER_DAY } from '@/lib/repo/riderLedgerRepo'
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
   const [orders, wallet, lastSettlement, days, today, collections] = await Promise.all([
     findMany(
       ctx,
-      { $and: [riderDoneFilter(outcomes), onRiderRecord(ctx.userId), window] },
+      { $and: [riderDoneFilter(outcomes), onClosedRecord(ctx.userId), window] },
       { sort: { updatedAt: -1 }, limit: q ? 100 : 500 },
     ),
     pendingCashFor(ctx, ctx.userId),
@@ -112,7 +112,12 @@ export async function GET(request: Request) {
     riderDays(ctx, [ctx.userId], todayRange),
     collectionHistory(ctx, [ctx.userId], { limit: 20 }),
   ])
-  const receivers = await receiversOf(collections)
+  // Receivers of the handovers listed AND of every order row: an older day's
+  // orders were often received by someone absent from the latest handovers.
+  const receivers = await receiversOf([
+    ...collections,
+    ...orders.map((o) => ({ receivedById: o.delivery?.codSettledBy ? String(o.delivery.codSettledBy) : null })),
+  ])
   const receiverOf = (id: unknown) => (id ? (receivers.get(String(id))?.name ?? null) : null)
   const summary = days ? (days.get(String(ctx.userId)) ?? NO_RIDER_DAY) : null
   const todaySummary = today.get(String(ctx.userId)) ?? NO_RIDER_DAY

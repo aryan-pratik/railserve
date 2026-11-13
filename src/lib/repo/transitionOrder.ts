@@ -169,7 +169,18 @@ export async function transitionOrder(params: {
       // from here, whoever else it was offered to (see onRiderRecord).
       if (to === 'DISPATCHED' && rider) $set['delivery.pickedUpBy'] = rider
       // Back on the counter: nobody is carrying it.
-      if (from === 'DISPATCHED' && to === 'PREPARED') $set['delivery.pickedUpBy'] = null
+      if (from === 'DISPATCHED' && to === 'PREPARED') {
+        $set['delivery.pickedUpBy'] = null
+        // And it has not left the counter: an order cancelled while it sits
+        // there again was in nobody's hands, and is nobody's work.
+        $set['delivery.dispatchedAt'] = null
+      }
+      // A rider closing an order nobody is recorded as carrying (taken over
+      // from another rider mid-run, or closed straight off the counter) is
+      // the one who had it. Named here so a closed order is one rider's.
+      if (isTerminal(to) && ctx.role === 'DELIVERY_AGENT' && !current.delivery?.pickedUpBy) {
+        $set['delivery.pickedUpBy'] = ctx.userId
+      }
 
       // First close only: corrections and the passenger-number mask are
       // measured from here, so nothing after the first close may move it.
@@ -259,6 +270,10 @@ function deliveredFields(
 ): Record<string, unknown> {
   const holder = rider ?? current.delivery?.pickedUpBy ?? current.delivery?.agentIds?.[0] ?? null
   const fields: Record<string, unknown> = { 'delivery.collectedBy': holder }
+  // The rider charged with the cash is the rider whose delivery it is. An
+  // order closed without a pickup would otherwise sit on the record of
+  // everyone it was offered to.
+  if (holder && !current.delivery?.pickedUpBy) fields['delivery.pickedUpBy'] = holder
   if (amountCollectedPaise === undefined && current.delivery?.amountCollectedPaise == null) {
     fields['delivery.amountCollectedPaise'] =
       current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
@@ -362,7 +377,34 @@ export async function adminOverrideStatus(params: {
         $set['delivery.collectedBy'] = null
         consequences.cashCleared = true
       }
-      if (known && !rto && from === 'DISPATCHED' && opensReturn('DISPATCHED', to as OrderStatus)) {
+      const wasClosed = (ORDER_STATUSES as readonly string[]).includes(from) && isTerminal(from as OrderStatus)
+      const reopens = known && !isTerminal(to as OrderStatus)
+      if (wasClosed && reopens) {
+        // Back in play. The next close is a new close, on its own day, and
+        // the old return no longer describes where the bag is.
+        $set['delivery.closedAt'] = null
+        $set['delivery.deliveredAt'] = null
+        $set['delivery.failureReason'] = null
+        if (rto) {
+          $set['delivery.rto'] = null
+          consequences.returnWithdrawn = true
+        }
+      }
+      if (from === 'DISPATCHED' && reopens) {
+        // Back at the outlet: nobody is carrying it, and every rider it was
+        // offered to can take it again.
+        $set['delivery.pickedUpBy'] = null
+        $set['delivery.dispatchedAt'] = null
+      }
+      if (to === 'DISPATCHED') {
+        $set['delivery.dispatchedAt'] = (wasClosed ? null : current.delivery?.dispatchedAt) ?? now
+        // One rider on it is its carrier. With several the override cannot
+        // know which, and whoever closes it is recorded then.
+        const agents = current.delivery?.agentIds ?? []
+        if (!current.delivery?.pickedUpBy && agents.length === 1) $set['delivery.pickedUpBy'] = agents[0]
+      }
+      const stillHasReturn = rto && !(wasClosed && reopens)
+      if (known && !stillHasReturn && from === 'DISPATCHED' && opensReturn('DISPATCHED', to as OrderStatus)) {
         $set['delivery.rto'] = openReturn(to as OrderStatus, now)
         consequences.returnOpened = true
       }
@@ -826,10 +868,13 @@ export async function assignRiders(params: {
         }
       }
 
-      // Taking an order off the rider who is carrying it is a handover: the
-      // bag has no recorded carrier until one of the new riders takes it.
+      // Taking an order off the rider who is carrying it is a handover. Given
+      // to one rider, that rider has it now. Given to several, there is no
+      // pickup left to tap on an order already out, so the carrier is
+      // recorded when one of them closes it (see transitionOrder).
       const carrier = current.delivery?.pickedUpBy
       const carrierRemoved = Boolean(carrier) && !ids.some((i) => i.equals(String(carrier)))
+      const nextCarrier = current.status === 'DISPATCHED' && ids.length === 1 ? ids[0] : null
 
       await Order.updateOne(
         { _id },
@@ -837,7 +882,7 @@ export async function assignRiders(params: {
           $set: {
             'delivery.agentIds': ids,
             'delivery.assignedAt': ids.length > 0 ? new Date() : null,
-            ...(carrierRemoved ? { 'delivery.pickedUpBy': null } : {}),
+            ...(carrierRemoved ? { 'delivery.pickedUpBy': nextCarrier } : {}),
           },
           $push: {
             events: {

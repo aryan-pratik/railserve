@@ -58,6 +58,9 @@ function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
             restaurantId: { $in: ctx.restaurantIds },
             $or: [
               ...riderRecordClauses(ctx.userId),
+              // Cash charged to them stays in view even if they were later
+              // taken off the order: it is still theirs to hand in.
+              { 'delivery.collectedBy': ctx.userId },
               { status: 'PREPARED', 'delivery.agentIds.0': { $exists: false } },
             ],
           }
@@ -103,6 +106,42 @@ export function riderRecordOf(
   const picked = order.delivery?.pickedUpBy
   if (picked) return [String(picked)]
   return (order.delivery?.agentIds ?? []).map(String)
+}
+
+/**
+ * The finished orders on a rider's record. A closed order belongs to exactly
+ * one rider, so its delivery and its cash are never counted twice:
+ *
+ *   the carrier, when one is recorded (`pickedUpBy`);
+ *   else whoever the cash was charged to (`collectedBy`);
+ *   else the first rider it was given to, the same rider the cash screens
+ *   fall back to.
+ *
+ * The last two cover orders closed without a pickup (the office closing one
+ * off the counter) and orders from before the carrier was recorded. Live
+ * orders use `onRiderRecord`, where an order nobody has picked up yet really
+ * is on several riders' lists at once.
+ */
+export function onClosedRecord(
+  riderIds: mongoose.Types.ObjectId | mongoose.Types.ObjectId[],
+): QueryFilter<OrderDoc> {
+  const who = Array.isArray(riderIds) ? { $in: riderIds } : riderIds
+  return {
+    $or: [
+      { 'delivery.pickedUpBy': who },
+      { 'delivery.pickedUpBy': null, 'delivery.collectedBy': who },
+      { 'delivery.pickedUpBy': null, 'delivery.collectedBy': null, 'delivery.agentIds.0': who },
+    ],
+  }
+}
+
+/** The one rider a closed order is on the record of. The read-side twin of `onClosedRecord`. */
+export function closedRecordOf(
+  order: { delivery?: { pickedUpBy?: unknown; collectedBy?: unknown; agentIds?: unknown[] | null } | null },
+): string | null {
+  const d = order.delivery
+  const who = d?.pickedUpBy ?? d?.collectedBy ?? d?.agentIds?.[0]
+  return who ? String(who) : null
 }
 
 /**

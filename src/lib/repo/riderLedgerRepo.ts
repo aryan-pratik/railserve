@@ -2,7 +2,7 @@ import mongoose, { type QueryFilter } from 'mongoose'
 import { Order, type OrderDoc } from '../models'
 import { connectDb } from '../db'
 import type { AuthContext } from '../authContext'
-import { onRiderRecord, outletScoped } from './orderRepo'
+import { onClosedRecord, onRiderRecord, outletScoped } from './orderRepo'
 import { OVERALL_CANCELLED_STATUSES } from '../orderViews'
 import { opsDayOf, opsDayRange, opsDaysRange } from '../opsDay'
 
@@ -22,7 +22,8 @@ import { opsDayOf, opsDayRange, opsDaysRange } from '../opsDay'
  * definition each of
  *
  * - whose order it is: the rider who picked it up, or, before anyone has,
- *   everyone it was offered to (onRiderRecord)
+ *   everyone it was offered to (onRiderRecord); once closed, exactly one
+ *   rider (onClosedRecord)
  * - which day it falls in: the 3am-to-3am reporting day in which it CLOSED
  *   (lib/opsDay), because that is when the work and the cash happened
  * - what counts as done: delivered or not delivered, plus anything else that
@@ -74,7 +75,7 @@ export function riderDoneBetween(
   range: { from: Date; to: Date },
   outcomes: 'legacy' | 'cancelled' | 'all' = 'all',
 ): QueryFilter<OrderDoc> {
-  return { $and: [riderDoneFilter(outcomes), onRiderRecord(riderId), closedBetween(range.from, range.to)] }
+  return { $and: [riderDoneFilter(outcomes), onClosedRecord(riderId), closedBetween(range.from, range.to)] }
 }
 
 export type RiderDay = {
@@ -115,7 +116,10 @@ export const NO_RIDER_DAY: RiderDay = {
 }
 export const NO_RIDER_NOW: RiderNow = { inHand: 0, waiting: 0, trains: [], inHandCodPaise: 0 }
 
-/** Adds the rider (or riders) an order is on the record of, as `_rider`, one row each. */
+/**
+ * Adds the rider (or riders) a LIVE order is on the record of, as `_rider`,
+ * one row each: its carrier, or everyone it is offered to while it waits.
+ */
 const ATTRIBUTE = [
   {
     $addFields: {
@@ -129,6 +133,20 @@ const ATTRIBUTE = [
     },
   },
   { $unwind: '$_rider' },
+]
+
+/** Adds the ONE rider a closed order is on the record of (see onClosedRecord). */
+const ATTRIBUTE_CLOSED = [
+  {
+    $addFields: {
+      _rider: {
+        $ifNull: [
+          '$delivery.pickedUpBy',
+          { $ifNull: ['$delivery.collectedBy', { $arrayElemAt: [{ $ifNull: ['$delivery.agentIds', []] }, 0] }] },
+        ],
+      },
+    },
+  },
 ]
 
 const CASH = { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] }
@@ -161,10 +179,10 @@ export async function riderDays(
   }>([
     {
       $match: outletScoped(ctx, {
-        $and: [riderDoneFilter('all'), onRiderRecord(riderIds), closedBetween(range.from, range.to)],
+        $and: [riderDoneFilter('all'), onClosedRecord(riderIds), closedBetween(range.from, range.to)],
       }),
     },
-    ...ATTRIBUTE,
+    ...ATTRIBUTE_CLOSED,
     { $match: { _rider: { $in: riderIds } } },
     {
       $group: {
@@ -260,7 +278,7 @@ export async function ridersDayTotal(
   const [row] = await Order.aggregate<typeof zero>([
     {
       $match: outletScoped(ctx, {
-        $and: [riderDoneFilter('all'), onRiderRecord(riderIds), closedBetween(range.from, range.to)],
+        $and: [riderDoneFilter('all'), onClosedRecord(riderIds), closedBetween(range.from, range.to)],
       }),
     },
     {

@@ -41,6 +41,18 @@ export function riderClause(rider: string): Record<string, unknown> | null {
 }
 
 /**
+ * Adds a whole clause to a filter under $and.
+ *
+ * The rider clause and the search clause are each a top-level `$or`, so
+ * copying both onto one filter object lets the second replace the first, and
+ * the list quietly stops being filtered by rider. This keeps every clause.
+ */
+export function andClause(filter: Record<string, unknown>, clause: Record<string, unknown> | null): void {
+  if (!clause) return
+  filter.$and = [...((filter.$and as unknown[] | undefined) ?? []), clause]
+}
+
+/**
  * Rider names for a page of orders, joined per order as the table shows them.
  * Looked up by id rather than from riderOptions, so an order carried by a
  * rider from another outlet still names them.

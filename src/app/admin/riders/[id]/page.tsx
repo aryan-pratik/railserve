@@ -7,7 +7,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant, RiderLocation, User, type OrderDoc } from '@/lib/models'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { activityFeed } from '@/lib/repo/activityRepo'
-import { onRiderRecord } from '@/lib/repo/orderRepo'
+import { onClosedRecord, onRiderRecord } from '@/lib/repo/orderRepo'
 import {
   NO_RIDER_DAY, NO_RIDER_NOW, closedBetween, opsSpan, riderDays, riderDoneFilter, ridersNow,
 } from '@/lib/repo/riderLedgerRepo'
@@ -125,9 +125,12 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
 
   const mine = onRiderRecord(riderId)
   const finished = (statuses?: QueryFilter<OrderDoc>): QueryFilter<OrderDoc> => ({
-    $and: [mine, riderDoneFilter('all'), closedBetween(span.from, span.to), ...(statuses ? [statuses] : [])],
+    $and: [onClosedRecord(riderId), riderDoneFilter('all'), closedBetween(span.from, span.to), ...(statuses ? [statuses] : [])],
   })
-  const live = (statuses: string[]): QueryFilter<OrderDoc> => ({ $and: [mine, { status: { $in: statuses } }] })
+  // Live orders are "right now", so a range that ended before today has
+  // none: the chips read 0 there, and the list behind them must be empty too.
+  const live = (statuses: string[]): QueryFilter<OrderDoc> =>
+    includesNow ? { $and: [mine, { status: { $in: statuses } }] } : { _id: { $exists: false } }
   const BUCKET_FILTER: Record<Bucket, QueryFilter<OrderDoc>> = {
     waiting: live(WAITING),
     'on-the-way': live(['DISPATCHED']),
@@ -143,11 +146,13 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
 
   const logRange = dated ? span : null
 
-  const [days, nows, due, collections, orders, listed, log, location, outlets, lead, team] = await Promise.all([
+  const [days, nows, due, collections, collectedInSpan, orders, listed, log, location, outlets, lead, team] = await Promise.all([
     riderDays(ctx, [riderId], span),
     ridersNow(ctx, [riderId]),
     pendingCashFor(ctx, riderId),
     collectionHistory(ctx, [riderId], { limit: 100 }),
+    // Its own query: the newest 100 above say nothing about an older span.
+    collectionHistory(ctx, [riderId], { from: span.from, to: span.to, limit: 100_000 }),
     tab === 'orders'
       ? findMany(ctx, listFilter, {
           sort: { 'delivery.closedAt': -1, 'delivery.dispatchedAt': -1, createdAt: -1 },
@@ -180,10 +185,6 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
     cancelled: day.cancelled,
   }
   const all = day.done + now.inHand + now.waiting
-  const collectedInSpan = collections.filter((c) => {
-    const at = new Date(c.at)
-    return at >= span.from && at < span.to
-  })
   const presence = presenceOf(location?.recordedAt ?? null)
   const seen = location?.recordedAt ? `last location ${ageLabel(location.recordedAt)}` : 'has never shared a location'
 

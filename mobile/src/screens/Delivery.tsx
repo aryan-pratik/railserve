@@ -244,6 +244,7 @@ function ReasonForm({
         value={reason}
         onChangeText={onChange}
         onFocus={field.onFocus}
+        onBlur={field.onBlur}
         autoFocus
         placeholder="Passenger not at seat"
         placeholderTextColor={C.faint}

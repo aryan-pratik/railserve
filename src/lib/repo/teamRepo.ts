@@ -80,7 +80,7 @@ export async function teamView(
     riderDays(ctx, ids, range),
     ridersNow(ctx, ids),
     pendingCashByRider(ctx, ids),
-    collectionHistory(ctx, ids, { limit: 200 }),
+    collectionHistory(ctx, ids, { latestPerRider: true }),
   ])
   const receivers = await receiversOf(collections)
 
@@ -94,7 +94,6 @@ export async function teamView(
     },
     members: people.map((p) => {
       const id = String(p._id)
-      // collectionHistory is newest first, so the first match is the latest.
       const last = collections.find((c) => c.riderId === id)
       return {
         id,

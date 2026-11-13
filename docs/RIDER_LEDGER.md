@@ -20,6 +20,12 @@ or, for orders nobody has picked up yet, when it is assigned to them
 (`delivery.agentIds`). It counts on the day it was **closed**
 (`delivery.closedAt`), not the day it was booked for (`serviceDate`).
 
+A **closed** order belongs to exactly one rider (`onClosedRecord`): its
+carrier, else whoever the cash was charged to, else the first rider it was
+given to. Closing an order always records the carrier, so the fallbacks only
+matter for older orders. This is what keeps the riders' rows adding up to the
+headline. Only a live order nobody has picked up is on several lists at once.
+
 Before this, the app counted by close time on the calendar day and the admin
 board counted by `serviceDate`, included orders still in hand in "total", and
 summed the bill of every COD order carried rather than the cash collected. The
@@ -55,7 +61,9 @@ Rules that close the holes found:
   office recorded (which opens a return) cannot be flipped to Delivered from
   the app.
 - An admin status override now does what the status means: closing times,
-  cash, and the return are all set or cleared. It refuses Delivered once the
+  cash, the carrier and the return are all set or cleared. Putting a closed
+  order back in play clears its close time and its return, so the next close
+  counts on the day it really happens. It refuses Delivered once the
   outlet has the bag back, and refuses to un-deliver an order whose cash has
   been received.
 - The cash amount is fixed at the moment of delivery. Editing the bill later
@@ -111,7 +119,7 @@ admin (rider page, Collections tab).
 ```bash
 npm run indexes                    # adds rider_record
 npm run audit:riders               # read-only report
-npm run audit:riders -- --apply    # fills in the carrier on older orders
+npm run audit:riders -- --apply    # fills in close time and carrier on older orders
 ```
 
 The rider app needs a new build for the keyboard fix and the team view. Older

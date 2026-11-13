@@ -3,7 +3,7 @@ import { Order, Restaurant, User, type OrderDoc } from '../models'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../authContext'
 import { ROLE_LABEL } from '../roles'
 import { canCollectReturns, RTO_NOTE_MAX, type RtoStatus } from '../rto'
-import { scoped } from './orderRepo'
+import { riderRecordOf, scoped } from './orderRepo'
 
 /**
  * Return to origin: the bag that went out with a rider and is coming back.
@@ -95,7 +95,7 @@ export async function markReturnedToOrigin(params: {
           meta: {
             action: 'RTO_RETURNED',
             reason: rto.reason,
-            riderIds: (current.delivery?.agentIds ?? []).map(String),
+            riderIds: riderRecordOf(current),
             ...(note ? { note } : {}),
           },
           createdAt: now,
@@ -127,7 +127,8 @@ export async function viewReturn(
 ): Promise<ReturnView | null> {
   const rto = order.delivery?.rto
   if (!rto) return null
-  const riderIds = order.delivery?.agentIds ?? []
+  // The rider who carried it, not everyone it was offered to.
+  const riderIds = riderRecordOf(order)
   const ids = [...riderIds, rto.returnedBy].filter(
     (v): v is mongoose.Types.ObjectId => Boolean(v),
   )
@@ -187,7 +188,7 @@ export async function listReturns(
     opts.status === 'PENDING' ? { 'delivery.rto.openedAt': 1 } : { 'delivery.rto.returnedAt': -1 }
   const [orders, total] = await Promise.all([
     Order.find(filter)
-      .select('externalOrderId status trainNo contactName rawSeat restaurantId items amountPaise paymentMode delivery.agentIds delivery.rto')
+      .select('externalOrderId status trainNo contactName rawSeat restaurantId items amountPaise paymentMode delivery.agentIds delivery.pickedUpBy delivery.rto')
       .sort(sort)
       .skip(opts.skip)
       .limit(opts.limit)
@@ -196,7 +197,7 @@ export async function listReturns(
   ])
   if (orders.length === 0) return { rows: [], total }
 
-  const userIds = orders.flatMap((o) => [...(o.delivery?.agentIds ?? []), o.delivery?.rto?.returnedBy])
+  const userIds = orders.flatMap((o) => [...riderRecordOf(o), o.delivery?.rto?.returnedBy])
     .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const outletIds = orders.map((o) => o.restaurantId).filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const [users, outlets] = await Promise.all([
@@ -219,7 +220,7 @@ export async function listReturns(
       outletName: o.restaurantId ? (outletName.get(String(o.restaurantId)) ?? null) : null,
       itemCount: (o.items ?? []).filter((i) => !i.isPacking).reduce((n, i) => n + i.qty, 0),
       codPaise: o.paymentMode === 'COD' ? (o.amountPaise ?? null) : null,
-      riders: (o.delivery?.agentIds ?? []).map((id) => userName.get(String(id)) ?? 'Unknown rider'),
+      riders: riderRecordOf(o).map((id) => userName.get(id) ?? 'Unknown rider'),
       openedAt: rto.openedAt.toISOString(),
       returnedAt: rto.returnedAt ? rto.returnedAt.toISOString() : null,
       returnedBy: rto.returnedBy ? (userName.get(String(rto.returnedBy)) ?? 'Unknown user') : null,

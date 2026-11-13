@@ -394,6 +394,7 @@ function HistoryRow({
                 value={reason}
                 onChangeText={setReason}
                 onFocus={field.onFocus}
+                onBlur={field.onBlur}
                 placeholder={to === 'CANCELLED' ? 'Why was it cancelled?' : 'What happened?'}
                 placeholderTextColor={C.faint}
                 multiline

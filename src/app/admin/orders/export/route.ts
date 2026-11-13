@@ -6,7 +6,7 @@ import { Restaurant } from '@/lib/models'
 import { formatIST, paiseToRupees } from '@/lib/format'
 import { ORDER_TYPES, sourceLabel } from '@/lib/orderEnums'
 import { resolveDateRange } from '@/lib/dateFilter'
-import { riderClause, riderNamesFor } from '@/lib/repo/riderFilter'
+import { andClause, riderClause, riderNamesFor } from '@/lib/repo/riderFilter'
 import { orderSearchClause, parseStations } from '@/lib/repo/orderSearch'
 import type { QueryFilter } from 'mongoose'
 
@@ -85,12 +85,12 @@ export async function GET(request: Request) {
   if (type) filter.orderType = type
   if (payment) filter.paymentMode = payment
   const byRider = riderClause(rider)
-  if (byRider) Object.assign(filter, byRider)
+  andClause(filter, byRider)
 
   await connectDb()
   // The same search the page runs, so the file holds exactly the rows listed.
   const search = await orderSearchClause(q)
-  if (search) Object.assign(filter, search)
+  andClause(filter, search)
 
   const [orders, outlets] = await Promise.all([
     // A history export spanning every service date needs far more headroom
