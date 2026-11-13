@@ -6,6 +6,7 @@ import {
   type AnalyticsFilters, type CountRow, type Dimension,
 } from '../analytics'
 import { scoped } from './orderRepo'
+import { riderClause } from './riderFilter'
 
 /**
  * The queries behind the admin Analytics screen and its export.
@@ -36,6 +37,8 @@ export function analyticsMatch(f: AnalyticsFilters, opts: { status?: boolean } =
   if (f.payment === NO_PAYMENT) and.push({ paymentMode: null })
   else if (f.payment) and.push({ paymentMode: f.payment })
   if (f.type) and.push({ orderType: f.type })
+  const byRider = riderClause(f.rider)
+  if (byRider) and.push(byRider)
   if (f.status && opts.status !== false) {
     if (!isOutcome(f.status)) and.push({ status: f.status })
     else if (f.status === 'other') and.push({ status: { $nin: KNOWN_STATUSES } })
@@ -44,11 +47,15 @@ export function analyticsMatch(f: AnalyticsFilters, opts: { status?: boolean } =
   return { $and: and } as QueryFilter<OrderDoc>
 }
 
-const DIMENSION_FIELD: Record<Dimension, string> = {
+const DIMENSION_FIELD: Record<Dimension, string | Record<string, unknown>> = {
   outlet: '$restaurantId',
   station: '$stationCode',
   source: '$source',
   payment: '$paymentMode',
+  // An order is counted once, under the first rider on it: the same rider the
+  // cash screens treat as its holder when nobody else is named. A bulk
+  // handover shared by three riders is still one order, not three.
+  rider: { $arrayElemAt: ['$delivery.agentIds', 0] },
   status: '$status',
   day: '$serviceDate',
 }

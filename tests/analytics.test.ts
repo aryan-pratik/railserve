@@ -36,10 +36,10 @@ describe('readAnalyticsFilters', () => {
 
   it('drops values it does not recognise', () => {
     const f = readAnalyticsFilters({
-      outlet: 'not-an-id', source: 'NOPE', payment: 'BARTER', type: 'X', mode: 'all', by: 'rider',
+      outlet: 'not-an-id', source: 'NOPE', payment: 'BARTER', rider: 'someone', type: 'X', mode: 'all', by: 'nope',
       status: 'RATING_ORDER', station: ['cnb', 'bad code!'],
     })
-    expect(f).toMatchObject({ outlet: '', source: '', payment: '', type: '', mode: 'month', status: '', by: 'outlet' })
+    expect(f).toMatchObject({ outlet: '', source: '', payment: '', rider: '', type: '', mode: 'month', status: '', by: 'outlet' })
     expect(f.stations).toEqual(['CNB'])
   })
 
@@ -60,7 +60,7 @@ describe('readAnalyticsFilters', () => {
   it('round-trips through its own query string', () => {
     const sp = {
       mode: 'range', from: '2026-10-01', to: '2026-10-31', outlet: 'b'.repeat(24), source: 'ZOOP',
-      payment: 'COD', type: 'RETAIL', status: 'undelivered', by: 'day', station: ['CNB', 'PRYJ'],
+      payment: 'COD', rider: 'c'.repeat(24), type: 'RETAIL', status: 'undelivered', by: 'day', station: ['CNB', 'PRYJ'],
     }
     const u = analyticsParams(readAnalyticsFilters(sp))
     const back: Record<string, string | string[]> = {}
@@ -91,6 +91,7 @@ describe('tallies', () => {
     expect(first.counts).toMatchObject({ delivered: 2, progress: 9 })
     expect(second).toMatchObject({ key: 'A', total: 8, deliveredPaise: 60_000 })
     expect(second.counts).toMatchObject({ delivered: 6, undelivered: 1, cancelled: 1 })
+    expect(second.amounts).toMatchObject({ delivered: 60_000, undelivered: 10_000, cancelled: 5_000, progress: 0 })
     expect(third).toMatchObject({ key: null, total: 1 })
     expect(third.counts.other).toBe(1)
   })
