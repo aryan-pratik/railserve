@@ -153,6 +153,8 @@ export type ReturnRow = {
   status: string
   reason: string
   trainNo: string | null
+  /** The passenger, so a bag on the counter can be matched to its bill. */
+  contactName: string | null
   rawSeat: string | null
   outletName: string | null
   itemCount: number
@@ -185,7 +187,7 @@ export async function listReturns(
     opts.status === 'PENDING' ? { 'delivery.rto.openedAt': 1 } : { 'delivery.rto.returnedAt': -1 }
   const [orders, total] = await Promise.all([
     Order.find(filter)
-      .select('externalOrderId status trainNo rawSeat restaurantId items amountPaise paymentMode delivery.agentIds delivery.rto')
+      .select('externalOrderId status trainNo contactName rawSeat restaurantId items amountPaise paymentMode delivery.agentIds delivery.rto')
       .sort(sort)
       .skip(opts.skip)
       .limit(opts.limit)
@@ -212,6 +214,7 @@ export async function listReturns(
       status: o.status,
       reason: rto.reason,
       trainNo: o.trainNo ?? null,
+      contactName: o.contactName ?? null,
       rawSeat: o.rawSeat ?? null,
       outletName: o.restaurantId ? (outletName.get(String(o.restaurantId)) ?? null) : null,
       itemCount: (o.items ?? []).filter((i) => !i.isPacking).reduce((n, i) => n + i.qty, 0),

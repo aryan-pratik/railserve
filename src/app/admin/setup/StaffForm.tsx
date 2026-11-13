@@ -15,12 +15,25 @@ export type StaffValues = {
   role?: string
   restaurantIds?: string[]
   canCollectReturns?: boolean
+  isTeamLead?: boolean
+  teamLeadId?: string | null
+  /** Null when nobody has decided: a manager then may, a team leader may not. */
+  canReceiveCash?: boolean | null
 }
 
+/**
+ * "Rider team leader" is offered as a role because that is how the office
+ * thinks of it. Underneath, a team leader is a rider with a mark on them
+ * (see User.isTeamLead), so they keep the rider app and their own orders.
+ */
+const TEAM_LEAD = 'RIDER_TEAM_LEAD'
+
 export function StaffForm({
-  outlets, values = {}, onSaved, lockedRole,
+  outlets, values = {}, onSaved, lockedRole, teamLeads,
 }: {
   outlets: OutletOption[]
+  /** Active team leaders a rider can be placed under. Admin screens only. */
+  teamLeads?: { id: string; name: string }[]
   values?: StaffValues
   onSaved?: () => void
   /**
@@ -32,7 +45,11 @@ export function StaffForm({
   lockedRole?: Role
 }) {
   const [state, action, pending] = useActionState(saveUser, initial)
-  const [role, setRole] = useState(lockedRole ?? values.role ?? 'STORE_MANAGER')
+  const [choice, setChoice] = useState(
+    lockedRole ?? (values.role === 'DELIVERY_AGENT' && values.isTeamLead ? TEAM_LEAD : values.role) ?? 'STORE_MANAGER',
+  )
+  const isLead = choice === TEAM_LEAD
+  const role = isLead ? 'DELIVERY_AGENT' : choice
 
   useEffect(() => {
     if (state.ok) onSaved?.()
@@ -63,10 +80,13 @@ export function StaffForm({
             </Field>
           ) : (
             <Field label="Role" htmlFor="role">
-              <select id="role" name="role" value={role} onChange={(e) => setRole(e.target.value)}
+              <input type="hidden" name="role" value={role} />
+              {isLead ? <input type="hidden" name="isTeamLead" value="true" /> : null}
+              <select id="role" value={choice} onChange={(e) => setChoice(e.target.value)}
                 className={inputClass}>
                 <option value="STORE_MANAGER">Store manager</option>
-                <option value="DELIVERY_AGENT">Delivery agent</option>
+                <option value="DELIVERY_AGENT">Rider</option>
+                <option value={TEAM_LEAD}>Rider team leader</option>
                 <option value="TELECALLER">Telecaller</option>
                 <option value="ADMIN">Admin</option>
               </select>
@@ -94,6 +114,41 @@ export function StaffForm({
             </label>
           ) : null}
 
+          {!lockedRole && role === 'DELIVERY_AGENT' && !isLead ? (
+            <Field label="Team leader" htmlFor="teamLeadId" hint="Their team leader sees their orders, deliveries and cash in the rider app.">
+              <select id="teamLeadId" name="teamLeadId" defaultValue={values.teamLeadId ?? ''} className={inputClass}>
+                <option value="">No team</option>
+                {(teamLeads ?? []).filter((l) => l.id !== values.id).map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+
+          {/* Who may mark a rider's cash as received is decided per person.
+              A manager is ticked unless an admin unticks them; a team leader
+              is not, until an admin ticks them. Keyed so the default follows
+              the role picked. */}
+          {!lockedRole && (role === 'STORE_MANAGER' || isLead) ? (
+            <label key={choice} className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5 hover:bg-sunken">
+              <input
+                type="checkbox"
+                name="canReceiveCash"
+                value="true"
+                defaultChecked={values.canReceiveCash ?? role === 'STORE_MANAGER'}
+                className="mt-0.5 size-4 accent-accent"
+              />
+              <span>
+                <span className="block text-sm font-medium text-ink">Can receive COD cash from riders</span>
+                <span className="block text-xs text-muted">
+                  {isLead
+                    ? 'May mark the cash of riders on their own team as received.'
+                    : 'May mark a rider’s cash as received at the counter. An admin always can.'}
+                </span>
+              </span>
+            </label>
+          ) : null}
+
           <Field label={values.id ? 'New password' : 'Initial password'} htmlFor="password"
             hint={values.id ? 'Leave blank to keep their current password.' : undefined}>
             <input id="password" name="password" type="text" autoComplete="off" spellCheck={false} className={inputClass} />
@@ -112,7 +167,7 @@ export function StaffForm({
                 ? 'Every outlet this manager runs. They all share one board.'
                 : role === 'TELECALLER'
                   ? 'The outlets whose orders this telecaller may call about and cancel. Nothing outside them is visible to them at all.'
-                  : 'Riders see the live runs of the outlets they are attached to. Without one, their app is empty.'
+                  : 'Riders see only orders at the outlets they are attached to, and can only be assigned those. Without one, their app is empty.'
           }
         />
       </div>

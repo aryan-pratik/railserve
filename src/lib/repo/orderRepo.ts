@@ -57,12 +57,68 @@ function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
         ? {
             restaurantId: { $in: ctx.restaurantIds },
             $or: [
-              { 'delivery.agentIds': ctx.userId },
+              ...riderRecordClauses(ctx.userId),
               { status: 'PREPARED', 'delivery.agentIds.0': { $exists: false } },
             ],
           }
         : { _id: { $exists: false } }
   }
+}
+
+/**
+ * The orders that are on a rider's record: the ones they picked up, and the
+ * ones they were given that nobody has picked up yet.
+ *
+ * An order can be offered to several riders (`delivery.agentIds`), but one
+ * bag has one carrier. The moment a rider takes it (`delivery.pickedUpBy`) it
+ * is theirs alone, so it leaves the other riders' lists, cannot be closed by
+ * them, and is never counted for them. Orders picked up before `pickedUpBy`
+ * existed have none, and stay with everyone on agentIds as they always did.
+ *
+ * Two clauses rather than one $or'd value, so each can use an index.
+ */
+function riderRecordClauses(riderIds: mongoose.Types.ObjectId | mongoose.Types.ObjectId[]) {
+  const who = Array.isArray(riderIds) ? { $in: riderIds } : riderIds
+  return [
+    { 'delivery.pickedUpBy': who },
+    { 'delivery.pickedUpBy': null, 'delivery.agentIds': who },
+  ]
+}
+
+/** As a filter: every order on the record of any of these riders. */
+export function onRiderRecord(
+  riderIds: mongoose.Types.ObjectId | mongoose.Types.ObjectId[],
+): QueryFilter<OrderDoc> {
+  return { $or: riderRecordClauses(riderIds) }
+}
+
+/**
+ * Which of `riderIds` an order is on the record of: its carrier when it has
+ * one, otherwise everyone it was offered to. The read-side twin of
+ * `onRiderRecord`, for attributing rows after a query.
+ */
+export function riderRecordOf(
+  order: { delivery?: { pickedUpBy?: unknown; agentIds?: unknown[] | null } | null },
+): string[] {
+  const picked = order.delivery?.pickedUpBy
+  if (picked) return [String(picked)]
+  return (order.delivery?.agentIds ?? []).map(String)
+}
+
+/**
+ * Outlet scope for reading riders' records on someone else's behalf.
+ *
+ * `scoped()` narrows a rider to their own orders, which is right for
+ * everything a rider does and wrong for the one thing a team leader does:
+ * read the records of the riders under them. This keeps the outlet wall and
+ * drops only the per-rider narrowing, so the CALLER must pass rider ids it
+ * has already checked the user may see (their own, or their team's — see
+ * teamRepo). An admin is unscoped as everywhere else.
+ */
+export function outletScoped(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}): QueryFilter<OrderDoc> {
+  if (ctx.role === 'ADMIN') return filter
+  if (ctx.restaurantIds.length === 0) return { _id: { $exists: false } }
+  return { $and: [{ restaurantId: { $in: ctx.restaurantIds } }, filter] }
 }
 
 /** Merge the caller's scope with a caller-supplied filter. */

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   return withCors(request, NextResponse.json({
     token,
     expiresAt: expiresAt.toISOString(),
-    user: { id: String(user._id), name: user.name, phone: user.phone },
+    user: { id: String(user._id), name: user.name, phone: user.phone, isTeamLead: user.isTeamLead === true },
   }))
 }
 

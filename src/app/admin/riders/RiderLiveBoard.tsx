@@ -19,6 +19,7 @@ import {
 } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
 import { formatRupees } from '@/lib/format'
+import { opsDayCaption } from '@/lib/opsDay'
 import { useNowMs } from '@/components/useNow'
 import {
   IconBag, IconCalendar, IconCash, IconExpand, IconLocate, IconMore, IconPhone, IconPlus,
@@ -298,6 +299,7 @@ export function RiderLiveBoard({
             >
               <IconRefresh size={16} aria-hidden />
             </button>
+            <ButtonLink href="/admin/riders/teams">Teams</ButtonLink>
             <ButtonLink href="/admin/setup?tab=staff" variant="primary">
               <IconPlus size={16} aria-hidden />
               Add rider
@@ -395,7 +397,7 @@ export function RiderLiveBoard({
                     </select>
                   </label>
                   <label className="relative col-span-2 @xl:col-span-1">
-                    <span className="sr-only">Service date</span>
+                    <span className="sr-only">Reporting day, 3am to 3am</span>
                     <IconCalendar
                       size={15}
                       aria-hidden
@@ -474,7 +476,7 @@ export function RiderLiveBoard({
 
 /** Five tiles: an icon, the figure's name, and the figure. */
 function Figures({ board, count }: { board: RiderBoard; count: number }) {
-  const { orders, codOrders, codPaise, amountPaise } = board.totals
+  const t = board.totals
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
       <Figure
@@ -482,31 +484,36 @@ function Figures({ board, count }: { board: RiderBoard; count: number }) {
         tint="bg-accent-soft text-accent"
         label="Total riders"
         value={String(count)}
+        note={opsDayCaption(board.serviceDate)}
         className="col-span-2 sm:col-span-1"
       />
       <Figure
         icon={<IconBag size={20} aria-hidden />}
         tint="bg-orange-50 text-orange-600"
-        label="Total orders"
-        value={String(orders)}
+        label="Orders"
+        value={String(t.orders)}
+        note={`${t.inHand} in hand · ${t.done} finished`}
       />
       <Figure
         icon={<IconCash size={20} aria-hidden />}
         tint="bg-emerald-50 text-emerald-700"
-        label="COD orders"
-        value={String(codOrders)}
+        label="Delivered"
+        value={String(t.delivered)}
+        note={`${t.notDelivered} not delivered · ${t.cancelled} cancelled`}
       />
       <Figure
         icon={<IconRupee size={20} aria-hidden />}
         tint="bg-amber-50 text-amber-700"
-        label="COD amount"
-        value={formatRupees(codPaise)}
+        label="COD collected"
+        value={formatRupees(t.codPaise)}
+        note={`${t.codOrders} COD order${t.codOrders === 1 ? '' : 's'} delivered`}
       />
       <Figure
         icon={<IconWallet size={20} aria-hidden />}
         tint="bg-accent-soft text-accent"
-        label="Total order amount"
-        value={formatRupees(amountPaise)}
+        label="COD due from riders"
+        value={formatRupees(t.duePaise)}
+        note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} · all days`}
       />
     </div>
   )
@@ -517,12 +524,15 @@ function Figure({
   tint,
   label,
   value,
+  note,
   className = '',
 }: {
   icon: ReactNode
   tint: string
   label: string
   value: string
+  /** What the figure counts, in a few words, so nobody has to guess. */
+  note?: string
   className?: string
 }) {
   return (
@@ -535,6 +545,7 @@ function Figure({
         <p className="mt-0.5 truncate text-2xl leading-none font-semibold tracking-tight text-ink tabular-nums">
           {value}
         </p>
+        {note ? <p className="mt-1 truncate text-xs text-faint" title={note}>{note}</p> : null}
       </div>
     </Card>
   )
@@ -920,12 +931,12 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
             <th className={`${th} text-right`}>
               COD
               <br />
-              Amount
+              Collected
             </th>
             <th className={`${th} text-right`}>
-              Total
+              COD
               <br />
-              Amount
+              Due
             </th>
             <th className={th}>
               Last
@@ -938,7 +949,7 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
         <tbody className="divide-y divide-line" onClick={open}>
           {riders.map((rider) => {
             const move = movementOf(rider, now)
-            const { orders, codOrders, codPaise, amountPaise, carrying } = rider.work
+            const { orders, codOrders, codPaise, duePaise, dueOrders, carrying, delivered, failed } = rider.work
             const selected = rider.id === selectedId
             return (
               <tr
@@ -974,13 +985,19 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
                   {carrying > 0 ? (
                     <span className="block text-xs whitespace-nowrap text-blue-700">{carrying} in hand</span>
                   ) : null}
+                  <span className="block text-xs whitespace-nowrap text-muted">
+                    {delivered} delivered{failed > 0 ? ` · ${failed} not` : ''}
+                  </span>
                 </td>
                 <td className={`${td} text-right text-ink tabular-nums`}>{codOrders}</td>
                 <td className={`${td} text-right whitespace-nowrap text-ink tabular-nums`}>
                   {formatRupees(codPaise)}
                 </td>
-                <td className={`${td} text-right font-semibold whitespace-nowrap text-ink tabular-nums`}>
-                  {formatRupees(amountPaise)}
+                <td
+                  className={`${td} text-right font-semibold whitespace-nowrap tabular-nums ${duePaise > 0 ? 'text-amber-800' : 'text-ink'}`}
+                  title={`${dueOrders} delivered COD order${dueOrders === 1 ? '' : 's'} not yet received, across all days`}
+                >
+                  {formatRupees(duePaise)}
                 </td>
                 <td className={`${td} truncate text-xs text-muted tabular-nums`}>{lastActiveOf(rider, now)}</td>
                 <td className={`${td} pr-3`}>
@@ -1006,7 +1023,7 @@ function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
     >
       {riders.map((rider) => {
         const move = movementOf(rider, now)
-        const { orders, codOrders, codPaise, amountPaise, carrying } = rider.work
+        const { orders, codOrders, codPaise, duePaise, carrying } = rider.work
         return (
           <li
             key={rider.id}
@@ -1038,8 +1055,8 @@ function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
             <dl className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-canvas px-3 py-2 text-center">
               <MiniStat label="Orders" value={String(orders)} />
               <MiniStat label="COD" value={String(codOrders)} />
-              <MiniStat label="COD amt" value={formatRupees(codPaise)} />
-              <MiniStat label="Total" value={formatRupees(amountPaise)} />
+              <MiniStat label="COD got" value={formatRupees(codPaise)} />
+              <MiniStat label="COD due" value={formatRupees(duePaise)} />
             </dl>
 
             <div className="mt-2.5 flex items-center justify-between gap-3">

@@ -1,3 +1,5 @@
+import { OVERALL_LABEL, overallStatus } from '@/lib/orderViews'
+import { opsDayOf } from '@/lib/opsDay'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
@@ -97,7 +99,7 @@ export async function GET(request: Request) {
   const riderName = await riderNamesFor(orders)
 
   const header = [
-    'Order ID', 'Service date', 'Status', 'Outcome', 'Type', 'Aggregator', 'Outlet', 'Station',
+    'Order ID', 'Service date', 'Status', 'Outcome', 'Overall status', 'Reporting day (3am-3am)', 'Type', 'Aggregator', 'Outlet', 'Station',
     'Train no', 'Train name', 'Scheduled arrival', 'Coach', 'Berth', 'Passenger', 'Phone', 'Pax', 'Items',
     'Amount (INR)', 'Payment', 'COD collected (INR)', 'COD handed to store', 'Rider',
     'Delivered at', 'Not delivered reason', 'Created',
@@ -109,6 +111,9 @@ export async function GET(request: Request) {
       o.serviceDate,
       o.status,
       OUTCOME_LABEL[outcomeOf(o.status)],
+      OVERALL_LABEL[overallStatus(o.status)],
+      // The day the order closed in, as the rider pages count it. Blank while open.
+      o.delivery?.closedAt ? opsDayOf(o.delivery.closedAt) : '',
       o.orderType,
       sourceLabel(o.source),
       outletName.get(String(o.restaurantId)) ?? '',

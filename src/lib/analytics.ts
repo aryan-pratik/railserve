@@ -11,6 +11,8 @@ import { todayIST } from './format'
  * read the same rules. The queries themselves live in repo/analyticsRepo.
  */
 
+import { overallStatus, type OverallStatus } from './orderViews'
+
 /* ── outcomes ─────────────────────────────────────────────────────────────── */
 
 export const OUTCOMES = ['delivered', 'progress', 'undelivered', 'cancelled', 'other'] as const
@@ -212,7 +214,16 @@ export type Tally = {
   amountPaise: number
   /** Bill value of the delivered ones: what the group actually earned. */
   deliveredPaise: number
+  /**
+   * The same orders in the three overall statuses the business reports by:
+   * processing, delivered, cancelled. Failed and missed deliveries are
+   * cancelled here (see lib/orderViews); the five outcomes above keep them
+   * apart for anyone who needs to know why.
+   */
+  overall: Record<OverallStatus, number>
 }
+
+const zeroOverall = (): Record<OverallStatus, number> => ({ PROCESSING: 0, DELIVERED: 0, CANCELLED: 0 })
 
 /** Folds per-status rows into one tally per key, busiest first. */
 export function tallyByKey(rows: CountRow[]): Tally[] {
@@ -220,12 +231,13 @@ export function tallyByKey(rows: CountRow[]): Tally[] {
   for (const r of rows) {
     let t = byKey.get(r.key)
     if (!t) {
-      t = { key: r.key, total: 0, counts: zeroCounts(), amountPaise: 0, deliveredPaise: 0 }
+      t = { key: r.key, total: 0, counts: zeroCounts(), amountPaise: 0, deliveredPaise: 0, overall: zeroOverall() }
       byKey.set(r.key, t)
     }
     const outcome = outcomeOf(r.status)
     t.total += r.orders
     t.counts[outcome] += r.orders
+    t.overall[overallStatus(r.status)] += r.orders
     t.amountPaise += r.amountPaise
     if (outcome === 'delivered') t.deliveredPaise += r.amountPaise
   }
@@ -235,7 +247,7 @@ export function tallyByKey(rows: CountRow[]): Tally[] {
 /** Every row as one tally: the totals line. */
 export function tallyAll(rows: CountRow[]): Tally {
   return tallyByKey(rows.map((r) => ({ ...r, key: null })))[0] ?? {
-    key: null, total: 0, counts: zeroCounts(), amountPaise: 0, deliveredPaise: 0,
+    key: null, total: 0, counts: zeroCounts(), amountPaise: 0, deliveredPaise: 0, overall: zeroOverall(),
   }
 }
 

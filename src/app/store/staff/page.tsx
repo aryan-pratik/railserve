@@ -8,8 +8,9 @@ import {
 import { OutletPills, stationToneMap } from '@/components/OutletPills'
 import { StaffFormModal } from '@/app/admin/setup/StaffFormModal'
 import { toggleUserActive } from '@/app/admin/setup/staffActions'
-import { pendingCashByRider } from '@/lib/repo/riderCashRepo'
-import { formatRupees } from '@/lib/format'
+import { collectionHistory, pendingCashByRider, receiversOf } from '@/lib/repo/riderCashRepo'
+import { canReceiveCash } from '@/lib/collections'
+import { formatIST, formatRupees } from '@/lib/format'
 import { CollectCashButton } from './CollectCashButton'
 
 export const metadata = { title: 'Riders · RailServe' }
@@ -45,13 +46,29 @@ function ActiveToggle({
 const DEFAULT_PAGE_SIZE = 20
 
 function CashCell({
-  riderId, riderName, pending,
+  riderId, riderName, pending, last, mayReceive,
 }: {
   riderId: string
   riderName: string
   pending: { paise: number; orders: number; orderIds: string[] } | undefined
+  /** The rider's latest handover, so "did they hand in last night" has an answer on the row. */
+  last: { at: string; paise: number; receivedBy: string | null } | undefined
+  /** False for a manager an admin has not allowed to receive cash: they see the figure, not the button. */
+  mayReceive: boolean
 }) {
-  if (!pending || pending.orders === 0) return <span className="text-sm text-faint">₹0</span>
+  const lastLine = last ? (
+    <div className="text-xs whitespace-nowrap text-faint">
+      Last: {formatRupees(last.paise)} · {formatIST(last.at)}{last.receivedBy ? ` · ${last.receivedBy}` : ''}
+    </div>
+  ) : null
+  if (!pending || pending.orders === 0) {
+    return (
+      <div className="space-y-1">
+        <span className="text-sm text-faint">₹0</span>
+        {lastLine}
+      </div>
+    )
+  }
   const amount = formatRupees(pending.paise)
   return (
     <div className="space-y-1.5">
@@ -59,7 +76,12 @@ function CashCell({
       <div className="text-xs whitespace-nowrap text-muted">
         {pending.orders} COD order{pending.orders === 1 ? '' : 's'}
       </div>
-      <CollectCashButton riderId={riderId} riderName={riderName} orderIds={pending.orderIds} amountLabel={amount} />
+      {mayReceive ? (
+        <CollectCashButton riderId={riderId} riderName={riderName} orderIds={pending.orderIds} amountLabel={amount} />
+      ) : (
+        <div className="text-xs text-faint">An admin has not authorised you to receive cash</div>
+      )}
+      {lastLine}
     </div>
   )
 }
@@ -105,7 +127,25 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
 
   // Cash each rider on this page is carrying for these outlets: delivered COD
   // not yet handed over. Scoped by the manager's outlets inside the repo.
-  const cash = await pendingCashByRider(ctx, riders.map((u) => u._id))
+  const riderIds = riders.map((u) => u._id)
+  const [cash, collections, me] = await Promise.all([
+    pendingCashByRider(ctx, riderIds),
+    collectionHistory(ctx, riderIds, { limit: 200 }),
+    User.findById(ctx.userId).select('role isTeamLead canReceiveCash').lean(),
+  ])
+  const receivers = await receiversOf(collections)
+  const mayReceive = canReceiveCash({ role: ctx.role, canReceiveCash: me?.canReceiveCash, isTeamLead: me?.isTeamLead })
+  // Newest first, so the first one seen per rider is their latest.
+  const lastOf = new Map<string, { at: string; paise: number; receivedBy: string | null }>()
+  for (const c of collections) {
+    if (!lastOf.has(c.riderId)) {
+      lastOf.set(c.riderId, {
+        at: c.at,
+        paise: c.paise,
+        receivedBy: c.receivedById ? (receivers.get(c.receivedById)?.name ?? null) : null,
+      })
+    }
+  }
 
   const paginationHref = ({ page: p, pageSize: ps }: { page: number; pageSize: number }) => {
     const u = new URLSearchParams()
@@ -169,7 +209,12 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
               return (
                 <tr key={String(u._id)} className={isEditing ? 'bg-accent-soft/60' : u.active ? '' : 'bg-sunken/50 text-faint'}>
                   <td className="px-3 py-2.5 align-top">
-                    <div className="font-medium text-ink [overflow-wrap:anywhere]">{u.name}</div>
+                    <div className="font-medium text-ink [overflow-wrap:anywhere]">
+                      {u.name}
+                      {u.isTeamLead ? (
+                        <span className="ml-1.5 rounded-full bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">Team leader</span>
+                      ) : null}
+                    </div>
                     <div className="font-mono text-xs tabular-nums text-muted lg:hidden">{u.phone}</div>
                   </td>
                   <td className="hidden px-3 py-2.5 align-top font-mono whitespace-nowrap tabular-nums text-muted lg:table-cell">{u.phone}</td>
@@ -181,7 +226,13 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
                     )}
                   </td>
                   <td className="px-3 py-2.5 align-top text-right">
-                    <CashCell riderId={String(u._id)} riderName={u.name} pending={cash.get(String(u._id))} />
+                    <CashCell
+                      riderId={String(u._id)}
+                      riderName={u.name}
+                      pending={cash.get(String(u._id))}
+                      last={lastOf.get(String(u._id))}
+                      mayReceive={mayReceive}
+                    />
                   </td>
                   <td className="hidden px-3 py-2.5 align-top sm:table-cell">
                     <ActiveToggle id={String(u._id)} active={u.active} name={u.name} />

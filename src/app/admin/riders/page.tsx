@@ -1,6 +1,6 @@
 import { requireRole } from '@/lib/session'
 import { riderBoard } from '@/lib/repo/riderLocationRepo'
-import { todayIST } from '@/lib/format'
+import { opsDayOf } from '@/lib/opsDay'
 import { PING_INTERVAL_SECONDS } from '@/lib/riderLocation'
 import { RiderLiveBoard } from './RiderLiveBoard'
 
@@ -28,7 +28,7 @@ export default async function RidersPage(props: PageProps<'/admin/riders'>) {
   const requested = Array.isArray(sp.date) ? sp.date[0] : sp.date
   // Any other day is read-only history; the board still polls it, since the
   // same route serves every date.
-  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(requested ?? '') ? requested! : todayIST()
+  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(requested ?? '') ? requested! : opsDayOf()
   const board = await riderBoard(ctx, { serviceDate })
 
   return (
@@ -39,8 +39,8 @@ export default async function RidersPage(props: PageProps<'/admin/riders'>) {
     <RiderLiveBoard
       key={serviceDate}
       initial={board}
-      today={todayIST()}
-      note={`Live tracking and performance of all delivery riders. Positions arrive from the rider app every ${PING_INTERVAL_SECONDS}s while it is open.`}
+      today={opsDayOf()}
+      note={`Live tracking and performance of all delivery riders. A day here runs 3am to 3am, the same as in the rider app. Positions arrive from the rider app every ${PING_INTERVAL_SECONDS}s while it is open.`}
     />
   )
 }

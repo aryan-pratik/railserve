@@ -21,6 +21,19 @@ const UserSchema = new Schema(
     // per role: one manager at an outlet owns that counter, the others need
     // not. Meaningless on any other role; an admin always may.
     canCollectReturns: { type: Boolean, default: false },
+    // A rider who leads a team of riders. A team leader is still a rider:
+    // they sign in to the same app and carry orders, and additionally see the
+    // record of every rider placed under them. Kept as a mark on the rider
+    // rather than a fifth role so nothing that asks "is this a rider" has to
+    // learn a second answer. Meaningless on any other role.
+    isTeamLead: { type: Boolean, default: false },
+    // The team leader a rider reports to, set by an admin. Null: no team.
+    teamLeadId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Whether this person may mark a rider's cash as received, set by an
+    // admin (see lib/collections.ts). Null means nobody has decided: a store
+    // manager then may, as every manager could before this existed, and a
+    // team leader may not. An admin always may.
+    canReceiveCash: { type: Boolean, default: null },
   },
   { timestamps: true, strict: true, strictQuery: true },
 )

@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { TrainStartDate } from '@/components/TrainStartDate'
 import { requireRole } from '@/lib/session'
-import { findRuns } from '@/lib/repo/runRepo'
+import { findRunsWhere, LIVE_STATUSES } from '@/lib/repo/runRepo'
+import { riderLiveWindow } from '@/lib/riderRecords'
 import { runTrainLabel } from '@/lib/runs'
 import { timingForOrders, timingFor, trainFeedHealth } from '@/lib/train/service'
 import { todayIST, formatServiceDate } from '@/lib/format'
@@ -17,7 +18,12 @@ export const metadata = { title: 'My runs · RailServe' }
 export default async function AgentRunsPage() {
   const ctx = await requireRole('DELIVERY_AGENT')
   const today = todayIST()
-  const [runs, feedHealth] = await Promise.all([findRuns(ctx, today), trainFeedHealth()])
+  // The same list the app loads (see riderLiveWindow): everything in the
+  // rider's hands or assigned to them, not just today's service date.
+  const [runs, feedHealth] = await Promise.all([
+    findRunsWhere(ctx, riderLiveWindow(ctx.userId, LIVE_STATUSES)),
+    trainFeedHealth(),
+  ])
 
   // One provider call per distinct train, not per order.
   const timings = await timingForOrders(runs.flatMap((r) => r.orders))

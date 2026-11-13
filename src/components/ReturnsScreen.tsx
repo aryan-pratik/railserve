@@ -146,6 +146,7 @@ export async function ReturnsScreen({
                       {r.trainNo && r.rawSeat ? ' · ' : ''}
                       {r.rawSeat ? <span className="font-mono">{r.rawSeat}</span> : null}
                       {r.trainNo || r.rawSeat ? ' · ' : ''}
+                      {r.contactName ? `${r.contactName} · ` : ''}
                       {r.itemCount} item{r.itemCount === 1 ? '' : 's'}
                       {r.codPaise !== null ? ` · COD ${formatMoney(r.codPaise)} not collected` : ''}
                     </div>

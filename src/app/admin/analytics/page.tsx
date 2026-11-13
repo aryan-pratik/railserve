@@ -240,6 +240,16 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
         ))}
       </div>
 
+      {/* The three statuses the business reports by. Not delivered and missed
+          deliveries count as cancelled here; the figures above keep them apart. */}
+      <p className="text-sm text-muted">
+        Overall status:{' '}
+        <span className="font-medium text-ink tabular-nums">{overview.overall.PROCESSING}</span> processing ·{' '}
+        <span className="font-medium text-emerald-700 tabular-nums">{overview.overall.DELIVERED}</span> delivered ·{' '}
+        <span className="font-medium text-red-700 tabular-nums">{overview.overall.CANCELLED}</span> cancelled
+        <span className="text-faint"> (includes not delivered and missed)</span>
+      </p>
+
       {inView.total === 0 ? (
         <EmptyState
           title="No orders match"

@@ -1,6 +1,6 @@
 import { requireRole } from '@/lib/session'
 import { riderBoard } from '@/lib/repo/riderLocationRepo'
-import { todayIST } from '@/lib/format'
+import { opsDayOf } from '@/lib/opsDay'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const ctx = await requireRole('ADMIN')
 
   const requested = new URL(request.url).searchParams.get('serviceDate')
-  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(requested ?? '') ? requested! : todayIST()
+  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(requested ?? '') ? requested! : opsDayOf()
 
   const board = await riderBoard(ctx, { serviceDate })
 

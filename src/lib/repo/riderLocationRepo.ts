@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { Order, RiderLocation, User } from '../models'
+import { RiderLocation, User } from '../models'
 import { connectDb } from '../db'
 import type { AuthContext } from '../authContext'
 import {
@@ -10,8 +10,11 @@ import {
   type LocationFix,
   type Presence,
 } from '../riderLocation'
-import { scoped } from './orderRepo'
-import { todayIST } from '../format'
+import { opsDayOf, opsDayRange } from '../opsDay'
+import {
+  NO_RIDER_DAY, NO_RIDER_NOW, riderDays, ridersDayTotal, ridersNow, type RiderDay, type RiderNow,
+} from './riderLedgerRepo'
+import { pendingCashByRider, type PendingCash } from './riderCashRepo'
 
 /**
  * Reads and writes of where riders are.
@@ -147,35 +150,74 @@ export type RiderView = {
   } | null
   /** Oldest first, so it can be drawn straight as a path. */
   trail: { lat: number; lng: number; at: string }[]
+  isTeamLead: boolean
+  teamLeadId: string | null
   work: {
+    /** In their hands right now. Zero when looking at a past day. */
     carrying: number
     delivered: number
+    /** Finished without a delivery: not delivered plus cancelled after pickup. */
     failed: number
+    notDelivered: number
+    cancelled: number
     /** Trains this rider is carrying food for right now, most orders first. */
     trains: string[]
     lastDeliveredAt: string | null
-    /** Every order they took off the counter today, whatever became of it. */
+    /** Everything finished in the reporting day, plus what is in hand now. */
     orders: number
+    /** Finished in the reporting day: what the rider's own app counts. */
+    done: number
+    /** Delivered cash-on-delivery orders in the day. */
     codOrders: number
-    /** Paise. What they should have collected on COD orders today. */
+    /** Paise. Cash recorded on those deliveries. */
     codPaise: number
-    /** Paise. The value of everything they carried today. */
+    /** Paise. The bill value of everything finished in the day. */
     amountPaise: number
-    /** Stations they worked today, busiest first. Empty on a day off. */
+    /** Paise and orders. Delivered COD cash not yet received, across all days. */
+    duePaise: number
+    dueOrders: number
+    /** Stations they worked in the day, busiest first. Empty on a day off. */
     stations: string[]
   }
 }
 
 /**
- * The day's riders' work, counted per order rather than summed per rider: a
- * bulk handover carried by two riders is one order and one amount, where
+ * The day's riders' work, counted per order rather than summed per rider: an
+ * order still offered to two riders is one order and one amount, where
  * adding up the rows would count it twice.
  */
 export type RiderTotals = {
   orders: number
+  done: number
+  inHand: number
+  delivered: number
+  notDelivered: number
+  cancelled: number
   codOrders: number
   codPaise: number
   amountPaise: number
+  duePaise: number
+  dueOrders: number
+}
+
+function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined): RiderView['work'] {
+  return {
+    carrying: now.inHand,
+    delivered: day.delivered,
+    failed: day.notDelivered + day.cancelled,
+    notDelivered: day.notDelivered,
+    cancelled: day.cancelled,
+    trains: now.trains,
+    lastDeliveredAt: day.lastDeliveredAt,
+    orders: day.done + now.inHand,
+    done: day.done,
+    codOrders: day.codOrders,
+    codPaise: day.codPaise,
+    amountPaise: day.amountPaise,
+    duePaise: due?.paise ?? 0,
+    dueOrders: due?.orders ?? 0,
+    stations: day.stations,
+  }
 }
 
 export type RiderBoard = {
@@ -198,11 +240,11 @@ export async function riderBoard(
   opts: { serviceDate?: string; now?: Date } = {},
 ): Promise<RiderBoard> {
   const now = opts.now ?? new Date()
-  const serviceDate = opts.serviceDate ?? todayIST(now)
+  const serviceDate = opts.serviceDate ?? opsDayOf(now)
 
   await connectDb()
   const riders = await User.find({ role: 'DELIVERY_AGENT', active: true })
-    .select('name phone')
+    .select('name phone isTeamLead teamLeadId')
     .sort({ name: 1 })
     .lean()
 
@@ -211,11 +253,39 @@ export async function riderBoard(
     return { serviceDate, fetchedAt: now.toISOString(), riders: [], totals: NO_TOTALS }
   }
 
-  const [locations, work, totals] = await Promise.all([
+  // One reporting day, 3am to 3am, read from the rider ledger: the same
+  // source and the same boundary the rider's own app uses, so a rider and an
+  // admin looking at the same day see the same numbers.
+  const range = opsDayRange(serviceDate) ?? opsDayRange(opsDayOf(now))!
+  const isToday = serviceDate === opsDayOf(now)
+  const [locations, days, nows, dues, total] = await Promise.all([
     RiderLocation.find({ userId: { $in: ids } }).lean(),
-    workByRider(ctx, ids, serviceDate),
-    workTotals(ctx, ids, serviceDate),
+    riderDays(ctx, ids, range),
+    // What is in a rider's hands is a fact about now, not about a past day.
+    isToday ? ridersNow(ctx, ids) : Promise.resolve(new Map<string, RiderNow>()),
+    pendingCashByRider(ctx, ids),
+    ridersDayTotal(ctx, ids, range),
   ])
+  const work = new Map(
+    ids.map((id) => {
+      const key = String(id)
+      return [key, workOf(days.get(key) ?? NO_RIDER_DAY, nows.get(key) ?? NO_RIDER_NOW, dues.get(key))] as const
+    }),
+  )
+  const inHand = [...nows.values()].reduce((a, n) => a + n.inHand, 0)
+  const totals: RiderTotals = {
+    orders: total.done + inHand,
+    done: total.done,
+    inHand,
+    delivered: total.delivered,
+    notDelivered: total.notDelivered,
+    cancelled: total.cancelled,
+    codOrders: total.codOrders,
+    codPaise: total.codPaise,
+    amountPaise: total.amountPaise,
+    duePaise: [...dues.values()].reduce((a, d) => a + d.paise, 0),
+    dueOrders: [...dues.values()].reduce((a, d) => a + d.orders, 0),
+  }
 
   const locationOf = new Map(locations.map((l) => [String(l.userId), l]))
 
@@ -245,6 +315,8 @@ export async function riderBoard(
         at: p.at.toISOString(),
       })),
       work: w ?? NO_WORK,
+      isTeamLead: rider.isTeamLead === true,
+      teamLeadId: rider.teamLeadId ? String(rider.teamLeadId) : null,
     }
   })
 
@@ -262,126 +334,9 @@ export async function riderBoard(
   return { serviceDate, fetchedAt: now.toISOString(), riders: rows, totals }
 }
 
-const NO_WORK: RiderView['work'] = {
-  carrying: 0,
-  delivered: 0,
-  failed: 0,
-  trains: [],
-  lastDeliveredAt: null,
-  orders: 0,
-  codOrders: 0,
-  codPaise: 0,
-  amountPaise: 0,
-  stations: [],
-}
+const NO_WORK: RiderView['work'] = workOf(NO_RIDER_DAY, NO_RIDER_NOW, undefined)
 
-const NO_TOTALS: RiderTotals = { orders: 0, codOrders: 0, codPaise: 0, amountPaise: 0 }
-
-/** The orders a rider has had in hand today: on the way, handed over, or failed. */
-function riderWorkMatch(ctx: AuthContext, ids: mongoose.Types.ObjectId[], serviceDate: string) {
-  return scoped(ctx, {
-    serviceDate,
-    'delivery.agentIds': { $in: ids },
-    status: { $in: ['DISPATCHED', 'DELIVERED', 'FAILED'] },
-  })
-}
-
-const IS_COD = { $eq: ['$paymentMode', 'COD'] }
-
-/** The day's totals across every rider, one count per order. */
-async function workTotals(
-  ctx: AuthContext,
-  ids: mongoose.Types.ObjectId[],
-  serviceDate: string,
-): Promise<RiderTotals> {
-  const [row] = await Order.aggregate<RiderTotals>([
-    { $match: riderWorkMatch(ctx, ids, serviceDate) },
-    {
-      $group: {
-        _id: null,
-        orders: { $sum: 1 },
-        codOrders: { $sum: { $cond: [IS_COD, 1, 0] } },
-        codPaise: { $sum: { $cond: [IS_COD, { $ifNull: ['$amountPaise', 0] }, 0] } },
-        amountPaise: { $sum: { $ifNull: ['$amountPaise', 0] } },
-      },
-    },
-    { $project: { _id: 0 } },
-  ])
-  return row ?? NO_TOTALS
-}
-
-/**
- * Today's work per rider, in one aggregate rather than a query each.
- *
- * `delivery.agentIds` is written when a rider takes an order off the counter,
- * so it says who is carrying it — the `agent_runs` index covers exactly this
- * shape. Scoped through the order repository's filter so a caller only ever
- * counts work at outlets they hold.
- */
-async function workByRider(
-  ctx: AuthContext,
-  ids: mongoose.Types.ObjectId[],
-  serviceDate: string,
-): Promise<Map<string, RiderView['work']>> {
-  const rows = await Order.aggregate<{
-    _id: mongoose.Types.ObjectId
-    carrying: number
-    delivered: number
-    failed: number
-    lastDeliveredAt: Date | null
-    trains: (string | null)[]
-    orders: number
-    codOrders: number
-    codPaise: number
-    amountPaise: number
-    stations: string[]
-  }>([
-    { $match: riderWorkMatch(ctx, ids, serviceDate) },
-    { $unwind: '$delivery.agentIds' },
-    { $match: { 'delivery.agentIds': { $in: ids } } },
-    {
-      $group: {
-        _id: '$delivery.agentIds',
-        carrying: { $sum: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, 1, 0] } },
-        delivered: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] } },
-        failed: { $sum: { $cond: [{ $eq: ['$status', 'FAILED'] }, 1, 0] } },
-        lastDeliveredAt: { $max: '$delivery.deliveredAt' },
-        // Only what is still in their hands: the trains they have already
-        // served are not where they are going next.
-        trains: {
-          $push: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, '$trainNo', null] },
-        },
-        orders: { $sum: 1 },
-        codOrders: { $sum: { $cond: [IS_COD, 1, 0] } },
-        codPaise: { $sum: { $cond: [IS_COD, { $ifNull: ['$amountPaise', 0] }, 0] } },
-        amountPaise: { $sum: { $ifNull: ['$amountPaise', 0] } },
-        stations: { $push: '$stationCode' },
-      },
-    },
-  ])
-
-  return new Map(
-    rows.map((r) => [
-      String(r._id),
-      {
-        carrying: r.carrying,
-        delivered: r.delivered,
-        failed: r.failed,
-        trains: [...new Set(r.trains.filter((t): t is string => Boolean(t)))].sort(),
-        lastDeliveredAt: r.lastDeliveredAt ? r.lastDeliveredAt.toISOString() : null,
-        orders: r.orders,
-        codOrders: r.codOrders,
-        codPaise: r.codPaise,
-        amountPaise: r.amountPaise,
-        stations: byFrequency(r.stations),
-      },
-    ]),
-  )
-}
-
-/** Distinct values, most frequent first, ties alphabetical. */
-function byFrequency(values: string[]): string[] {
-  const count = new Map<string, number>()
-  for (const v of values) if (v) count.set(v, (count.get(v) ?? 0) + 1)
-  return [...count.keys()].sort((a, b) => count.get(b)! - count.get(a)! || a.localeCompare(b))
+const NO_TOTALS: RiderTotals = {
+  orders: 0, done: 0, inHand: 0, delivered: 0, notDelivered: 0, cancelled: 0,
+  codOrders: 0, codPaise: 0, amountPaise: 0, duePaise: 0, dueOrders: 0,
 }

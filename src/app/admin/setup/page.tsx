@@ -7,7 +7,8 @@ import { getAuthContext } from '@/lib/session'
 import {
   Card, CardHeader, Dash, PageHeader, Pagination, Tabs, PAGE_SIZE_OPTIONS, thClass, focusRing,
 } from '@/components/ui'
-import { ROLE_LABEL } from '@/lib/roles'
+import { ROLE_LABEL, type Role } from '@/lib/roles'
+import { canReceiveCash } from '@/lib/collections'
 import { OutletPills, StationPill, stationToneMap } from '@/components/OutletPills'
 import { OutletFormModal } from './OutletFormModal'
 import { StaffFormModal } from './StaffFormModal'
@@ -55,16 +56,32 @@ function ActiveToggle({
 
 const DEFAULT_PAGE_SIZE = 20
 
-/** The role, and for a manager allowed to take bags back, that too. */
-function roleCell(u: { role: string; canCollectReturns?: boolean | null }) {
-  const label = ROLE_LABEL[u.role as keyof typeof ROLE_LABEL] ?? u.role
-  if (u.role !== 'STORE_MANAGER' || !u.canCollectReturns) return label
+const pill = 'ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset'
+
+/** The role, and beside it what an admin has allowed this person to do. */
+function roleCell(
+  u: {
+    role: string
+    canCollectReturns?: boolean | null
+    isTeamLead?: boolean | null
+    teamLeadId?: unknown
+    canReceiveCash?: boolean | null
+  },
+  leadName: Map<string, string>,
+) {
+  const lead = u.role === 'DELIVERY_AGENT' && u.isTeamLead === true
+  const label = lead ? 'Rider team leader' : (ROLE_LABEL[u.role as keyof typeof ROLE_LABEL] ?? u.role)
+  const team = u.role === 'DELIVERY_AGENT' && !lead && u.teamLeadId ? leadName.get(String(u.teamLeadId)) : null
   return (
     <>
       {label}
-      <span className="ml-1.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">
-        collects returns
-      </span>
+      {team ? <span className="ml-1.5 text-xs text-faint">team {team}</span> : null}
+      {u.role === 'STORE_MANAGER' && u.canCollectReturns ? (
+        <span className={`${pill} bg-emerald-50 text-emerald-800 ring-emerald-200`}>collects returns</span>
+      ) : null}
+      {canReceiveCash({ role: u.role as Role, isTeamLead: u.isTeamLead, canReceiveCash: u.canReceiveCash }) && u.role !== 'ADMIN' ? (
+        <span className={`${pill} bg-amber-50 text-amber-800 ring-amber-200`}>receives cash</span>
+      ) : null}
     </>
   )
 }
@@ -86,7 +103,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     : DEFAULT_PAGE_SIZE
 
   await connectDb()
-  const [outlets, users, userCount, editingUser] = await Promise.all([
+  const [outlets, users, userCount, editingUser, leads] = await Promise.all([
     // Unpaginated: also feeds the outlet-name lookup and the staff form's outlet picker.
     Restaurant.find({}).sort({ active: -1, name: 1 }).lean(),
     staff
@@ -95,7 +112,10 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     staff ? User.countDocuments({}) : 0,
     // Fetched separately so an edit target still resolves even off the current page.
     editId && staff ? User.findById(editId).lean() : undefined,
+    // Every team leader, for the "Team leader" picker and the team shown on a rider's row.
+    staff ? User.find({ role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ name: 1 }).lean() : [],
   ])
+  const leadName = new Map(leads.map((l) => [String(l._id), l.name]))
 
   // Aggregator storefronts, the orders behind each, and each station's
   // fallback kitchen. Only fetched for the tab that shows them.
@@ -270,6 +290,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                 <StaffFormModal
                   key={editId ?? 'new'}
                   editId={editId}
+                  teamLeads={leads.filter((l) => l.active !== false).map((l) => ({ id: String(l._id), name: l.name }))}
                   outlets={outlets
                     // An outlet a manager already holds must stay selectable even if
                     // it was deactivated after the fact.
@@ -286,6 +307,9 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                           role: editingUser.role,
                           restaurantIds: editingUser.restaurantIds.map(String),
                           canCollectReturns: editingUser.canCollectReturns ?? false,
+                          isTeamLead: editingUser.isTeamLead ?? false,
+                          teamLeadId: editingUser.teamLeadId ? String(editingUser.teamLeadId) : null,
+                          canReceiveCash: editingUser.canReceiveCash ?? null,
                         }
                       : undefined
                   }
@@ -315,7 +339,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                       <td className="px-3 py-2.5 align-top">
                         <div className="font-medium text-ink [overflow-wrap:anywhere]">{u.name}</div>
                         <div className="font-mono text-xs tabular-nums text-muted lg:hidden">{u.phone}</div>
-                        <div className="text-xs text-muted sm:hidden">{roleCell(u)}</div>
+                        <div className="text-xs text-muted sm:hidden">{roleCell(u, leadName)}</div>
                         {u.restaurantIds.length > 0 ? (
                           <div className="mt-1.5 sm:hidden">
                             <OutletPills ids={u.restaurantIds.map(String)} outletById={outletById} stationTone={stationTone} />
@@ -323,7 +347,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
                         ) : null}
                       </td>
                       <td className="hidden px-3 py-2.5 align-top font-mono whitespace-nowrap tabular-nums text-muted lg:table-cell">{u.phone}</td>
-                      <td className="hidden px-3 py-2.5 align-top whitespace-nowrap text-muted sm:table-cell">{roleCell(u)}</td>
+                      <td className="hidden px-3 py-2.5 align-top whitespace-nowrap text-muted sm:table-cell">{roleCell(u, leadName)}</td>
                       <td className="hidden px-3 py-2.5 align-top text-muted sm:table-cell">
                         {u.restaurantIds.length > 0
                           ? <OutletPills ids={u.restaurantIds.map(String)} outletById={outletById} stationTone={stationTone} />

@@ -20,6 +20,11 @@ const UserInput = z
     password: z.string().optional(),
     // A checkbox: present as "true" when ticked, absent otherwise.
     canCollectReturns: z.literal('true').optional(),
+    // Rider-only, admin-only (see User model): leads a team; reports to a
+    // team leader. And for a manager or a team leader: may receive cash.
+    isTeamLead: z.literal('true').optional(),
+    teamLeadId: z.string().optional(),
+    canReceiveCash: z.literal('true').optional(),
   })
   .superRefine((v, ctx) => {
     // Every scoped role needs at least one outlet: a manager or telecaller
@@ -89,7 +94,7 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Check the form.' }
   }
-  const { id, password, restaurantIds, canCollectReturns, ...rest } = parsed.data
+  const { id, password, restaurantIds, canCollectReturns, isTeamLead, teamLeadId, canReceiveCash, ...rest } = parsed.data
 
   await connectDb()
 
@@ -112,6 +117,28 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
     // manager editing a rider cannot post it (the box is not rendered), and
     // a forged post is dropped here; a role change away from manager clears it.
     canCollectReturns: ctx.role === 'ADMIN' && rest.role === 'STORE_MANAGER' && canCollectReturns === 'true',
+  }
+  // Teams and who may receive cash are an admin's to arrange. A store
+  // manager saving one of their riders posts none of this (the fields are not
+  // rendered), so for them the keys are left out and what an admin set stays.
+  if (ctx.role === 'ADMIN') {
+    const rider = rest.role === 'DELIVERY_AGENT'
+    const lead = rider && isTeamLead === 'true'
+    doc.isTeamLead = lead
+    // A team is one level deep: a leader reports to nobody.
+    let reportsTo: mongoose.Types.ObjectId | null = null
+    if (rider && !lead && teamLeadId && mongoose.isValidObjectId(teamLeadId) && teamLeadId !== id) {
+      const found = await User.findOne({ _id: teamLeadId, role: 'DELIVERY_AGENT', isTeamLead: true })
+        .select('_id')
+        .lean()
+      if (!found) return { error: 'That team leader no longer exists. Pick another.' }
+      reportsTo = found._id
+    }
+    doc.teamLeadId = reportsTo
+    doc.canReceiveCash =
+      rest.role === 'STORE_MANAGER' || lead ? canReceiveCash === 'true' : null
+    // Someone who stops being a team leader leaves their riders without one.
+    if (id && !lead) await User.updateMany({ teamLeadId: id }, { $set: { teamLeadId: null } })
   }
   if (password) doc.passwordHash = await bcrypt.hash(password, 10)
 

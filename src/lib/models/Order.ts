@@ -129,6 +129,14 @@ const DeliverySchema = new Schema(
     // Array from day one: a 75-pax bulk handover is not a one-agent job (§9).
     agentIds: { type: [Schema.Types.ObjectId], ref: 'User', default: [] },
     assignedAt: { type: Date, default: null },
+    // The one rider who took the bag off the counter. agentIds says who may
+    // carry an order (several riders can be offered the same one); this says
+    // who did. Written when the order becomes DISPATCHED, cleared if the rider
+    // puts it back. From the moment it is set the order belongs to this rider
+    // alone: it leaves every other assigned rider's list, and only this rider
+    // can deliver it, fail it or be counted for it. Missing on orders picked
+    // up before it existed, which fall back to agentIds (see riderRecordOf).
+    pickedUpBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     dispatchedAt: { type: Date, default: null },
     deliveredAt: { type: Date, default: null },
     proofType: { type: String, default: null, enum: [...PROOF_TYPES, null] },
@@ -149,6 +157,10 @@ const DeliverySchema = new Schema(
     // every order in one handover; never cleared.
     codSettledAt: { type: Date, default: null },
     codSettledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // One id shared by every order in the same handover, so "the ₹2,400 Ravi
+    // handed in at 9:40" can be read back as one collection with its orders.
+    // Missing on handovers made before it existed, which group by the stamp.
+    codSettlementId: { type: String, default: null },
     rto: { type: ReturnToOriginSchema, default: null },
   },
   { _id: false },
