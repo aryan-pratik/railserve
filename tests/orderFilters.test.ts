@@ -74,7 +74,14 @@ describe('order filter bar', () => {
     })
   })
 
-  it('adds no date bound on all time', async () => {
-    expect(await orderFilterClause(readOrderFilters({}, { defaultMode: 'all' }))).toEqual({})
+  it('adds no date bound on all time, and leaves rating decoys out', async () => {
+    expect(await orderFilterClause(readOrderFilters({}, { defaultMode: 'all' }))).toEqual({
+      status: { $ne: 'RATING_ORDER' },
+    })
+  })
+
+  it('lists rating decoys when asked for them by name', async () => {
+    const clause = await orderFilterClause(readOrderFilters({ status: 'RATING_ORDER' }, { defaultMode: 'all' }))
+    expect(clause.status).toBe('RATING_ORDER')
   })
 })

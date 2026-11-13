@@ -324,6 +324,11 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
                 />
               ))}
             </ul>
+            {f.by === 'rider' ? (
+              <p className="border-t border-line px-5 py-2.5 text-xs text-muted">
+                An order shared by two riders counts for each of them here, so rows can add up to more than the total.
+              </p>
+            ) : null}
             {groups.length > DEFAULT_GROUP_PAGE_SIZE ? (
               <div className="border-t border-line">
                 <Pagination

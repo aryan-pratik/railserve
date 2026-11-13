@@ -472,9 +472,16 @@ export function RiderLiveBoard({
 
 /* ── figures ─────────────────────────────────────────────────────────────── */
 
-/** Five tiles: an icon, the figure's name, and the figure. */
+/**
+ * Five tiles: an icon, the figure's name, and the figure.
+ *
+ * The orders tile is the day's total, the same number Analytics and All
+ * orders show, with the split under it, so a reader never has to work out
+ * why this board and those screens disagree: they don't.
+ */
 function Figures({ board, count }: { board: RiderBoard; count: number }) {
-  const { orders, codOrders, codPaise, amountPaise } = board.totals
+  const { orders, codOrders, codPaise, amountPaise, dayOrders, dayAmountPaise, dayCodOrders, dayCodPaise, unassignedOrders } =
+    board.totals
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
       <Figure
@@ -488,25 +495,30 @@ function Figures({ board, count }: { board: RiderBoard; count: number }) {
         icon={<IconBag size={20} aria-hidden />}
         tint="bg-orange-50 text-orange-600"
         label="Total orders"
-        value={String(orders)}
+        value={String(dayOrders)}
+        note={`${orders} with a rider · ${unassignedOrders} not yet`}
+        noteTone={unassignedOrders > 0 ? 'text-amber-700' : undefined}
       />
       <Figure
         icon={<IconCash size={20} aria-hidden />}
         tint="bg-emerald-50 text-emerald-700"
         label="COD orders"
-        value={String(codOrders)}
+        value={String(dayCodOrders)}
+        note={`${codOrders} with a rider`}
       />
       <Figure
         icon={<IconRupee size={20} aria-hidden />}
         tint="bg-amber-50 text-amber-700"
         label="COD amount"
-        value={formatRupees(codPaise)}
+        value={formatRupees(dayCodPaise)}
+        note={`${formatRupees(codPaise)} with a rider`}
       />
       <Figure
         icon={<IconWallet size={20} aria-hidden />}
         tint="bg-accent-soft text-accent"
         label="Total order amount"
-        value={formatRupees(amountPaise)}
+        value={formatRupees(dayAmountPaise)}
+        note={`${formatRupees(amountPaise)} with a rider`}
       />
     </div>
   )
@@ -517,12 +529,17 @@ function Figure({
   tint,
   label,
   value,
+  note,
+  noteTone = 'text-faint',
   className = '',
 }: {
   icon: ReactNode
   tint: string
   label: string
   value: string
+  /** One line under the figure that says what it is made of. */
+  note?: string
+  noteTone?: string
   className?: string
 }) {
   return (
@@ -535,6 +552,7 @@ function Figure({
         <p className="mt-0.5 truncate text-2xl leading-none font-semibold tracking-tight text-ink tabular-nums">
           {value}
         </p>
+        {note ? <p className={`mt-1 truncate text-xs ${noteTone}`}>{note}</p> : null}
       </div>
     </Card>
   )

@@ -62,7 +62,10 @@ function searchFilter(q: string) {
  * Three views on one route, all additive query params so an older app build
  * that sends none still gets a sensible answer:
  *   - no params: the last 48 hours
- *   - ?date=YYYY-MM-DD: one IST day, any day back
+ *   - ?date=YYYY-MM-DD: one service day, any day back — the orders for that
+ *     day, as the admin board and Analytics count them, so the rider's 13 Nov
+ *     and the office's 13 Nov are the same orders even when a late train was
+ *     handed over after midnight
  *   - ?q=…: search across everything the rider ever finished
  *
  * The passenger's number is masked server-side once an order is 30 hours
@@ -90,11 +93,10 @@ export async function GET(request: Request) {
     window = searchFilter(q)
     view = { kind: 'search', q }
   } else if (date) {
-    const range = istDayRange(date)
-    if (!range) {
+    if (!istDayRange(date)) {
       return withCors(request, NextResponse.json({ error: 'Pick a valid date.' }, { status: 400 }))
     }
-    window = closedBetween(range.from, range.to)
+    window = { serviceDate: date }
     view = { kind: 'date', date }
   } else {
     window = closedBetween(new Date(now.getTime() - RIDER_RECENT_WINDOW_MS), new Date(now.getTime() + 60_000))

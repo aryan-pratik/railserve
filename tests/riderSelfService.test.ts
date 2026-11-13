@@ -264,7 +264,8 @@ describe('rider self-service: pickup, correction, cash', () => {
     const ancient = await delivered(riderA, { contactPhone: '9000011111', externalOrderId: 'ANCIENT-1' })
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000)
     await Order.updateOne({ _id: old }, { 'delivery.closedAt': hoursAgo(31) })
-    await Order.updateOne({ _id: ancient }, { 'delivery.closedAt': hoursAgo(24 * 5) })
+    const day = new Date(Date.now() - 24 * 5 * 3600_000 + 5.5 * 3600_000).toISOString().slice(0, 10)
+    await Order.updateOne({ _id: ancient }, { 'delivery.closedAt': hoursAgo(24 * 5), serviceDate: day })
 
     const get = async (qs = '?v=2') => (await getHistory(new Request(`http://localhost/api/mobile/history${qs}`, {
       headers: { authorization: `Bearer ${tokenA}` },
@@ -277,9 +278,9 @@ describe('rider self-service: pickup, correction, cash', () => {
     expect((byId.get(fresh) as { editableUntil: string | null }).editableUntil).not.toBeNull()
     expect(byId.get(old)).toMatchObject({ contactPhone: '912••••789', phoneMasked: true, editableUntil: null })
 
-    const day = new Date(Date.now() - 24 * 5 * 3600_000 + 5.5 * 3600_000).toISOString().slice(0, 10)
+    // A day reads the orders for that service day, like every other screen.
     const dated = await get(`?v=2&date=${day}`)
-    expect(dated.orders.map((o: { id: string }) => o.id)).toContain(ancient)
+    expect(dated.orders.map((o: { id: string }) => o.id)).toEqual([ancient])
 
     const found = await get('?v=2&q=ANCIENT')
     expect(found.orders.map((o: { id: string }) => o.id)).toEqual([ancient])

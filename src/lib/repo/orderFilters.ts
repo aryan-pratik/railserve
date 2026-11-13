@@ -2,6 +2,7 @@ import type { AuthContext } from '@/lib/authContext'
 import { Restaurant, Station } from '@/lib/models'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { ORDER_TYPES } from '@/lib/orderEnums'
+import { EXCLUDED_STATUS } from '@/lib/analytics'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { distinctStatuses } from './orderRepo'
 import { riderClause, riderOptions, type RiderOption } from './riderFilter'
@@ -114,7 +115,9 @@ export async function orderFilterClause(f: OrderFilters): Promise<Record<string,
   const clause: Record<string, unknown> = {}
   if (f.outlet) clause.restaurantId = f.outlet
   if (f.stations.length) clause.stationCode = { $in: f.stations }
-  if (f.status) clause.status = f.status
+  // Rating decoys are not business: left out unless asked for by name, so
+  // this list's total is the same day total Analytics and the board show.
+  clause.status = f.status ? f.status : { $ne: EXCLUDED_STATUS }
   const { from, to } = resolveDateRange(f.mode, { month: f.month, from: f.from, to: f.to })
   if (from || to) {
     const range: Record<string, string> = {}

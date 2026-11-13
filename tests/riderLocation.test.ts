@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
-import { RiderLocation } from '../src/lib/models'
+import { RiderLocation, User } from '../src/lib/models'
 import { recordFixes, riderBoard } from '../src/lib/repo/riderLocationRepo'
 import {
   TRAIL_MAX_POINTS,
@@ -242,7 +242,7 @@ describe('the admin board', () => {
     })
 
     const board = await riderBoard(admin, { serviceDate: day })
-    expect(board.totals).toEqual({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
+    expect(board.totals).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
 
     const row = board.riders.find((r) => r.id === String(sharing))!
     expect(row.work).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
@@ -251,6 +251,46 @@ describe('the admin board', () => {
     const other = board.riders.find((r) => r.id === String(silent))!
     expect(other.work).toMatchObject({ orders: 1, codOrders: 1, codPaise: 50000, amountPaise: 50000 })
     expect(other.work.stations).toEqual(['CNB'])
+  })
+
+  it('splits the day into orders with a rider and orders without, adding up to the day', async () => {
+    const day = '2026-09-29'
+    const base = { serviceDate: day, stationCode: 'CNB', paymentMode: 'COD' as const }
+    // With a rider, at every stage: assigned and still cooking, out, and
+    // cancelled after the rider was put on it. All of them are the rider's.
+    await makeOrder({ ...base, status: 'PREPARED', amountPaise: 10000, delivery: { agentIds: [sharing] } })
+    await makeOrder({ ...base, status: 'DISPATCHED', amountPaise: 20000, delivery: { agentIds: [sharing] } })
+    await makeOrder({ ...base, status: 'CANCELLED', amountPaise: 30000, delivery: { agentIds: [sharing] } })
+    await makeOrder({ ...base, status: 'MISSED_DELIVERY', amountPaise: 40000, delivery: { agentIds: [silent] } })
+    // Nobody on it yet.
+    await makeOrder({ ...base, status: 'KOT_PRINTED', amountPaise: 27000, paymentMode: 'PREPAID', delivery: { agentIds: [] } })
+    // A rating decoy is not business, here or on any other screen.
+    await makeOrder({ ...base, status: 'RATING_ORDER', amountPaise: 99900, delivery: { agentIds: [sharing] } })
+
+    const { totals, riders } = await riderBoard(admin, { serviceDate: day })
+    expect(totals).toEqual({
+      orders: 4, codOrders: 4, codPaise: 100000, amountPaise: 100000,
+      dayOrders: 5, dayAmountPaise: 127000, dayCodOrders: 4, dayCodPaise: 100000,
+      unassignedOrders: 1, unassignedPaise: 27000,
+    })
+    expect(totals.orders + totals.unassignedOrders).toBe(totals.dayOrders)
+
+    expect(riders.find((r) => r.id === String(sharing))!.work.orders).toBe(3)
+    // Missed delivery is undelivered, counted with failures as Analytics does.
+    expect(riders.find((r) => r.id === String(silent))!.work).toMatchObject({ orders: 1, failed: 1 })
+  })
+
+  it('still lists a rider switched off since, on the days they worked', async () => {
+    const day = '2026-09-30'
+    const gone = await makeUser('DELIVERY_AGENT', '9100000013')
+    await User.updateOne({ _id: gone._id }, { active: false })
+    await makeOrder({ serviceDate: day, status: 'DELIVERED', amountPaise: 15000, delivery: { agentIds: [gone._id] } })
+
+    const board = await riderBoard(admin, { serviceDate: day })
+    expect(board.riders.find((r) => r.id === String(gone._id))?.work.orders).toBe(1)
+    expect(board.totals.orders).toBe(1)
+    // And not on a day they did not work.
+    expect((await riderBoard(admin, { serviceDate: '2026-09-26' })).riders.some((r) => r.id === String(gone._id))).toBe(false)
   })
 
   it('puts the riders who need looking at first', async () => {

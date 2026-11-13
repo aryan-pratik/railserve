@@ -78,7 +78,8 @@ export async function GET(request: Request) {
     if (dateTo) range.$lte = dateTo
     filter.serviceDate = range
   }
-  if (statuses) filter.status = { $in: statuses }
+  // Rating decoys only when asked for by name, as on the All orders list.
+  filter.status = statuses ? { $in: statuses } : { $ne: 'RATING_ORDER' }
   if (outlet) filter.restaurantId = outlet
   if (stations.length) filter.stationCode = stations.length === 1 ? stations[0] : { $in: stations }
   if (train) filter.trainNo = train.toUpperCase()

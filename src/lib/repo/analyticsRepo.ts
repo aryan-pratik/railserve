@@ -52,10 +52,9 @@ const DIMENSION_FIELD: Record<Dimension, string | Record<string, unknown>> = {
   station: '$stationCode',
   source: '$source',
   payment: '$paymentMode',
-  // An order is counted once, under the first rider on it: the same rider the
-  // cash screens treat as its holder when nobody else is named. A bulk
-  // handover shared by three riders is still one order, not three.
-  rider: { $arrayElemAt: ['$delivery.agentIds', 0] },
+  // Unwound first (see countOrdersBy), so an order counts against every rider
+  // on it, as on the Riders board.
+  rider: '$delivery.agentIds',
   status: '$status',
   day: '$serviceDate',
 }
@@ -72,6 +71,10 @@ export async function countOrdersBy(
 ): Promise<CountRow[]> {
   const rows = await Order.aggregate<{ _id: { k: unknown; s: string }; orders: number; amountPaise: number }>([
     { $match: scoped(ctx, match) },
+    // A shared order counts against each of its riders, matching the rider
+    // filter and the Riders board; orders with nobody on them stay as one
+    // row, under "No rider".
+    ...(by === 'rider' ? [{ $unwind: { path: '$delivery.agentIds', preserveNullAndEmptyArrays: true } }] : []),
     {
       $group: {
         _id: { k: by ? DIMENSION_FIELD[by] : null, s: '$status' },
