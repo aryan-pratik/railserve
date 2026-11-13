@@ -53,7 +53,11 @@ export async function AppShell({
       <Sidebar items={nav} user={sidebarUser} logoutAction={logout} initialCollapsed={sidebarCollapsed} />
       <div className="relative min-w-0 flex-1">
         <TopProgress />
-        <main id="main" className="w-full max-w-7xl min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+        {/* Fills the width the sidebar leaves, so collapsing it gives the page
+            the room rather than a blank strip on the right. Capped far above
+            a laptop and centred, so an ultra-wide monitor does not stretch a
+            table across 3000px. */}
+        <main id="main" className="mx-auto w-full min-w-0 max-w-[120rem] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
           {children}
         </main>
       </div>
