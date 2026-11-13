@@ -6,7 +6,7 @@ import { analyticsMatch, codSummary, countOrdersBy, countOverdueOpen } from '@/l
 import { orderFilterOptions } from '@/lib/repo/orderFilters'
 import { riderNamesFor } from '@/lib/repo/riderFilter'
 import {
-  DIMENSIONS, DIMENSION_LABEL, NO_OUTLET, NO_PAYMENT, OUTCOMES, OUTCOME_LABEL,
+  DIMENSIONS, DIMENSION_LABEL, NO_OUTLET, NO_PAYMENT, NO_RIDER, OUTCOMES, OUTCOME_LABEL,
   analyticsParams, buildSeries, hasAnalyticsFilters, isOutcome, readAnalyticsFilters, share, tallyAll, tallyByKey,
   type Outcome, type Tally,
 } from '@/lib/analytics'
@@ -44,7 +44,19 @@ const PAYMENT_LABEL: Record<string, string> = { COD: 'Cash on delivery', PREPAID
 export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>) {
   const ctx = await requireRole('ADMIN')
   const sp = await props.searchParams
-  const f = readAnalyticsFilters(sp)
+  let f = readAnalyticsFilters(sp)
+
+  await connectDb()
+  const options = await orderFilterOptions(ctx, f.stations)
+  // With a station picked, only its outlets are on offer. An outlet carried
+  // over from before the station changed is dropped rather than left to
+  // filter the page down to nothing.
+  const outletChoices = f.stations.length
+    ? options.outlets.filter((o) => f.stations.includes(o.stationCode))
+    : options.outlets
+  if (f.outlet && f.outlet !== NO_OUTLET && f.stations.length && !outletChoices.some((o) => o.id === f.outlet)) {
+    f = readAnalyticsFilters({ ...sp, outlet: undefined })
+  }
 
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
   const positive = (raw: string) => {
@@ -64,15 +76,13 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
   const match = analyticsMatch(f)
   // The orders themselves appear once the view has been narrowed to
   // something a person would want to read row by row.
-  const showOrders = Boolean(f.outlet || f.status)
+  const showOrders = Boolean(f.outlet || f.status || f.rider)
 
-  await connectDb()
-  const [statusRows, dayRows, groupRows, overdue, options, cod] = await Promise.all([
+  const [statusRows, dayRows, groupRows, overdue, cod] = await Promise.all([
     countOrdersBy(ctx, matchAnyStatus, null),
     countOrdersBy(ctx, match, 'day'),
     f.by === 'day' ? null : countOrdersBy(ctx, match, f.by),
     countOverdueOpen(ctx, matchAnyStatus),
-    orderFilterOptions(ctx, f.stations),
     showOrders ? codSummary(ctx, match) : null,
   ])
 
@@ -89,6 +99,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
 
   const outletName = new Map(options.outlets.map((o) => [o.id, `${o.name} · ${o.stationCode}`]))
   const stationName = new Map(options.stations.map((s) => [s.code, s.name]))
+  const riderLabel = new Map(options.riders.map((r) => [r.id, r.active ? r.name : `${r.name} (inactive)`]))
   const pickedOutlet =
     f.outlet === NO_OUTLET ? 'Unassigned orders' : f.outlet ? (outletName.get(f.outlet) ?? 'Unknown outlet') : null
 
@@ -125,6 +136,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
       case 'station': return key ? (stationName.get(key) ? `${key} · ${stationName.get(key)}` : key) : 'No station'
       case 'source': return sourceLabel(key)
       case 'payment': return key ? (PAYMENT_LABEL[key] ?? key) : 'Not recorded'
+      case 'rider': return key ? (riderLabel.get(key) ?? 'Unknown rider') : 'No rider'
       case 'status': return key ? statusLabel(key) : 'No status'
       case 'day': return key ? formatServiceDate(key) : 'No date'
     }
@@ -137,6 +149,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
       case 'station': return key ? href({ stations: [key], by: '' }) : href()
       case 'source': return key ? href({ source: key, by: '' }) : href()
       case 'payment': return href({ payment: key ?? NO_PAYMENT, by: '' })
+      case 'rider': return href({ rider: key ?? NO_RIDER, by: '' })
       case 'status': return key ? href({ status: key, by: '' }) : href()
       case 'day': return key ? href({ mode: 'range', from: key, to: key, by: '' }) : href()
     }
@@ -171,7 +184,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
         <div className="grid grid-cols-2 gap-2 lg:ml-auto lg:flex lg:flex-wrap">
           <AutoSelect name="outlet" defaultValue={f.outlet} aria-label="Outlet">
             <option value="">All outlets</option>
-            {options.outlets.map((o) => (
+            {outletChoices.map((o) => (
               <option key={o.id} value={o.id}>{o.name} · {o.stationCode}</option>
             ))}
             <option value={NO_OUTLET}>Unassigned</option>
@@ -186,6 +199,13 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
             <option value="">All aggregators</option>
             {ORDER_SOURCES.map((s) => (
               <option key={s} value={s}>{sourceLabel(s)}</option>
+            ))}
+          </AutoSelect>
+          <AutoSelect name="rider" defaultValue={f.rider} aria-label="Rider">
+            <option value="">All riders</option>
+            <option value={NO_RIDER}>No rider</option>
+            {options.riders.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}{r.active ? '' : ' (inactive)'}</option>
             ))}
           </AutoSelect>
           <AutoSelect name="payment" defaultValue={f.payment} aria-label="Payment mode">
@@ -217,7 +237,8 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
           active={!f.status}
           label="Orders"
           value={overview.total}
-          note={`${formatRupees(overview.amountPaise)} billed`}
+          amount={formatRupees(overview.amountPaise)}
+          note="billed"
           className="col-span-2 md:col-span-1"
         />
         {(['delivered', 'progress', 'undelivered', 'cancelled'] as const).map((o) => (
@@ -228,12 +249,11 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
             outcome={o}
             label={OUTCOME_LABEL[o]}
             value={overview.counts[o]}
+            amount={formatRupees(overview.amounts[o])}
             note={
-              o === 'delivered'
-                ? `${share(overview.counts[o], overview.total)} · ${formatRupees(overview.deliveredPaise)}`
-                : o === 'progress' && overdue > 0
-                  ? `${overdue} past arrival`
-                  : `${share(overview.counts[o], overview.total)} of orders`
+              o === 'progress' && overdue > 0
+                ? `${overdue} past arrival`
+                : `${share(overview.counts[o], overview.total)} of orders`
             }
             warn={o === 'progress' && overdue > 0}
           />
@@ -338,7 +358,12 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
                 <div>
                   <h2 className="text-sm font-semibold text-ink">Orders</h2>
                   <p className="mt-0.5 text-xs text-muted">
-                    {[pickedOutlet, f.status ? filterLabel(f.status) : null, plural(inView.total, 'order')]
+                    {[
+                      pickedOutlet,
+                      f.rider ? (f.rider === NO_RIDER ? 'No rider' : (riderLabel.get(f.rider) ?? 'Unknown rider')) : null,
+                      f.status ? filterLabel(f.status) : null,
+                      plural(inView.total, 'order'),
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
@@ -453,13 +478,15 @@ function filterLabel(status: string): string {
  * chart and the breakdown, so the figures double as their key.
  */
 function Figure({
-  href, active, outcome, label, value, note, warn = false, className = '',
+  href, active, outcome, label, value, amount, note, warn = false, className = '',
 }: {
   href: string
   active: boolean
   outcome?: Outcome
   label: string
   value: number
+  /** The bill value of these orders, already formatted. */
+  amount: string
   note: string
   warn?: boolean
   className?: string
@@ -482,7 +509,10 @@ function Figure({
       <div className="mt-1 text-[28px] font-semibold leading-9 tracking-tight text-ink">
         {value.toLocaleString('en-IN')}
       </div>
-      <div className={`text-xs ${warn ? 'font-medium text-amber-700' : 'text-faint'}`}>{note}</div>
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-xs">
+        <span className="text-sm font-semibold text-ink">{amount}</span>
+        <span className={warn ? 'font-medium text-amber-700' : 'text-faint'}>{note}</span>
+      </div>
     </Link>
   )
 }

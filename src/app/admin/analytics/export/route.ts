@@ -5,7 +5,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { findMany } from '@/lib/repo/orderRepo'
 import { analyticsMatch, countOrdersBy } from '@/lib/repo/analyticsRepo'
-import { riderNamesFor } from '@/lib/repo/riderFilter'
+import { riderNamesFor, riderOptions } from '@/lib/repo/riderFilter'
 import {
   DIMENSION_LABEL, OUTCOME_LABEL, outcomeOf, readAnalyticsFilters, tallyByKey,
 } from '@/lib/analytics'
@@ -65,7 +65,9 @@ export async function GET(request: Request) {
   if (url.searchParams.get('report') === 'summary') {
     const groups = tallyByKey(await countOrdersBy(ctx, match, f.by))
     if (f.by === 'day') groups.sort((a, b) => String(a.key).localeCompare(String(b.key)))
+    const riders = f.by === 'rider' ? new Map((await riderOptions(ctx)).map((r) => [r.id, r.name])) : null
     const name = (key: string | null) => {
+      if (riders) return key ? (riders.get(key) ?? 'Unknown rider') : 'No rider'
       if (f.by === 'outlet') return key ? (outletName.get(key) ?? 'Unknown outlet') : 'Unassigned'
       if (f.by === 'source') return sourceLabel(key)
       return key ?? 'Not recorded'

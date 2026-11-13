@@ -60,7 +60,7 @@ export function isOutcome(value: string): value is Outcome {
 
 /* ── filters ──────────────────────────────────────────────────────────────── */
 
-export const DIMENSIONS = ['outlet', 'station', 'source', 'payment', 'status', 'day'] as const
+export const DIMENSIONS = ['outlet', 'station', 'source', 'payment', 'rider', 'status', 'day'] as const
 export type Dimension = (typeof DIMENSIONS)[number]
 
 export const DIMENSION_LABEL: Record<Dimension, string> = {
@@ -68,6 +68,7 @@ export const DIMENSION_LABEL: Record<Dimension, string> = {
   station: 'Station',
   source: 'Aggregator',
   payment: 'Payment',
+  rider: 'Rider',
   status: 'Status',
   day: 'Day',
 }
@@ -76,6 +77,8 @@ export const DIMENSION_LABEL: Record<Dimension, string> = {
 export const NO_OUTLET = 'none'
 /** The payment filter's value for orders with no payment mode recorded. */
 export const NO_PAYMENT = 'none'
+/** The rider filter's value for orders no rider is on. Matches riderFilter's NO_RIDER. */
+export const NO_RIDER = 'none'
 
 export type AnalyticsFilters = {
   mode: DateFilterMode
@@ -90,6 +93,8 @@ export type AnalyticsFilters = {
   stations: string[]
   source: string
   payment: string
+  /** A rider's user id, or NO_RIDER; '' for any. */
+  rider: string
   type: string
   /** An exact status (upper case) or an outcome key (lower case); '' for any. */
   status: string
@@ -129,6 +134,7 @@ export function readAnalyticsFilters(sp: Params): AnalyticsFilters {
   const source = one(sp.source)
   const payment = one(sp.payment)
   const type = one(sp.type)
+  const rider = one(sp.rider)
   const status = one(sp.status).trim()
   const rawBy = one(sp.by) as Dimension
   const bySet = DIMENSIONS.includes(rawBy)
@@ -145,6 +151,7 @@ export function readAnalyticsFilters(sp: Params): AnalyticsFilters {
     stations: [...new Set(many(sp.station).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z0-9]{1,8}$/.test(s)))],
     source: (ORDER_SOURCES as readonly string[]).includes(source) ? source : '',
     payment: payment === NO_PAYMENT || (PAYMENT_MODES as readonly string[]).includes(payment) ? payment : '',
+    rider: rider === NO_RIDER || /^[a-f0-9]{24}$/i.test(rider) ? rider : '',
     type: (ORDER_TYPES as readonly string[]).includes(type) ? type : '',
     status: status && status !== EXCLUDED_STATUS && status.length <= 60 ? status : '',
     by: 'outlet',
@@ -164,7 +171,7 @@ export function readAnalyticsFilters(sp: Params): AnalyticsFilters {
 
 /** Whether anything beyond the default date range is narrowing the view. */
 export function hasAnalyticsFilters(f: AnalyticsFilters): boolean {
-  return Boolean(f.outlet || f.stations.length || f.source || f.payment || f.type || f.status || f.mode !== 'month')
+  return Boolean(f.outlet || f.stations.length || f.source || f.payment || f.rider || f.type || f.status || f.mode !== 'month')
 }
 
 /**
@@ -174,7 +181,7 @@ export function hasAnalyticsFilters(f: AnalyticsFilters): boolean {
  */
 export function analyticsParams(
   f: AnalyticsFilters,
-  over: Partial<Record<'outlet' | 'source' | 'payment' | 'type' | 'status' | 'by' | 'mode' | 'from' | 'to', string>> & {
+  over: Partial<Record<'outlet' | 'source' | 'payment' | 'rider' | 'type' | 'status' | 'by' | 'mode' | 'from' | 'to', string>> & {
     stations?: string[]
   } = {},
 ): URLSearchParams {
@@ -188,6 +195,7 @@ export function analyticsParams(
     ['outlet', over.outlet ?? f.outlet],
     ['source', over.source ?? f.source],
     ['payment', over.payment ?? f.payment],
+    ['rider', over.rider ?? f.rider],
     ['type', over.type ?? f.type],
     ['status', over.status ?? f.status],
     ['by', over.by ?? (f.bySet ? f.by : '')],
@@ -212,6 +220,8 @@ export type Tally = {
   counts: OutcomeCounts
   /** Bill value of every order in the group. */
   amountPaise: number
+  /** The same, split by how the orders turned out. */
+  amounts: OutcomeCounts
   /** Bill value of the delivered ones: what the group actually earned. */
   deliveredPaise: number
   /**
@@ -231,7 +241,10 @@ export function tallyByKey(rows: CountRow[]): Tally[] {
   for (const r of rows) {
     let t = byKey.get(r.key)
     if (!t) {
-      t = { key: r.key, total: 0, counts: zeroCounts(), amountPaise: 0, deliveredPaise: 0, overall: zeroOverall() }
+      t = {
+        key: r.key, total: 0, counts: zeroCounts(), amountPaise: 0, amounts: zeroCounts(), deliveredPaise: 0,
+        overall: zeroOverall(),
+      }
       byKey.set(r.key, t)
     }
     const outcome = outcomeOf(r.status)
@@ -239,6 +252,7 @@ export function tallyByKey(rows: CountRow[]): Tally[] {
     t.counts[outcome] += r.orders
     t.overall[overallStatus(r.status)] += r.orders
     t.amountPaise += r.amountPaise
+    t.amounts[outcome] += r.amountPaise
     if (outcome === 'delivered') t.deliveredPaise += r.amountPaise
   }
   return [...byKey.values()].sort((a, b) => b.total - a.total || String(a.key).localeCompare(String(b.key)))
@@ -247,7 +261,8 @@ export function tallyByKey(rows: CountRow[]): Tally[] {
 /** Every row as one tally: the totals line. */
 export function tallyAll(rows: CountRow[]): Tally {
   return tallyByKey(rows.map((r) => ({ ...r, key: null })))[0] ?? {
-    key: null, total: 0, counts: zeroCounts(), amountPaise: 0, deliveredPaise: 0, overall: zeroOverall(),
+    key: null, total: 0, counts: zeroCounts(), amountPaise: 0, amounts: zeroCounts(), deliveredPaise: 0,
+    overall: zeroOverall(),
   }
 }
 
