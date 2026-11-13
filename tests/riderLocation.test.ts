@@ -1,3 +1,4 @@
+import { opsDayOf } from '../src/lib/opsDay'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
@@ -209,7 +210,10 @@ describe('the admin board', () => {
   })
 
   it('counts what each rider is carrying and has finished today', async () => {
-    const board = await riderBoard(admin, { serviceDate: '2026-09-27' })
+    // The board's day is the reporting day the work happened in (3am to 3am),
+    // not the date on the booking: these orders are booked for 27 Sep and
+    // were finished just now, so they are today's work.
+    const board = await riderBoard(admin, { serviceDate: opsDayOf() })
     const row = board.riders.find((r) => r.id === String(sharing))!
     expect(row.presence).toBe('LIVE')
     expect(row.work.carrying).toBe(1)
@@ -230,19 +234,19 @@ describe('the admin board', () => {
       stationCode: 'CNB',
       amountPaise: 50000,
       paymentMode: 'COD',
-      delivery: { agentIds: [sharing, silent], deliveredAt: new Date() },
+      delivery: { agentIds: [sharing, silent], deliveredAt: new Date(`${day}T12:00:00+05:30`) },
     })
     await makeOrder({
       serviceDate: day,
-      status: 'DISPATCHED',
+      status: 'DELIVERED',
       stationCode: 'PRYJ',
       amountPaise: 20000,
       paymentMode: 'PREPAID',
-      delivery: { agentIds: [sharing], dispatchedAt: new Date() },
+      delivery: { agentIds: [sharing], pickedUpBy: sharing, deliveredAt: new Date(`${day}T13:00:00+05:30`) },
     })
 
     const board = await riderBoard(admin, { serviceDate: day })
-    expect(board.totals).toEqual({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
+    expect(board.totals).toMatchObject({ done: 2, delivered: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
 
     const row = board.riders.find((r) => r.id === String(sharing))!
     expect(row.work).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
@@ -254,7 +258,7 @@ describe('the admin board', () => {
   })
 
   it('puts the riders who need looking at first', async () => {
-    const board = await riderBoard(admin, { serviceDate: '2026-09-27' })
+    const board = await riderBoard(admin, { serviceDate: opsDayOf() })
     expect(board.riders[0].id).toBe(String(sharing))
   })
 
