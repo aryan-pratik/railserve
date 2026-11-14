@@ -32,3 +32,23 @@ Payment\tCollect &#8377;651 in cash at the seat\t
 Passenger\tGautam, 9821244895\t
 Order total\t&#8377;651 (items &#8377;620 + GST &#8377;31)\t
 foodontrains.in &middot; Food at your train seat`
+
+// The plain-text part of the mail, as FoodOnTrains documents it: "Label:
+// value" lines, an "Items:" heading with rows below it, and our outlet named
+// on the id line.
+export const SAMPLE_PLAIN = `foodontrains · New order FT-123456 for Zaika
+
+Items:
+  2 x Aalu Paratha Combo  ₹400
+  1 x Sweet Lassi  ₹60
+
+Order ID: FT-123456
+Station: Kanpur Central (CNB)
+Train: 12002 Bhopal Shatabdi
+Expected arrival: 26 Oct, 03:09 pm
+Coach and seat: B4, seat 11
+Payment: Collect ₹460 in cash at the seat
+Passenger: Suman Ray, 7001573488
+Order total: ₹460 (items ₹438 + GST ₹22)
+
+foodontrains.in · Food at your train seat`

@@ -11,6 +11,7 @@ import {
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../authContext'
 import { scoped } from './orderRepo'
 import { closedAtOf, correctableUntil, isRiderOutcome, type RiderOutcome } from '../riderRecords'
+import { reportFoodOnTrainsStatus } from '../aggregators/foodontrains'
 import { opensReturn } from '../rto'
 
 /**
@@ -242,6 +243,10 @@ export async function transitionOrder(params: {
       updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
     })
 
+    // After the commit, never inside the callback: withTransaction retries
+    // that on a write conflict, and a status that never landed must not be
+    // reported to the aggregator.
+    reportFoodOnTrainsStatus(updated!)
     return updated!
   } finally {
     await session.endSession()
@@ -435,6 +440,7 @@ export async function adminOverrideStatus(params: {
       updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
     })
 
+    reportFoodOnTrainsStatus(updated!)
     return updated!
   } finally {
     await session.endSession()
@@ -676,6 +682,7 @@ export async function correctRiderOutcome(params: {
       updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
     })
 
+    reportFoodOnTrainsStatus(updated!)
     return updated!
   } finally {
     await session.endSession()
