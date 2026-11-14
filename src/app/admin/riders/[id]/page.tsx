@@ -250,7 +250,7 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
         <Stat
           label="In hand now"
           value={String(now.inHand)}
-          note={`${now.waiting} waiting for pickup${now.inHandCodPaise ? ` · ${formatRupees(now.inHandCodPaise)} COD to collect` : ''}`}
+          note={`${now.waiting} waiting for pickup${now.stale ? ` · ${now.stale} older, never closed` : ''}${now.inHandCodPaise ? ` · ${formatRupees(now.inHandCodPaise)} COD to collect` : ''}`}
           tone="text-accent"
         />
         <Stat

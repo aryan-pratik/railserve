@@ -501,6 +501,7 @@ function Figures({ board, count }: { board: RiderBoard; count: number }) {
   const worked = board.riders.filter((r) => r.work.done > 0).length
   const c = board.carried
   const open = c.openOrders ?? 0
+  const stale = c.staleOrders
   const day = new Date(`${board.serviceDate}T12:00:00+05:30`).toLocaleDateString('en-IN', {
     timeZone: 'Asia/Kolkata',
     weekday: 'short',
@@ -552,12 +553,17 @@ function Figures({ board, count }: { board: RiderBoard; count: number }) {
           noteTone={t.duePaise > 0 ? 'text-amber-700' : undefined}
         />
       </div>
-      {open > 0 || c.cashOrders > 0 ? (
+      {open > 0 || stale > 0 || c.cashOrders > 0 ? (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           <span className="font-medium">Carried over from earlier days</span>
           {open > 0 ? (
             <span>
               {open} order{open === 1 ? '' : 's'} still out with riders
+            </span>
+          ) : null}
+          {stale > 0 ? (
+            <span title="Marked out for a rider more than a day and a half ago and never marked delivered or not delivered">
+              {stale} older order{stale === 1 ? '' : 's'} handed over and never closed
             </span>
           ) : null}
           {c.cashOrders > 0 ? (
@@ -566,7 +572,7 @@ function Figures({ board, count }: { board: RiderBoard; count: number }) {
               {c.cashOrders === 1 ? '' : 's'})
             </span>
           ) : null}
-          {open > 0 ? (
+          {open > 0 || stale > 0 ? (
             <Link
               href="/admin/orders?mode=all&status=DISPATCHED"
               className={`ml-auto rounded font-medium underline underline-offset-2 hover:text-amber-950 ${focusRing}`}
@@ -1069,6 +1075,14 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday
                   title="Orders the rider is carrying right now, whatever day they were picked up"
                 >
                   {isToday ? carrying : '–'}
+                  {isToday && rider.work.stale > 0 ? (
+                    <span
+                      className="block text-xs leading-snug font-normal text-muted"
+                      title="Marked out for this rider over a day and a half ago and never closed"
+                    >
+                      +{rider.work.stale} old
+                    </span>
+                  ) : null}
                 </td>
                 <td className={`${td} pr-3`}>
                   <RowActions rider={rider} onShowOnMap={onShowOnMap} detailHref={detailHref(rider.id)} />
@@ -1141,6 +1155,7 @@ function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref, isToday
                     {carrying} in hand now{rider.work.trains.length ? ` · ${rider.work.trains.join(', ')}` : ''}
                   </span>
                 ) : null}
+                {isToday && rider.work.stale > 0 ? <span className="truncate">+{rider.work.stale} old</span> : null}
               </div>
               <RowActions rider={rider} onShowOnMap={onShowOnMap} detailHref={detailHref(rider.id)} />
             </div>
