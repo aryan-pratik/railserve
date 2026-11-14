@@ -157,6 +157,8 @@ export type RiderView = {
   work: {
     /** In their hands right now. Zero when looking at a past day. */
     carrying: number
+    /** Marked out for them over a day and a half ago, never closed. Not in anyone's hands. */
+    stale: number
     delivered: number
     /** Finished without a delivery: not delivered plus cancelled after pickup. */
     failed: number
@@ -247,6 +249,7 @@ function workOf(
 ): RiderView['work'] {
   return {
     carrying: now.inHand,
+    stale: now.stale,
     delivered: day.delivered,
     failed: day.notDelivered + day.cancelled,
     notDelivered: day.notDelivered,
@@ -285,7 +288,10 @@ export type RiderBoard = {
 }
 
 export type Carried = {
+  /** Still out with a rider, picked up before this day began. */
   openOrders: number | null
+  /** Marked out for a rider long ago and never closed: stale records, not food in hands. */
+  staleOrders: number
   cashPaise: number
   cashOrders: number
 }
@@ -423,6 +429,7 @@ export async function riderBoard(
 
   const carried: Carried = {
     openOrders: isToday ? [...nows.values()].reduce((a, n) => a + n.inHandBefore, 0) : null,
+    staleOrders: isToday ? [...nows.values()].reduce((a, n) => a + n.stale, 0) : 0,
     cashPaise: [...earlierDues.values()].reduce((a, d) => a + d.paise, 0),
     cashOrders: [...earlierDues.values()].reduce((a, d) => a + d.orders, 0),
   }
@@ -432,7 +439,7 @@ export async function riderBoard(
 
 const NO_WORK: RiderView['work'] = workOf(NO_RIDER_DAY, NO_RIDER_NOW, undefined, undefined)
 
-const NO_CARRIED: Carried = { openOrders: null, cashPaise: 0, cashOrders: 0 }
+const NO_CARRIED: Carried = { openOrders: null, staleOrders: 0, cashPaise: 0, cashOrders: 0 }
 
 const NO_TOTALS: RiderTotals = {
   orders: 0, done: 0, inHand: 0, delivered: 0, notDelivered: 0, cancelled: 0,

@@ -100,8 +100,16 @@ export type RiderDay = {
 }
 
 export type RiderNow = {
-  /** In the rider's hands this minute, whatever day they were picked up. */
+  /**
+   * Out with the rider this minute: handed over within IN_HAND_WINDOW_MS and
+   * not closed yet. Older than that is `stale`, not in hand.
+   */
   inHand: number
+  /**
+   * Marked out for the rider more than IN_HAND_WINDOW_MS ago and never marked
+   * delivered or not delivered. Nobody is carrying these; the record is stale.
+   */
+  stale: number
   /** Given to the rider and not picked up yet. */
   waiting: number
   /** Trains they are carrying food for right now. */
@@ -112,11 +120,14 @@ export type RiderNow = {
   inHandBefore: number
 }
 
+/** How long an order can be out before it stops counting as in the rider's hands. */
+export const IN_HAND_WINDOW_MS = 36 * 60 * 60 * 1000
+
 export const NO_RIDER_DAY: RiderDay = {
   done: 0, delivered: 0, notDelivered: 0, cancelled: 0, codOrders: 0, codPaise: 0,
   prepaidOrders: 0, deliveredPaise: 0, amountPaise: 0, lastDeliveredAt: null, stations: [],
 }
-export const NO_RIDER_NOW: RiderNow = { inHand: 0, waiting: 0, trains: [], inHandCodPaise: 0, inHandBefore: 0 }
+export const NO_RIDER_NOW: RiderNow = { inHand: 0, stale: 0, waiting: 0, trains: [], inHandCodPaise: 0, inHandBefore: 0 }
 
 /**
  * Adds the rider (or riders) a LIVE order is on the record of, as `_rider`,
@@ -227,10 +238,15 @@ export async function ridersNow(
   if (riderIds.length === 0) return out
   await connectDb()
 
-  const out_ = IS('DISPATCHED')
+  const dispatched = IS('DISPATCHED')
+  const outAt = { $ifNull: ['$delivery.dispatchedAt', '$updatedAt'] }
+  const cutoff = new Date(Date.now() - IN_HAND_WINDOW_MS)
+  const fresh = { $gte: [outAt, cutoff] }
+  const out_ = AND(dispatched, fresh)
   const rows = await Order.aggregate<{
     _id: mongoose.Types.ObjectId
     inHand: number
+    stale: number
     waiting: number
     trains: (string | null)[]
     inHandCodPaise: number
@@ -250,11 +266,12 @@ export async function ridersNow(
       $group: {
         _id: '$_rider',
         inHand: COUNT(out_),
-        waiting: COUNT({ $not: [out_] }),
+        stale: COUNT(AND(dispatched, { $not: [fresh] })),
+        waiting: COUNT({ $not: [dispatched] }),
         trains: { $push: { $cond: [out_, '$trainNo', null] } },
         inHandCodPaise: SUM(AND(out_, { $eq: ['$paymentMode', 'COD'] }), BILL),
         inHandBefore: pickedUpBefore
-          ? COUNT(AND(out_, { $lt: [{ $ifNull: ['$delivery.dispatchedAt', pickedUpBefore] }, pickedUpBefore] }))
+          ? COUNT(AND(out_, { $lt: [{ $ifNull: [outAt, pickedUpBefore] }, pickedUpBefore] }))
           : { $sum: 0 },
       },
     },
@@ -262,6 +279,7 @@ export async function ridersNow(
   for (const r of rows) {
     out.set(String(r._id), {
       inHand: r.inHand,
+      stale: r.stale,
       waiting: r.waiting,
       trains: [...new Set(r.trains.filter((t): t is string => Boolean(t)))].sort(),
       inHandCodPaise: r.inHandCodPaise,

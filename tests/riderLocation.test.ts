@@ -337,12 +337,19 @@ describe('the admin board', () => {
     // Cash from the day, and cash from the day before that nobody has taken.
     await delivered('2026-10-27', 12, 30000)
     await delivered('2026-10-26', 12, 70000)
-    // Out with the rider since days ago, never closed.
+    // Marked out for the rider three days ago and never closed: stale, not in hand.
     await makeOrder({
       serviceDate: '2026-10-20',
       status: 'DISPATCHED',
       restaurantId: outlet._id,
       delivery: { agentIds: [rider], pickedUpBy: rider, dispatchedAt: new Date(Date.now() - 3 * 86_400_000) },
+    })
+    // And one that left the kitchen an hour ago: really in hand.
+    await makeOrder({
+      serviceDate: opsDayOf(),
+      status: 'DISPATCHED',
+      restaurantId: outlet._id,
+      delivery: { agentIds: [rider], pickedUpBy: rider, dispatchedAt: new Date(Date.now() - 3_600_000) },
     })
 
     const past = await riderBoard(admin, { serviceDate: '2026-10-27' })
@@ -353,15 +360,17 @@ describe('the admin board', () => {
     expect(row.work.earlierDuePaise).toBe(70000)
     expect(row.work.carrying).toBe(0)
     expect(past.totals).toMatchObject({ orders: 1, done: 1, codPaise: 30000, duePaise: 30000, dueOrders: 1 })
-    expect(past.carried).toEqual({ openOrders: null, cashPaise: 70000, cashOrders: 1 })
+    expect(past.carried).toEqual({ openOrders: null, staleOrders: 0, cashPaise: 70000, cashOrders: 1 })
 
     // Today: the old open order is carried over, and counts in no day tile.
     const today = await riderBoard(admin, { serviceDate: opsDayOf() })
-    expect(today.carried.openOrders).toBeGreaterThanOrEqual(1)
+    expect(today.carried.staleOrders).toBeGreaterThanOrEqual(1)
     const todayRow = today.riders.find((r) => r.id === String(rider))!
     expect(todayRow.work.orders).toBe(0)
     expect(todayRow.work.duePaise).toBe(0)
+    // Only the order from an hour ago is in hand; the three-day-old one is stale.
     expect(todayRow.work.carrying).toBe(1)
+    expect(todayRow.work.stale).toBe(1)
     expect(todayRow.work.earlierDuePaise).toBe(100000)
   })
 })

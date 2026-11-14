@@ -132,7 +132,10 @@ function MemberRow({ m }: { m: TeamMember }) {
         {m.isLead ? <span className="ml-1.5 text-xs text-faint">leader</span> : null}
         {m.active ? null : <span className="ml-1.5 text-xs">inactive</span>}
       </td>
-      <td className={`${td} text-right`}>{m.now.inHand}</td>
+      <td className={`${td} text-right`}>
+        {m.now.inHand}
+        {m.now.stale > 0 ? <span className="block text-xs font-normal text-muted">+{m.now.stale} old</span> : null}
+      </td>
       <td className={`${td} text-right text-emerald-800`}>{m.day.delivered}</td>
       <td className={`${td} text-right`}>{m.day.notDelivered}</td>
       <td className={`${td} text-right`}>{m.day.cancelled}</td>
