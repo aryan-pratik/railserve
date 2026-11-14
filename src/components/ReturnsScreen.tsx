@@ -24,6 +24,7 @@ export async function ReturnsScreen({
   basePath,
   orderBasePath,
   searchParams,
+  defaultMode = 'all',
 }: {
   ctx: AuthContext
   /** This section's returns page, e.g. `/store/returns`. */
@@ -31,14 +32,18 @@ export async function ReturnsScreen({
   /** Where a row's order id links, e.g. `/store/orders`. */
   orderBasePath: string
   searchParams: Record<string, string | string[] | undefined>
+  /** The dates the filter bar opens on. */
+  defaultMode?: 'all' | 'today'
 }) {
   const collected = searchParams.tab === 'collected'
   const status: RtoStatus = collected ? 'RETURNED' : 'PENDING'
   const { page, pageSize, skip } = readPage(searchParams)
 
-  // The same filter bar as All orders. Opens on all time, not today: a bag
-  // still out from yesterday is exactly the one that must not drop off.
-  const filters = readOrderFilters(searchParams, { defaultMode: 'all' })
+  // The same filter bar as All orders. Which dates it opens on is the screen's
+  // call: the admin's opens on today, like All orders, with an earlier day one
+  // "All time" away (and a search widens it by itself). A store's opens on all
+  // time, because a bag still out from yesterday must not drop off its list.
+  const filters = readOrderFilters(searchParams, { defaultMode })
   const filtered = hasOrderFilters(filters)
   await connectDb()
   const where = await orderFilterClause(filters)
