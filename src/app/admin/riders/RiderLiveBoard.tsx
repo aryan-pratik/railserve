@@ -19,7 +19,6 @@ import {
 } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
 import { formatRupees } from '@/lib/format'
-import { opsDayCaption } from '@/lib/opsDay'
 import { useNowMs } from '@/components/useNow'
 import {
   IconBag, IconCalendar, IconCash, IconExpand, IconLocate, IconMore, IconPhone, IconPlus,
@@ -475,97 +474,56 @@ export function RiderLiveBoard({
 /* ── figures ─────────────────────────────────────────────────────────────── */
 
 /**
- * Two rows of tiles, because the board answers two questions and mixing them
- * is how its numbers once stopped matching anything.
+ * One row, one question: what did riders do in this 3am to 3am day, and what
+ * cash is on them. Every figure is read from the rider ledger, which is what
+ * each rider's own app shows, so the row is the sum of the rows below it.
  *
- * Booked for the date: the day's orders exactly as Analytics and All orders
- * count them, with the split under it, so a reader never has to work out why
- * this board and those screens disagree: they don't.
- *
- * Riders' work: what riders finished in the 3am to 3am day and the cash on
- * it, read from the rider ledger, which is what each rider's own app shows.
+ * The day's bookings by service date are on Analytics and All orders. They
+ * were once a second row here, and two rows of near-identical tiles counted
+ * two different ways read as one set of numbers contradicting itself.
  */
 function Figures({ board, count }: { board: RiderBoard; count: number }) {
   const t = board.totals
-  const { orders, codOrders, codPaise, amountPaise, dayOrders, dayAmountPaise, dayCodOrders, dayCodPaise, unassignedOrders } =
-    board.day
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-muted">Booked for this date · same as Analytics and All orders</p>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <Figure
-            icon={<IconBag size={20} aria-hidden />}
-            tint="bg-orange-50 text-orange-600"
-            label="Total orders"
-            value={String(dayOrders)}
-            note={`${orders} with a rider · ${unassignedOrders} not yet`}
-            noteTone={unassignedOrders > 0 ? 'text-amber-700' : undefined}
-          />
-          <Figure
-            icon={<IconCash size={20} aria-hidden />}
-            tint="bg-emerald-50 text-emerald-700"
-            label="COD orders"
-            value={String(dayCodOrders)}
-            note={`${codOrders} with a rider`}
-          />
-          <Figure
-            icon={<IconRupee size={20} aria-hidden />}
-            tint="bg-amber-50 text-amber-700"
-            label="COD amount"
-            value={formatRupees(dayCodPaise)}
-            note={`${formatRupees(codPaise)} with a rider`}
-          />
-          <Figure
-            icon={<IconWallet size={20} aria-hidden />}
-            tint="bg-accent-soft text-accent"
-            label="Total order amount"
-            value={formatRupees(dayAmountPaise)}
-            note={`${formatRupees(amountPaise)} with a rider`}
-          />
-        </div>
-      </div>
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-muted">Riders&apos; work · 3am to 3am, same as the rider app</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          <Figure
-            icon={<IconUsers size={20} aria-hidden />}
-            tint="bg-accent-soft text-accent"
-            label="Total riders"
-            value={String(count)}
-            note={opsDayCaption(board.serviceDate)}
-            className="col-span-2 sm:col-span-1"
-          />
-          <Figure
-            icon={<IconBag size={20} aria-hidden />}
-            tint="bg-orange-50 text-orange-600"
-            label="Handled by riders"
-            value={String(t.orders)}
-            note={`${t.inHand} in hand · ${t.done} finished`}
-          />
-          <Figure
-            icon={<IconCash size={20} aria-hidden />}
-            tint="bg-emerald-50 text-emerald-700"
-            label="Delivered"
-            value={String(t.delivered)}
-            note={`${t.notDelivered} not delivered · ${t.cancelled} cancelled`}
-          />
-          <Figure
-            icon={<IconRupee size={20} aria-hidden />}
-            tint="bg-amber-50 text-amber-700"
-            label="COD collected"
-            value={formatRupees(t.codPaise)}
-            note={`${t.codOrders} COD order${t.codOrders === 1 ? '' : 's'} delivered`}
-          />
-          <Figure
-            icon={<IconWallet size={20} aria-hidden />}
-            tint="bg-accent-soft text-accent"
-            label="COD due from riders"
-            value={formatRupees(t.duePaise)}
-            note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} · all days`}
-          />
-        </div>
-      </div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <Figure
+        icon={<IconUsers size={20} aria-hidden />}
+        tint="bg-accent-soft text-accent"
+        label="Riders"
+        value={String(count)}
+        note="day runs 3 am to 3 am"
+        className="col-span-2 sm:col-span-1"
+      />
+      <Figure
+        icon={<IconBag size={20} aria-hidden />}
+        tint="bg-orange-50 text-orange-600"
+        label="Orders with riders"
+        value={String(t.orders)}
+        note={`${t.inHand} in hand · ${t.done} finished`}
+      />
+      <Figure
+        icon={<IconCash size={20} aria-hidden />}
+        tint="bg-emerald-50 text-emerald-700"
+        label="Delivered"
+        value={String(t.delivered)}
+        note={`${t.notDelivered} failed · ${t.cancelled} cancelled`}
+        noteTone={t.notDelivered > 0 ? 'text-amber-700' : undefined}
+      />
+      <Figure
+        icon={<IconRupee size={20} aria-hidden />}
+        tint="bg-amber-50 text-amber-700"
+        label="COD collected"
+        value={formatRupees(t.codPaise)}
+        note={`from ${t.codOrders} order${t.codOrders === 1 ? '' : 's'}`}
+      />
+      <Figure
+        icon={<IconWallet size={20} aria-hidden />}
+        tint="bg-accent-soft text-accent"
+        label="COD to receive"
+        value={formatRupees(t.duePaise)}
+        note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} · all days`}
+        noteTone={t.duePaise > 0 ? 'text-amber-700' : undefined}
+      />
     </div>
   )
 }
