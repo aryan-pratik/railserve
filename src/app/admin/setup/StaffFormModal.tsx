@@ -17,12 +17,13 @@ import type { Role } from '@/lib/roles'
  * initial value track the server-derived edit target for free.
  */
 export function StaffFormModal({
-  outlets, values, editId, lockedRole, addLabel = 'Add staff', editHref = '/admin/setup?tab=staff',
+  outlets, values, editId, lockedRole, teamLeads, addLabel = 'Add staff', editHref = '/admin/setup?tab=staff',
 }: {
   outlets: OutletOption[]
   values?: StaffValues
   editId?: string
   lockedRole?: Role
+  teamLeads?: { id: string; name: string }[]
   /** Button copy — "Add rider" on the store manager's Riders page. */
   addLabel?: string
   /** Where the deep-linked edit modal returns to on close. */
@@ -44,7 +45,7 @@ export function StaffFormModal({
       </Button>
       {open ? (
         <Modal title={values?.id ? 'Edit staff' : addLabel} titleId="staff-form-modal" onClose={close} maxWidthClassName="max-w-3xl">
-          <StaffForm outlets={outlets} values={values} onSaved={close} lockedRole={lockedRole} />
+          <StaffForm outlets={outlets} values={values} onSaved={close} lockedRole={lockedRole} teamLeads={teamLeads} />
         </Modal>
       ) : null}
     </>

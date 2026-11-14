@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import { User } from '@/lib/models'
 import type { AuthContext } from '@/lib/authContext'
+import { riderRecordOf } from './orderRepo'
 
 /** The rider filter's value for orders no rider is on yet. */
 export const NO_RIDER = 'none'
@@ -31,10 +32,23 @@ export async function riderOptions(ctx: AuthContext): Promise<RiderOption[]> {
  */
 export function riderClause(rider: string): Record<string, unknown> | null {
   if (rider === NO_RIDER) return { 'delivery.agentIds.0': { $exists: false } }
-  if (mongoose.isValidObjectId(rider)) {
-    return { 'delivery.agentIds': new mongoose.Types.ObjectId(rider) }
-  }
+  // Everyone on the order, not only its carrier: the rule the day's-orders
+  // screens share (see "What counts" in lib/analytics). The rider ledger asks
+  // a different question, who carried it, and uses onClosedRecord instead.
+  if (mongoose.isValidObjectId(rider)) return { 'delivery.agentIds': new mongoose.Types.ObjectId(rider) }
   return null
+}
+
+/**
+ * Adds a whole clause to a filter under $and.
+ *
+ * The rider clause and the search clause are each a top-level `$or`, so
+ * copying both onto one filter object lets the second replace the first, and
+ * the list quietly stops being filtered by rider. This keeps every clause.
+ */
+export function andClause(filter: Record<string, unknown>, clause: Record<string, unknown> | null): void {
+  if (!clause) return
+  filter.$and = [...((filter.$and as unknown[] | undefined) ?? []), clause]
 }
 
 /**
@@ -43,16 +57,18 @@ export function riderClause(rider: string): Record<string, unknown> | null {
  * rider from another outlet still names them.
  */
 export async function riderNamesFor(
-  orders: { _id: unknown; delivery?: { agentIds?: unknown[] | null } | null }[],
+  orders: { _id: unknown; delivery?: { agentIds?: unknown[] | null; pickedUpBy?: unknown } | null }[],
 ): Promise<Map<string, string>> {
-  const ids = [...new Set(orders.flatMap((o) => (o.delivery?.agentIds ?? []).map(String)))]
+  // Once somebody has picked an order up, they are its rider: the others it
+  // was offered to are no longer named beside it.
+  const ids = [...new Set(orders.flatMap((o) => riderRecordOf(o)))]
   if (ids.length === 0) return new Map()
   const users = await User.find({ _id: { $in: ids } }).select('name').lean()
   const name = new Map(users.map((u) => [String(u._id), u.name]))
   return new Map(
     orders.map((o) => [
       String(o._id),
-      (o.delivery?.agentIds ?? []).map((id) => name.get(String(id)) ?? 'Unknown rider').join(', '),
+      riderRecordOf(o).map((id) => name.get(id) ?? 'Unknown rider').join(', '),
     ]),
   )
 }

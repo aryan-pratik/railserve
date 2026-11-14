@@ -32,11 +32,15 @@ const initial: ActionState = {}
  * a record is wrong. It edits history, so it is an admin-only, per-order control.
  */
 export function AssignAgents({
-  orderId, agents, assigned,
+  orderId, agents, assigned, open, pickedUpBy,
 }: {
   orderId: string
-  agents: { id: string; name: string; phone: string }[]
+  agents: { id: string; name: string; phone: string; atOutlet: boolean }[]
   assigned: string[]
+  /** Still routing. A rider from another outlet cannot be put on an open order. */
+  open: boolean
+  /** Who took the bag off the counter, when somebody has. */
+  pickedUpBy: string | null
 }) {
   const [state, action, pending] = useActionState(assignAgentsAction, initial)
 
@@ -56,6 +60,11 @@ export function AssignAgents({
               />
               <span className="font-medium text-ink">{a.name}</span>
               <span className="font-mono text-xs tabular-nums text-faint">{a.phone}</span>
+              {a.atOutlet ? null : (
+                <span className="text-xs text-amber-800">
+                  another outlet{open ? ', cannot see this order' : ''}
+                </span>
+              )}
             </label>
           ))}
         </div>
@@ -67,6 +76,11 @@ export function AssignAgents({
         </Button>
         <FormNote state={state} />
       </div>
+      {pickedUpBy ? (
+        <p className="text-xs text-ink">
+          Picked up by <span className="font-medium">{pickedUpBy}</span>. The order is on their record alone; the other riders ticked no longer see it.
+        </p>
+      ) : null}
       <p className="text-xs text-muted text-pretty">
         Normally filled in by whoever delivered. More than one is valid: a large bulk handover is not a one-rider job.
       </p>

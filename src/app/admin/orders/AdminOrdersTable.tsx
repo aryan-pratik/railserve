@@ -1,5 +1,6 @@
 'use client'
 
+import { OVERALL_LABEL, overallStatus } from '@/lib/orderViews'
 import { useActionState, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST, paiseToRupees } from '@/lib/format'
@@ -201,6 +202,8 @@ function AdminOrderRow({
             <StatusBadge status={order.status} />
           </button>
         )}
+        {/* The reporting status beside the pipeline one: processing, delivered or cancelled. */}
+        <div className="mt-0.5 text-[11px] text-faint">{OVERALL_LABEL[overallStatus(order.status)]}</div>
       </td>
       <td className="px-3 py-2.5 text-center">
         <DeleteOrderCell orderId={order.id} externalOrderId={order.externalOrderId} />

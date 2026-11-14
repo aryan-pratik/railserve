@@ -79,6 +79,36 @@ export function maskPhone(phone: string | null | undefined): string | null {
   return `${digits.slice(0, 3)}${'•'.repeat(digits.length - 6)}${digits.slice(-3)}`
 }
 
+/**
+ * The live orders a rider's app loads, as an order filter (the rider scope is
+ * applied on top by the repository).
+ *
+ * Shift windows are not enforced here on purpose. Three kinds of order show:
+ * - anything in the rider's hands, whatever its date: a bag does not stop
+ *   being theirs because the calendar moved
+ * - anything assigned to them from yesterday's service date onwards
+ * - orders nobody is assigned, ready on the counter, for yesterday to
+ *   tomorrow only, so a forgotten order from last week does not sit at the
+ *   top of every rider's list forever
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- an order filter, typed by the repository it is passed to
+export function riderLiveWindow(riderId: unknown, liveStatuses: readonly string[], now: Date = new Date()): any {
+  const today = new Date(now.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10)
+  const shift = (days: number) => {
+    const d = new Date(`${today}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+  return {
+    status: { $in: [...liveStatuses] },
+    $or: [
+      { status: 'DISPATCHED' },
+      { 'delivery.agentIds': riderId, serviceDate: { $gte: shift(-1) } },
+      { serviceDate: { $gte: shift(-1), $lte: shift(1) } },
+    ],
+  }
+}
+
 /** IST calendar day as a [start, end) UTC range. */
 export function istDayRange(date: string): { from: Date; to: Date } | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null

@@ -1,6 +1,6 @@
 import React from 'react'
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
-import { Store, Send, CheckCircle2, Search, X } from 'lucide-react-native'
+import { Store, Send, CheckCircle2, Search, Users, X } from 'lucide-react-native'
 
 /**
  * Primitives for the rider app.
@@ -246,23 +246,30 @@ export function Money({ paise, mode }: { paise: number | null; mode: string | nu
  * read as decoration at this size, and the words are shorter than the time
  * spent decoding them.
  */
-export type TabKey = 'orders' | 'delivery' | 'done'
+export type TabKey = 'orders' | 'delivery' | 'done' | 'team'
 
-export function TabBar({ tab, onChange }: {
+/**
+ * The Team tab is a team leader's only: everyone else keeps the three tabs
+ * they know. With four, labels tighten so they still fit a narrow phone.
+ */
+export function TabBar({ tab, onChange, showTeam = false }: {
   tab: TabKey
   onChange: (t: TabKey) => void
   badge?: number
+  showTeam?: boolean
 }) {
   const items = [
     { key: 'orders' as const, label: 'Orders', icon: Store },
     { key: 'delivery' as const, label: 'Delivery', icon: Send },
     { key: 'done' as const, label: 'Delivered', icon: CheckCircle2 },
+    ...(showTeam ? [{ key: 'team' as const, label: 'Team', icon: Users }] : []),
   ]
+  const tight = items.length > 3
   return (
     <View style={{
       flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#E5E7EB',
-      backgroundColor: '#FFFFFF', paddingBottom: 24, paddingTop: 10, paddingHorizontal: 12,
-      gap: 6
+      backgroundColor: '#FFFFFF', paddingBottom: 24, paddingTop: 10, paddingHorizontal: tight ? 6 : 12,
+      gap: tight ? 2 : 6
     }}>
       {items.map((it) => {
         const on = tab === it.key
@@ -278,13 +285,13 @@ export function TabBar({ tab, onChange }: {
               flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               paddingVertical: 10, borderRadius: 12,
               backgroundColor: on ? '#EEF3FF' : 'transparent',
-              gap: 6,
+              gap: tight ? 4 : 6,
               opacity: pressed ? 0.6 : 1
             }]}
           >
-            <Icon size={18} color={on ? '#2457D6' : '#686B76'} />
-            <Text style={{
-              fontSize: 14, fontWeight: on ? '700' : '600',
+            <Icon size={tight ? 16 : 18} color={on ? '#2457D6' : '#686B76'} />
+            <Text numberOfLines={1} style={{
+              fontSize: tight ? 12.5 : 14, fontWeight: on ? '700' : '600',
               color: on ? '#2457D6' : '#686B76'
             }}>
               {it.label}

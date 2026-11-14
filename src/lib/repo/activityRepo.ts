@@ -49,6 +49,13 @@ export type ActivityQuery = {
   orderId?: string | null
   stationCode?: string | null
   /**
+   * Free text: finds the orders it could be about, by order id, passenger
+   * name or phone, train number or name, coach, or by what was written on
+   * the order (a reason given for a failure or a cancellation, a call note),
+   * and shows everything recorded on them in the range.
+   */
+  search?: string | null
+  /**
    * One rider's record: what they did, and what was done to their deliveries
    * by anyone else — being assigned or taken off an order, a manager handing
    * food over for them, a telecaller closing one of theirs, their cash being
@@ -68,6 +75,8 @@ export type ActivityEntry = {
   externalOrderId: string
   stationCode: string
   trainNo: string | null
+  /** Who the order is for, so a row can be matched to a bill without opening it. */
+  contactName: string | null
   actor: { id: string; name: string; role: string } | null
   panel: ActivityPanel
   kind: ActivityKind
@@ -199,6 +208,24 @@ export async function activityFeed(ctx: AuthContext, q: ActivityQuery): Promise<
   const term = (q.orderId ?? '').replace(/^\s*#\s*/, '').trim()
   if (term) orderMatch.push({ externalOrderId: { $regex: escapeRegex(term), $options: 'i' } })
   if (q.stationCode) orderMatch.push({ stationCode: q.stationCode.toUpperCase() })
+  const search = (q.search ?? '').replace(/^\s*#\s*/, '').trim().slice(0, 80)
+  if (search) {
+    const text = { $regex: escapeRegex(search), $options: 'i' }
+    const or: Record<string, unknown>[] = [
+      { externalOrderId: text },
+      { contactName: text },
+      { trainNo: text },
+      { trainName: text },
+      { coach: text },
+      { 'delivery.failureReason': text },
+      { 'events.meta.reason': text },
+      { 'callLog.text': text },
+    ]
+    // Digits match across however the number was typed in: spaces, a +91.
+    const digits = search.replace(/\D/g, '')
+    if (digits.length >= 4) or.push({ contactPhone: { $regex: digits.split('').join('\\D*') } })
+    orderMatch.push({ $or: or })
+  }
 
   const orderFilter = orderMatch.length ? { $and: orderMatch } : {}
 
@@ -230,7 +257,7 @@ export async function activityFeed(ctx: AuthContext, q: ActivityQuery): Promise<
     })
   }
 
-  const orderFields = { externalOrderId: 1, stationCode: 1, trainNo: 1 }
+  const orderFields = { externalOrderId: 1, stationCode: 1, trainNo: 1, contactName: 1 }
 
   const events: PipelineStage[] = [
     { $match: scoped(ctx, orderFilter) },
@@ -319,6 +346,7 @@ export async function activityFeed(ctx: AuthContext, q: ActivityQuery): Promise<
     externalOrderId: string
     stationCode: string
     trainNo?: string | null
+    contactName?: string | null
     type: 'event' | 'note'
     entryId?: mongoose.Types.ObjectId | null
     at: Date
@@ -381,6 +409,7 @@ export async function activityFeed(ctx: AuthContext, q: ActivityQuery): Promise<
       externalOrderId: r.externalOrderId,
       stationCode: r.stationCode,
       trainNo: r.trainNo ?? null,
+      contactName: r.contactName ?? null,
       actor: person && r.userId ? { id: String(r.userId), ...person } : null,
       panel: panelOf(person?.role, r.via),
       kind: r.type === 'note' ? 'CALL_NOTE' : kindOf({ fromStatus, toStatus: r.toStatus, meta }),

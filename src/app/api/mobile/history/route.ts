@@ -1,39 +1,20 @@
 import { NextResponse } from 'next/server'
 import { contextFromBearer } from '@/lib/mobile/token'
-import { findMany } from '@/lib/repo/orderRepo'
-import { wasCancelledBy } from '@/lib/repo/transitionOrder'
-import { lastSettlementFor, pendingCashFor } from '@/lib/repo/riderCashRepo'
+import { findMany, onClosedRecord } from '@/lib/repo/orderRepo'
+import { wasCancelledBy, wasClosedBy } from '@/lib/repo/transitionOrder'
+import { collectionHistory, lastSettlementFor, pendingCashFor, receiversOf } from '@/lib/repo/riderCashRepo'
+import { closedBetween, riderDays, riderDoneFilter, NO_RIDER_DAY } from '@/lib/repo/riderLedgerRepo'
 import {
-  closedAtOf, correctableUntil, escapeRegex, istDayRange, maskPhone, RIDER_RECENT_WINDOW_MS,
+  closedAtOf, correctableUntil, escapeRegex, maskPhone, RIDER_RECENT_WINDOW_MS,
 } from '@/lib/riderRecords'
+import { opsDayOf, opsDayRange } from '@/lib/opsDay'
+import { overallStatus, riderStatus, RIDER_LABEL } from '@/lib/orderViews'
+import { rtoReasonLabel } from '@/lib/rto'
 import { preflight, withCors } from '@/lib/mobile/cors'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 
 export const dynamic = 'force-dynamic'
-
-/**
- * Finished orders that belong in a rider's record. A cancellation counts only
- * if the rider actually carried it (dispatchedAt set): an order the office
- * cancelled while it was still cooking was never in their hands, and would
- * otherwise pad their order count.
- */
-function doneFilter(withCancelled: boolean) {
-  const closed = { status: { $in: ['DELIVERED', 'FAILED'] } }
-  if (!withCancelled) return closed
-  return { $or: [closed, { status: 'CANCELLED', 'delivery.dispatchedAt': { $ne: null } }] }
-}
-
-/** Closed within [from, to), for orders with and without `delivery.closedAt`. */
-function closedBetween(from: Date, to: Date) {
-  return {
-    $or: [
-      { 'delivery.closedAt': { $gte: from, $lt: to } },
-      { 'delivery.closedAt': null, 'delivery.deliveredAt': { $gte: from, $lt: to } },
-      { 'delivery.closedAt': null, 'delivery.deliveredAt': null, updatedAt: { $gte: from, $lt: to } },
-    ],
-  }
-}
 
 /** Order id, passenger name or phone, train or coach. */
 function searchFilter(q: string) {
@@ -62,11 +43,13 @@ function searchFilter(q: string) {
  * Three views on one route, all additive query params so an older app build
  * that sends none still gets a sensible answer:
  *   - no params: the last 48 hours
- *   - ?date=YYYY-MM-DD: one service day, any day back — the orders for that
- *     day, as the admin board and Analytics count them, so the rider's 13 Nov
- *     and the office's 13 Nov are the same orders even when a late train was
- *     handed over after midnight
+ *   - ?date=YYYY-MM-DD: one reporting day (3am to 3am IST), any day back
  *   - ?q=…: search across everything the rider ever finished
+ *
+ * The rows and the `summary` beside them come from the rider ledger
+ * (riderLedgerRepo), the same source the admin's Riders page reads, with the
+ * same day boundary. The app shows the summary as sent; it does not add the
+ * rows up itself, so the two screens cannot drift apart again.
  *
  * The passenger's number is masked server-side once an order is 30 hours
  * closed, so the full number never reaches the phone after that.
@@ -83,35 +66,61 @@ export async function GET(request: Request) {
   const q = (params.get('q') ?? '').trim().slice(0, 60)
   const date = params.get('date') ?? ''
   // Builds before v=2 render every non-FAILED row as delivered, so they must
-  // never be sent a cancellation.
-  const withCancelled = params.get('v') === '2'
+  // never be sent a cancellation. v=2 knows CANCELLED. v=3 reads the rider
+  // status and the server's summary, so it can be sent everything that
+  // closed after pickup, with the stored status folded to the three
+  // outcomes the app has words for.
+  const v = Number(params.get('v') ?? '1')
+  const outcomes = v >= 3 ? 'all' as const : v === 2 ? 'cancelled' as const : 'legacy' as const
   const now = new Date()
 
   let window: Record<string, unknown>
   let view: { kind: 'recent' | 'date' | 'search'; date?: string; q?: string }
+  let summaryRange: { from: Date; to: Date } | null = null
   if (q) {
     window = searchFilter(q)
     view = { kind: 'search', q }
   } else if (date) {
-    if (!istDayRange(date)) {
+    // Builds older than the 3am day send the calendar date for "Today".
+    // Between midnight and 3 am that names a reporting day that has not
+    // begun, and would show an empty list to a rider in mid-shift; read it
+    // as the day in progress instead.
+    const day = opsDayRange(date) && date > opsDayOf(now) ? opsDayOf(now) : date
+    const range = opsDayRange(day)
+    if (!range) {
       return withCors(request, NextResponse.json({ error: 'Pick a valid date.' }, { status: 400 }))
     }
-    window = { serviceDate: date }
-    view = { kind: 'date', date }
+    window = closedBetween(range.from, range.to)
+    summaryRange = range
+    view = { kind: 'date', date: day }
   } else {
-    window = closedBetween(new Date(now.getTime() - RIDER_RECENT_WINDOW_MS), new Date(now.getTime() + 60_000))
+    summaryRange = { from: new Date(now.getTime() - RIDER_RECENT_WINDOW_MS), to: new Date(now.getTime() + 60_000) }
+    window = closedBetween(summaryRange.from, summaryRange.to)
     view = { kind: 'recent' }
   }
+  const todayRange = opsDayRange(opsDayOf(now))!
 
-  const [orders, wallet, lastSettlement] = await Promise.all([
+  const [orders, wallet, lastSettlement, days, today, collections] = await Promise.all([
     findMany(
       ctx,
-      { $and: [doneFilter(withCancelled), { 'delivery.agentIds': ctx.userId }, window] },
+      { $and: [riderDoneFilter(outcomes), onClosedRecord(ctx.userId), window] },
       { sort: { updatedAt: -1 }, limit: q ? 100 : 500 },
     ),
     pendingCashFor(ctx, ctx.userId),
     lastSettlementFor(ctx, ctx.userId),
+    summaryRange ? riderDays(ctx, [ctx.userId], summaryRange) : Promise.resolve(null),
+    riderDays(ctx, [ctx.userId], todayRange),
+    collectionHistory(ctx, [ctx.userId], { limit: 20 }),
   ])
+  // Receivers of the handovers listed AND of every order row: an older day's
+  // orders were often received by someone absent from the latest handovers.
+  const receivers = await receiversOf([
+    ...collections,
+    ...orders.map((o) => ({ receivedById: o.delivery?.codSettledBy ? String(o.delivery.codSettledBy) : null })),
+  ])
+  const receiverOf = (id: unknown) => (id ? (receivers.get(String(id))?.name ?? null) : null)
+  const summary = days ? (days.get(String(ctx.userId)) ?? NO_RIDER_DAY) : null
+  const todaySummary = today.get(String(ctx.userId)) ?? NO_RIDER_DAY
 
   // Where a bag still in the rider's hands has to go back to. Looked up only
   // for orders with a return open, which is a handful at most.
@@ -132,12 +141,26 @@ export async function GET(request: Request) {
       const editable =
         openUntil !== null &&
         !o.delivery.codSettledAt &&
-        (o.status !== 'CANCELLED' || wasCancelledBy(o, ctx.userId))
+        // Only the three outcomes a rider can name, and only their own tap
+        // (see correctRiderOutcome): what the office recorded is the office's.
+        ['DELIVERED', 'FAILED', 'CANCELLED'].includes(o.status) &&
+        (o.status !== 'CANCELLED' || wasCancelledBy(o, ctx.userId)) &&
+        wasClosedBy(o, ctx.userId)
+      // The app has words for three outcomes. Anything else that closed
+      // after pickup reads as the overall status, with the detail beside it.
+      const shown =
+        o.status === 'DELIVERED' || o.status === 'FAILED' || o.status === 'CANCELLED'
+          ? o.status
+          : overallStatus(o.status) === 'DELIVERED' ? 'DELIVERED' : 'CANCELLED'
+      const rs = riderStatus(o)
       return {
         id: String(o._id),
         externalOrderId: o.externalOrderId,
         serviceDate: o.serviceDate,
-        status: o.status,
+        status: shown,
+        riderStatus: rs,
+        riderStatusLabel: RIDER_LABEL[rs],
+        statusDetail: shown !== o.status ? rtoReasonLabel(o.status) : null,
         trainNo: o.trainNo,
         trainName: o.trainName,
         coach: o.coach,
@@ -155,6 +178,7 @@ export async function GET(request: Request) {
         amountCollectedPaise: o.delivery.amountCollectedPaise ?? null,
         failureReason: o.delivery.failureReason ?? null,
         codSettledAt: o.delivery.codSettledAt?.toISOString() ?? null,
+        codReceivedBy: receiverOf(o.delivery.codSettledBy),
         editableUntil: editable ? openUntil!.toISOString() : null,
         // Null for almost every order: only one cancelled or failed after the
         // rider took it has a bag to bring back.
@@ -173,11 +197,24 @@ export async function GET(request: Request) {
     fetchedAt: now.toISOString(),
     view,
     orders: rows,
+    // The figures for the period in view, and for the reporting day in
+    // progress, counted by the server. Null for a search, which is not a period.
+    summary,
+    today: { day: opsDayOf(now), ...todaySummary },
     wallet: {
       pendingPaise: wallet.paise,
       pendingOrders: wallet.orders,
       lastSettlement,
     },
+    // Every handover, newest first, and who received it.
+    collections: collections.map((c) => ({
+      id: c.id,
+      at: c.at,
+      paise: c.paise,
+      orders: c.orders,
+      receivedBy: receiverOf(c.receivedById),
+      receivedAs: c.receivedById ? (receivers.get(c.receivedById)?.label ?? null) : null,
+    })),
   }))
 }
 

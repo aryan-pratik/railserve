@@ -46,6 +46,7 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
   const kind = readKind(kindParam)
   const person = one(sp.person)
   const orderId = one(sp.orderId)
+  const search = one(sp.q).trim()
   const station = one(sp.station).toUpperCase()
   const { page, pageSize, skip } = readPage(sp)
 
@@ -65,6 +66,7 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
       kind,
       actorId: person || null,
       orderId: orderId || null,
+      search: search || null,
       stationCode: station || null,
       skip,
       limit: pageSize,
@@ -83,6 +85,7 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
     kind: kind ? kindParam : '',
     person,
     orderId,
+    q: search,
     station,
   }
   const href = (over: Partial<typeof current>, target?: { page: number; pageSize: number }) => {
@@ -103,7 +106,7 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
     })),
   ]
 
-  const narrowed = Boolean(kind || person || orderId || station)
+  const narrowed = Boolean(kind || person || orderId || search || station)
   const span = formatDateRange(fromDay, toDay)
 
   return (
@@ -117,6 +120,16 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
 
       <Card className="p-3">
         <QueryForm action="/admin/activity" className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <input
+            name="q"
+            type="search"
+            defaultValue={search}
+            placeholder="Search passenger, phone, train, coach, order id or a reason"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Search the log"
+            className={`${inputClass} sm:col-span-2 lg:col-span-5`}
+          />
           {/* The tabs own this value; without it, filtering would drop it. */}
           <input type="hidden" name="panel" value={current.panel} />
           <select name="kind" defaultValue={current.kind} className={inputClass} aria-label="What happened">
@@ -146,7 +159,7 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
           <div className="flex gap-2">
             <Button type="submit" variant="secondary" className="flex-1">Apply</Button>
             {narrowed ? (
-              <ButtonLink href={href({ kind: '', person: '', orderId: '', station: '' })} variant="ghost">
+              <ButtonLink href={href({ kind: '', person: '', orderId: '', q: '', station: '' })} variant="ghost">
                 Clear
               </ButtonLink>
             ) : null}

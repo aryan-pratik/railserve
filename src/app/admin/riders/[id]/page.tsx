@@ -6,10 +6,16 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, RiderLocation, User, type OrderDoc } from '@/lib/models'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
-import { activityFeed, riderStatusCounts, type RiderStatusCount } from '@/lib/repo/activityRepo'
-import { istDaysToRange } from '@/lib/activity'
+import { activityFeed } from '@/lib/repo/activityRepo'
+import { onClosedRecord, onRiderRecord } from '@/lib/repo/orderRepo'
+import {
+  NO_RIDER_DAY, NO_RIDER_NOW, closedBetween, opsSpan, riderDays, riderDoneFilter, ridersNow,
+} from '@/lib/repo/riderLedgerRepo'
+import { collectionHistory, pendingCashFor, receiversOf } from '@/lib/repo/riderCashRepo'
+import { opsDayOf } from '@/lib/opsDay'
+import { OVERALL_LABEL, RIDER_LABEL, overallStatus, riderStatus } from '@/lib/orderViews'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
-import { formatDateRange, formatIST, formatRupees, formatShortDate, todayIST } from '@/lib/format'
+import { formatDateRange, formatIST, formatRupees, formatShortDate, shiftServiceDate } from '@/lib/format'
 import { readPage, withPage } from '@/lib/pagination'
 import { PRESENCE_LABEL, ageLabel, presenceOf } from '@/lib/riderLocation'
 import { TERMINAL_STATUSES } from '@/lib/orderStatus'
@@ -27,24 +33,20 @@ export const metadata = { title: 'Rider · RailServe' }
  * Where a rider's orders are, grouped the way someone asks about them: still
  * at the counter, in their hands, handed over, not handed over, called off.
  *
- * Statuses outside every bucket — an admin's custom status — still count
- * under All.
+ * The first two are about now and are not bounded by the dates picked; the
+ * last three are what the rider finished inside those dates. Together they
+ * are the same record the rider's own app shows, read from the same ledger.
  */
+const NOT_DELIVERED = ['FAILED', 'MISSED_DELIVERY', 'MISDELIVERY']
+const WAITING = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']
 const BUCKETS = {
-  waiting: { label: 'Waiting for pickup', statuses: ['ENQUIRY', 'QUOTED', 'RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
-  'on-the-way': { label: 'On the way', statuses: ['DISPATCHED'] },
-  delivered: { label: 'Delivered', statuses: ['DELIVERED'] },
-  'not-delivered': { label: 'Not delivered', statuses: ['FAILED', 'MISDELIVERY', 'MISSED_DELIVERY'] },
-  cancelled: { label: 'Cancelled', statuses: ['CANCELLED', 'LOST', 'REFUNDED', 'RATING_ORDER'] },
+  waiting: 'Waiting for pickup',
+  'on-the-way': 'In hand',
+  delivered: 'Delivered',
+  'not-delivered': 'Not delivered',
+  cancelled: 'Cancelled',
 } as const
 type Bucket = keyof typeof BUCKETS
-
-/** What the live board counts against a rider: food that left the counter. */
-const CARRIED = ['DISPATCHED', 'DELIVERED', 'FAILED']
-
-function sum(rows: RiderStatusCount[], statuses: readonly string[] | null, key: keyof Omit<RiderStatusCount, 'status'>) {
-  return rows.filter((r) => !statuses || statuses.includes(r.status)).reduce((a, r) => a + r[key], 0)
-}
 
 type Delivery = {
   agentIds?: unknown[] | null
@@ -74,10 +76,11 @@ function closedAt(order: OrderDoc): Date | null {
 /**
  * One rider's record: every order they were on, and everything they did.
  *
- * The orders are those naming the rider in `delivery.agentIds` — assigned to
- * them, or taken off the counter by them — whatever became of each, so the
- * count here can run ahead of the board's, which counts only food that left
- * the counter on one day. The headline "Carried" figure is the board's.
+ * Everything here is the rider ledger (riderLedgerRepo): the orders this
+ * rider picked up, or was given and nobody has picked up yet, placed in the
+ * 3am-to-3am reporting day in which each one closed. It is the same source,
+ * the same day and the same figures as the rider's own app and the Riders
+ * board, so the three can be read against each other line by line.
  *
  * The event log is the rider's slice of the activity log: their own actions
  * from the app or the web page, and what others did to their deliveries.
@@ -90,13 +93,16 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
   await connectDb()
   // Inactive riders open too: history is exactly where someone asks what a
   // rider who has since left carried.
-  const rider = await User.findById(id).select('name phone role active restaurantIds').lean()
+  const rider = await User.findById(id)
+    .select('name phone role active restaurantIds isTeamLead teamLeadId canReceiveCash')
+    .lean()
   if (!rider || rider.role !== 'DELIVERY_AGENT') notFound()
   const riderId = rider._id
 
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
-  const tab = one(sp.tab) === 'log' ? 'log' : 'orders'
+  const tabParam = one(sp.tab)
+  const tab = tabParam === 'log' ? 'log' : tabParam === 'cash' ? 'cash' : 'orders'
   const bucketParam = one(sp.status)
   const bucket = bucketParam in BUCKETS ? (bucketParam as Bucket) : null
   const orderTerm = one(sp.order).trim()
@@ -107,30 +113,49 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
   const rawTo = one(sp.to)
   const { page, pageSize, skip } = readPage(sp)
 
-  const { from: dateFrom, to: dateTo } = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
-  const serviceDate: Record<string, string> = {}
-  if (dateFrom) serviceDate.$gte = dateFrom
-  if (dateTo) serviceDate.$lte = dateTo
-  const dated = Object.keys(serviceDate).length > 0
+  // The dates picked are reporting days. "Today" before 3am is still the day
+  // that began yesterday at 3am, which is the whole point of the boundary.
+  const today = opsDayOf()
+  const resolved = resolveDateRange(mode, { month, from: rawFrom, to: rawTo })
+  const dateFrom = mode === 'today' ? today : mode === 'yesterday' ? shiftServiceDate(today, -1) : resolved.from
+  const dateTo = mode === 'today' ? today : mode === 'yesterday' ? shiftServiceDate(today, -1) : resolved.to
+  const dated = Boolean(dateFrom || dateTo)
+  const span = opsSpan(dateFrom, dateTo)
+  const includesNow = !dated || (dateTo || today) >= today
 
-  const mine: QueryFilter<OrderDoc> = {
-    'delivery.agentIds': riderId,
-    ...(dated ? { serviceDate } : {}),
+  const mine = onRiderRecord(riderId)
+  const finished = (statuses?: QueryFilter<OrderDoc>): QueryFilter<OrderDoc> => ({
+    $and: [onClosedRecord(riderId), riderDoneFilter('all'), closedBetween(span.from, span.to), ...(statuses ? [statuses] : [])],
+  })
+  // Live orders are "right now", so a range that ended before today has
+  // none: the chips read 0 there, and the list behind them must be empty too.
+  const live = (statuses: string[]): QueryFilter<OrderDoc> =>
+    includesNow ? { $and: [mine, { status: { $in: statuses } }] } : { _id: { $exists: false } }
+  const BUCKET_FILTER: Record<Bucket, QueryFilter<OrderDoc>> = {
+    waiting: live(WAITING),
+    'on-the-way': live(['DISPATCHED']),
+    delivered: finished({ status: 'DELIVERED' }),
+    'not-delivered': finished({ status: { $in: NOT_DELIVERED } }),
+    cancelled: finished({ status: { $nin: ['DELIVERED', ...NOT_DELIVERED] } }),
   }
   const listFilter: QueryFilter<OrderDoc> = bucket
-    ? { ...mine, status: { $in: [...BUCKETS[bucket].statuses] } }
-    : mine
+    ? BUCKET_FILTER[bucket]
+    : includesNow
+      ? { $or: [finished(), live([...WAITING, 'DISPATCHED'])] }
+      : finished()
 
-  // The log is bounded by when things happened, the orders by service date;
-  // the same days either way, read off the same filter.
-  const today = todayIST()
-  const logRange = dated ? istDaysToRange(dateFrom || dateTo, dateTo || today) : null
+  const logRange = dated ? span : null
 
-  const [counts, orders, listed, log, location, outlets] = await Promise.all([
-    riderStatusCounts(ctx, riderId, { from: dateFrom, to: dateTo }),
+  const [days, nows, due, collections, collectedInSpan, orders, listed, log, location, outlets, lead, team] = await Promise.all([
+    riderDays(ctx, [riderId], span),
+    ridersNow(ctx, [riderId]),
+    pendingCashFor(ctx, riderId),
+    collectionHistory(ctx, [riderId], { limit: 100 }),
+    // Its own query: the newest 100 above say nothing about an older span.
+    collectionHistory(ctx, [riderId], { from: span.from, to: span.to, limit: 100_000 }),
     tab === 'orders'
       ? findMany(ctx, listFilter, {
-          sort: { serviceDate: -1, 'delivery.dispatchedAt': -1, createdAt: -1 },
+          sort: { 'delivery.closedAt': -1, 'delivery.dispatchedAt': -1, createdAt: -1 },
           skip,
           limit: pageSize,
         })
@@ -145,16 +170,27 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
     }),
     RiderLocation.findOne({ userId: riderId }).select('recordedAt').lean(),
     Restaurant.find({ _id: { $in: rider.restaurantIds ?? [] } }).select('name stationCode').sort({ name: 1 }).lean(),
+    rider.teamLeadId ? User.findById(rider.teamLeadId).select('name').lean() : null,
+    rider.isTeamLead ? User.countDocuments({ role: 'DELIVERY_AGENT', teamLeadId: riderId }) : 0,
   ])
+  const receivers = await receiversOf(collections)
 
-  const all = sum(counts, null, 'orders')
-  const carried = sum(counts, CARRIED, 'orders')
+  const day = days.get(String(riderId)) ?? NO_RIDER_DAY
+  const now = includesNow ? (nows.get(String(riderId)) ?? NO_RIDER_NOW) : NO_RIDER_NOW
+  const bucketCount: Record<Bucket, number> = {
+    waiting: now.waiting,
+    'on-the-way': now.inHand,
+    delivered: day.delivered,
+    'not-delivered': day.notDelivered,
+    cancelled: day.cancelled,
+  }
+  const all = day.done + now.inHand + now.waiting
   const presence = presenceOf(location?.recordedAt ?? null)
   const seen = location?.recordedAt ? `last location ${ageLabel(location.recordedAt)}` : 'has never shared a location'
 
   // Every filter in play, so tabs, buckets and the pager keep each other.
   const current = {
-    tab: tab === 'log' ? 'log' : '',
+    tab: tab === 'orders' ? '' : tab,
     status: bucket ?? '',
     order: tab === 'log' ? orderTerm : '',
     mode: mode === 'today' ? '' : mode,
@@ -169,7 +205,7 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
     return `/admin/riders/${id}${qs ? `?${qs}` : ''}`
   }
 
-  const span = dated ? formatDateRange(dateFrom || dateTo, dateTo || today) : 'All time'
+  const spanLabel = dated ? `${formatDateRange(dateFrom || dateTo, dateTo || today)} · 3am to 3am` : 'All time'
 
   return (
     <div className="space-y-4">
@@ -190,6 +226,11 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
             <span className="tabular-nums">{rider.phone}</span>
             {outlets.length ? ` · ${outlets.map((o) => `${o.name} (${o.stationCode})`).join(', ')}` : ''}
             {` · ${seen}.`}
+            {rider.isTeamLead
+              ? ` Team leader of ${team} rider${team === 1 ? '' : 's'}${rider.canReceiveCash ? ', may receive cash' : ''}.`
+              : lead
+                ? ` Team: ${lead.name}.`
+                : ''}
           </>
         }
         action={
@@ -206,24 +247,33 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
       />
 
       <StatStrip columns={5}>
-        <Stat label="Orders" value={String(all)} note={`${sum(counts, BUCKETS.waiting.statuses, 'orders')} waiting for pickup`} />
         <Stat
-          label="Carried"
-          value={String(carried)}
-          note={`${sum(counts, ['DISPATCHED'], 'orders')} on the way now`}
+          label="In hand now"
+          value={String(now.inHand)}
+          note={`${now.waiting} waiting for pickup${now.inHandCodPaise ? ` · ${formatRupees(now.inHandCodPaise)} COD to collect` : ''}`}
           tone="text-accent"
         />
         <Stat
-          label="Delivered"
-          value={String(sum(counts, ['DELIVERED'], 'orders'))}
-          note={`${sum(counts, BUCKETS['not-delivered'].statuses, 'orders')} not delivered · ${sum(counts, BUCKETS.cancelled.statuses, 'orders')} cancelled`}
+          label="Finished"
+          value={String(day.done)}
+          note={`${day.delivered} delivered · ${day.notDelivered} not delivered · ${day.cancelled} cancelled`}
         />
         <Stat
-          label="COD amount"
-          value={formatRupees(sum(counts, CARRIED, 'codPaise'))}
-          note={`${sum(counts, CARRIED, 'codOrders')} COD orders carried`}
+          label="Delivered"
+          value={String(day.delivered)}
+          note={`${day.codOrders} COD · ${day.prepaidOrders} prepaid · ${formatRupees(day.deliveredPaise)}`}
         />
-        <Stat label="Total amount" value={formatRupees(sum(counts, CARRIED, 'amountPaise'))} note="Everything carried" />
+        <Stat
+          label="COD collected"
+          value={formatRupees(day.codPaise)}
+          note={`${formatRupees(collectedInSpan.reduce((a, c) => a + c.paise, 0))} handed in on these dates`}
+        />
+        <Stat
+          label="COD due now"
+          value={formatRupees(due.paise)}
+          note={`${due.orders} delivered COD order${due.orders === 1 ? '' : 's'} not yet received · all days`}
+          tone={due.paise > 0 ? 'text-amber-700' : undefined}
+        />
       </StatStrip>
 
       <Card className="p-3">
@@ -236,9 +286,10 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
         label="Rider record"
         tabs={[
           { href: href({ tab: '', order: '' }), label: 'Orders', count: all, active: tab === 'orders' },
+          { href: href({ tab: 'cash', status: '', order: '' }), label: 'Collections', count: collections.length, active: tab === 'cash' },
           { href: href({ tab: 'log', status: '' }), label: 'Event log', count: log.total, active: tab === 'log' },
         ]}
-        action={<span className="text-xs text-muted">{span}</span>}
+        action={<span className="text-xs text-muted">{spanLabel}</span>}
       />
 
       {tab === 'orders' ? (
@@ -254,8 +305,8 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
                 aria-current={bucket === b ? 'true' : undefined}
                 className={segmentClass(bucket === b)}
               >
-                {BUCKETS[b].label}{' '}
-                <span className="tabular-nums text-faint">{sum(counts, BUCKETS[b].statuses, 'orders')}</span>
+                {BUCKETS[b]}{' '}
+                <span className="tabular-nums text-faint">{bucketCount[b]}</span>
               </Link>
             ))}
           </div>
@@ -279,6 +330,56 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
             </Card>
           )}
         </>
+      ) : tab === 'cash' ? (
+        <Card className="overflow-hidden">
+          {collections.length === 0 && due.paise === 0 ? (
+            <EmptyState
+              title="No collections yet"
+              note={`Nobody has received cash from ${rider.name.split(/\s+/)[0]} yet.`}
+            />
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="border-b border-line bg-canvas">
+                <tr>
+                  <th className={thClass}>Received</th>
+                  <th className={thClass}>Received by</th>
+                  <th className={`${thClass} text-right`}>COD orders</th>
+                  <th className={`${thClass} text-right`}>Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {due.paise > 0 ? (
+                  <tr className="bg-amber-50/60">
+                    <td className={`${td} font-medium text-amber-900`}>Not yet received</td>
+                    <td className={`${td} text-muted`}>With {rider.name.split(/\s+/)[0]}</td>
+                    <td className={`${td} text-right tabular-nums`}>{due.orders}</td>
+                    <td className={`${td} text-right font-semibold tabular-nums text-amber-900`}>{formatRupees(due.paise)}</td>
+                  </tr>
+                ) : null}
+                {collections.map((c) => {
+                  const by = c.receivedById ? receivers.get(c.receivedById) : null
+                  return (
+                    <tr key={c.id}>
+                      <td className={`${td} tabular-nums text-ink`}>{formatIST(c.at)}</td>
+                      <td className={td}>
+                        {by ? (
+                          <>
+                            <span className="text-ink">{by.name}</span>
+                            <span className="ml-1.5 text-xs text-faint">{by.label}</span>
+                          </>
+                        ) : (
+                          <Dash />
+                        )}
+                      </td>
+                      <td className={`${td} text-right tabular-nums`}>{c.orders}</td>
+                      <td className={`${td} text-right font-medium tabular-nums text-emerald-800`}>{formatRupees(c.paise)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </Card>
       ) : (
         <Card className="overflow-hidden">
           {orderTerm ? (
@@ -336,6 +437,9 @@ function Outcome({ order }: { order: OrderDoc }) {
   return (
     <div className="space-y-0.5">
       <StatusBadge status={order.status} />
+      <p className="text-xs text-muted">
+        {OVERALL_LABEL[overallStatus(order.status)]} · {RIDER_LABEL[riderStatus(order)]}
+      </p>
       {closed ? <p className="text-xs text-muted tabular-nums">{formatIST(closed)}</p> : null}
       {d?.proofType && order.status === 'DELIVERED' ? (
         <p className="text-xs text-faint">Proof: {d.proofType.toLowerCase()}</p>
@@ -394,6 +498,9 @@ function RiderOrderTable({ orders, riderId, logHref }: OrderListProps) {
                     {o.trainNo ? ` · ${o.trainNo}` : ''}
                     {o.coach ? ` · ${o.coach}${o.berth ? ` ${o.berth}` : ''}` : ''}
                   </p>
+                  {o.contactName ? (
+                    <p className="truncate text-xs font-medium text-ink" title={o.contactName}>{o.contactName}</p>
+                  ) : null}
                   {others > 0 ? <p className="text-xs text-faint">with {others} other rider{others === 1 ? '' : 's'}</p> : null}
                 </td>
                 <td className={`${td} font-mono text-xs text-ink`}>{o.stationCode}</td>
@@ -453,6 +560,7 @@ function RiderOrderCards({ orders, riderId, logHref }: OrderListProps) {
                 <p className="mt-0.5 text-xs text-muted">
                   {formatShortDate(o.serviceDate)} · {o.stationCode}
                   {o.trainNo ? ` · ${o.trainNo}` : ''}
+                  {o.contactName ? ` · ${o.contactName}` : ''}
                   {others > 0 ? ` · with ${others} other` : ''}
                 </p>
               </div>

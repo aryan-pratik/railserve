@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { contextFromBearer } from '@/lib/mobile/token'
-import { findRuns } from '@/lib/repo/runRepo'
+import { findRunsWhere, LIVE_STATUSES } from '@/lib/repo/runRepo'
+import { riderLiveWindow } from '@/lib/riderRecords'
+import { riderStatus, RIDER_LABEL } from '@/lib/orderViews'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { computeDispatchAt } from '@/lib/train/policy'
 import { connectDb } from '@/lib/db'
@@ -24,7 +26,19 @@ export async function GET(request: Request) {
   const serviceDate =
     new URL(request.url).searchParams.get('serviceDate') || todayIST()
 
-  const runs = await findRuns(ctx, serviceDate)
+  // Not "today's service date" alone. A rider's work is whatever they have
+  // been given, and the date on the booking is a poor guide to that at the
+  // edges of a shift: a train booked for yesterday that arrives after
+  // midnight, an order assigned tonight for the first train tomorrow. Both
+  // used to be invisible in the app while the office saw them as assigned.
+  // An explicit ?serviceDate= still narrows to that one day.
+  const asked = new URL(request.url).searchParams.get('serviceDate')
+  const runs = await findRunsWhere(
+    ctx,
+    asked
+      ? { serviceDate: asked, status: { $in: LIVE_STATUSES } }
+      : riderLiveWindow(ctx.userId, LIVE_STATUSES),
+  )
   const timings = await timingForOrders(runs.flatMap((r) => r.orders))
 
   await connectDb()
@@ -65,6 +79,9 @@ export async function GET(request: Request) {
           externalOrderId: o.externalOrderId,
           orderType: o.orderType,
           status: o.status,
+          riderStatus: riderStatus(o),
+          riderStatusLabel: RIDER_LABEL[riderStatus(o)],
+          serviceDate: o.serviceDate,
           // false for a ready order nobody was given: open on the counter to
           // whichever rider at the outlet takes it first.
           assignedToMe: (o.delivery.agentIds ?? []).some((id) => String(id) === String(ctx.userId)),

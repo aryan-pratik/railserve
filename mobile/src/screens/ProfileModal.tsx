@@ -15,7 +15,7 @@ import {
   ShieldCheck,
 } from 'lucide-react-native'
 import type { StoredUser } from '../storage'
-import type { HistoryOrder } from '../types'
+import type { RiderDay } from '../types'
 
 const colors = {
   primary: '#2457D6',
@@ -38,7 +38,8 @@ export function ProfileModal({
   user,
   stationCode,
   serviceDate,
-  history,
+  today,
+  cashWithYouPaise,
   offline,
   queueSize,
   onSignOut,
@@ -48,7 +49,15 @@ export function ProfileModal({
   user: StoredUser
   stationCode?: string | null
   serviceDate?: string | null
-  history: HistoryOrder[]
+  /**
+   * The reporting day in progress (3 am to 3 am), counted by the server from
+   * the same ledger the office reads. Not worked out here from whichever
+   * list of orders happens to be loaded, which is how this card used to
+   * disagree with both the Done tab and the office.
+   */
+  today?: RiderDay | null
+  /** COD not yet handed over, across all days: the figure on the Done tab. */
+  cashWithYouPaise?: number | null
   offline: boolean
   queueSize: number
   onSignOut: () => void
@@ -60,17 +69,9 @@ export function ProfileModal({
     .substring(0, 2)
     .toUpperCase()
 
-  const today = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
-  const isToday = (o: HistoryOrder) =>
-    o.deliveredAt
-      ? new Date(o.deliveredAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) === today
-      : false
-
-  const deliveredHistory = history.filter((o) => o.status === 'DELIVERED')
-  const doneToday = deliveredHistory.filter(isToday).length
-  const cashToday = deliveredHistory
-    .filter(isToday)
-    .reduce((sum, o) => sum + (o.amountCollectedPaise ?? 0), 0)
+  const doneToday = today?.delivered ?? 0
+  const notDoneToday = (today?.notDelivered ?? 0) + (today?.cancelled ?? 0)
+  const cashToday = today?.codPaise ?? 0
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -178,7 +179,7 @@ export function ProfileModal({
               marginLeft: 4,
             }}
           >
-            TODAY'S SHIFT
+            TODAY · 3 AM TO 3 AM
           </Text>
           <View
             style={{
@@ -204,13 +205,16 @@ export function ProfileModal({
               <View style={{ alignItems: 'center' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <Banknote size={16} color={colors.success} />
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.secondaryText }}>Cash on Duty</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.secondaryText }}>COD collected</Text>
                 </View>
                 <Text style={{ fontSize: 24, fontWeight: '800', color: colors.success }}>
                   ₹{Math.round(cashToday / 100)}
                 </Text>
               </View>
             </View>
+            <Text style={{ fontSize: 13, color: colors.secondaryText, textAlign: 'center', marginTop: 14 }}>
+              {notDoneToday} not delivered or cancelled · ₹{Math.round((cashWithYouPaise ?? 0) / 100)} cash with you now
+            </Text>
           </View>
 
           {/* Station & Shift Details */}

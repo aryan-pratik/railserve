@@ -8,7 +8,7 @@ const K = {
   runs: 'railserve.runs',
 } as const
 
-export type StoredUser = { id: string; name: string; phone: string }
+export type StoredUser = { id: string; name: string; phone: string; isTeamLead?: boolean }
 
 export async function saveSession(token: string, user: StoredUser) {
   await AsyncStorage.multiSet([

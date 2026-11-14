@@ -100,13 +100,18 @@ describe('assigning riders to one order', () => {
     expect((await findById(admin, id))!.delivery.agentIds).toEqual([])
   })
 
-  it('an admin may pick a rider from any outlet, but not an inactive one', async () => {
+  it('an admin cannot pick a rider from another outlet either, nor an inactive one', async () => {
+    // A rider only ever sees orders at their own outlets, so one assigned
+    // from elsewhere would be named on the order and never shown it.
     const id = await newOrder({ status: 'PREPARED' })
-    const out = await assignRiders({ ctx: admin, orderId: id, riderIds: [String(farRider)] })
-    expect(out.delivery.agentIds.map(String)).toEqual([String(farRider)])
+    await expect(
+      assignRiders({ ctx: admin, orderId: id, riderIds: [String(farRider)] }),
+    ).rejects.toBeInstanceOf(ConflictError)
     await expect(
       assignRiders({ ctx: admin, orderId: id, riderIds: [String(idleRider)] }),
     ).rejects.toBeInstanceOf(ConflictError)
+    const out = await assignRiders({ ctx: admin, orderId: id, riderIds: [String(riderA)] })
+    expect(out.delivery.agentIds.map(String)).toEqual([String(riderA)])
   })
 
   it('refuses a closed order', async () => {

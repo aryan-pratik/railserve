@@ -11,6 +11,7 @@ import { GET as getHistory } from '../src/app/api/mobile/history/route'
 import { POST as postMutations } from '../src/app/api/mobile/mutations/route'
 import { maskPhone, RIDER_CORRECTION_WINDOW_MS } from '../src/lib/riderRecords'
 import { todayIST } from '../src/lib/format'
+import { opsDayOf } from '../src/lib/opsDay'
 import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
 
 type Id = mongoose.Types.ObjectId
@@ -264,7 +265,8 @@ describe('rider self-service: pickup, correction, cash', () => {
     const ancient = await delivered(riderA, { contactPhone: '9000011111', externalOrderId: 'ANCIENT-1' })
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000)
     await Order.updateOne({ _id: old }, { 'delivery.closedAt': hoursAgo(31) })
-    const day = new Date(Date.now() - 24 * 5 * 3600_000 + 5.5 * 3600_000).toISOString().slice(0, 10)
+    // The 3am reporting day it closed in, which before 3 am is the day before.
+    const day = opsDayOf(hoursAgo(24 * 5))
     await Order.updateOne({ _id: ancient }, { 'delivery.closedAt': hoursAgo(24 * 5), serviceDate: day })
 
     const get = async (qs = '?v=2') => (await getHistory(new Request(`http://localhost/api/mobile/history${qs}`, {
@@ -278,7 +280,8 @@ describe('rider self-service: pickup, correction, cash', () => {
     expect((byId.get(fresh) as { editableUntil: string | null }).editableUntil).not.toBeNull()
     expect(byId.get(old)).toMatchObject({ contactPhone: '912••••789', phoneMasked: true, editableUntil: null })
 
-    // A day reads the orders for that service day, like every other screen.
+    // A day in the app is the reporting day the rider closed the order in,
+    // the same day the admin's rider figures use.
     const dated = await get(`?v=2&date=${day}`)
     expect(dated.orders.map((o: { id: string }) => o.id)).toEqual([ancient])
 

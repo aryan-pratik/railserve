@@ -112,6 +112,7 @@ function ActivityRow({ row, names, self }: { row: ActivityEntry; names: Map<stri
           <span className="text-xs text-faint">
             {row.stationCode}
             {row.trainNo ? ` · ${row.trainNo}` : ''}
+            {row.contactName ? ` · ${row.contactName}` : ''}
           </span>
           <span className="ml-auto flex items-center gap-2">
             {self ? null : <span className="text-xs text-muted">{who}</span>}

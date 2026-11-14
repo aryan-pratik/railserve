@@ -1,3 +1,4 @@
+import { opsDayOf } from '../src/lib/opsDay'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
@@ -209,7 +210,10 @@ describe('the admin board', () => {
   })
 
   it('counts what each rider is carrying and has finished today', async () => {
-    const board = await riderBoard(admin, { serviceDate: '2026-09-27' })
+    // The board's day is the reporting day the work happened in (3am to 3am),
+    // not the date on the booking: these orders are booked for 27 Sep and
+    // were finished just now, so they are today's work.
+    const board = await riderBoard(admin, { serviceDate: opsDayOf() })
     const row = board.riders.find((r) => r.id === String(sharing))!
     expect(row.presence).toBe('LIVE')
     expect(row.work.carrying).toBe(1)
@@ -222,7 +226,7 @@ describe('the admin board', () => {
     expect(other.work.carrying).toBe(0)
   })
 
-  it('counts a shared handover once in the day’s totals but against each rider', async () => {
+  it('counts a shared handover once: in the day’s totals and for one rider', async () => {
     const day = '2026-09-28'
     await makeOrder({
       serviceDate: day,
@@ -230,27 +234,33 @@ describe('the admin board', () => {
       stationCode: 'CNB',
       amountPaise: 50000,
       paymentMode: 'COD',
-      delivery: { agentIds: [sharing, silent], deliveredAt: new Date() },
+      delivery: { agentIds: [sharing, silent], deliveredAt: new Date(`${day}T12:00:00+05:30`) },
     })
     await makeOrder({
       serviceDate: day,
-      status: 'DISPATCHED',
+      status: 'DELIVERED',
       stationCode: 'PRYJ',
       amountPaise: 20000,
       paymentMode: 'PREPAID',
-      delivery: { agentIds: [sharing], dispatchedAt: new Date() },
+      delivery: { agentIds: [sharing], pickedUpBy: sharing, deliveredAt: new Date(`${day}T13:00:00+05:30`) },
     })
 
     const board = await riderBoard(admin, { serviceDate: day })
-    expect(board.totals).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
+    // What riders finished in the day, from the ledger.
+    expect(board.totals).toMatchObject({ done: 2, delivered: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
+    // What was booked for the date, as Analytics counts it.
+    expect(board.day).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
 
     const row = board.riders.find((r) => r.id === String(sharing))!
     expect(row.work).toMatchObject({ orders: 2, codOrders: 1, codPaise: 50000, amountPaise: 70000 })
     expect(row.work.stations.sort()).toEqual(['CNB', 'PRYJ'])
 
     const other = board.riders.find((r) => r.id === String(silent))!
-    expect(other.work).toMatchObject({ orders: 1, codOrders: 1, codPaise: 50000, amountPaise: 50000 })
-    expect(other.work.stations).toEqual(['CNB'])
+    // A closed order is one rider's. With no carrier or cash holder on an
+    // older order, that is the first rider it was given to.
+    expect(other.work).toMatchObject({ orders: 0, codOrders: 0, codPaise: 0, amountPaise: 0 })
+    // They were on it all the same, which is what the booked count says.
+    expect(other.work.booked).toBe(1)
   })
 
   it('splits the day into orders with a rider and orders without, adding up to the day', async () => {
@@ -267,7 +277,7 @@ describe('the admin board', () => {
     // A rating decoy is not business, here or on any other screen.
     await makeOrder({ ...base, status: 'RATING_ORDER', amountPaise: 99900, delivery: { agentIds: [sharing] } })
 
-    const { totals, riders } = await riderBoard(admin, { serviceDate: day })
+    const { day: totals, riders } = await riderBoard(admin, { serviceDate: day })
     expect(totals).toEqual({
       orders: 4, codOrders: 4, codPaise: 100000, amountPaise: 100000,
       dayOrders: 5, dayAmountPaise: 127000, dayCodOrders: 4, dayCodPaise: 100000,
@@ -275,9 +285,8 @@ describe('the admin board', () => {
     })
     expect(totals.orders + totals.unassignedOrders).toBe(totals.dayOrders)
 
-    expect(riders.find((r) => r.id === String(sharing))!.work.orders).toBe(3)
-    // Missed delivery is undelivered, counted with failures as Analytics does.
-    expect(riders.find((r) => r.id === String(silent))!.work).toMatchObject({ orders: 1, failed: 1 })
+    expect(riders.find((r) => r.id === String(sharing))!.work.booked).toBe(3)
+    expect(riders.find((r) => r.id === String(silent))!.work.booked).toBe(1)
   })
 
   it('still lists a rider switched off since, on the days they worked', async () => {
@@ -287,14 +296,14 @@ describe('the admin board', () => {
     await makeOrder({ serviceDate: day, status: 'DELIVERED', amountPaise: 15000, delivery: { agentIds: [gone._id] } })
 
     const board = await riderBoard(admin, { serviceDate: day })
-    expect(board.riders.find((r) => r.id === String(gone._id))?.work.orders).toBe(1)
-    expect(board.totals.orders).toBe(1)
+    expect(board.riders.find((r) => r.id === String(gone._id))?.work.booked).toBe(1)
+    expect(board.day.orders).toBe(1)
     // And not on a day they did not work.
     expect((await riderBoard(admin, { serviceDate: '2026-09-26' })).riders.some((r) => r.id === String(gone._id))).toBe(false)
   })
 
   it('puts the riders who need looking at first', async () => {
-    const board = await riderBoard(admin, { serviceDate: '2026-09-27' })
+    const board = await riderBoard(admin, { serviceDate: opsDayOf() })
     expect(board.riders[0].id).toBe(String(sharing))
   })
 

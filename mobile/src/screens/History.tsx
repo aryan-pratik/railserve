@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, RefreshControl, Text, TextInput, View } from 'react-native'
+import { KeyboardScroll, useRevealOnFocus } from '../keyboard'
 import { ChevronLeft, ChevronRight } from 'lucide-react-native'
 import type { HistoryOrder, HistoryQuery, HistoryResponse, Outcome } from '../types'
 import { Button, C, Person, Rule, SearchBox, Seat, dateIST, rupees, s, timeIST } from '../ui'
@@ -29,10 +30,16 @@ const OUTCOME_LABEL: Record<Outcome, string> = {
 }
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+/** The reporting day turns at 3 am IST. Must match the server (lib/opsDay). */
+const DAY_START_MS = 3 * 60 * 60 * 1000
 
-/** Today's date in IST as YYYY-MM-DD. */
+/**
+ * Today's reporting day as YYYY-MM-DD. A day runs 3 am to 3 am, so a late
+ * train delivered at 1 am is still part of the day the shift began in, here
+ * and on the office's Riders page alike.
+ */
 function todayIST(): string {
-  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10)
+  return new Date(Date.now() + IST_OFFSET_MS - DAY_START_MS).toISOString().slice(0, 10)
 }
 
 function shiftDate(date: string, days: number): string {
@@ -85,11 +92,21 @@ export function HistoryScreen({
   }, [text, query.q, query.date, onQueryChange])
 
   const searching = Boolean(query.q)
+  // The period's figures are the server's (data.summary): the same count the
+  // office sees for this rider and this day. Adding the rows up here is only
+  // the fallback for a search, which is not a period, and for an old server.
   const delivered = orders.filter((o) => o.status === 'DELIVERED')
   const cod = delivered.filter((o) => o.paymentMode === 'COD')
-  const codPaise = cod.reduce((sum, o) => sum + (o.amountCollectedPaise ?? o.amountPaise ?? 0), 0)
-  const online = delivered.length - cod.length
-  const notDelivered = orders.length - delivered.length
+  const sum = data?.summary ?? null
+  const total = sum ? sum.done : orders.length
+  const codCount = sum ? sum.codOrders : cod.length
+  const codPaise = sum
+    ? sum.codPaise
+    : cod.reduce((a, o) => a + (o.amountCollectedPaise ?? o.amountPaise ?? 0), 0)
+  const online = sum ? sum.prepaidOrders : delivered.length - cod.length
+  const notDelivered = sum ? sum.notDelivered + sum.cancelled : orders.length - delivered.length
+  const collections = data?.collections ?? []
+  const [showCollections, setShowCollections] = useState(false)
 
   // Group by calendar day, preserving the server's newest-first order.
   const days: { label: string; items: HistoryOrder[] }[] = []
@@ -108,11 +125,10 @@ export function HistoryScreen({
       : 'Last 48 hours'
 
   return (
-    <ScrollView
+    <KeyboardScroll
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      keyboardShouldPersistTaps="handled"
     >
       {/* Cash first. It is the one number the rider is answerable for. */}
       <View style={{
@@ -134,7 +150,39 @@ export function HistoryScreen({
         {wallet?.lastSettlement ? (
           <Text style={{ fontSize: 13, color: C.faint, marginTop: 6 }}>
             Last handed over {rupees(wallet.lastSettlement.paise)} · {whenLabel(wallet.lastSettlement.at)}
+            {collections[0]?.receivedBy ? ` · to ${collections[0].receivedBy}` : ''}
           </Text>
+        ) : null}
+
+        {/* Every handover and who took it, so the rider can check their own
+            record against the store's without asking anyone. */}
+        {collections.length > 0 ? (
+          <>
+            <Pressable
+              onPress={() => setShowCollections(!showCollections)}
+              hitSlop={8}
+              accessibilityRole="button"
+              style={{ marginTop: 12, alignSelf: 'flex-start' }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent }}>
+                {showCollections ? 'Hide collection history' : `Collection history (${collections.length})`}
+              </Text>
+            </Pressable>
+            {showCollections
+              ? collections.map((c) => (
+                <View key={c.id} style={[s.row, { justifyContent: 'space-between', marginTop: 10, gap: 12 }]}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ fontSize: 14, color: C.ink }}>{whenLabel(c.at)}</Text>
+                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>
+                      {c.orders} COD order{c.orders === 1 ? '' : 's'}
+                      {c.receivedBy ? ` · received by ${c.receivedBy}${c.receivedAs ? ` (${c.receivedAs})` : ''}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: C.green }}>{rupees(c.paise)}</Text>
+                </View>
+              ))
+              : null}
+          </>
         ) : null}
       </View>
 
@@ -190,11 +238,17 @@ export function HistoryScreen({
       {/* The period's record: how many, and how they were paid. */}
       <Text style={[s.label, { marginTop: 22 }]}>{periodLabel.toUpperCase()}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, rowGap: 16 }}>
-        <Stat value={String(orders.length)} label="orders" />
-        <Stat value={String(cod.length)} label={`COD · ${rupees(codPaise)}`} tone={C.amber} />
+        <Stat value={String(total)} label="orders finished" />
+        <Stat value={String(codCount)} label={`COD · ${rupees(codPaise)}`} tone={C.amber} />
         <Stat value={String(online)} label="online / prepaid" tone={C.green} />
         <Stat value={String(notDelivered)} label="not delivered / cancelled" tone={notDelivered ? C.red : undefined} />
       </View>
+
+      {query.date && !searching ? (
+        <Text style={{ fontSize: 12, color: C.faint, marginTop: 12 }}>
+          A day runs 3 am to 3 am, the same as the office counts it.
+        </Text>
+      ) : null}
 
       <View style={{ height: 24 }} />
 
@@ -232,7 +286,7 @@ export function HistoryScreen({
           ))}
         </View>
       ))}
-    </ScrollView>
+    </KeyboardScroll>
   )
 }
 
@@ -251,6 +305,7 @@ function HistoryRow({
 }) {
   const [to, setTo] = useState<Outcome | null>(null)
   const [reason, setReason] = useState('')
+  const field = useRevealOnFocus()
   const tone = o.status === 'DELIVERED' ? C.green : C.red
   // Delivered or not delivered: "cancelled" is the office's word for an order
   // it stopped, so a rider is never offered it. A passenger refusing at the
@@ -264,7 +319,9 @@ function HistoryRow({
       <View style={{ paddingVertical: 18 }}>
         <View style={[s.row, { justifyContent: 'space-between', alignItems: 'baseline' }]}>
           <Seat coach={o.coach} berth={o.berth} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: tone }}>{OUTCOME_LABEL[o.status]}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: tone }}>
+            {OUTCOME_LABEL[o.status]}{o.statusDetail ? ` · ${o.statusDetail}` : ''}
+          </Text>
         </View>
 
         <View style={{ marginTop: 14 }}>
@@ -288,7 +345,7 @@ function HistoryRow({
 
         {o.codSettledAt ? (
           <Text style={{ fontSize: 13, color: C.green, marginTop: 5, fontWeight: '600' }}>
-            Cash handed over · {whenLabel(o.codSettledAt)}
+            Cash received{o.codReceivedBy ? ` by ${o.codReceivedBy}` : ''} · {whenLabel(o.codSettledAt)}
           </Text>
         ) : null}
 
@@ -318,7 +375,7 @@ function HistoryRow({
         ) : null}
 
         {editing ? (
-          <View style={{ marginTop: 14, gap: 10 }}>
+          <View ref={field.ref} collapsable={false} style={{ marginTop: 14, gap: 10 }}>
             <View style={[s.row, { flexWrap: 'wrap', gap: 8 }]}>
               {choices.map((c) => (
                 <Pressable
@@ -336,6 +393,8 @@ function HistoryRow({
               <TextInput
                 value={reason}
                 onChangeText={setReason}
+                onFocus={field.onFocus}
+                onBlur={field.onBlur}
                 placeholder={to === 'CANCELLED' ? 'Why was it cancelled?' : 'What happened?'}
                 placeholderTextColor={C.faint}
                 multiline

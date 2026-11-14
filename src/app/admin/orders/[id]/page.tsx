@@ -4,7 +4,7 @@ import { requireRole } from '@/lib/session'
 import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
-import type { OrderStatus } from '@/lib/orderStatus'
+import { isTerminal, type OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import { formatIST, formatMoney, formatServiceDate, paiseToRupees, utcToIstLocal } from '@/lib/format'
 import { sourceLabel } from '@/lib/orderEnums'
@@ -71,7 +71,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
 
   const [outlets, agents, actors, timings, cancelRequest, rto] = await Promise.all([
     Restaurant.find().select('name stationCode stationName').sort({ name: 1 }).lean(),
-    User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone').sort({ name: 1 }).lean(),
+    User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone restaurantIds').sort({ name: 1 }).lean(),
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     timingForOrders([order]),
     viewCancelRequest(order),
@@ -374,7 +374,15 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             <AssignAgents
               orderId={String(order._id)}
               assigned={assigned}
-              agents={agents.map((a) => ({ id: String(a._id), name: a.name, phone: a.phone }))}
+              agents={agents.map((a) => ({
+                id: String(a._id),
+                name: a.name,
+                phone: a.phone,
+                // A rider only ever sees orders at their own outlets.
+                atOutlet: (a.restaurantIds ?? []).some((r) => String(r) === String(order.restaurantId)),
+              }))}
+              open={!isTerminal(order.status as OrderStatus)}
+              pickedUpBy={order.delivery?.pickedUpBy ? (riderName.get(String(order.delivery.pickedUpBy)) ?? 'Unknown rider') : null}
             />
           </Card>
 

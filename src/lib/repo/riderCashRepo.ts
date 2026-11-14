@@ -1,8 +1,9 @@
 import mongoose from 'mongoose'
-import { Order } from '../models'
+import { Order, User } from '../models'
 import { ConflictError, ForbiddenError, type AuthContext } from '../authContext'
 import { COD_WALLET_FROM } from '../riderRecords'
-import { scoped } from './orderRepo'
+import { canReceiveCash, receiverLabel } from '../collections'
+import { outletScoped } from './orderRepo'
 
 /**
  * Cash a rider is carrying for the store, and the handover that clears it.
@@ -45,7 +46,13 @@ function holderOf(o: { delivery?: { collectedBy?: unknown; agentIds?: unknown[] 
   return String(o.delivery?.collectedBy ?? o.delivery?.agentIds?.[0] ?? '')
 }
 
-/** Pending cash per rider, within the caller's outlets. */
+/**
+ * Pending cash per rider, within the caller's outlets.
+ *
+ * Read through the outlet scope, not the rider scope: the filter already
+ * names whose cash it is, and a team leader reads this for the riders under
+ * them. Callers pass only rider ids the user may see.
+ */
 export async function pendingCashByRider(
   ctx: AuthContext,
   riderIds: (string | mongoose.Types.ObjectId)[],
@@ -54,7 +61,7 @@ export async function pendingCashByRider(
   const out = new Map<string, PendingCash>()
   if (ids.length === 0) return out
 
-  const orders = await Order.find(scoped(ctx, pendingFilter(ids)))
+  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids)))
     .select('amountPaise delivery.amountCollectedPaise delivery.collectedBy delivery.agentIds')
     .lean()
 
@@ -67,6 +74,43 @@ export async function pendingCashByRider(
     out.set(holder, prev)
   }
   return out
+}
+
+/** One delivered COD order whose cash a rider still holds. */
+export type PendingCashOrder = {
+  id: string
+  riderId: string
+  externalOrderId: string | null
+  trainNo: string | null
+  contactName: string | null
+  paise: number
+  deliveredAt: string | null
+}
+
+/**
+ * The orders behind each rider's pending cash, oldest delivery first, so a
+ * receiver can count and take them one at a time. Same filter and scope as
+ * `pendingCashByRider`, so the rows always add up to its totals.
+ */
+export async function pendingCashOrders(
+  ctx: AuthContext,
+  riderIds: (string | mongoose.Types.ObjectId)[],
+): Promise<PendingCashOrder[]> {
+  const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
+  if (ids.length === 0) return []
+  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids)))
+    .select('externalOrderId trainNo contactName amountPaise delivery.amountCollectedPaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
+    .sort({ 'delivery.deliveredAt': 1 })
+    .lean()
+  return orders.map((o) => ({
+    id: String(o._id),
+    riderId: holderOf(o),
+    externalOrderId: o.externalOrderId ?? null,
+    trainNo: o.trainNo ?? null,
+    contactName: o.contactName ?? null,
+    paise: cashOf(o),
+    deliveredAt: o.delivery?.deliveredAt ? new Date(o.delivery.deliveredAt).toISOString() : null,
+  }))
 }
 
 export async function pendingCashFor(ctx: AuthContext, riderId: mongoose.Types.ObjectId): Promise<PendingCash> {
@@ -84,14 +128,14 @@ export async function lastSettlementFor(
       { 'delivery.collectedBy': null, 'delivery.agentIds.0': riderId },
     ],
   }
-  const latest = await Order.findOne(scoped(ctx, { ...holder, 'delivery.codSettledAt': { $ne: null } }))
+  const latest = await Order.findOne(outletScoped(ctx, { ...holder, 'delivery.codSettledAt': { $ne: null } }))
     .sort({ 'delivery.codSettledAt': -1 })
     .select('delivery.codSettledAt')
     .lean()
   const at = latest?.delivery?.codSettledAt
   if (!at) return null
 
-  const batch = await Order.find(scoped(ctx, { ...holder, 'delivery.codSettledAt': at }))
+  const batch = await Order.find(outletScoped(ctx, { ...holder, 'delivery.codSettledAt': at }))
     .select('amountPaise delivery.amountCollectedPaise')
     .lean()
   return {
@@ -121,15 +165,28 @@ export async function settleRiderCash(params: {
 }): Promise<{ orders: number; paise: number }> {
   const { ctx, riderId, now = new Date() } = params
 
-  if (ctx.role !== 'STORE_MANAGER' && ctx.role !== 'ADMIN') {
-    throw new ForbiddenError('Only a store manager may take cash from a rider')
-  }
   if (!mongoose.isValidObjectId(riderId)) throw new ConflictError('Choose a rider')
+
+  // Who may receive cash is an admin's decision per person (lib/collections),
+  // so it is read off the user as they are now, not off the session's role.
+  const receiver = await User.findById(ctx.userId).select('role isTeamLead canReceiveCash active').lean()
+  if (!receiver || receiver.active === false || !canReceiveCash({ ...receiver, role: ctx.role })) {
+    throw new ForbiddenError('You have not been authorised to receive cash from riders. Ask an admin.')
+  }
+  if (String(ctx.userId) === riderId) {
+    throw new ForbiddenError('Somebody else has to receive your cash')
+  }
+  if (ctx.role === 'DELIVERY_AGENT') {
+    // A team leader receives from their own team and nobody else.
+    const member = await User.findOne({ _id: riderId, teamLeadId: ctx.userId }).select('_id').lean()
+    if (!member) throw new ForbiddenError('That rider is not on your team')
+  }
   const orderIds = [...new Set(params.orderIds)].filter((id) => mongoose.isValidObjectId(id))
   if (orderIds.length === 0) throw new ConflictError('There is no cash to collect')
 
   const rider = new mongoose.Types.ObjectId(riderId)
-  const filter = scoped(ctx, {
+  const settlementId = new mongoose.Types.ObjectId().toString()
+  const filter = outletScoped(ctx, {
     _id: { $in: orderIds.map((id) => new mongoose.Types.ObjectId(id)) },
     ...pendingFilter([rider]),
   })
@@ -148,7 +205,11 @@ export async function settleRiderCash(params: {
         await Order.updateOne(
           { _id: o._id, 'delivery.codSettledAt': null },
           {
-            $set: { 'delivery.codSettledAt': now, 'delivery.codSettledBy': ctx.userId },
+            $set: {
+              'delivery.codSettledAt': now,
+              'delivery.codSettledBy': ctx.userId,
+              'delivery.codSettlementId': settlementId,
+            },
             $push: {
               events: {
                 fromStatus: o.status,
@@ -157,6 +218,8 @@ export async function settleRiderCash(params: {
                 meta: {
                   action: 'COD_SETTLED',
                   riderId,
+                  settlementId,
+                  receivedAs: receiverLabel({ role: ctx.role, isTeamLead: receiver.isTeamLead }),
                   amountPaise: cashOf(o),
                   handoverPaise: paise,
                   handoverOrders: mine.length,
@@ -174,4 +237,99 @@ export async function settleRiderCash(params: {
   } finally {
     await session.endSession()
   }
+}
+
+/** One handover: cash a rider gave to somebody authorised to receive it. */
+export type Collection = {
+  id: string
+  riderId: string
+  at: string
+  /** Who received it; null on handovers from before that was recorded. */
+  receivedById: string | null
+  orders: number
+  paise: number
+  orderIds: string[]
+}
+
+/**
+ * A rider's (or several riders') collection history, newest first.
+ *
+ * Derived from the orders, like the wallet: each handover stamps every order
+ * in it with the same time, receiver and id, so the batches read straight
+ * back. Handovers made before the id existed group by rider and stamp, which
+ * identifies them just as well since a handover writes one instant.
+ *
+ * `latestPerRider` returns one row per rider, their most recent handover.
+ */
+export async function collectionHistory(
+  ctx: AuthContext,
+  riderIds: (string | mongoose.Types.ObjectId)[],
+  opts: { from?: Date; to?: Date; limit?: number; latestPerRider?: boolean } = {},
+): Promise<Collection[]> {
+  const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
+  if (ids.length === 0) return []
+  const at: Record<string, Date> = {}
+  if (opts.from) at.$gte = opts.from
+  if (opts.to) at.$lt = opts.to
+
+  const rows = await Order.aggregate<{
+    _id: { rider: mongoose.Types.ObjectId; at: Date; sid: string | null }
+    by: mongoose.Types.ObjectId | null
+    orders: number
+    paise: number
+    orderIds: mongoose.Types.ObjectId[]
+  }>([
+    {
+      $match: outletScoped(ctx, {
+        'delivery.codSettledAt': Object.keys(at).length ? at : { $ne: null },
+        $or: [
+          { 'delivery.collectedBy': { $in: ids } },
+          { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: ids } },
+        ],
+      }),
+    },
+    {
+      $group: {
+        _id: {
+          rider: { $ifNull: ['$delivery.collectedBy', { $arrayElemAt: ['$delivery.agentIds', 0] }] },
+          at: '$delivery.codSettledAt',
+          sid: { $ifNull: ['$delivery.codSettlementId', null] },
+        },
+        by: { $first: '$delivery.codSettledBy' },
+        orders: { $sum: 1 },
+        paise: { $sum: { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] } },
+        orderIds: { $push: '$_id' },
+      },
+    },
+    { $sort: { '_id.at': -1 } },
+    // One global limit would drop exactly the rider worth chasing: the one
+    // whose last handover is older than everyone else's recent ones. For
+    // "when did each last hand in", keep each rider's newest and no limit.
+    ...(opts.latestPerRider
+      ? [
+          { $group: { _id: '$_id.rider', last: { $first: '$$ROOT' } } },
+          { $replaceRoot: { newRoot: '$last' } },
+          { $sort: { '_id.at': -1 as const } },
+        ]
+      : [{ $limit: opts.limit ?? 50 }]),
+  ])
+  return rows.map((r) => ({
+    id: r._id.sid ?? `${r._id.rider}-${r._id.at.getTime()}`,
+    riderId: String(r._id.rider),
+    at: r._id.at.toISOString(),
+    receivedById: r.by ? String(r.by) : null,
+    orders: r.orders,
+    paise: r.paise,
+    orderIds: r.orderIds.map(String),
+  }))
+}
+
+/** Names and standing of the people who received these collections. */
+export async function receiversOf(
+  collections: { receivedById: string | null }[],
+): Promise<Map<string, { name: string; label: string }>> {
+  const ids = [...new Set(collections.map((c) => c.receivedById).filter((x): x is string => Boolean(x)))]
+  if (ids.length === 0) return new Map()
+  const users = await User.find({ _id: { $in: ids } }).select('name role isTeamLead').lean()
+  return new Map(users.map((u) => [String(u._id), { name: u.name, label: receiverLabel(u) }]))
 }

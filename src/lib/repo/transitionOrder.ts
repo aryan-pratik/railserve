@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import { Order, User, type OrderDoc } from '../models'
 import {
+  ORDER_STATUSES,
   isTerminal,
   isTransitionAllowed,
   missingQuoteFields,
@@ -164,6 +165,23 @@ export async function transitionOrder(params: {
         : undefined
       const $addToSet = rider ? { 'delivery.agentIds': rider } : undefined
 
+      // The bag has one carrier. Whoever takes it off the counter holds it
+      // from here, whoever else it was offered to (see onRiderRecord).
+      if (to === 'DISPATCHED' && rider) $set['delivery.pickedUpBy'] = rider
+      // Back on the counter: nobody is carrying it.
+      if (from === 'DISPATCHED' && to === 'PREPARED') {
+        $set['delivery.pickedUpBy'] = null
+        // And it has not left the counter: an order cancelled while it sits
+        // there again was in nobody's hands, and is nobody's work.
+        $set['delivery.dispatchedAt'] = null
+      }
+      // A rider closing an order nobody is recorded as carrying (taken over
+      // from another rider mid-run, or closed straight off the counter) is
+      // the one who had it. Named here so a closed order is one rider's.
+      if (isTerminal(to) && ctx.role === 'DELIVERY_AGENT' && !current.delivery?.pickedUpBy) {
+        $set['delivery.pickedUpBy'] = ctx.userId
+      }
+
       // First close only: corrections and the passenger-number mask are
       // measured from here, so nothing after the first close may move it.
       if (isTerminal(to) && !current.delivery?.closedAt) $set['delivery.closedAt'] = new Date()
@@ -171,7 +189,7 @@ export async function transitionOrder(params: {
       // Whoever is holding the cash. A telecaller closing it from the phone
       // hands nothing over, so the first rider already on it keeps the cash.
       if (to === 'DELIVERED') {
-        $set['delivery.collectedBy'] = rider ?? current.delivery?.agentIds?.[0] ?? null
+        Object.assign($set, deliveredFields(current, rider ?? null, apply.amountCollectedPaise))
       }
 
       // Food that left the counter and is not being delivered has to come
@@ -205,7 +223,9 @@ export async function transitionOrder(params: {
               fromStatus: from,
               toStatus: to,
               userId: ctx.userId,
-              meta,
+              // Who took the bag, when it was not the person tapping: the
+              // only place a counter handover names its rider in the log.
+              meta: handedTo && rider ? { ...meta, riderId: String(rider) } : meta,
               createdAt: new Date(),
             },
           },
@@ -229,12 +249,51 @@ export async function transitionOrder(params: {
 }
 
 /**
+ * What entering DELIVERED writes besides the status, wherever it is entered
+ * from: the pipeline, a rider's correction or an admin's override. One copy,
+ * so a delivery means the same thing however it was recorded.
+ *
+ * The cash holder is the rider who delivered it; failing that the rider who
+ * picked it up; failing that the only rider on the order. With several riders
+ * offered an order nobody picked up, the first is charged, as before — a
+ * telecaller closing an order nobody tapped has no better answer.
+ *
+ * The cash amount is fixed here, once. A COD order with nothing typed is
+ * taken to have been paid in full, and that figure is stored rather than left
+ * to be read off the bill later: a bill edited after the delivery must not
+ * quietly change what a rider owes for cash they already collected.
+ */
+function deliveredFields(
+  current: OrderDoc,
+  rider: mongoose.Types.ObjectId | null,
+  amountCollectedPaise: number | undefined,
+): Record<string, unknown> {
+  const holder = rider ?? current.delivery?.pickedUpBy ?? current.delivery?.agentIds?.[0] ?? null
+  const fields: Record<string, unknown> = { 'delivery.collectedBy': holder }
+  // The rider charged with the cash is the rider whose delivery it is. An
+  // order closed without a pickup would otherwise sit on the record of
+  // everyone it was offered to.
+  if (holder && !current.delivery?.pickedUpBy) fields['delivery.pickedUpBy'] = holder
+  if (amountCollectedPaise === undefined && current.delivery?.amountCollectedPaise == null) {
+    fields['delivery.amountCollectedPaise'] =
+      current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
+  }
+  return fields
+}
+
+/**
  * Admin-only escape hatch: sets status to any value, including one that has
- * never existed before, bypassing every guard in transitionOrder above — the
- * TRANSITIONS allow-list, the rider-naming check, the quote completeness
- * guard, and delivery-timestamp stamping. Those all exist to keep the guided
- * pipeline honest; they do not apply to an admin correction or a custom label
- * that was never meant to enter that pipeline.
+ * never existed before, bypassing the guards that say WHO may make a move —
+ * the TRANSITIONS allow-list, the rider-naming check and the quote
+ * completeness guard. Those keep the guided pipeline honest; they do not
+ * apply to an admin correction or a custom label.
+ *
+ * What it does not bypass is what a status MEANS. Overriding to a fixed
+ * status writes what the pipeline would have written (close time, delivery
+ * time, cash holder, a return for a bag that was out), and two moves are
+ * refused outright because they would contradict a record somebody else
+ * made: marking delivered an order the outlet already took back, and
+ * un-delivering an order whose cash has already been received.
  *
  * Still transactional, still re-reads under the caller's scope, and still
  * uses the freshly-read status as the optimistic-concurrency precondition —
@@ -277,16 +336,89 @@ export async function adminOverrideStatus(params: {
         )
       }
 
+      // A fixed status means the same thing however it is reached. The
+      // override skips who-may-do-what, not what the status does: an order
+      // overridden to DELIVERED has a delivery time and a cash holder, one
+      // cancelled out of a rider's hands has a bag to bring back, and none of
+      // them may contradict what the counter or the cash already recorded.
+      const $set: Record<string, unknown> = { status: to }
+      const consequences: Record<string, unknown> = {}
+      const now = new Date()
+      const known = (ORDER_STATUSES as readonly string[]).includes(to)
+      const rto = current.delivery?.rto ?? null
+
+      if (to === 'DELIVERED' && rto?.status === 'RETURNED') {
+        throw new ConflictError(
+          'The outlet has already taken this order back as a return, so it cannot be marked delivered',
+        )
+      }
+      if (from === 'DELIVERED' && current.delivery?.codSettledAt && current.paymentMode === 'COD') {
+        throw new ConflictError(
+          'The cash for this delivery has already been received from the rider, so it cannot stop being a delivery',
+        )
+      }
+
+      if (known && isTerminal(to as OrderStatus) && !current.delivery?.closedAt) {
+        $set['delivery.closedAt'] = now
+      }
+      if (to === 'DELIVERED') {
+        $set['delivery.deliveredAt'] = current.delivery?.deliveredAt ?? now
+        $set['delivery.failureReason'] = null
+        Object.assign($set, deliveredFields(current, null, undefined))
+        // Delivered after all: there is nothing left to bring back.
+        if (rto) {
+          $set['delivery.rto'] = null
+          consequences.returnWithdrawn = true
+        }
+      } else if (from === 'DELIVERED') {
+        // No longer a delivery, so no cash changed hands on it.
+        $set['delivery.deliveredAt'] = null
+        $set['delivery.amountCollectedPaise'] = null
+        $set['delivery.collectedBy'] = null
+        consequences.cashCleared = true
+      }
+      const wasClosed = (ORDER_STATUSES as readonly string[]).includes(from) && isTerminal(from as OrderStatus)
+      const reopens = known && !isTerminal(to as OrderStatus)
+      if (wasClosed && reopens) {
+        // Back in play. The next close is a new close, on its own day, and
+        // the old return no longer describes where the bag is.
+        $set['delivery.closedAt'] = null
+        $set['delivery.deliveredAt'] = null
+        $set['delivery.failureReason'] = null
+        if (rto) {
+          $set['delivery.rto'] = null
+          consequences.returnWithdrawn = true
+        }
+      }
+      if (from === 'DISPATCHED' && reopens) {
+        // Back at the outlet: nobody is carrying it, and every rider it was
+        // offered to can take it again.
+        $set['delivery.pickedUpBy'] = null
+        $set['delivery.dispatchedAt'] = null
+      }
+      if (to === 'DISPATCHED') {
+        $set['delivery.dispatchedAt'] = (wasClosed ? null : current.delivery?.dispatchedAt) ?? now
+        // One rider on it is its carrier. With several the override cannot
+        // know which, and whoever closes it is recorded then.
+        const agents = current.delivery?.agentIds ?? []
+        if (!current.delivery?.pickedUpBy && agents.length === 1) $set['delivery.pickedUpBy'] = agents[0]
+      }
+      const stillHasReturn = rto && !(wasClosed && reopens)
+      if (known && !stillHasReturn && from === 'DISPATCHED' && opensReturn('DISPATCHED', to as OrderStatus)) {
+        $set['delivery.rto'] = openReturn(to as OrderStatus, now)
+        consequences.returnOpened = true
+      }
+
       const res = await Order.updateOne(
         scoped(ctx, { _id, status: from }),
         {
-          $set: { status: to },
+          $set,
           $push: {
             events: {
               fromStatus: from,
               toStatus: to,
               userId: ctx.userId,
-              meta: { ...meta, via: 'admin-override' },
+              meta: { ...meta, ...consequences, via: 'admin-override' },
               createdAt: new Date(),
             },
           },
@@ -465,6 +597,16 @@ export async function correctRiderOutcome(params: {
       if (from === 'CANCELLED' && !wasCancelledBy(current, ctx.userId)) {
         throw new ForbiddenError('The office cancelled this order, so only the office can change it')
       }
+      // A rider corrects their own tap, not somebody else's finding. When a
+      // telecaller recorded "not delivered" from the passenger's own word,
+      // the rider saying "delivered" a day later is a dispute, not a
+      // correction, and it would silently withdraw the return the outlet is
+      // waiting on. That goes to the office.
+      if (!wasClosedBy(current, ctx.userId)) {
+        throw new ForbiddenError(
+          'The office recorded how this order ended, so only the office can change it',
+        )
+      }
 
       // The store has the bag back: it cannot now have been delivered as
       // well. The rider has to take the correction to the counter instead.
@@ -482,6 +624,7 @@ export async function correctRiderOutcome(params: {
         $set['delivery.deliveredAt'] = now
         $set['delivery.failureReason'] = null
         $set['delivery.collectedBy'] = ctx.userId
+        if (!current.delivery?.pickedUpBy) $set['delivery.pickedUpBy'] = ctx.userId
         $set['delivery.amountCollectedPaise'] =
           current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
         if (receivedBy) {
@@ -544,6 +687,22 @@ function openReturn(reason: OrderStatus, at: Date = new Date()) {
   return { status: 'PENDING', openedAt: at, reason, returnedAt: null, returnedBy: null, note: null }
 }
 
+/**
+ * True when the order's current outcome was recorded by this rider: the last
+ * event that changed its status is theirs. Orders with no such event (data
+ * from before the log) are given the benefit of the doubt.
+ */
+export function wasClosedBy(
+  order: {
+    events?: { fromStatus?: string | null; toStatus?: string | null; userId?: unknown }[] | null
+  },
+  riderId: mongoose.Types.ObjectId,
+): boolean {
+  const last = [...(order.events ?? [])].reverse().find((e) => e.toStatus && e.fromStatus !== e.toStatus)
+  if (!last || !last.userId) return true
+  return String(last.userId) === String(riderId)
+}
+
 /** True when the order's latest move into CANCELLED was this rider's own correction. */
 export function wasCancelledBy(
   order: { events?: { toStatus?: string | null; userId?: unknown; meta?: unknown }[] | null },
@@ -582,12 +741,45 @@ export async function assignAgents(params: {
       const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
       if (!current) throw new NotFoundError('Order not found')
 
+      const open = !isTerminal(current.status as OrderStatus)
+      // An open order is still routing: a rider from another outlet would be
+      // named on it and never shown it (see assignRiders). A closed order is
+      // only a record, and the record may name whoever really carried it.
+      if (open && ids.length > 0) {
+        const atOutlet = await User.countDocuments(
+          { _id: { $in: ids }, role: 'DELIVERY_AGENT', restaurantIds: current.restaurantId },
+          { session },
+        )
+        if (atOutlet !== ids.length) {
+          throw new ConflictError(
+            'One of those riders does not work at this order\'s outlet, so they would not see it. Add the outlet to the rider in Setup first.',
+          )
+        }
+      }
+
+      // The record now says who carried it. With one rider named that is
+      // unambiguous, and on a delivery whose cash is still out the cash moves
+      // with the correction; otherwise the carrier is only dropped when the
+      // correction removes them.
+      const carrier = current.delivery?.pickedUpBy
+      const carried = current.status === 'DISPATCHED' || !open
+      const $carrier: Record<string, unknown> = {}
+      if (carried && ids.length === 1) {
+        $carrier['delivery.pickedUpBy'] = ids[0]
+        if (current.status === 'DELIVERED' && !current.delivery?.codSettledAt) {
+          $carrier['delivery.collectedBy'] = ids[0]
+        }
+      } else if (carrier && !ids.some((i) => i.equals(String(carrier)))) {
+        $carrier['delivery.pickedUpBy'] = null
+      }
+
       await Order.updateOne(
         { _id },
         {
           $set: {
             'delivery.agentIds': ids,
             'delivery.assignedAt': ids.length > 0 ? new Date() : null,
+            ...$carrier,
           },
           $push: {
             events: {
@@ -660,15 +852,29 @@ export async function assignRiders(params: {
             _id: { $in: ids },
             role: 'DELIVERY_AGENT',
             active: true,
-            ...(ctx.role === 'ADMIN' ? {} : { restaurantIds: current.restaurantId }),
+            // For an admin as well. A rider only ever sees orders at their
+            // own outlets (scopeFilter), so a rider assigned from another
+            // outlet is named on the order and never shown it: the order
+            // looks assigned in the office and is missing in the app.
+            restaurantIds: current.restaurantId,
           },
           '_id',
           { session },
         ).lean()
         if (riders.length !== ids.length) {
-          throw new ConflictError('One of those riders is not active at this outlet')
+          throw new ConflictError(
+            'One of those riders is not active at this outlet. Add the outlet to the rider in Setup first, or they will not see the order.',
+          )
         }
       }
+
+      // Taking an order off the rider who is carrying it is a handover. Given
+      // to one rider, that rider has it now. Given to several, there is no
+      // pickup left to tap on an order already out, so the carrier is
+      // recorded when one of them closes it (see transitionOrder).
+      const carrier = current.delivery?.pickedUpBy
+      const carrierRemoved = Boolean(carrier) && !ids.some((i) => i.equals(String(carrier)))
+      const nextCarrier = current.status === 'DISPATCHED' && ids.length === 1 ? ids[0] : null
 
       await Order.updateOne(
         { _id },
@@ -676,13 +882,19 @@ export async function assignRiders(params: {
           $set: {
             'delivery.agentIds': ids,
             'delivery.assignedAt': ids.length > 0 ? new Date() : null,
+            ...(carrierRemoved ? { 'delivery.pickedUpBy': nextCarrier } : {}),
           },
           $push: {
             events: {
               fromStatus: current.status,
               toStatus: current.status,
               userId: ctx.userId,
-              meta: { action: 'ASSIGN_RIDERS', agentIds: unique },
+              meta: {
+                action: 'ASSIGN_RIDERS',
+                agentIds: unique,
+                fromAgentIds: (current.delivery?.agentIds ?? []).map(String),
+                ...(carrierRemoved ? { takenFrom: String(carrier) } : {}),
+              },
               createdAt: new Date(),
             },
           },
