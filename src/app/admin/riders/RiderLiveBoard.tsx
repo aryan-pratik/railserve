@@ -954,25 +954,25 @@ const td = 'px-1.5 py-3'
 function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday }: RosterProps) {
   const open = useOpenOnTap()
   return (
-    <div className="hidden min-h-0 flex-1 overflow-x-hidden overflow-y-auto border-t border-line @2xl:block">
-      {/* Fixed layout, never wider than the card: every column but Rider has
-          a set width and Rider takes what is left, truncating a long name
-          rather than pushing the row sideways. The row scrolls up, not
-          across. */}
-      <table className="w-full table-fixed text-sm">
+    <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-auto border-t border-line @2xl:block">
+      {/* Fixed layout: every column but Rider has a set width and Rider takes
+          what is left, truncating a long name. Cell notes wrap onto their own
+          lines inside the column, never across into the next one. When the
+          card is narrower than the columns need, the table scrolls sideways
+          rather than letting columns run into each other. */}
+      <table className="w-full min-w-[44rem] table-fixed text-sm">
         {/* Money columns are sized for a five-figure rupee amount and never
             truncated: a clipped amount is a wrong amount. Text columns give
             way first — a long name or status note truncates with a tooltip. */}
         <colgroup>
-          <col />
-          <col className="w-[3.75rem]" />
-          <col className="w-[6.75rem]" />
-          <col className="w-[4.75rem]" />
-          <col className="w-[5.5rem]" />
-          <col className="w-[6.25rem]" />
-          <col className="w-[3.75rem]" />
-          <col className="w-[4.25rem]" />
-          <col className="w-[4.75rem]" />
+          <col className="w-[9rem]" />
+          <col className="w-[3.5rem]" />
+          <col className="w-[7rem]" />
+          <col className="w-[5rem]" />
+          <col className="w-[5rem]" />
+          <col className="w-[6.5rem]" />
+          <col className="w-[3.5rem]" />
+          <col className="w-[4.5rem]" />
         </colgroup>
         <thead className="sticky top-0 z-20 shadow-[0_1px_0_var(--color-line)]">
           <tr className="bg-canvas">
@@ -1002,11 +1002,6 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday
               In hand
               <br />
               now
-            </th>
-            <th className={th}>
-              Last
-              <br />
-              Active
             </th>
             <th className={`${th} pr-3 text-right`}>Actions</th>
           </tr>
@@ -1047,9 +1042,10 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday
                 </td>
                 <td className={`${td} text-right tabular-nums`}>
                   <span className="font-semibold text-ink">{orders}</span>
-                  <span className="block text-xs whitespace-nowrap text-muted">
-                    {delivered} delivered{failed > 0 ? ` · ${failed} not` : ''}
-                  </span>
+                  <span className="block text-xs leading-snug text-muted">{delivered} delivered</span>
+                  {failed > 0 ? (
+                    <span className="block text-xs leading-snug text-amber-800">{failed} not delivered</span>
+                  ) : null}
                 </td>
                 <td className={`${td} text-right whitespace-nowrap text-ink tabular-nums`}>
                   {formatRupees(codPaise)}
@@ -1058,13 +1054,13 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday
                   </span>
                 </td>
                 <td
-                  className={`${td} text-right font-semibold whitespace-nowrap tabular-nums ${duePaise > 0 ? 'text-amber-800' : 'text-ink'}`}
+                  className={`${td} text-right font-semibold tabular-nums ${duePaise > 0 ? 'text-amber-800' : 'text-ink'}`}
                   title={`${dueOrders} COD order${dueOrders === 1 ? '' : 's'} delivered this day and not yet received`}
                 >
-                  {formatRupees(duePaise)}
+                  <span className="whitespace-nowrap">{formatRupees(duePaise)}</span>
                   {earlierDuePaise > 0 ? (
-                    <span className="block text-xs font-normal text-muted">
-                      + {formatRupees(earlierDuePaise)} earlier
+                    <span className="block text-xs leading-snug font-normal text-muted">
+                      <span className="whitespace-nowrap">+ {formatRupees(earlierDuePaise)}</span> earlier
                     </span>
                   ) : null}
                 </td>
@@ -1074,7 +1070,6 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday
                 >
                   {isToday ? carrying : '–'}
                 </td>
-                <td className={`${td} truncate text-xs text-muted tabular-nums`}>{lastActiveOf(rider, now)}</td>
                 <td className={`${td} pr-3`}>
                   <RowActions rider={rider} onShowOnMap={onShowOnMap} detailHref={detailHref(rider.id)} />
                 </td>
@@ -1161,7 +1156,7 @@ function MiniStat({ label, value, sub }: { label: string; value: string; sub?: s
     <div className="min-w-0">
       <dt className="text-[11px] text-muted">{label}</dt>
       <dd className="truncate text-sm font-semibold text-ink tabular-nums">{value}</dd>
-      {sub ? <dd className="truncate text-[10px] text-muted">{sub}</dd> : null}
+      {sub ? <dd className="text-[10px] leading-tight text-muted">{sub}</dd> : null}
     </div>
   )
 }
