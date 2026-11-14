@@ -140,6 +140,19 @@ export type Collection = {
   receivedAs: string | null
 }
 
+/** One delivered COD order whose cash a rider still holds. */
+export type TeamDueOrder = {
+  id: string
+  externalOrderId: string | null
+  trainNo: string | null
+  contactName: string | null
+  paise: number
+  deliveredAt: string | null
+}
+
+/** One handover by somebody on the team. */
+export type TeamCollection = Collection & { riderId: string; riderName: string }
+
 export type TeamMember = {
   id: string
   name: string
@@ -149,6 +162,8 @@ export type TeamMember = {
   day: RiderDay
   now: { inHand: number; waiting: number; trains: string[]; inHandCodPaise: number }
   due: { paise: number; orders: number; orderIds: string[] }
+  /** The orders that cash is on, oldest first. Absent on older servers. */
+  dueOrders?: TeamDueOrder[]
   lastCollection: { at: string; paise: number; orders: number; receivedBy: string | null } | null
 }
 
@@ -157,6 +172,8 @@ export type TeamResponse = {
   day: string
   lead: { id: string; name: string; phone: string; canReceiveCash: boolean }
   members: TeamMember[]
+  /** The team's recent handovers, newest first. Absent on older servers. */
+  collections?: TeamCollection[]
 }
 
 export type HistoryResponse = {

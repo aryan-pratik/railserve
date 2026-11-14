@@ -76,6 +76,43 @@ export async function pendingCashByRider(
   return out
 }
 
+/** One delivered COD order whose cash a rider still holds. */
+export type PendingCashOrder = {
+  id: string
+  riderId: string
+  externalOrderId: string | null
+  trainNo: string | null
+  contactName: string | null
+  paise: number
+  deliveredAt: string | null
+}
+
+/**
+ * The orders behind each rider's pending cash, oldest delivery first, so a
+ * receiver can count and take them one at a time. Same filter and scope as
+ * `pendingCashByRider`, so the rows always add up to its totals.
+ */
+export async function pendingCashOrders(
+  ctx: AuthContext,
+  riderIds: (string | mongoose.Types.ObjectId)[],
+): Promise<PendingCashOrder[]> {
+  const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
+  if (ids.length === 0) return []
+  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids)))
+    .select('externalOrderId trainNo contactName amountPaise delivery.amountCollectedPaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
+    .sort({ 'delivery.deliveredAt': 1 })
+    .lean()
+  return orders.map((o) => ({
+    id: String(o._id),
+    riderId: holderOf(o),
+    externalOrderId: o.externalOrderId ?? null,
+    trainNo: o.trainNo ?? null,
+    contactName: o.contactName ?? null,
+    paise: cashOf(o),
+    deliveredAt: o.delivery?.deliveredAt ? new Date(o.delivery.deliveredAt).toISOString() : null,
+  }))
+}
+
 export async function pendingCashFor(ctx: AuthContext, riderId: mongoose.Types.ObjectId): Promise<PendingCash> {
   return (await pendingCashByRider(ctx, [riderId])).get(String(riderId)) ?? EMPTY
 }

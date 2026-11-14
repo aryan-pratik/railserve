@@ -452,6 +452,45 @@ describe('rider record: one source for the app and the office', () => {
       expect(seen.wallet.pendingPaise).toBe(0)
     })
 
+    it('lets a team leader take the cash one order at a time, and shows the handovers', async () => {
+      const ids: string[] = []
+      for (const amountPaise of [11000, 22000]) {
+        const o = String((await ready({ amountPaise, contactName: 'Asha Verma' }))._id)
+        await assignRiders({ ctx: manager, orderId: o, riderIds: [String(aId)] })
+        await transitionOrder({ ctx: a, orderId: o, to: 'DISPATCHED' })
+        await transitionOrder({ ctx: a, orderId: o, to: 'DELIVERED' })
+        ids.push(o)
+      }
+      const get = async () => (await (await getTeam(new Request('http://localhost/api/mobile/team', {
+        headers: { authorization: `Bearer ${tokenLead}` },
+      }))).json())
+
+      const before = await get()
+      const member = before.members.find((m: { id: string }) => m.id === String(aId))
+      // The orders listed are exactly the cash due, each with what the leader needs to count it.
+      expect(member.dueOrders.map((o: { id: string }) => o.id).sort()).toEqual([...ids].sort())
+      expect(member.dueOrders.reduce((sum: number, o: { paise: number }) => sum + o.paise, 0)).toBe(member.due.paise)
+      expect(member.dueOrders[0]).toMatchObject({ contactName: 'Asha Verma', trainNo: '12878' })
+
+      const one = await postTeam(new Request('http://localhost/api/mobile/team', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${tokenLead}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ riderId: String(aId), orderIds: [ids[0]] }),
+      }))
+      expect(await one.json()).toMatchObject({ ok: true, orders: 1, paise: 11000 })
+
+      const after = await get()
+      const left = after.members.find((m: { id: string }) => m.id === String(aId))
+      expect(left.due).toMatchObject({ orders: 1, paise: 22000 })
+      expect(left.dueOrders.map((o: { id: string }) => o.id)).toEqual([ids[1]])
+      // Newest first, naming the rider and the receiver.
+      expect(after.collections[0]).toMatchObject({
+        riderId: String(aId), paise: 11000, orders: 1, receivedAs: 'Team leader',
+      })
+      expect(after.collections[0].riderName).toBeTruthy()
+      expect(after.collections[0].receivedBy).toBeTruthy()
+    })
+
     it('stops a store manager an admin has switched off', async () => {
       const o = String((await ready())._id)
       await assignRiders({ ctx: manager, orderId: o, riderIds: [String(bId)] })

@@ -16,7 +16,6 @@ import {
 } from 'lucide-react-native'
 import type { StoredUser } from '../storage'
 import type { RiderDay } from '../types'
-import { TeamSection } from './TeamSection'
 
 const colors = {
   primary: '#2457D6',
@@ -41,7 +40,6 @@ export function ProfileModal({
   serviceDate,
   today,
   cashWithYouPaise,
-  token,
   offline,
   queueSize,
   onSignOut,
@@ -60,7 +58,6 @@ export function ProfileModal({
   today?: RiderDay | null
   /** COD not yet handed over, across all days: the figure on the Done tab. */
   cashWithYouPaise?: number | null
-  token: string | null
   offline: boolean
   queueSize: number
   onSignOut: () => void
@@ -219,11 +216,6 @@ export function ProfileModal({
               {notDoneToday} not delivered or cancelled · ₹{Math.round((cashWithYouPaise ?? 0) / 100)} cash with you now
             </Text>
           </View>
-
-          {/* Not gated on the flag saved at login: an admin can make a rider a
-              team leader at any time, and the server's 403 hides this for
-              everyone else. */}
-          {token ? <TeamSection token={token} active={visible} /> : null}
 
           {/* Station & Shift Details */}
           <Text

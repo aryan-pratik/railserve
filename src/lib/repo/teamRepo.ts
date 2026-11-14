@@ -5,7 +5,9 @@ import { ConflictError, ForbiddenError, type AuthContext } from '../authContext'
 import { canReceiveCash } from '../collections'
 import { opsDayOf, opsDayRange } from '../opsDay'
 import { NO_RIDER_DAY, NO_RIDER_NOW, riderDays, ridersNow, type RiderDay, type RiderNow } from './riderLedgerRepo'
-import { collectionHistory, pendingCashByRider, receiversOf, type PendingCash } from './riderCashRepo'
+import {
+  collectionHistory, pendingCashByRider, pendingCashOrders, receiversOf, type PendingCash, type PendingCashOrder,
+} from './riderCashRepo'
 
 /**
  * Rider teams: a team leader and the riders an admin has put under them.
@@ -26,6 +28,8 @@ export type TeamMember = {
   now: RiderNow
   /** Delivered COD cash not yet received from this rider, across all days. */
   due: { paise: number; orders: number; orderIds: string[] }
+  /** The orders that cash is on, oldest first, for receiving one at a time. */
+  dueOrders: Omit<PendingCashOrder, 'riderId'>[]
   lastCollection: { at: string; paise: number; orders: number; receivedBy: string | null } | null
 }
 
@@ -33,6 +37,17 @@ export type TeamView = {
   day: string
   lead: { id: string; name: string; phone: string; canReceiveCash: boolean }
   members: TeamMember[]
+  /** The team's recent handovers, newest first: who handed in what, to whom. */
+  collections: {
+    id: string
+    riderId: string
+    riderName: string
+    at: string
+    paise: number
+    orders: number
+    receivedBy: string | null
+    receivedAs: string | null
+  }[]
 }
 
 const NO_DUE: PendingCash = { paise: 0, orders: 0, orderIds: [] }
@@ -76,13 +91,16 @@ export async function teamView(
 
   const day = opts.day ?? opsDayOf(opts.now)
   const range = opsDayRange(day) ?? opsDayRange(opsDayOf(opts.now))!
-  const [days, nows, dues, collections] = await Promise.all([
+  const [days, nows, dues, dueOrders, collections, recent] = await Promise.all([
     riderDays(ctx, ids, range),
     ridersNow(ctx, ids),
     pendingCashByRider(ctx, ids),
+    pendingCashOrders(ctx, ids),
     collectionHistory(ctx, ids, { latestPerRider: true }),
+    collectionHistory(ctx, ids, { limit: 60 }),
   ])
-  const receivers = await receiversOf(collections)
+  const receivers = await receiversOf([...collections, ...recent])
+  const nameOf = new Map(people.map((p) => [String(p._id), p.name]))
 
   return {
     day,
@@ -104,6 +122,16 @@ export async function teamView(
         day: days.get(id) ?? NO_RIDER_DAY,
         now: nows.get(id) ?? NO_RIDER_NOW,
         due: dues.get(id) ?? NO_DUE,
+        dueOrders: dueOrders
+          .filter((o) => o.riderId === id)
+          .map((o) => ({
+            id: o.id,
+            externalOrderId: o.externalOrderId,
+            trainNo: o.trainNo,
+            contactName: o.contactName,
+            paise: o.paise,
+            deliveredAt: o.deliveredAt,
+          })),
         lastCollection: last
           ? {
               at: last.at,
@@ -114,6 +142,16 @@ export async function teamView(
           : null,
       }
     }),
+    collections: recent.map((c) => ({
+      id: c.id,
+      riderId: c.riderId,
+      riderName: nameOf.get(c.riderId) ?? 'Rider',
+      at: c.at,
+      paise: c.paise,
+      orders: c.orders,
+      receivedBy: c.receivedById ? (receivers.get(c.receivedById)?.name ?? null) : null,
+      receivedAs: c.receivedById ? (receivers.get(c.receivedById)?.label ?? null) : null,
+    })),
   }
 }
 

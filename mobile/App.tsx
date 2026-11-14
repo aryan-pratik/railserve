@@ -6,19 +6,22 @@ import { LogOut } from 'lucide-react-native'
 import { isRunningInExpoGo } from 'expo'
 import * as Device from 'expo-device'
 import {
-  flushQueue, fetchHistory, fetchRuns, newClientId, queueAndFlush, queueManyAndFlush, registerPushToken,
+  flushQueue, fetchHistory, fetchRuns, fetchTeam, newClientId, queueAndFlush, queueManyAndFlush, registerPushToken,
   ApiError, OfflineError, type Rejected,
 } from './src/api'
 import {
   cacheRuns, clearSession, loadCachedRuns, loadQueue, loadSession, type StoredUser,
 } from './src/storage'
-import type { HistoryOrder, HistoryQuery, HistoryResponse, Outcome, RunOrder, RunsResponse } from './src/types'
+import type {
+  HistoryOrder, HistoryQuery, HistoryResponse, Outcome, RunOrder, RunsResponse, TeamResponse,
+} from './src/types'
 import { LoginScreen } from './src/screens/Login'
 import { HomeScreen } from './src/screens/Home'
 import { DeliveryScreen } from './src/screens/Delivery'
 import { DeliveryTabScreen } from './src/screens/DeliveryTab'
 import { HistoryScreen } from './src/screens/History'
 import { ProfileModal } from './src/screens/ProfileModal'
+import { TeamScreen } from './src/screens/Team'
 import { C, EnvBanner, TabBar } from './src/ui'
 import { IS_NOT_PRODUCTION } from './src/config'
 import { flushNow, startSharing, stopSharing } from './src/location'
@@ -64,7 +67,10 @@ function AppShell() {
   const [busy, setBusy] = useState(false)
   const [queueSize, setQueueSize] = useState(0)
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
-  const [tab, setTab] = useState<'orders' | 'delivery' | 'done'>('orders')
+  const [tab, setTab] = useState<'orders' | 'delivery' | 'done' | 'team'>('orders')
+  // Non-null only for a team leader: it is what puts the Team tab on the bar.
+  const [team, setTeam] = useState<TeamResponse | null>(null)
+  const [teamLoading, setTeamLoading] = useState(false)
   const [history, setHistory] = useState<HistoryResponse | null>(null)
   const [historyQuery, setHistoryQuery] = useState<HistoryQuery>({})
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -98,6 +104,8 @@ function AppShell() {
         await clearSession()
         setToken(null)
         setUser(null)
+        setTeam(null)
+        setTab('orders')
       }
     } finally {
       setRefreshing(false)
@@ -113,6 +121,24 @@ function AppShell() {
       // list; the pull-to-refresh on that tab retries.
     } finally {
       setHistoryLoading(false)
+    }
+  }, [])
+
+  // Asked of the server rather than read off the login: an admin can make a
+  // rider a team leader, or stop them being one, at any time. 403 means "not
+  // a leader", and the tab goes; any other failure keeps what was there, so a
+  // dead spot on a platform does not take the tab away mid-count.
+  const loadTeam = useCallback(async (t: string, showSpinner = false) => {
+    if (showSpinner) setTeamLoading(true)
+    try {
+      setTeam(await fetchTeam(t))
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setTeam(null)
+        setTab((cur) => (cur === 'team' ? 'orders' : cur))
+      }
+    } finally {
+      setTeamLoading(false)
     }
   }, [])
 
@@ -141,6 +167,7 @@ function AppShell() {
       if (cancelled) return
       void refresh(token, false)
       void sync(token)
+      void loadTeam(token)
     }
 
     // Deferred rather than called in the effect body: both of these set state,
@@ -160,7 +187,7 @@ function AppShell() {
       clearInterval(timer)
       sub.remove()
     }
-  }, [token, refresh, sync])
+  }, [token, refresh, sync, loadTeam])
 
   // --- location sharing ---------------------------------------------------
   // Runs for as long as there is a session, and stops the moment there isn't.
@@ -441,6 +468,8 @@ function AppShell() {
             await clearSession()
             setToken(null)
             setUser(null)
+            setTeam(null)
+            setTab('orders')
             setScreen({ name: 'home' })
           }}
           hitSlop={10}
@@ -474,6 +503,14 @@ function AppShell() {
             )
           }
           onFail={(reason) => fail(order.id, reason)}
+        />
+      ) : tab === 'team' && team && token ? (
+        <TeamScreen
+          team={team}
+          token={token}
+          refreshing={teamLoading}
+          offline={offline}
+          onRefresh={() => void loadTeam(token, true)}
         />
       ) : tab === 'done' ? (
         <HistoryScreen
@@ -525,8 +562,10 @@ function AppShell() {
       {screen.name === 'home' ? (
         <TabBar
           tab={tab}
+          showTeam={team !== null}
           onChange={(t) => {
             setTab(t)
+            if (t === 'team' && token) void loadTeam(token)
             if (t === 'done' && token) void loadHistory(token, historyQuery)
           }}
         />
@@ -540,13 +579,14 @@ function AppShell() {
         serviceDate={data?.serviceDate}
         today={history?.today ?? null}
         cashWithYouPaise={history?.wallet?.pendingPaise ?? null}
-        token={token}
         offline={offline}
         queueSize={queueSize}
         onSignOut={async () => {
           await clearSession()
           setToken(null)
           setUser(null)
+          setTeam(null)
+          setTab('orders')
           setScreen({ name: 'home' })
         }}
       />
