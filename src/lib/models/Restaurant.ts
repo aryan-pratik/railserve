@@ -19,6 +19,13 @@ const RestaurantSchema = new Schema(
     // back to the pre-station image finds its token where it left it; the
     // values are purged once the new shape has proven itself in production.
     printAgentToken: { type: String, default: null },
+    // This outlet's key for reporting order status back to FoodOnTrains (see
+    // aggregators/foodontrains.ts). FoodOnTrains issues one per outlet — Zaika
+    // at CNB and Zaika at GAYA hold different keys — so it lives here rather
+    // than in the env. A secret: `select: false` keeps it out of every query
+    // that does not ask for it by name, and so out of any page that renders
+    // an outlet.
+    foodOnTrainsApiKey: { type: String, default: null, select: false },
   },
   { timestamps: true, strict: true, strictQuery: true },
 )

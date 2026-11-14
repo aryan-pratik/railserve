@@ -33,16 +33,32 @@ import { looksLikePhone, parseAggregatorDate, rupeeStringToPaise } from './share
  * "25 Oct 23:50" shape parseAggregatorDate already reads, so it gets the
  * same year inference as every other year-less aggregator date.
  *
- * The mail names no outlet. The line under the id ("Test · please have it
- * ready…") could be the restaurant's name or a customer note, and reading a
- * note as an outlet would file a junk storefront per order. A fixed name, as
- * for HomeBytes and RajBhog, routes through the station instead, and a
- * Listing for "FoodOnTrains" can map it to a kitchen in Setup.
+ * The plain-text part FoodOnTrains now sends uses "Label: value" lines, an
+ * "Items:" heading with one row per line ("2 x Aalu Paratha Combo  ₹400") and
+ * a blank line after them, and names our outlet on the id line:
+ *
+ *   foodontrains · New order FT-123456 for Zaika
+ *   …
+ *   Order ID: FT-123456
+ *   Expected arrival: 26 Oct, 03:09 pm (running 59 min late)
+ *
+ * That outlet name routes like any other aggregator's. The older rendered
+ * shape names no outlet — the line under its id could be the restaurant or a
+ * customer note, and reading a note as an outlet would file a junk storefront
+ * per order — so it falls back to a fixed name, as for HomeBytes and RajBhog,
+ * which routes through the station and which a Listing can map in Setup.
+ *
+ * "Expected arrival" includes the train's delay when the order was placed.
+ * scheduledArrival is the booked time the live reading is measured against,
+ * so the stated delay is taken back off it.
+ *
+ * Unknown labels are ignored: FoodOnTrains may add more.
  */
 type Item = ParsedOrder['items'][number]
 
 const LABELS = [
   'Items',
+  'Order ID',
   'Station',
   'Train',
   'Expected arrival',
@@ -64,6 +80,13 @@ function decodeEntities(s: string): string {
     .replace(/&nbsp;|\u00a0/g, ' ')
 }
 
+/** "(running 59 min late)", "(running 1 hr 5 min late)" → minutes; 0 when absent. */
+function lateMinutes(raw: string): number {
+  const m = /running\s+(?:(\d+)\s*h(?:ou)?rs?\.?)?\s*(?:(\d+)\s*min(?:ute)?s?\.?)?\s*late/i.exec(raw)
+  if (!m) return 0
+  return Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0)
+}
+
 export class FoodOnTrainsParser implements OrderParser {
   readonly source = 'FOODONTRAINS' as const
 
@@ -75,19 +98,23 @@ export class FoodOnTrainsParser implements OrderParser {
     const text = decodeEntities(body.replace(/\r\n/g, '\n'))
     const partial: Partial<ParsedOrder> = { source: 'FOODONTRAINS', outletName: 'FoodOnTrains' }
 
-    const idMatch = /\bNew order\s+(FT-\d+)/i.exec(text)
-    if (!idMatch) {
-      return { ok: false, reason: 'PARSE_FAILED', detail: 'no FT- order id found', partial }
-    }
-    const orderId = idMatch[1].toUpperCase()
-    partial.externalOrderId = orderId
-
     // A label at the start of a line, then a tab, a run of spaces or a colon.
     const field = (label: string): string | null => {
       const re = new RegExp(`^[ \\t]*${label.replace(/ /g, '\\s+')}(?:[ \\t]*:[ \\t]*|\\t+[ \\t]*|[ ]{2,})(.+)$`, 'im')
       const v = re.exec(text)?.[1]?.trim()
       return v || null
     }
+
+    const header = /\bNew order\s+(FT-\d+)(?:[ \t]+for[ \t]+(.+))?/i.exec(text)
+    const idRaw = /^(FT-\d+)\b/i.exec(field('Order ID') ?? '')?.[1] ?? header?.[1]
+    if (!idRaw) {
+      return { ok: false, reason: 'PARSE_FAILED', detail: 'no FT- order id found', partial }
+    }
+    const orderId = idRaw.toUpperCase()
+    partial.externalOrderId = orderId
+
+    const outletName = header?.[2]?.trim() || 'FoodOnTrains'
+    partial.outletName = outletName
 
     const stationMatch = /^(.+?)\s*\(([A-Za-z]{2,5})\)\s*$/.exec(field('Station') ?? '')
     if (!stationMatch) {
@@ -149,7 +176,7 @@ export class FoodOnTrainsParser implements OrderParser {
       order: {
         source: 'FOODONTRAINS',
         externalOrderId: orderId,
-        outletName: 'FoodOnTrains',
+        outletName,
         stationName,
         stationCode,
         contactName,
@@ -167,7 +194,10 @@ export class FoodOnTrainsParser implements OrderParser {
     }
   }
 
-  /** "25 Oct, 11:50 pm" → "25 Oct 23:50", then the shared year inference. */
+  /**
+   * "25 Oct, 11:50 pm" → "25 Oct 23:50", then the shared year inference.
+   * A "(running 59 min late)" suffix is taken back off, leaving the booked time.
+   */
   private parseArrival(raw: string | null, receivedAt: Date): Date | null {
     if (!raw) return null
     const m = /(\d{1,2})\s+([A-Za-z]{3,})\.?,?\s+(\d{1,2}):(\d{2})\s*([ap])\.?m\.?/i.exec(raw)
@@ -177,21 +207,35 @@ export class FoodOnTrainsParser implements OrderParser {
     const pm = m[5].toLowerCase() === 'p'
     if (hour === 12) hour = pm ? 12 : 0
     else if (pm) hour += 12
-    return parseAggregatorDate(`${m[1]} ${m[2]} ${hour}:${m[4]}`, receivedAt)
+    const expected = parseAggregatorDate(`${m[1]} ${m[2]} ${hour}:${m[4]}`, receivedAt)
+    if (!expected) return null
+    return new Date(expected.getTime() - lateMinutes(raw) * 60_000)
   }
 
   /**
-   * "2 × veg pizza 1 ₹420", read from the "Items" label up to the next label.
-   * Matched across the whole block rather than per line, so it does not care
-   * whether the flattened HTML put each row on its own line or in cells.
+   * "2 × veg pizza 1 ₹420" or "2 x Aalu Paratha Combo  ₹400", read from the
+   * "Items" label up to the next label or the first blank line after the
+   * rows, whichever comes first: the blank line is what ends the list in the
+   * plain-text mail, so a label FoodOnTrains adds below it cannot be read as
+   * a row. Rows are then matched across the block rather than one per line,
+   * so it does not care whether flattened HTML put each row on its own line.
    */
   private parseItems(text: string): Item[] {
-    const start = /^[ \t]*Items\b/im.exec(text)
+    const start = /^[ \t]*Items\b[ \t]*:?/im.exec(text)
     if (!start) return []
     const rest = text.slice(start.index + start[0].length)
     const others = LABELS.filter((l) => l !== 'Items').map((l) => l.replace(/ /g, '\\s+')).join('|')
-    const end = new RegExp(`^[ \\t]*(?:${others})\\b`, 'im').exec(rest)
-    const block = end ? rest.slice(0, end.index) : rest
+    const label = new RegExp(`^[ \\t]*(?:${others})\\b`, 'i')
+    const rows: string[] = []
+    for (const line of rest.split('\n')) {
+      if (label.test(line)) break
+      if (!line.trim()) {
+        if (rows.length > 0) break
+        continue
+      }
+      rows.push(line)
+    }
+    const block = rows.join('\n')
 
     const items: Item[] = []
     const row = /(\d+)\s*[×xX]\s+(.+?)\s*₹\s*[\d,]+(?:\.\d+)?/g

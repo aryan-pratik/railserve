@@ -159,6 +159,19 @@ describe('resolving the outlet name in an aggregator mail', () => {
     expect((await matchOutlet('SHARED', null)).ok).toBe(false)
   })
 
+  // A chain: one brand, one outlet of ours per station, all with the same
+  // name (FoodOnTrains' Zaika at CNB and at GAYA). The station picks the outlet.
+  it('routes a chain outlet by station when two of our outlets share its name', async () => {
+    const zaikaCnb = (await makeRestaurant('ZAIKA', 'CNB'))._id
+    const zaikaGaya = (await makeRestaurant('ZAIKA', 'GAYA'))._id
+
+    const cnb = await matchOutlet('Zaika', 'CNB', 'FOODONTRAINS')
+    expect(cnb.ok && cnb.restaurantId).toBe(String(zaikaCnb))
+    const gaya = await matchOutlet('Zaika', 'GAYA', 'FOODONTRAINS')
+    expect(gaya.ok && gaya.restaurantId).toBe(String(zaikaGaya))
+    expect((await matchOutlet('Zaika', null)).ok).toBe(false)
+  })
+
   // One fixed storefront name for every station (FoodOnTrains, HomeBytes).
   // The CNB row the first order writes down must not pull a GAYA order —
   // nor, once mapped, carry it to a CNB kitchen.
