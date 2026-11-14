@@ -12,6 +12,7 @@ export default async function AdminReturnsPage(props: PageProps<'/admin/returns'
       basePath="/admin/returns"
       orderBasePath="/admin/orders"
       searchParams={await props.searchParams}
+      defaultMode="today"
     />
   )
 }

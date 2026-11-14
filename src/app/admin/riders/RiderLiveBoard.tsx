@@ -277,12 +277,18 @@ export function RiderLiveBoard({
     // scroll, the roster does, inside its own card. Stacked, it is an
     // ordinary page. 3rem is the shell's vertical padding at that width.
     //
+    // The floor matters as much as the height. A box that content overflows,
+    // rather than grows, leaves the page taller than the shell around it, and
+    // the shell's sticky sidebar then scrolls away with the overflow, stopping
+    // partway down the screen. The floor lets a short window scroll the page
+    // instead.
+    //
     // Two elements, not one: a container query answers for the nearest
     // *ancestor* container, so the element carrying @container cannot size
     // itself by its own width. The outer div is the yardstick, the inner
     // one is measured against it.
     <div className="@container/board">
-    <div className="flex min-h-0 flex-col gap-5 @[60rem]/board:h-[calc(100dvh-3rem)]">
+    <div className="flex min-h-0 flex-col gap-5 @[60rem]/board:h-[calc(100dvh-3rem)] @[60rem]/board:min-h-[40rem]">
       <PageHeader
         title="Riders"
         note={note}
@@ -497,7 +503,7 @@ function Figures({ board, count }: { board: RiderBoard; count: number }) {
       <Figure
         icon={<IconBag size={20} aria-hidden />}
         tint="bg-orange-50 text-orange-600"
-        label="Orders with riders"
+        label="Rider orders"
         value={String(t.orders)}
         note={`${t.inHand} in hand · ${t.done} finished`}
       />
@@ -556,7 +562,7 @@ function Figure({
         <p className="mt-0.5 truncate text-2xl leading-none font-semibold tracking-tight text-ink tabular-nums">
           {value}
         </p>
-        {note ? <p className={`mt-1 truncate text-xs ${noteTone}`} title={note}>{note}</p> : null}
+        {note ? <p className={`mt-1 text-xs leading-snug ${noteTone}`}>{note}</p> : null}
       </div>
     </Card>
   )

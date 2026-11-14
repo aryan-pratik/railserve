@@ -95,7 +95,7 @@ export function PageHeader({
           </div>
           {note ? <p className="mt-1 text-sm leading-relaxed text-muted text-pretty">{note}</p> : null}
         </div>
-        {action ? <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div> : null}
+        {action ? <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{action}</div> : null}
       </div>
     </div>
   )
