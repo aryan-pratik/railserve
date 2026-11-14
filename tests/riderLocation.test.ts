@@ -315,6 +315,55 @@ describe('the admin board', () => {
     // The position is not a service-day fact: it is still the last one known.
     expect(row.position).not.toBeNull()
   })
+
+  it('keeps the board to the one day, and shows what is left over from earlier apart', async () => {
+    const outlet = await makeRestaurant('DAY SCOPE OUTLET', 'CNB')
+    const rider = (await makeUser('DELIVERY_AGENT', '9100000014', outlet._id))._id
+    const delivered = (day: string, hour: number, paise: number) =>
+      makeOrder({
+        serviceDate: day,
+        status: 'DELIVERED',
+        restaurantId: outlet._id,
+        paymentMode: 'COD',
+        amountPaise: paise,
+        delivery: {
+          agentIds: [rider],
+          pickedUpBy: rider,
+          collectedBy: rider,
+          deliveredAt: new Date(`${day}T${hour}:00:00+05:30`),
+          amountCollectedPaise: paise,
+        },
+      })
+    // Cash from the day, and cash from the day before that nobody has taken.
+    await delivered('2026-10-27', 12, 30000)
+    await delivered('2026-10-26', 12, 70000)
+    // Out with the rider since days ago, never closed.
+    await makeOrder({
+      serviceDate: '2026-10-20',
+      status: 'DISPATCHED',
+      restaurantId: outlet._id,
+      delivery: { agentIds: [rider], pickedUpBy: rider, dispatchedAt: new Date(Date.now() - 3 * 86_400_000) },
+    })
+
+    const past = await riderBoard(admin, { serviceDate: '2026-10-27' })
+    const row = past.riders.find((r) => r.id === String(rider))!
+    // The day's figures hold only the day: one delivery, its cash, and the cash
+    // still to receive from it. Nothing from the 26th, nothing still out.
+    expect(row.work).toMatchObject({ orders: 1, delivered: 1, codPaise: 30000, duePaise: 30000, dueOrders: 1 })
+    expect(row.work.earlierDuePaise).toBe(70000)
+    expect(row.work.carrying).toBe(0)
+    expect(past.totals).toMatchObject({ orders: 1, done: 1, codPaise: 30000, duePaise: 30000, dueOrders: 1 })
+    expect(past.carried).toEqual({ openOrders: null, cashPaise: 70000, cashOrders: 1 })
+
+    // Today: the old open order is carried over, and counts in no day tile.
+    const today = await riderBoard(admin, { serviceDate: opsDayOf() })
+    expect(today.carried.openOrders).toBeGreaterThanOrEqual(1)
+    const todayRow = today.riders.find((r) => r.id === String(rider))!
+    expect(todayRow.work.orders).toBe(0)
+    expect(todayRow.work.duePaise).toBe(0)
+    expect(todayRow.work.carrying).toBe(1)
+    expect(todayRow.work.earlierDuePaise).toBe(100000)
+  })
 })
 
 describe('the ingest route\u2019s gate', () => {

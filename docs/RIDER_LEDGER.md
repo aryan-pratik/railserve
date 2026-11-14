@@ -45,8 +45,17 @@ different questions, and each screen says which one it is answering.
 | Used by | Analytics, All orders, store history, the rider filter | rider app, Riders board (tiles and rows), rider page, team view, cash |
 | Invariant | with a rider + without = the day's orders | app figures = admin rider figures |
 
-The Riders board shows only riders' work, in one row of tiles. It briefly
-showed the bookings as a second row and that read as the same numbers twice,
+The Riders board shows only riders' work, in one row of tiles, and only for
+the selected 3 am to 3 am day: tiles and rows both come from `riderDays`, the
+same call the rider's app uses, so an admin and a rider looking at the same day
+see the same numbers. What is left over from earlier days is real but is not
+that day's work, so it sits apart in a "Carried over from earlier days" line
+(`board.carried`): orders still out with riders (today only, since it is a
+live fact) and COD cash delivered before the day and not yet received. A rider's
+row shows the day's cash to receive, with the older cash under it as "+ earlier",
+and "In hand now" as its own column. The tile row and the rider rows add up.
+
+The board briefly showed the bookings as a second row and that read as the same numbers twice,
 disagreeing. The bookings stay on Analytics and All orders (the board API still
 returns them as `board.day`). The two will not add up to each other, and should
 not: a late train booked for the 12th and delivered at 1 am is in the 12th's

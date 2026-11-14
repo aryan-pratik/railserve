@@ -108,13 +108,15 @@ export type RiderNow = {
   trains: string[]
   /** Cash to collect on what is in hand. */
   inHandCodPaise: number
+  /** Of `inHand`, picked up before the moment `ridersNow` was asked about. */
+  inHandBefore: number
 }
 
 export const NO_RIDER_DAY: RiderDay = {
   done: 0, delivered: 0, notDelivered: 0, cancelled: 0, codOrders: 0, codPaise: 0,
   prepaidOrders: 0, deliveredPaise: 0, amountPaise: 0, lastDeliveredAt: null, stations: [],
 }
-export const NO_RIDER_NOW: RiderNow = { inHand: 0, waiting: 0, trains: [], inHandCodPaise: 0 }
+export const NO_RIDER_NOW: RiderNow = { inHand: 0, waiting: 0, trains: [], inHandCodPaise: 0, inHandBefore: 0 }
 
 /**
  * Adds the rider (or riders) a LIVE order is on the record of, as `_rider`,
@@ -211,10 +213,15 @@ export async function riderDays(
   return out
 }
 
-/** What each rider is holding and waiting on right now. Not bounded by a day. */
+/**
+ * What each rider is holding and waiting on right now. Not bounded by a day.
+ * `pickedUpBefore` splits out the part of it picked up before that moment, so
+ * a board can say how much of what is out is left over from earlier days.
+ */
 export async function ridersNow(
   ctx: AuthContext,
   riderIds: mongoose.Types.ObjectId[],
+  pickedUpBefore?: Date,
 ): Promise<Map<string, RiderNow>> {
   const out = new Map<string, RiderNow>()
   if (riderIds.length === 0) return out
@@ -227,6 +234,7 @@ export async function ridersNow(
     waiting: number
     trains: (string | null)[]
     inHandCodPaise: number
+    inHandBefore: number
   }>([
     {
       $match: outletScoped(ctx, {
@@ -245,6 +253,9 @@ export async function ridersNow(
         waiting: COUNT({ $not: [out_] }),
         trains: { $push: { $cond: [out_, '$trainNo', null] } },
         inHandCodPaise: SUM(AND(out_, { $eq: ['$paymentMode', 'COD'] }), BILL),
+        inHandBefore: pickedUpBefore
+          ? COUNT(AND(out_, { $lt: [{ $ifNull: ['$delivery.dispatchedAt', pickedUpBefore] }, pickedUpBefore] }))
+          : { $sum: 0 },
       },
     },
   ])
@@ -254,6 +265,7 @@ export async function ridersNow(
       waiting: r.waiting,
       trains: [...new Set(r.trains.filter((t): t is string => Boolean(t)))].sort(),
       inHandCodPaise: r.inHandCodPaise,
+      inHandBefore: r.inHandBefore,
     })
   }
   return out

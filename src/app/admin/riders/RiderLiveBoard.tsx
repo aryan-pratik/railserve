@@ -19,6 +19,7 @@ import {
 } from '@/components/ui'
 import { readPage, withPage } from '@/lib/pagination'
 import { formatRupees } from '@/lib/format'
+import { opsDayCaption } from '@/lib/opsDay'
 import { useNowMs } from '@/components/useNow'
 import {
   IconBag, IconCalendar, IconCash, IconExpand, IconLocate, IconMore, IconPhone, IconPlus,
@@ -449,6 +450,7 @@ export function RiderLiveBoard({
                     selectedId={selectedId}
                     onShowOnMap={showOnMap}
                     detailHref={detailHref}
+                    isToday={isToday}
                   />
                   <RosterCards
                     riders={pageRiders}
@@ -456,6 +458,7 @@ export function RiderLiveBoard({
                     selectedId={selectedId}
                     onShowOnMap={showOnMap}
                     detailHref={detailHref}
+                    isToday={isToday}
                   />
                 </>
               )}
@@ -484,52 +487,95 @@ export function RiderLiveBoard({
  * cash is on them. Every figure is read from the rider ledger, which is what
  * each rider's own app shows, so the row is the sum of the rows below it.
  *
+ * Only that day. What is left over from earlier days (orders never closed,
+ * cash never received) is real and matters, but folding it into the day's
+ * tiles is what made 788 "orders" appear on a day with nine finished, so it
+ * sits in its own labelled line under the row.
+ *
  * The day's bookings by service date are on Analytics and All orders. They
  * were once a second row here, and two rows of near-identical tiles counted
  * two different ways read as one set of numbers contradicting itself.
  */
 function Figures({ board, count }: { board: RiderBoard; count: number }) {
   const t = board.totals
+  const worked = board.riders.filter((r) => r.work.done > 0).length
+  const c = board.carried
+  const open = c.openOrders ?? 0
+  const day = new Date(`${board.serviceDate}T12:00:00+05:30`).toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-      <Figure
-        icon={<IconUsers size={20} aria-hidden />}
-        tint="bg-accent-soft text-accent"
-        label="Riders"
-        value={String(count)}
-        note="day runs 3 am to 3 am"
-        className="col-span-2 sm:col-span-1"
-      />
-      <Figure
-        icon={<IconBag size={20} aria-hidden />}
-        tint="bg-orange-50 text-orange-600"
-        label="Rider orders"
-        value={String(t.orders)}
-        note={`${t.inHand} in hand · ${t.done} finished`}
-      />
-      <Figure
-        icon={<IconCash size={20} aria-hidden />}
-        tint="bg-emerald-50 text-emerald-700"
-        label="Delivered"
-        value={String(t.delivered)}
-        note={`${t.notDelivered} failed · ${t.cancelled} cancelled`}
-        noteTone={t.notDelivered > 0 ? 'text-amber-700' : undefined}
-      />
-      <Figure
-        icon={<IconRupee size={20} aria-hidden />}
-        tint="bg-amber-50 text-amber-700"
-        label="COD collected"
-        value={formatRupees(t.codPaise)}
-        note={`from ${t.codOrders} order${t.codOrders === 1 ? '' : 's'}`}
-      />
-      <Figure
-        icon={<IconWallet size={20} aria-hidden />}
-        tint="bg-accent-soft text-accent"
-        label="COD to receive"
-        value={formatRupees(t.duePaise)}
-        note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} · all days`}
-        noteTone={t.duePaise > 0 ? 'text-amber-700' : undefined}
-      />
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted">
+        {day} · {opsDayCaption(board.serviceDate)} · same figures as the rider app
+      </p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <Figure
+          icon={<IconUsers size={20} aria-hidden />}
+          tint="bg-accent-soft text-accent"
+          label="Riders"
+          value={String(count)}
+          note={`${worked} finished an order this day`}
+          className="col-span-2 sm:col-span-1"
+        />
+        <Figure
+          icon={<IconBag size={20} aria-hidden />}
+          tint="bg-orange-50 text-orange-600"
+          label="Finished"
+          value={String(t.done)}
+          note="delivered, failed or cancelled"
+        />
+        <Figure
+          icon={<IconCash size={20} aria-hidden />}
+          tint="bg-emerald-50 text-emerald-700"
+          label="Delivered"
+          value={String(t.delivered)}
+          note={`${t.notDelivered} failed · ${t.cancelled} cancelled`}
+          noteTone={t.notDelivered > 0 ? 'text-amber-700' : undefined}
+        />
+        <Figure
+          icon={<IconRupee size={20} aria-hidden />}
+          tint="bg-amber-50 text-amber-700"
+          label="COD collected"
+          value={formatRupees(t.codPaise)}
+          note={`from ${t.codOrders} order${t.codOrders === 1 ? '' : 's'}`}
+        />
+        <Figure
+          icon={<IconWallet size={20} aria-hidden />}
+          tint="bg-accent-soft text-accent"
+          label="COD to receive"
+          value={formatRupees(t.duePaise)}
+          note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} from this day`}
+          noteTone={t.duePaise > 0 ? 'text-amber-700' : undefined}
+        />
+      </div>
+      {open > 0 || c.cashOrders > 0 ? (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="font-medium">Carried over from earlier days</span>
+          {open > 0 ? (
+            <span>
+              {open} order{open === 1 ? '' : 's'} still out with riders
+            </span>
+          ) : null}
+          {c.cashOrders > 0 ? (
+            <span>
+              {formatRupees(c.cashPaise)} COD cash not yet received ({c.cashOrders} order
+              {c.cashOrders === 1 ? '' : 's'})
+            </span>
+          ) : null}
+          {open > 0 ? (
+            <Link
+              href="/admin/orders?mode=all&status=DISPATCHED"
+              className={`ml-auto rounded font-medium underline underline-offset-2 hover:text-amber-950 ${focusRing}`}
+            >
+              See open orders
+            </Link>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -719,6 +765,8 @@ type RosterProps = {
   onShowOnMap: (id: string) => void
   /** The rider's own page: their orders and event log. */
   detailHref: (id: string) => string
+  /** What a rider holds right now is only worth showing for today. */
+  isToday: boolean
 }
 
 /**
@@ -903,7 +951,7 @@ function RowActions({
 const th = 'px-1.5 py-2.5 text-left align-bottom text-xs font-medium leading-tight text-muted'
 const td = 'px-1.5 py-3'
 
-function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: RosterProps) {
+function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref, isToday }: RosterProps) {
   const open = useOpenOnTap()
   return (
     <div className="hidden min-h-0 flex-1 overflow-x-hidden overflow-y-auto border-t border-line @2xl:block">
@@ -919,10 +967,10 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
           <col />
           <col className="w-[3.75rem]" />
           <col className="w-[6.75rem]" />
-          <col className="w-[4.25rem]" />
-          <col className="w-[3.5rem]" />
+          <col className="w-[4.75rem]" />
           <col className="w-[5.5rem]" />
-          <col className="w-[5.75rem]" />
+          <col className="w-[6.25rem]" />
+          <col className="w-[3.75rem]" />
           <col className="w-[4.25rem]" />
           <col className="w-[4.75rem]" />
         </colgroup>
@@ -936,14 +984,9 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
             </th>
             <th className={th}>Status</th>
             <th className={`${th} text-right`}>
-              Total
-              <br />
               Orders
-            </th>
-            <th className={`${th} text-right`}>
-              COD
               <br />
-              Orders
+              finished
             </th>
             <th className={`${th} text-right`}>
               COD
@@ -951,9 +994,14 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
               Collected
             </th>
             <th className={`${th} text-right`}>
-              COD
+              COD to
               <br />
-              Due
+              receive
+            </th>
+            <th className={`${th} text-right`}>
+              In hand
+              <br />
+              now
             </th>
             <th className={th}>
               Last
@@ -966,7 +1014,7 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
         <tbody className="divide-y divide-line" onClick={open}>
           {riders.map((rider) => {
             const move = movementOf(rider, now)
-            const { orders, codOrders, codPaise, duePaise, dueOrders, carrying, delivered, failed } = rider.work
+            const { orders, codOrders, codPaise, duePaise, dueOrders, earlierDuePaise, carrying, delivered, failed } = rider.work
             const selected = rider.id === selectedId
             return (
               <tr
@@ -999,22 +1047,32 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
                 </td>
                 <td className={`${td} text-right tabular-nums`}>
                   <span className="font-semibold text-ink">{orders}</span>
-                  {carrying > 0 ? (
-                    <span className="block text-xs whitespace-nowrap text-blue-700">{carrying} in hand</span>
-                  ) : null}
                   <span className="block text-xs whitespace-nowrap text-muted">
                     {delivered} delivered{failed > 0 ? ` · ${failed} not` : ''}
                   </span>
                 </td>
-                <td className={`${td} text-right text-ink tabular-nums`}>{codOrders}</td>
                 <td className={`${td} text-right whitespace-nowrap text-ink tabular-nums`}>
                   {formatRupees(codPaise)}
+                  <span className="block text-xs text-muted">
+                    {codOrders} order{codOrders === 1 ? '' : 's'}
+                  </span>
                 </td>
                 <td
                   className={`${td} text-right font-semibold whitespace-nowrap tabular-nums ${duePaise > 0 ? 'text-amber-800' : 'text-ink'}`}
-                  title={`${dueOrders} delivered COD order${dueOrders === 1 ? '' : 's'} not yet received, across all days`}
+                  title={`${dueOrders} COD order${dueOrders === 1 ? '' : 's'} delivered this day and not yet received`}
                 >
                   {formatRupees(duePaise)}
+                  {earlierDuePaise > 0 ? (
+                    <span className="block text-xs font-normal text-muted">
+                      + {formatRupees(earlierDuePaise)} earlier
+                    </span>
+                  ) : null}
+                </td>
+                <td
+                  className={`${td} text-right tabular-nums ${carrying > 0 ? 'font-semibold text-blue-700' : 'text-muted'}`}
+                  title="Orders the rider is carrying right now, whatever day they were picked up"
+                >
+                  {isToday ? carrying : '–'}
                 </td>
                 <td className={`${td} truncate text-xs text-muted tabular-nums`}>{lastActiveOf(rider, now)}</td>
                 <td className={`${td} pr-3`}>
@@ -1030,7 +1088,7 @@ function RosterTable({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
 }
 
 /** The same roster as cards, for a card too narrow to hold the table's columns. */
-function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: RosterProps) {
+function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref, isToday }: RosterProps) {
   const open = useOpenOnTap()
   return (
     <ul
@@ -1040,7 +1098,7 @@ function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
     >
       {riders.map((rider) => {
         const move = movementOf(rider, now)
-        const { orders, codOrders, codPaise, duePaise, carrying } = rider.work
+        const { orders, codOrders, codPaise, duePaise, earlierDuePaise, carrying } = rider.work
         return (
           <li
             key={rider.id}
@@ -1073,15 +1131,19 @@ function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
               <MiniStat label="Orders" value={String(orders)} />
               <MiniStat label="COD" value={String(codOrders)} />
               <MiniStat label="COD got" value={formatRupees(codPaise)} />
-              <MiniStat label="COD due" value={formatRupees(duePaise)} />
+              <MiniStat
+                label="To receive"
+                value={formatRupees(duePaise)}
+                sub={earlierDuePaise > 0 ? `+ ${formatRupees(earlierDuePaise)} earlier` : undefined}
+              />
             </dl>
 
             <div className="mt-2.5 flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2 text-xs text-muted">
                 <StationChip rider={rider} />
-                {carrying > 0 ? (
+                {isToday && carrying > 0 ? (
                   <span className="truncate text-blue-700">
-                    {carrying} in hand{rider.work.trains.length ? ` · ${rider.work.trains.join(', ')}` : ''}
+                    {carrying} in hand now{rider.work.trains.length ? ` · ${rider.work.trains.join(', ')}` : ''}
                   </span>
                 ) : null}
               </div>
@@ -1094,11 +1156,12 @@ function RosterCards({ riders, now, selectedId, onShowOnMap, detailHref }: Roste
   )
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] text-muted">{label}</dt>
       <dd className="truncate text-sm font-semibold text-ink tabular-nums">{value}</dd>
+      {sub ? <dd className="truncate text-[10px] text-muted">{sub}</dd> : null}
     </div>
   )
 }
