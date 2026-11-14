@@ -31,8 +31,8 @@ const RevealContext = createContext<Reveal>({ reveal: () => {}, forget: () => {}
 const BREATHING_ROOM = 96
 
 export function KeyboardScroll({ children, contentContainerStyle, onScroll, ...props }: ScrollViewProps) {
-  const frame = useRef<View>(null)
-  const scroll = useRef<ScrollView>(null)
+  const frame = useRef<React.ComponentRef<typeof View>>(null)
+  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null)
   const offset = useRef(0)
   const keyboardTop = useRef<number | null>(null)
   const focused = useRef<Measurable | null>(null)
@@ -109,7 +109,7 @@ export function KeyboardScroll({ children, contentContainerStyle, onScroll, ...p
  */
 export function useRevealOnFocus() {
   const { reveal, forget } = useContext(RevealContext)
-  const ref = useRef<View>(null)
+  const ref = useRef<React.ComponentRef<typeof View>>(null)
   const onFocus = useCallback(() => {
     // A beat, so a field that has only just been shown has been laid out.
     setTimeout(() => reveal(ref.current), 60)
