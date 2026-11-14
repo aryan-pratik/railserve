@@ -18,18 +18,22 @@ export type PendingCash = { paise: number; orders: number; orderIds: string[] }
 
 const EMPTY: PendingCash = { paise: 0, orders: 0, orderIds: [] }
 
+/** Only cash delivered inside [from, to). Open ends mean no limit on that side. */
+export type DeliveredSpan = { from?: Date; to?: Date }
+
 /**
  * Delivered, cash on delivery, not yet handed over — and held by one of
  * `riderIds`. `collectedBy` names the holder; orders closed before it existed
  * fall back to the first rider on the order, so a bulk handover to three
  * riders still counts its cash once.
  */
-function pendingFilter(riderIds: mongoose.Types.ObjectId[]) {
+function pendingFilter(riderIds: mongoose.Types.ObjectId[], span: DeliveredSpan = {}) {
+  const from = span.from && span.from > COD_WALLET_FROM ? span.from : COD_WALLET_FROM
   return {
     status: 'DELIVERED' as const,
     paymentMode: 'COD' as const,
     'delivery.codSettledAt': null,
-    'delivery.deliveredAt': { $gte: COD_WALLET_FROM },
+    'delivery.deliveredAt': span.to ? { $gte: from, $lt: span.to } : { $gte: from },
     $or: [
       { 'delivery.collectedBy': { $in: riderIds } },
       { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: riderIds } },
@@ -56,12 +60,13 @@ function holderOf(o: { delivery?: { collectedBy?: unknown; agentIds?: unknown[] 
 export async function pendingCashByRider(
   ctx: AuthContext,
   riderIds: (string | mongoose.Types.ObjectId)[],
+  span: DeliveredSpan = {},
 ): Promise<Map<string, PendingCash>> {
   const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
   const out = new Map<string, PendingCash>()
   if (ids.length === 0) return out
 
-  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids)))
+  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids, span)))
     .select('amountPaise delivery.amountCollectedPaise delivery.collectedBy delivery.agentIds')
     .lean()
 

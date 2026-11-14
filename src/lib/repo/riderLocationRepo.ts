@@ -165,7 +165,7 @@ export type RiderView = {
     /** Trains this rider is carrying food for right now, most orders first. */
     trains: string[]
     lastDeliveredAt: string | null
-    /** Everything finished in the reporting day, plus what is in hand now. */
+    /** Everything finished in the reporting day, the same count as `done`. */
     orders: number
     /**
      * Orders booked for this date that they are on, whatever became of them:
@@ -180,9 +180,12 @@ export type RiderView = {
     codPaise: number
     /** Paise. The bill value of everything finished in the day. */
     amountPaise: number
-    /** Paise and orders. Delivered COD cash not yet received, across all days. */
+    /** Paise and orders. COD cash delivered in the day and not yet received. */
     duePaise: number
     dueOrders: number
+    /** The same, delivered before the day began and still not received. */
+    earlierDuePaise: number
+    earlierDueOrders: number
     /** Stations they worked in the day, busiest first. Empty on a day off. */
     stations: string[]
   }
@@ -194,6 +197,7 @@ export type RiderView = {
  * adding up the rows would count it twice.
  */
 export type RiderTotals = {
+  /** Finished in the day. Same as `done`. */
   orders: number
   done: number
   inHand: number
@@ -234,7 +238,13 @@ export type DayTotals = {
   unassignedPaise: number
 }
 
-function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined, booked = 0): RiderView['work'] {
+function workOf(
+  day: RiderDay,
+  now: RiderNow,
+  due: PendingCash | undefined,
+  earlier: PendingCash | undefined,
+  booked = 0,
+): RiderView['work'] {
   return {
     carrying: now.inHand,
     delivered: day.delivered,
@@ -243,7 +253,7 @@ function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined, book
     cancelled: day.cancelled,
     trains: now.trains,
     lastDeliveredAt: day.lastDeliveredAt,
-    orders: day.done + now.inHand,
+    orders: day.done,
     booked,
     done: day.done,
     codOrders: day.codOrders,
@@ -251,6 +261,8 @@ function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined, book
     amountPaise: day.amountPaise,
     duePaise: due?.paise ?? 0,
     dueOrders: due?.orders ?? 0,
+    earlierDuePaise: earlier?.paise ?? 0,
+    earlierDueOrders: earlier?.orders ?? 0,
     stations: day.stations,
   }
 }
@@ -263,6 +275,19 @@ export type RiderBoard = {
   totals: RiderTotals
   /** What was booked for the date, as Analytics and All orders count it. */
   day: DayTotals
+  /**
+   * What is left over from before the day began, kept out of the day's
+   * figures and shown beside them: orders riders still hold (only knowable for
+   * today, so null for a past day) and COD cash delivered earlier and still
+   * not received.
+   */
+  carried: Carried
+}
+
+export type Carried = {
+  openOrders: number | null
+  cashPaise: number
+  cashOrders: number
 }
 
 /**
@@ -304,7 +329,7 @@ export async function riderBoard(
 
   const ids = riders.map((r) => r._id)
   if (ids.length === 0) {
-    return { serviceDate, fetchedAt: now.toISOString(), riders: [], totals: NO_TOTALS, day }
+    return { serviceDate, fetchedAt: now.toISOString(), riders: [], totals: NO_TOTALS, day, carried: NO_CARRIED }
   }
 
   // One reporting day, 3am to 3am, read from the rider ledger: the same
@@ -312,12 +337,14 @@ export async function riderBoard(
   // admin looking at the same day see the same numbers.
   const range = opsDayRange(serviceDate) ?? opsDayRange(opsDayOf(now))!
   const isToday = serviceDate === opsDayOf(now)
-  const [locations, days, nows, dues, total] = await Promise.all([
+  const [locations, days, nows, dues, earlierDues, total] = await Promise.all([
     RiderLocation.find({ userId: { $in: ids } }).lean(),
     riderDays(ctx, ids, range),
     // What is in a rider's hands is a fact about now, not about a past day.
-    isToday ? ridersNow(ctx, ids) : Promise.resolve(new Map<string, RiderNow>()),
-    pendingCashByRider(ctx, ids),
+    isToday ? ridersNow(ctx, ids, range.from) : Promise.resolve(new Map<string, RiderNow>()),
+    // Cash from the day, and cash from before it that is still out, apart.
+    pendingCashByRider(ctx, ids, { from: range.from, to: range.to }),
+    pendingCashByRider(ctx, ids, { to: range.from }),
     ridersDayTotal(ctx, ids, range),
   ])
   const work = new Map(
@@ -325,13 +352,19 @@ export async function riderBoard(
       const key = String(id)
       return [
         key,
-        workOf(days.get(key) ?? NO_RIDER_DAY, nows.get(key) ?? NO_RIDER_NOW, dues.get(key), booked.get(key) ?? 0),
+        workOf(
+          days.get(key) ?? NO_RIDER_DAY,
+          nows.get(key) ?? NO_RIDER_NOW,
+          dues.get(key),
+          earlierDues.get(key),
+          booked.get(key) ?? 0,
+        ),
       ] as const
     }),
   )
   const inHand = [...nows.values()].reduce((a, n) => a + n.inHand, 0)
   const totals: RiderTotals = {
-    orders: total.done + inHand,
+    orders: total.done,
     done: total.done,
     inHand,
     delivered: total.delivered,
@@ -388,10 +421,18 @@ export async function riderBoard(
       a.name.localeCompare(b.name),
   )
 
-  return { serviceDate, fetchedAt: now.toISOString(), riders: rows, totals, day }
+  const carried: Carried = {
+    openOrders: isToday ? [...nows.values()].reduce((a, n) => a + n.inHandBefore, 0) : null,
+    cashPaise: [...earlierDues.values()].reduce((a, d) => a + d.paise, 0),
+    cashOrders: [...earlierDues.values()].reduce((a, d) => a + d.orders, 0),
+  }
+
+  return { serviceDate, fetchedAt: now.toISOString(), riders: rows, totals, day, carried }
 }
 
-const NO_WORK: RiderView['work'] = workOf(NO_RIDER_DAY, NO_RIDER_NOW, undefined)
+const NO_WORK: RiderView['work'] = workOf(NO_RIDER_DAY, NO_RIDER_NOW, undefined, undefined)
+
+const NO_CARRIED: Carried = { openOrders: null, cashPaise: 0, cashOrders: 0 }
 
 const NO_TOTALS: RiderTotals = {
   orders: 0, done: 0, inHand: 0, delivered: 0, notDelivered: 0, cancelled: 0,
