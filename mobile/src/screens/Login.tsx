@@ -8,10 +8,15 @@ import {
   Text,
   TextInput,
   View,
+  type TextStyle,
 } from 'react-native'
 import { Train, Phone, Lock, Eye, EyeOff, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react-native'
 import { login } from '../api'
 import { saveSession, type StoredUser } from '../storage'
+
+// Web draws a focus ring round inputs; the field's own border already shows
+// focus. 'none' is a web-only value, so the native style types don't list it.
+const NO_FOCUS_OUTLINE = { outlineStyle: 'none' } as unknown as TextStyle
 
 const colors = {
   primary: '#2457D6',
@@ -183,8 +188,7 @@ export function LoginScreen({ onDone }: { onDone: (token: string, user: StoredUs
                   fontSize: 15,
                   fontWeight: '500',
                   color: colors.text,
-                  // @ts-ignore
-                  outlineStyle: 'none',
+                  ...NO_FOCUS_OUTLINE,
                   outlineWidth: 0,
                   borderWidth: 0,
                   padding: 0,
@@ -239,8 +243,7 @@ export function LoginScreen({ onDone }: { onDone: (token: string, user: StoredUs
                   fontSize: 15,
                   fontWeight: '500',
                   color: colors.text,
-                  // @ts-ignore
-                  outlineStyle: 'none',
+                  ...NO_FOCUS_OUTLINE,
                   outlineWidth: 0,
                   borderWidth: 0,
                   padding: 0,

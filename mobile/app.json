@@ -51,7 +51,8 @@
           "androidForegroundServiceIcon": "./assets/notification-icon.png"
         }
       ],
-      "expo-task-manager"
+      "expo-task-manager",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
