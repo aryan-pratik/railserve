@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { RiderLocation, User } from '../models'
+import { Order, RiderLocation, User } from '../models'
 import { connectDb } from '../db'
 import type { AuthContext } from '../authContext'
 import {
@@ -15,6 +15,8 @@ import {
   NO_RIDER_DAY, NO_RIDER_NOW, riderDays, ridersDayTotal, ridersNow, type RiderDay, type RiderNow,
 } from './riderLedgerRepo'
 import { pendingCashByRider, type PendingCash } from './riderCashRepo'
+import { scoped } from './orderRepo'
+import { EXCLUDED_STATUS } from '../analytics'
 
 /**
  * Reads and writes of where riders are.
@@ -165,6 +167,11 @@ export type RiderView = {
     lastDeliveredAt: string | null
     /** Everything finished in the reporting day, plus what is in hand now. */
     orders: number
+    /**
+     * Orders booked for this date that they are on, whatever became of them:
+     * the count Analytics and All orders give for this rider and this date.
+     */
+    booked: number
     /** Finished in the reporting day: what the rider's own app counts. */
     done: number
     /** Delivered cash-on-delivery orders in the day. */
@@ -200,7 +207,34 @@ export type RiderTotals = {
   dueOrders: number
 }
 
-function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined): RiderView['work'] {
+/**
+ * The orders booked for the date, the same set Analytics and All orders
+ * count (see "What counts" in lib/analytics): every order with that
+ * `serviceDate`, rating decoys aside, split by whether a rider is on it.
+ * `orders + unassignedOrders === dayOrders`, exactly.
+ *
+ * This is a different question from RiderTotals. That one asks what riders
+ * finished between 3am and 3am, and is what a rider's app shows; this one
+ * asks what was booked for the date, and is what the office's other screens
+ * show. The board shows both, each under its own name.
+ */
+export type DayTotals = {
+  /** Booked orders with a rider on them. */
+  orders: number
+  codOrders: number
+  codPaise: number
+  amountPaise: number
+  /** Every order booked for the day, rating decoys aside. */
+  dayOrders: number
+  dayAmountPaise: number
+  dayCodOrders: number
+  dayCodPaise: number
+  /** Booked orders nobody has been put on yet. */
+  unassignedOrders: number
+  unassignedPaise: number
+}
+
+function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined, booked = 0): RiderView['work'] {
   return {
     carrying: now.inHand,
     delivered: day.delivered,
@@ -210,6 +244,7 @@ function workOf(day: RiderDay, now: RiderNow, due: PendingCash | undefined): Rid
     trains: now.trains,
     lastDeliveredAt: day.lastDeliveredAt,
     orders: day.done + now.inHand,
+    booked,
     done: day.done,
     codOrders: day.codOrders,
     codPaise: day.codPaise,
@@ -224,7 +259,10 @@ export type RiderBoard = {
   serviceDate: string
   fetchedAt: string
   riders: RiderView[]
+  /** What riders finished in the 3am to 3am day: the rider ledger. */
   totals: RiderTotals
+  /** What was booked for the date, as Analytics and All orders count it. */
+  day: DayTotals
 }
 
 /**
@@ -243,14 +281,30 @@ export async function riderBoard(
   const serviceDate = opts.serviceDate ?? opsDayOf(now)
 
   await connectDb()
-  const riders = await User.find({ role: 'DELIVERY_AGENT', active: true })
-    .select('name phone isTeamLead teamLeadId')
-    .sort({ name: 1 })
-    .lean()
+  const [active, booked, day] = await Promise.all([
+    User.find({ role: 'DELIVERY_AGENT', active: true })
+      .select('name phone isTeamLead teamLeadId')
+      .sort({ name: 1 })
+      .lean(),
+    bookedByRider(ctx, serviceDate),
+    bookedTotals(ctx, serviceDate),
+  ])
+
+  // A rider switched off since still carried what they carried: listed on the
+  // days they worked, so their orders are not counted in the totals but
+  // missing from every row.
+  const listed = new Set(active.map((r) => String(r._id)))
+  const missing = [...booked.keys()].filter((id) => !listed.has(id) && mongoose.isValidObjectId(id))
+  const inactive = missing.length
+    ? await User.find({ _id: { $in: missing }, role: 'DELIVERY_AGENT' })
+        .select('name phone isTeamLead teamLeadId')
+        .lean()
+    : []
+  const riders = [...active, ...inactive]
 
   const ids = riders.map((r) => r._id)
   if (ids.length === 0) {
-    return { serviceDate, fetchedAt: now.toISOString(), riders: [], totals: NO_TOTALS }
+    return { serviceDate, fetchedAt: now.toISOString(), riders: [], totals: NO_TOTALS, day }
   }
 
   // One reporting day, 3am to 3am, read from the rider ledger: the same
@@ -269,7 +323,10 @@ export async function riderBoard(
   const work = new Map(
     ids.map((id) => {
       const key = String(id)
-      return [key, workOf(days.get(key) ?? NO_RIDER_DAY, nows.get(key) ?? NO_RIDER_NOW, dues.get(key))] as const
+      return [
+        key,
+        workOf(days.get(key) ?? NO_RIDER_DAY, nows.get(key) ?? NO_RIDER_NOW, dues.get(key), booked.get(key) ?? 0),
+      ] as const
     }),
   )
   const inHand = [...nows.values()].reduce((a, n) => a + n.inHand, 0)
@@ -331,7 +388,7 @@ export async function riderBoard(
       a.name.localeCompare(b.name),
   )
 
-  return { serviceDate, fetchedAt: now.toISOString(), riders: rows, totals }
+  return { serviceDate, fetchedAt: now.toISOString(), riders: rows, totals, day }
 }
 
 const NO_WORK: RiderView['work'] = workOf(NO_RIDER_DAY, NO_RIDER_NOW, undefined)
@@ -339,4 +396,63 @@ const NO_WORK: RiderView['work'] = workOf(NO_RIDER_DAY, NO_RIDER_NOW, undefined)
 const NO_TOTALS: RiderTotals = {
   orders: 0, done: 0, inHand: 0, delivered: 0, notDelivered: 0, cancelled: 0,
   codOrders: 0, codPaise: 0, amountPaise: 0, duePaise: 0, dueOrders: 0,
+}
+
+const NO_DAY: DayTotals = {
+  orders: 0, codOrders: 0, codPaise: 0, amountPaise: 0,
+  dayOrders: 0, dayAmountPaise: 0, dayCodOrders: 0, dayCodPaise: 0, unassignedOrders: 0, unassignedPaise: 0,
+}
+
+/**
+ * The day's orders, the same set Analytics and All orders count: one service
+ * date, rating decoys aside.
+ */
+function dayMatch(ctx: AuthContext, serviceDate: string) {
+  return scoped(ctx, { serviceDate, status: { $ne: EXCLUDED_STATUS } })
+}
+
+const IS_COD = { $eq: ['$paymentMode', 'COD'] }
+const AMOUNT = { $ifNull: ['$amountPaise', 0] }
+/** Any rider on the order, at any status. */
+const HAS_RIDER = { $gt: [{ $size: { $ifNull: ['$delivery.agentIds', []] } }, 0] }
+
+/** The booked day's totals, one count per order, split by whether a rider is on it. */
+async function bookedTotals(ctx: AuthContext, serviceDate: string): Promise<DayTotals> {
+  const ridden = (expr: unknown) => ({ $cond: [HAS_RIDER, expr, 0] })
+  const [row] = await Order.aggregate<DayTotals>([
+    { $match: dayMatch(ctx, serviceDate) },
+    {
+      $group: {
+        _id: null,
+        dayOrders: { $sum: 1 },
+        dayAmountPaise: { $sum: AMOUNT },
+        dayCodOrders: { $sum: { $cond: [IS_COD, 1, 0] } },
+        dayCodPaise: { $sum: { $cond: [IS_COD, AMOUNT, 0] } },
+        orders: { $sum: ridden(1) },
+        codOrders: { $sum: ridden({ $cond: [IS_COD, 1, 0] }) },
+        codPaise: { $sum: ridden({ $cond: [IS_COD, AMOUNT, 0] }) },
+        amountPaise: { $sum: ridden(AMOUNT) },
+      },
+    },
+    { $project: { _id: 0 } },
+  ])
+  if (!row) return NO_DAY
+  return {
+    ...row,
+    unassignedOrders: row.dayOrders - row.orders,
+    unassignedPaise: row.dayAmountPaise - row.amountPaise,
+  }
+}
+
+/**
+ * How many of the day's booked orders each rider is on, whatever became of
+ * them. A shared order counts for each rider on it, as in Analytics.
+ */
+async function bookedByRider(ctx: AuthContext, serviceDate: string): Promise<Map<string, number>> {
+  const rows = await Order.aggregate<{ _id: mongoose.Types.ObjectId; orders: number }>([
+    { $match: { $and: [dayMatch(ctx, serviceDate), { 'delivery.agentIds.0': { $exists: true } }] } },
+    { $unwind: '$delivery.agentIds' },
+    { $group: { _id: '$delivery.agentIds', orders: { $sum: 1 } } },
+  ])
+  return new Map(rows.map((r) => [String(r._id), r.orders]))
 }

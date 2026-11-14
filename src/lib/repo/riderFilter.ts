@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
 import { User } from '@/lib/models'
 import type { AuthContext } from '@/lib/authContext'
-import { onRiderRecord, riderRecordOf } from './orderRepo'
+import { riderRecordOf } from './orderRepo'
 
 /** The rider filter's value for orders no rider is on yet. */
 export const NO_RIDER = 'none'
@@ -32,11 +32,10 @@ export async function riderOptions(ctx: AuthContext): Promise<RiderOption[]> {
  */
 export function riderClause(rider: string): Record<string, unknown> | null {
   if (rider === NO_RIDER) return { 'delivery.agentIds.0': { $exists: false } }
-  if (mongoose.isValidObjectId(rider)) {
-    // The rider's record: orders they picked up, or were given and nobody
-    // has picked up yet. Not every order they were merely offered.
-    return onRiderRecord(new mongoose.Types.ObjectId(rider)) as Record<string, unknown>
-  }
+  // Everyone on the order, not only its carrier: the rule the day's-orders
+  // screens share (see "What counts" in lib/analytics). The rider ledger asks
+  // a different question, who carried it, and uses onClosedRecord instead.
+  if (mongoose.isValidObjectId(rider)) return { 'delivery.agentIds': new mongoose.Types.ObjectId(rider) }
   return null
 }
 

@@ -44,6 +44,24 @@ export const OUTCOME_STATUSES: Record<Exclude<Outcome, 'other'>, readonly string
  */
 export const EXCLUDED_STATUS = 'RATING_ORDER'
 
+/*
+ * What counts, on every screen that counts orders.
+ *
+ * The day's orders: every order whose `serviceDate` is that day, rating
+ * decoys aside. Analytics, All orders and the Riders board all start here,
+ * which is what lets their totals be compared at all.
+ *
+ * A rider's orders: every one of those with that rider in
+ * `delivery.agentIds`, whatever has become of it since. Not only the ones out
+ * on the platform or closed: an order a rider was put on and that was then
+ * cancelled is still part of their day, and leaving it out is how the Riders
+ * board once showed 48 against a day of 50 with no way to tell why.
+ *
+ * So for any day, orders with a rider + orders with none = the day's orders,
+ * exactly. An order shared by two riders counts once in that sum, and once
+ * against each rider in a per-rider list.
+ */
+
 const STATUS_OUTCOME = new Map<string, Outcome>(
   (Object.entries(OUTCOME_STATUSES) as [Outcome, readonly string[]][]).flatMap(([o, list]) =>
     list.map((s) => [s, o] as const),

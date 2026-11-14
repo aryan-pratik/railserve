@@ -31,6 +31,25 @@ board counted by `serviceDate`, included orders still in hand in "total", and
 summed the bill of every COD order carried rather than the cash collected. The
 two could not agree except by accident.
 
+## Two questions, two rules
+
+Main gained its own counting rule while this was in review (see "What counts"
+in `src/lib/analytics.ts`). The two are kept side by side because they answer
+different questions, and each screen says which one it is answering.
+
+| | Booked for the date | Riders' work |
+| --- | --- | --- |
+| Asks | what was ordered for this date | what riders finished, and the cash on it |
+| Day | `serviceDate` | 3am to 3am, by close time |
+| A rider's orders | every order they are on (`agentIds`), any status | orders they carried; a closed order is one rider's |
+| Used by | Analytics, All orders, store history, the rider filter, the top row of the Riders board | rider app, Riders board rows and second row, rider page, team view, cash |
+| Invariant | with a rider + without = the day's orders | app figures = admin rider figures |
+
+The two rows of the Riders board will not add up to each other, and should
+not: a late train booked for the 12th and delivered at 1 am is in the 12th's
+bookings and in the 12th's rider work, but an order booked for the 13th and
+delivered at 2 am on the 13th is in the 13th's bookings and the 12th's work.
+
 ## The reporting day: 3 am to 3 am IST
 
 `src/lib/opsDay.ts`. A delivery at 01:30 belongs to the shift that started the

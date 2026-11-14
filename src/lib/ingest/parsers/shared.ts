@@ -91,3 +91,20 @@ export function looksLikePhone(s: string): boolean {
   const digits = s.replace(/\D/g, '')
   return digits.length >= 10 && digits.length <= 13
 }
+
+/**
+ * Station names to codes, for aggregators that send only the name (OLF, the
+ * "New Order Notification" format). Keyed by the upper-cased name. Extend it
+ * as new stations are seen: an unmapped name fails closed into MISSING_FIELD
+ * rather than guessing a code.
+ */
+export const STATION_CODES: Record<string, string> = {
+  'KANPUR CENTRAL': 'CNB',
+  'PRAYAGRAJ JN': 'PRYJ',
+}
+
+/** The code for a station name, or null when it is not in STATION_CODES. */
+export function stationCodeForName(name: string | null | undefined): string | null {
+  if (!name) return null
+  return STATION_CODES[name.trim().toUpperCase().replace(/\s+/g, ' ')] ?? null
+}
