@@ -405,7 +405,7 @@ separate stations.
   aggregator and dish together, so one row per dish holds by construction.
 - The order total and the COD QR print on the first KOT only; the second says
   `TOTAL ON KOT 1`, so it cannot be read as a second amount to collect. The
-  PAX box of a bulk order prints on the first KOT only, for the same reason.
+  PAX box of a bulk order also prints once, on the KOT that carries the thali.
 - A train's batch print is checked before anything is queued: every ticket
   carries its order id (`data-order-id`), and the orders drawn must be exactly
   the orders asked for, each with two tickets or four (`checkRunRender` in

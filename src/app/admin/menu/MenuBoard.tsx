@@ -8,7 +8,7 @@ import { DietMark } from '@/components/DietMark'
 import { formatShortDateTime } from './when'
 import type { Diet } from '@/lib/diet'
 import type { MenuRow } from '@/lib/repo/menuRepo'
-import { addMenuItem, confirmSuggested, tagMenuItem, type MenuState, type TagResult } from './actions'
+import { addMenuItem, confirmSuggested, forgetMenuPage, tagMenuItem, type MenuState, type TagResult } from './actions'
 
 type Filter = 'all' | 'check' | 'untagged' | 'VEG' | 'NON_VEG'
 
@@ -69,14 +69,35 @@ export function MenuBoard({
   const seq = useRef(0)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => () => {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (refreshTimer.current) {
+        // Leaving with a re-read still owed: the browser keeps this page as
+        // it was read, for Back. Drop that copy so Back shows the saved tags.
+        clearTimeout(refreshTimer.current)
+        refreshTimer.current = null
+        void forgetMenuPage().catch(() => {})
+      }
+    }
   }, [])
 
   /** One re-read after the clicking pauses, not one per click: it recounts every order. */
   function refreshSoon() {
     if (refreshTimer.current) clearTimeout(refreshTimer.current)
-    refreshTimer.current = setTimeout(() => router.refresh(), REFRESH_AFTER_MS)
+    if (!mounted.current) {
+      // The save answered after the page was left: nothing here to refresh.
+      refreshTimer.current = null
+      void forgetMenuPage().catch(() => {})
+      return
+    }
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null
+      router.refresh()
+    }, REFRESH_AFTER_MS)
   }
 
   const merged = useMemo(

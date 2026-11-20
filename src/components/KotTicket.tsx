@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import Image from 'next/image'
 import { formatIST, formatMoney, formatServiceDate, formatTimeIST } from '@/lib/format'
 import { sourceLabel } from '@/lib/orderEnums'
-import { splitKotParts, type DietLookup, type KotPart } from '@/lib/diet'
+import { isMenuDish, splitKotParts, type DietLookup, type KotPart } from '@/lib/diet'
 import { DietMark } from './DietMark'
 
 /**
@@ -154,6 +154,11 @@ export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: Ko
   const wideMarks = kitchen.some((i) => i.diet !== null && !i.confirmed)
   const isBulk = order.orderType === 'BULK'
   const isLocal = order.orderType === 'LOCAL'
+  // The PAX box prints once per order, on the ticket that carries the thali
+  // (the one line that is not a menu dish). On a split order that may be the
+  // second ticket. An order with no such line shows it on the first.
+  const isThali = (i: KotItem) => !i.isPacking && !isMenuDish(i)
+  const paxHere = order.items.some(isThali) ? kitchen.some(isThali) : part.index === 1
 
   return (
     <div className={TICKET_CLASS} data-order-id={String(order._id)}>
@@ -234,9 +239,9 @@ export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: Ko
       <Rule />
 
       <div className="text-[13px] font-bold">KITCHEN</div>
-      {/* Once per order, like the amount: on the second KOT of a split
-          order the same box would read as a second lot of plates. */}
-      {isBulk && order.pax && part.index === 1 ? (
+      {/* Once per order: on both KOTs of a split order the same box would
+          read as a second lot of plates. */}
+      {isBulk && order.pax && paxHere ? (
         <div className="my-1 border border-black py-1 text-center text-[15px] font-bold">
           {order.pax} PAX
         </div>

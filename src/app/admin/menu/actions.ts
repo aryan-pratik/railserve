@@ -43,6 +43,16 @@ export async function tagMenuItem(id: string, diet: string): Promise<TagResult> 
   return { ok: 'Saved', at: Date.now() }
 }
 
+/**
+ * Drops every cached copy of the Menu page. Called when the board is left
+ * with saved tags it had not re-read yet, so that coming Back to it does not
+ * show the page as it was before those tags.
+ */
+export async function forgetMenuPage(): Promise<void> {
+  await requireRole('ADMIN')
+  revalidatePath('/admin/menu')
+}
+
 /** Accept the suggested tag on every one of these rows as it stands. */
 export async function confirmSuggested(ids: string[]): Promise<TagResult> {
   const ctx = await requireRole('ADMIN')
