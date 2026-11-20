@@ -1,12 +1,13 @@
 'use client'
 
-import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Fragment, useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, FormNote, Stat, StatStrip, focusRing, inputBase, segmentClass, segmentedClass, thClass } from '@/components/ui'
 import { IconSearch } from '@/components/Icons'
 import { DietMark } from '@/components/DietMark'
 import { formatShortDateTime } from './when'
 import type { Diet } from '@/lib/diet'
+import { MENU_CATEGORIES, menuCategory } from '@/lib/menuCategory'
 import type { MenuRow } from '@/lib/repo/menuRepo'
 import { addMenuItem, confirmSuggested, forgetMenuPage, tagMenuItem, type MenuState, type TagResult } from './actions'
 
@@ -46,7 +47,8 @@ const REFRESH_AFTER_MS = 2500
 
 /**
  * The menu as one list, a page at a time, with the veg / non-veg tag on every
- * row as two buttons. Narrowed by aggregator, by tag and by search. Filtering and search are done here in the browser: the
+ * row as two buttons. Laid out like a restaurant menu, section by section
+ * (lib/menuCategory.ts), and narrowed by aggregator, section, tag and search. Filtering and search are done here in the browser: the
  * whole menu is a few hundred short rows and tagging is a click-through job,
  * so a round trip per keystroke would only slow it down.
  */
@@ -62,6 +64,7 @@ export function MenuBoard({
 }) {
   const [filter, setFilter] = useState<Filter>('all')
   const [source, setSource] = useState('all')
+  const [category, setCategory] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(25)
   const [adding, setAdding] = useState(false)
@@ -114,13 +117,32 @@ export function MenuBoard({
       }),
     [rows, overrides, asOf],
   )
+  // The menu section each dish reads under (Thali, Biryani, Breads...), and
+  // the list in menu order: section by section, most ordered first in each.
+  const grouped = useMemo(() => {
+    const rank = new Map(MENU_CATEGORIES.map((c, i) => [c, i]))
+    const sectionOf = new Map(rows.map((r) => [r.id, menuCategory(r.name)]))
+    const order = [...rows]
+      .sort(
+        (a, b) =>
+          (rank.get(sectionOf.get(a.id)!) ?? 99) - (rank.get(sectionOf.get(b.id)!) ?? 99) ||
+          b.orderCount - a.orderCount ||
+          a.name.localeCompare(b.name),
+      )
+      .map((r) => r.id)
+    return { sectionOf, position: new Map(order.map((id, i) => [id, i])) }
+  }, [rows])
+  const sectionOf = (r: MenuRow) => grouped.sectionOf.get(r.id) ?? 'Other'
   const needle = q.trim().toLowerCase()
-  const shown = merged.filter(
-    (r) =>
-      (source === 'all' || r.source === source) &&
-      matches(r, filter) &&
-      (!needle || r.name.toLowerCase().includes(needle)),
-  )
+  const shown = merged
+    .filter(
+      (r) =>
+        (source === 'all' || r.source === source) &&
+        (category === 'all' || sectionOf(r) === category) &&
+        matches(r, filter) &&
+        (!needle || r.name.toLowerCase().includes(needle)),
+    )
+    .sort((a, b) => (grouped.position.get(a.id) ?? 0) - (grouped.position.get(b.id) ?? 0))
 
   const counts = {
     all: merged.length,
@@ -178,7 +200,8 @@ export function MenuBoard({
   // Everything below is one list: narrowed by aggregator, tag and search,
   // then cut into pages. All of it happens in the browser on rows already
   // loaded, so changing a filter or a page is instant.
-  const scoped = source === 'all' ? merged : merged.filter((r) => r.source === source)
+  const inSource = source === 'all' ? merged : merged.filter((r) => r.source === source)
+  const scoped = category === 'all' ? inSource : inSource.filter((r) => sectionOf(r) === category)
   const inScope = (f: Filter) => scoped.filter((r) => matches(r, f)).length
   const pageCount = Math.max(1, Math.ceil(shown.length / pageSize))
   // A filter change can leave the page number past the end; show the last page then.
@@ -186,7 +209,8 @@ export function MenuBoard({
   const visible = shown.slice((current - 1) * pageSize, current * pageSize)
   const suggested = visible.filter((r) => r.diet !== null && !r.reviewed).length
   const labelOf = new Map(sources.map((s) => [s.id, s.label]))
-  const filtering = filter !== 'all' || source !== 'all' || needle !== ''
+  const filtering = filter !== 'all' || source !== 'all' || category !== 'all' || needle !== ''
+  const columns = source === 'all' ? 6 : 5
 
   return (
     <div className="space-y-4">
@@ -215,6 +239,20 @@ export function MenuBoard({
                     {s.label} ({all.length}{check > 0 ? `, ${check} to check` : ''})
                   </option>
                 )
+              })}
+            </select>
+          </label>
+          <label className="block">
+            <span className="sr-only">Menu group</span>
+            <select
+              value={category}
+              onChange={(e) => { setCategory(e.target.value); setPage(1) }}
+              className={`${inputBase} h-9 text-sm`}
+            >
+              <option value="all">All groups</option>
+              {MENU_CATEGORIES.map((c) => {
+                const n = inSource.filter((r) => sectionOf(r) === c).length
+                return n > 0 || c === category ? <option key={c} value={c}>{c} ({n})</option> : null
               })}
             </select>
           </label>
@@ -254,7 +292,7 @@ export function MenuBoard({
           {filtering ? (
             <button
               type="button"
-              onClick={() => { setFilter('all'); setSource('all'); setQ(''); setPage(1) }}
+              onClick={() => { setFilter('all'); setSource('all'); setCategory('all'); setQ(''); setPage(1) }}
               className={`rounded font-medium text-accent hover:underline ${focusRing}`}
             >
               Clear filters
@@ -296,8 +334,21 @@ export function MenuBoard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {visible.map((r) => (
-                  <tr key={r.id} className="hover:bg-sunken/60">
+                {visible.map((r, i) => (
+                  <Fragment key={r.id}>
+                  {/* A heading where the section changes, and at the top of
+                      every page so a page never starts without one. */}
+                  {i === 0 || sectionOf(visible[i - 1]) !== sectionOf(r) ? (
+                    <tr className="bg-sunken/60">
+                      <th colSpan={columns} scope="colgroup" className="px-3 py-1.5 text-left text-xs font-semibold text-ink">
+                        {sectionOf(r)}
+                        <span className="ml-2 font-normal tabular-nums text-muted">
+                          {shown.filter((x) => sectionOf(x) === sectionOf(r)).length}
+                        </span>
+                      </th>
+                    </tr>
+                  ) : null}
+                  <tr className="hover:bg-sunken/60">
                     <td className="px-3 py-2">
                       <span className="flex items-center gap-2">
                         <DietMark diet={r.diet} />
@@ -342,6 +393,7 @@ export function MenuBoard({
                       ) : null}
                     </td>
                   </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
