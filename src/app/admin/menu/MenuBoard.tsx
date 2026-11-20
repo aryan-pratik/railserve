@@ -1,16 +1,19 @@
 'use client'
 
-import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Fragment, useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, FormNote, Stat, StatStrip, focusRing, inputBase, segmentClass, segmentedClass, thClass } from '@/components/ui'
-import { IconChevronDown, IconSearch } from '@/components/Icons'
+import { IconSearch } from '@/components/Icons'
 import { DietMark } from '@/components/DietMark'
 import { formatShortDateTime } from './when'
 import type { Diet } from '@/lib/diet'
+import { MENU_CATEGORIES, menuCategory } from '@/lib/menuCategory'
 import type { MenuRow } from '@/lib/repo/menuRepo'
 import { addMenuItem, confirmSuggested, forgetMenuPage, tagMenuItem, type MenuState, type TagResult } from './actions'
 
 type Filter = 'all' | 'check' | 'untagged' | 'VEG' | 'NON_VEG'
+
+const PAGE_SIZES = [25, 50, 100] as const
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -43,8 +46,9 @@ type Override = { diet: Diet | null; reviewed: boolean; pending: boolean; at: nu
 const REFRESH_AFTER_MS = 2500
 
 /**
- * The menu, one section per aggregator, with the veg / non-veg tag on every
- * row as two buttons. Filtering and search are done here in the browser: the
+ * The menu as one list, a page at a time, with the veg / non-veg tag on every
+ * row as two buttons. Laid out like a restaurant menu, section by section
+ * (lib/menuCategory.ts), and narrowed by aggregator, section, tag and search. Filtering and search are done here in the browser: the
  * whole menu is a few hundred short rows and tagging is a click-through job,
  * so a round trip per keystroke would only slow it down.
  */
@@ -59,6 +63,11 @@ export function MenuBoard({
   sources: { id: string; label: string }[]
 }) {
   const [filter, setFilter] = useState<Filter>('all')
+  const [source, setSource] = useState('all')
+  const [category, setCategory] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(25)
+  const [adding, setAdding] = useState(false)
   const [q, setQ] = useState('')
   const [overrides, setOverrides] = useState<Record<string, Override>>({})
   // Per row, and kept until that row saves: a failure on one row must not be
@@ -108,8 +117,32 @@ export function MenuBoard({
       }),
     [rows, overrides, asOf],
   )
+  // The menu section each dish reads under (Thali, Biryani, Breads...), and
+  // the list in menu order: section by section, most ordered first in each.
+  const grouped = useMemo(() => {
+    const rank = new Map(MENU_CATEGORIES.map((c, i) => [c, i]))
+    const sectionOf = new Map(rows.map((r) => [r.id, menuCategory(r.name)]))
+    const order = [...rows]
+      .sort(
+        (a, b) =>
+          (rank.get(sectionOf.get(a.id)!) ?? 99) - (rank.get(sectionOf.get(b.id)!) ?? 99) ||
+          b.orderCount - a.orderCount ||
+          a.name.localeCompare(b.name),
+      )
+      .map((r) => r.id)
+    return { sectionOf, position: new Map(order.map((id, i) => [id, i])) }
+  }, [rows])
+  const sectionOf = (r: MenuRow) => grouped.sectionOf.get(r.id) ?? 'Other'
   const needle = q.trim().toLowerCase()
-  const shown = merged.filter((r) => matches(r, filter) && (!needle || r.name.toLowerCase().includes(needle)))
+  const shown = merged
+    .filter(
+      (r) =>
+        (source === 'all' || r.source === source) &&
+        (category === 'all' || sectionOf(r) === category) &&
+        matches(r, filter) &&
+        (!needle || r.name.toLowerCase().includes(needle)),
+    )
+    .sort((a, b) => (grouped.position.get(a.id) ?? 0) - (grouped.position.get(b.id) ?? 0))
 
   const counts = {
     all: merged.length,
@@ -164,6 +197,21 @@ export function MenuBoard({
     save(changes, () => confirmSuggested(changes.map((c) => c.id)))
   }
 
+  // Everything below is one list: narrowed by aggregator, tag and search,
+  // then cut into pages. All of it happens in the browser on rows already
+  // loaded, so changing a filter or a page is instant.
+  const inSource = source === 'all' ? merged : merged.filter((r) => r.source === source)
+  const scoped = category === 'all' ? inSource : inSource.filter((r) => sectionOf(r) === category)
+  const inScope = (f: Filter) => scoped.filter((r) => matches(r, f)).length
+  const pageCount = Math.max(1, Math.ceil(shown.length / pageSize))
+  // A filter change can leave the page number past the end; show the last page then.
+  const current = Math.min(page, pageCount)
+  const visible = shown.slice((current - 1) * pageSize, current * pageSize)
+  const suggested = visible.filter((r) => r.diet !== null && !r.reviewed).length
+  const labelOf = new Map(sources.map((s) => [s.id, s.label]))
+  const filtering = filter !== 'all' || source !== 'all' || category !== 'all' || needle !== ''
+  const columns = source === 'all' ? 6 : 5
+
   return (
     <div className="space-y-4">
       <StatStrip columns={4}>
@@ -173,153 +221,212 @@ export function MenuBoard({
         <Stat label="Needs check" value={String(counts.check)} tone={counts.check > 0 ? 'text-amber-700' : 'text-ink'} />
       </StatStrip>
 
-      <Card className="flex flex-wrap items-center gap-3 p-3">
-        {/* A group of toggle buttons, not tabs: nothing here is a tab panel,
-            and a tablist promises arrow-key movement these do not have. */}
-        <div className={segmentedClass} role="group" aria-label="Filter items">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              aria-pressed={filter === f.key}
-              onClick={() => setFilter(f.key)}
-              className={segmentClass(filter === f.key)}
+      <Card className="space-y-3 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="block">
+            <span className="sr-only">Aggregator</span>
+            <select
+              value={source}
+              onChange={(e) => { setSource(e.target.value); setPage(1) }}
+              className={`${inputBase} h-9 text-sm`}
             >
-              {f.label}
-              <span className="tabular-nums text-faint">{counts[f.key]}</span>
-            </button>
-          ))}
+              <option value="all">All aggregators ({merged.length})</option>
+              {sources.map((s) => {
+                const all = merged.filter((r) => r.source === s.id)
+                const check = all.filter(needsCheck).length
+                return (
+                  <option key={s.id} value={s.id}>
+                    {s.label} ({all.length}{check > 0 ? `, ${check} to check` : ''})
+                  </option>
+                )
+              })}
+            </select>
+          </label>
+          <label className="block">
+            <span className="sr-only">Menu group</span>
+            <select
+              value={category}
+              onChange={(e) => { setCategory(e.target.value); setPage(1) }}
+              className={`${inputBase} h-9 text-sm`}
+            >
+              <option value="all">All groups</option>
+              {MENU_CATEGORIES.map((c) => {
+                const n = inSource.filter((r) => sectionOf(r) === c).length
+                return n > 0 || c === category ? <option key={c} value={c}>{c} ({n})</option> : null
+              })}
+            </select>
+          </label>
+          {/* A group of toggle buttons, not tabs: nothing here is a tab panel,
+              and a tablist promises arrow-key movement these do not have. */}
+          <div className={segmentedClass} role="group" aria-label="Filter items">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                aria-pressed={filter === f.key}
+                onClick={() => { setFilter(f.key); setPage(1) }}
+                className={segmentClass(filter === f.key)}
+              >
+                {f.label}
+                <span className="tabular-nums text-faint">{inScope(f.key)}</span>
+              </button>
+            ))}
+          </div>
+          <label className="relative ml-auto block w-full sm:w-64">
+            <span className="sr-only">Search items</span>
+            <IconSearch size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+            <input
+              value={q}
+              onChange={(e) => { setQ(e.target.value); setPage(1) }}
+              placeholder="Search items"
+              className={`${inputBase} h-9 w-full pl-8 text-sm`}
+            />
+          </label>
         </div>
-        <label className="relative ml-auto block w-full sm:w-64">
-          <span className="sr-only">Search items</span>
-          <IconSearch size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search items"
-            className={`${inputBase} h-9 w-full pl-8 text-sm`}
-          />
-        </label>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3 text-xs text-muted">
+          <span className="tabular-nums">
+            {shown.length === 0
+              ? 'No items'
+              : `${(current - 1) * pageSize + 1} to ${Math.min(current * pageSize, shown.length)} of ${shown.length} item${shown.length === 1 ? '' : 's'}`}
+          </span>
+          {filtering ? (
+            <button
+              type="button"
+              onClick={() => { setFilter('all'); setSource('all'); setCategory('all'); setQ(''); setPage(1) }}
+              className={`rounded font-medium text-accent hover:underline ${focusRing}`}
+            >
+              Clear filters
+            </button>
+          ) : null}
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {suggested > 0 ? (
+              <Button type="button" size="sm" variant="secondary" onClick={() => confirmAll(visible)}>
+                Confirm {suggested} suggested on this page
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" variant="secondary" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
+              {adding ? 'Close' : 'Add an item'}
+            </Button>
+          </span>
+        </div>
       </Card>
 
-      <AddItemForm sources={sources} />
+      {adding ? <AddItemForm sources={sources} /> : null}
 
-      {sources.map((s) => {
-        const all = merged.filter((r) => r.source === s.id)
-        const list = shown.filter((r) => r.source === s.id)
-        // While filtering or searching, an aggregator with nothing to show is noise.
-        if ((filter !== 'all' || needle) && list.length === 0) return null
-        const suggested = list.filter((r) => r.diet !== null && !r.reviewed).length
-        const orders = all.reduce((n, r) => n + r.orderCount, 0)
-        return (
-          <Card key={s.id} className="overflow-hidden">
-            <details open={all.length > 0} className="group">
-              <summary className={`flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 [&::-webkit-details-marker]:hidden ${focusRing}`}>
-                <IconChevronDown size={16} className="shrink-0 text-muted transition-transform group-open:rotate-180" />
-                <h2 className="text-sm font-semibold text-ink">{s.label}</h2>
-                <span className="text-xs text-muted">
-                  {all.length} item{all.length === 1 ? '' : 's'}
-                  {all.length > 0 ? (
-                    <>
-                      {' · '}
-                      <span className="inline-flex items-center gap-1">
-                        <DietMark diet="VEG" size={11} /> {all.filter((r) => r.diet === 'VEG').length}
-                      </span>
-                      {' · '}
-                      <span className="inline-flex items-center gap-1">
-                        <DietMark diet="NON_VEG" size={11} /> {all.filter((r) => r.diet === 'NON_VEG').length}
-                      </span>
-                      {' · '}
-                      {orders} item order{orders === 1 ? '' : 's'}
-                    </>
-                  ) : null}
-                </span>
-                {all.some(needsCheck) ? (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-200">
-                    {all.filter(needsCheck).length} to check
-                  </span>
-                ) : null}
-              </summary>
-
-              {list.length === 0 ? (
-                <p className="border-t border-line px-4 py-4 text-sm text-muted">
-                  No items yet. They appear here with the first order from this aggregator, or add one above.
-                </p>
-              ) : (
-                <div className="overflow-x-auto border-t border-line">
-                  <table className="w-full min-w-[40rem] text-sm">
-                    <thead className="border-b border-line bg-sunken/60">
-                      <tr>
-                        <th className={thClass}>Item</th>
-                        <th className={`${thClass} w-20 text-right`}>Orders</th>
-                        <th className={`${thClass} w-20 text-right`}>Qty</th>
-                        <th className={`${thClass} w-32 whitespace-nowrap`}>Last ordered</th>
-                        <th className={`${thClass} w-80 whitespace-nowrap`}>
-                          <span className="flex items-center justify-between gap-3">
-                            Veg / non-veg
-                            {suggested > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => confirmAll(list)}
-                                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold normal-case tracking-normal whitespace-nowrap text-accent hover:bg-accent-soft ${focusRing}`}
-                              >
-                                Confirm {suggested} suggested
-                              </button>
-                            ) : null}
-                          </span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line">
-                      {list.map((r) => (
-                        <tr key={r.id} className="hover:bg-sunken/60">
-                          <td className="px-3 py-2">
-                            <span className="flex items-center gap-2">
-                              <DietMark diet={r.diet} />
-                              <span className="font-medium text-ink [overflow-wrap:anywhere]">{r.name}</span>
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-ink">{r.orderCount || <span className="text-faint">0</span>}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-muted">{r.qty || <span className="text-faint">0</span>}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-muted">
-                            {r.lastOrderedAt ? formatShortDateTime(r.lastOrderedAt) : <span className="text-faint">never</span>}
-                          </td>
-                          <td className="px-3 py-1.5">
-                            <span className="flex items-center gap-2">
-                              <span className={segmentedClass}>
-                                <TagButton active={r.diet === 'VEG'} diet="VEG" onClick={() => tag(r, 'VEG')} name={r.name} />
-                                <TagButton active={r.diet === 'NON_VEG'} diet="NON_VEG" onClick={() => tag(r, 'NON_VEG')} name={r.name} />
-                              </span>
-                              {r.diet === null ? (
-                                <span className="text-[11px] font-semibold text-amber-800">not tagged</span>
-                              ) : !r.reviewed ? (
-                                <span className="text-[11px] text-amber-800" title="Filled in automatically from the item name. Click the right tag to confirm it. Until then it prints on the KOT with a ? after its mark.">
-                                  suggested
-                                </span>
-                              ) : null}
-                            </span>
-                            {errors[r.id] ? (
-                              <p role="alert" className="mt-1 text-[11px] font-medium text-red-700">
-                                Not saved: {errors[r.id]}
-                              </p>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </details>
-          </Card>
-        )
-      })}
-
-      {shown.length === 0 && (filter !== 'all' || needle) ? (
+      {visible.length === 0 ? (
         <p className="rounded-xl border border-dashed border-line-strong bg-surface p-8 text-center text-sm text-muted">
-          Nothing matches.
+          {filtering
+            ? 'Nothing matches.'
+            : 'No items yet. They appear here with the first order from each aggregator, or add one above.'}
         </p>
-      ) : null}
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[46rem] text-sm">
+              <thead className="border-b border-line bg-sunken/60">
+                <tr>
+                  <th className={thClass}>Item</th>
+                  {source === 'all' ? <th className={`${thClass} w-40`}>Aggregator</th> : null}
+                  <th className={`${thClass} w-20 text-right`}>Orders</th>
+                  <th className={`${thClass} w-20 text-right`}>Qty</th>
+                  <th className={`${thClass} w-32 whitespace-nowrap`}>Last ordered</th>
+                  <th className={`${thClass} w-64 whitespace-nowrap`}>Veg / non-veg</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {visible.map((r, i) => (
+                  <Fragment key={r.id}>
+                  {/* A heading where the section changes, and at the top of
+                      every page so a page never starts without one. */}
+                  {i === 0 || sectionOf(visible[i - 1]) !== sectionOf(r) ? (
+                    <tr className="bg-sunken/60">
+                      <th colSpan={columns} scope="colgroup" className="px-3 py-1.5 text-left text-xs font-semibold text-ink">
+                        {sectionOf(r)}
+                        <span className="ml-2 font-normal tabular-nums text-muted">
+                          {shown.filter((x) => sectionOf(x) === sectionOf(r)).length}
+                        </span>
+                      </th>
+                    </tr>
+                  ) : null}
+                  <tr className="hover:bg-sunken/60">
+                    <td className="px-3 py-2">
+                      <span className="flex items-center gap-2">
+                        <DietMark diet={r.diet} />
+                        <span className="font-medium text-ink [overflow-wrap:anywhere]">{r.name}</span>
+                      </span>
+                    </td>
+                    {source === 'all' ? (
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => { setSource(r.source); setPage(1) }}
+                          title={`Show only ${labelOf.get(r.source) ?? r.source}`}
+                          className={`rounded text-xs text-muted hover:text-accent hover:underline ${focusRing}`}
+                        >
+                          {labelOf.get(r.source) ?? r.source}
+                        </button>
+                      </td>
+                    ) : null}
+                    <td className="px-3 py-2 text-right tabular-nums text-ink">{r.orderCount || <span className="text-faint">0</span>}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">{r.qty || <span className="text-faint">0</span>}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-muted">
+                      {r.lastOrderedAt ? formatShortDateTime(r.lastOrderedAt) : <span className="text-faint">never</span>}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <span className="flex items-center gap-2">
+                        <span className={segmentedClass}>
+                          <TagButton active={r.diet === 'VEG'} diet="VEG" onClick={() => tag(r, 'VEG')} name={r.name} />
+                          <TagButton active={r.diet === 'NON_VEG'} diet="NON_VEG" onClick={() => tag(r, 'NON_VEG')} name={r.name} />
+                        </span>
+                        {r.diet === null ? (
+                          <span className="text-[11px] font-semibold text-amber-800">not tagged</span>
+                        ) : !r.reviewed ? (
+                          <span className="text-[11px] text-amber-800" title="Filled in automatically from the item name. Click the right tag to confirm it. Until then it prints on the KOT with a ? after its mark.">
+                            suggested
+                          </span>
+                        ) : null}
+                      </span>
+                      {errors[r.id] ? (
+                        <p role="alert" className="mt-1 text-[11px] font-medium text-red-700">
+                          Not saved: {errors[r.id]}
+                        </p>
+                      ) : null}
+                    </td>
+                  </tr>
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-3 py-2 text-xs text-muted">
+            <span className="flex items-center gap-2" role="group" aria-label="Items per page">
+              Per page
+              <span className={segmentedClass}>
+                {PAGE_SIZES.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    aria-pressed={pageSize === n}
+                    onClick={() => { setPageSize(n); setPage(1) }}
+                    className={segmentClass(pageSize === n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </span>
+            </span>
+            <nav aria-label="Pages" className="flex items-center gap-2">
+              <Button type="button" size="sm" variant="secondary" disabled={current <= 1} onClick={() => setPage(current - 1)}>
+                Previous
+              </Button>
+              <span className="tabular-nums">Page {current} of {pageCount}</span>
+              <Button type="button" size="sm" variant="secondary" disabled={current >= pageCount} onClick={() => setPage(current + 1)}>
+                Next
+              </Button>
+            </nav>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
