@@ -53,6 +53,7 @@ const DIET_TEXT: Record<Exclude<OrderDiet, null>, string> = {
   NON_VEG: 'non-veg',
   MIXED: 'veg + non-veg',
   UNTAGGED: 'veg/non-veg not tagged',
+  NON_VEG_UNTAGGED: 'non-veg + an item not tagged',
 }
 
 /** Everything shown in a row, as plain text for pasting elsewhere. */

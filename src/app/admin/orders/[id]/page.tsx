@@ -32,7 +32,7 @@ import { viewReturn } from '@/lib/repo/rtoRepo'
 import { ReturnToOriginCard } from '@/components/ReturnToOrigin'
 import Link from 'next/link'
 import { dietLookupFor } from '@/lib/repo/menuRepo'
-import { dietFor, DIET_LABEL } from '@/lib/diet'
+import { DIET_LABEL, isMenuDish, tagFor } from '@/lib/diet'
 import { DietMark } from '@/components/DietMark'
 
 /** Statuses an order can only be in if its KOT has already been sent once. */
@@ -254,9 +254,11 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
             />
             <ul className="divide-y divide-line">
               {kitchenItems.map((i) => {
-                // From the menu database, by aggregator and item name: the
-                // same lookup that decides which KOT this item prints on.
-                const diet = dietFor(dietLookup, order.source, i)
+                // The same lookup that decides which KOT this item prints on:
+                // the menu database by aggregator and item name, unless the
+                // item is tagged on this order itself.
+                const { diet, confirmed } = tagFor(dietLookup, order.source, i)
+                const composite = !isMenuDish(i)
                 return (
                 <li key={String(i._id)} className="px-4 py-3 text-sm">
                   <div className="flex justify-between gap-4">
@@ -269,7 +271,19 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                         <DietMark diet={diet} />
                         {diet ? DIET_LABEL[diet] : 'Not tagged'}
                       </span>
-                      <span className="font-medium text-ink">{i.name}</span>
+                      <span className="min-w-0">
+                        <span className="font-medium text-ink">{i.name}</span>
+                        {diet && !confirmed ? (
+                          <span className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                            suggested, not confirmed
+                          </span>
+                        ) : null}
+                        {!diet && composite ? (
+                          <span className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                            set veg / non-veg with the pencil
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2 tabular-nums text-muted">
                       ×{i.qty}
@@ -283,6 +297,7 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                         notes={i.notes}
                         spec={i.spec}
                         isPacking={i.isPacking}
+                        diet={i.diet}
                       />
                     </span>
                   </div>

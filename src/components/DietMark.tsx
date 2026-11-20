@@ -50,7 +50,8 @@ const ORDER_DIET_TEXT: Record<Exclude<OrderDiet, null>, string> = {
   VEG: 'Veg',
   NON_VEG: 'Non-veg',
   MIXED: 'Veg + non-veg: prints two KOTs',
-  UNTAGGED: 'Has an item the menu has no veg / non-veg tag for',
+  UNTAGGED: 'Has an item with no veg / non-veg tag',
+  NON_VEG_UNTAGGED: 'Has non-veg, and an item with no veg / non-veg tag: prints two KOTs',
 }
 
 /** One order's mark for a board row: both shapes when it carries both. */
@@ -62,6 +63,13 @@ export function OrderDietMark({ diet, size = 14 }: { diet: OrderDiet | undefined
         <>
           <DietMark diet="VEG" size={size} />
           <DietMark diet="NON_VEG" size={size} />
+        </>
+      ) : diet === 'NON_VEG_UNTAGGED' ? (
+        // The triangle still shows: an untagged side dish must not hide that
+        // the order is known to carry non-veg.
+        <>
+          <DietMark diet="NON_VEG" size={size} />
+          <DietMark diet={null} size={size} />
         </>
       ) : (
         <DietMark diet={diet === 'UNTAGGED' ? null : diet} size={size} />

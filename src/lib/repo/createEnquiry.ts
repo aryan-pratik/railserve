@@ -1,5 +1,6 @@
 import { ForbiddenError, type AuthContext } from '../authContext'
 import { insertOrder, nextManualOrderId } from './orderRepo'
+import { bulkThaliName, type Diet } from '../diet'
 import { istLocalToUtc } from '../format'
 
 /**
@@ -18,6 +19,8 @@ export async function createEnquiry(
     trainNo: string | null
     pax: number | null
     menuSpec: string | null
+    /** Veg or non-veg, when the enquiry already says. Settable later on the order. */
+    thaliDiet?: Diet | null
     scheduledArrival: string | null
     contactName: string | null
     contactPhone: string | null
@@ -59,12 +62,13 @@ export async function createEnquiry(
     items: input.pax
       ? [
           {
-            name: `Bulk thali × ${input.pax}`,
+            name: bulkThaliName(input.pax),
             qty: input.pax,
             pricePaise: null,
             spec: input.menuSpec,
             isPacking: false,
             notes: null,
+            diet: input.thaliDiet ?? null,
           },
         ]
       : [],

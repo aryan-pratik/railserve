@@ -17,6 +17,9 @@ export const dynamic = 'force-dynamic'
  */
 export default async function AdminMenuPage() {
   const ctx = await requireRole('ADMIN')
+  // Taken before the read: a tag saved after this moment may be missing from
+  // `rows`, and the board keeps showing its own copy of it (see MenuBoard).
+  const asOf = new Date().getTime()
   const rows = await menuOverview(ctx)
 
   return (
@@ -27,6 +30,7 @@ export default async function AdminMenuPage() {
       />
       <MenuBoard
         rows={rows}
+        asOf={asOf}
         sources={ORDER_SOURCES.map((s) => ({ id: s, label: SOURCE_LABEL[s] }))}
       />
     </div>

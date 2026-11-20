@@ -14,10 +14,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // appOrigin.test.ts. Two PNGs per requested order (the KOT and the bag
 // slip), which is what the real render page produces now that it is told
 // which orders to draw.
-const renderKotScreenshots = vi.fn(async (url: string) => {
+const renderKotScreenshots = vi.fn(async (url: string): Promise<{ image: Buffer; orderId: string | null }[]> => {
   const wanted = new URL(url).searchParams.get('orders')
   const orders = wanted ? wanted.split(',') : ['order']
-  return orders.flatMap((id) => [Buffer.from(`kot-${id}`), Buffer.from(`slip-${id}`)])
+  return orders.flatMap((id) => [
+    { image: Buffer.from(`kot-${id}`), orderId: id },
+    { image: Buffer.from(`slip-${id}`), orderId: id },
+  ])
 })
 vi.mock('@/lib/printer/screenshot', () => ({ renderKotScreenshots }))
 
@@ -118,12 +121,60 @@ describe('enqueueRunKotPrint', () => {
     expect(await PrintJob.countDocuments({})).toBe(0)
   })
 
-  it('throws when the render disagrees with what was asked for', async () => {
-    renderKotScreenshots.mockResolvedValueOnce([Buffer.from('a'), Buffer.from('b')])
+  it('throws when the render is missing an order that was asked for', async () => {
+    renderKotScreenshots.mockResolvedValueOnce([
+      { image: Buffer.from('a'), orderId: 'a' },
+      { image: Buffer.from('b'), orderId: 'a' },
+    ])
     await expect(
       enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a', 'b'] }),
-    ).rejects.toThrow(/Rendered 2 ticket\(s\) but expected 4 for 2 order\(s\)/)
+    ).rejects.toThrow(/Rendered tickets for 1 order\(s\) but 2 were asked for; missing b/)
     expect(await PrintJob.countDocuments({})).toBe(0)
+  })
+
+  it('throws when the render carries an order nobody asked for', async () => {
+    renderKotScreenshots.mockResolvedValueOnce([
+      { image: Buffer.from('a'), orderId: 'a' },
+      { image: Buffer.from('b'), orderId: 'a' },
+      { image: Buffer.from('c'), orderId: 'z' },
+      { image: Buffer.from('d'), orderId: 'z' },
+    ])
+    await expect(
+      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
+    ).rejects.toThrow(/not asked for z/)
+    expect(await PrintJob.countDocuments({})).toBe(0)
+  })
+
+  it('accepts four tickets for an order that splits into veg and non-veg', async () => {
+    // Two KOTs and two bag slips. What the order is tagged as is the render
+    // page's business; the queue only checks the shape of what came back.
+    renderKotScreenshots.mockResolvedValueOnce(
+      ['kot-veg', 'slip-veg', 'kot-nonveg', 'slip-nonveg'].map((t) => ({ image: Buffer.from(t), orderId: 'a' })),
+    )
+    await enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] })
+    expect((await jobsInPrintOrder()).map((j) => j.images.map(String))).toEqual([
+      ['kot-veg'], ['slip-veg'], ['kot-nonveg'], ['slip-nonveg'],
+    ])
+  })
+
+  it('throws on a ticket count no order can print', async () => {
+    renderKotScreenshots.mockResolvedValueOnce(
+      ['1', '2', '3'].map((t) => ({ image: Buffer.from(t), orderId: 'a' })),
+    )
+    await expect(
+      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
+    ).rejects.toThrow(/Rendered 3 ticket\(s\) for order a; expected 2 or 4/)
+    expect(await PrintJob.countDocuments({})).toBe(0)
+  })
+
+  it('throws on a ticket that does not name its order', async () => {
+    renderKotScreenshots.mockResolvedValueOnce([
+      { image: Buffer.from('a'), orderId: null },
+      { image: Buffer.from('b'), orderId: null },
+    ])
+    await expect(
+      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
+    ).rejects.toThrow(/does not say which order/)
   })
 })
 

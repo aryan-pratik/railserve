@@ -58,6 +58,7 @@ export function manualOrderFromFormData(formData: FormData) {
 
     items,
     menuSpec: text(formData, 'menuSpec'),
+    thaliDiet: text(formData, 'thaliDiet'),
     packingItems: formData.getAll('packingItems').map(String).filter(Boolean),
   })
 }

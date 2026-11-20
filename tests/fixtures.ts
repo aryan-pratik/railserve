@@ -30,8 +30,6 @@ export async function resetDb() {
     { gmailMessageId: 1 },
     { unique: true, name: 'gmailMessageId_unique', partialFilterExpression: { gmailMessageId: { $type: 'string' } } },
   )
-  // One menu row per dish per aggregator; registerMenuItems upserts on it.
-  await MenuItem.collection.createIndex({ source: 1, key: 1 }, { unique: true, name: 'source_key_unique' })
   // Payment ingestion is idempotent on the RRN, so the tests that assert that
   // need the index that enforces it.
   await Payment.collection.createIndex({ rrn: 1 }, { unique: true, name: 'rrn_unique' })

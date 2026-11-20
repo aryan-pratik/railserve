@@ -23,6 +23,8 @@ import { DietMark } from './DietMark'
  * the menu database, never from reading the item's name here. Each ticket
  * says VEG or NON-VEG beside a circle or a triangle, and every item carries
  * the same shape: thermal paper has no colour, so the shape is the signal.
+ * A shape followed by "?" is a tag nobody has confirmed on the Menu page yet;
+ * a "?" alone is an item with no tag at all. Both print a line saying so.
  *
  * Set in Inter, at medium weight. The ticket is printed as a 576-dot 1-bit
  * image, so a digit is about 16 dots tall and what survives is its outline,
@@ -43,6 +45,8 @@ import { DietMark } from './DietMark'
 type Maybe<T> = T | null | undefined
 
 export type KotOrder = {
+  /** Stamped on every ticket as data-order-id, which the print queue checks the render by. */
+  _id: unknown
   externalOrderId: string
   orderType: string
   /** The aggregator the order came through — see orderEnums.ts. */
@@ -71,6 +75,8 @@ export type KotOrder = {
     spec?: Maybe<string>
     isPacking: boolean
     notes?: Maybe<string>
+    /** Veg / non-veg set on this order itself. Wins over the menu (lib/diet.ts tagFor). */
+    diet?: Maybe<string>
   }[]
 }
 
@@ -79,11 +85,42 @@ type Part = KotPart<KotItem>
 
 /** "VEG" / "NON-VEG" with its shape, as the ticket's heading says it. */
 function PartLabel({ part, size = 14 }: { part: Part; size?: number }) {
+  // Untagged food rides on the veg ticket, but a ticket carrying nothing
+  // else must not call itself VEG: nobody has said that it is.
+  const food = part.items.filter((i) => !i.isPacking)
+  const unknown = part.diet === 'VEG' && food.length > 0 && food.every((i) => i.diet === null)
   return (
     <span className="inline-flex items-center gap-1">
-      <DietMark diet={part.diet} size={size} print />
-      <span>{part.diet === 'VEG' ? 'VEG' : 'NON-VEG'}</span>
+      <DietMark diet={unknown ? null : part.diet} size={size} print />
+      <span>{unknown ? 'NOT TAGGED' : part.diet === 'VEG' ? 'VEG' : 'NON-VEG'}</span>
     </span>
+  )
+}
+
+/**
+ * One item's mark. A tag that is only a suggestion prints its shape and a
+ * "?" after it. `wide` reserves the room for that "?" on every row of a
+ * ticket that has one, so the quantities stay in one column.
+ */
+function ItemMark({ item, wide }: { item: Part['items'][number]; wide: boolean }) {
+  return (
+    <span className={`mt-px inline-flex shrink-0 items-start ${wide ? 'w-[21px]' : ''}`}>
+      <DietMark diet={item.diet} size={13} print />
+      {item.diet && !item.confirmed ? <span className="text-[12px] font-bold leading-[13px]">?</span> : null}
+    </span>
+  )
+}
+
+/** The lines under the items that say what a "?" means. Nothing when every tag is confirmed. */
+function MarkNotes({ items }: { items: Part['items'] }) {
+  const untagged = items.some((i) => i.diet === null)
+  const unconfirmed = items.some((i) => i.diet !== null && !i.confirmed)
+  if (!untagged && !unconfirmed) return null
+  return (
+    <div className="mt-1.5 text-[11px] font-bold">
+      {untagged ? <div>? ALONE = NOT TAGGED VEG / NON-VEG. CHECK.</div> : null}
+      {unconfirmed ? <div>? AFTER MARK = TAG NOT CONFIRMED. CHECK.</div> : null}
+    </div>
   )
 }
 
@@ -114,12 +151,12 @@ function Line({ label, value }: { label: string; value: string }) {
 export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: KotOutlet; part: Part }) {
   const kitchen = part.items.filter((i) => !i.isPacking)
   const packing = part.items.filter((i) => i.isPacking)
-  const untagged = kitchen.some((i) => i.diet === null)
+  const wideMarks = kitchen.some((i) => i.diet !== null && !i.confirmed)
   const isBulk = order.orderType === 'BULK'
   const isLocal = order.orderType === 'LOCAL'
 
   return (
-    <div className={TICKET_CLASS}>
+    <div className={TICKET_CLASS} data-order-id={String(order._id)}>
       <div className="text-center">
         {/* Which brand's ticket this is. Several brands share one printer at
             a station, so this is the routing label the kitchen reads first -
@@ -197,7 +234,9 @@ export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: Ko
       <Rule />
 
       <div className="text-[13px] font-bold">KITCHEN</div>
-      {isBulk && order.pax ? (
+      {/* Once per order, like the amount: on the second KOT of a split
+          order the same box would read as a second lot of plates. */}
+      {isBulk && order.pax && part.index === 1 ? (
         <div className="my-1 border border-black py-1 text-center text-[15px] font-bold">
           {order.pax} PAX
         </div>
@@ -206,23 +245,21 @@ export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: Ko
         {kitchen.map((i) => (
           <li key={String(i._id)}>
             <div className="flex gap-1.5">
-              <DietMark diet={i.diet} size={13} print className="mt-px" />
+              <ItemMark item={i} wide={wideMarks} />
               <span className="w-8 shrink-0 text-[13px] font-bold tabular-nums">{i.qty}×</span>
               <span className="font-bold uppercase">{i.name}</span>
             </div>
             {/* The composite thali text, printed once, verbatim. */}
             {i.spec ? (
-              <pre className="ml-[3.25rem] mt-0.5 whitespace-pre-wrap break-words font-kot text-[11px]">
+              <pre className={`${wideMarks ? 'ml-[3.75rem]' : 'ml-[3.25rem]'} mt-0.5 whitespace-pre-wrap break-words font-kot text-[11px]`}>
                 {i.spec}
               </pre>
             ) : null}
-            {i.notes ? <div className="ml-[3.25rem] text-[11px] italic">note: {i.notes}</div> : null}
+            {i.notes ? <div className={`${wideMarks ? 'ml-[3.75rem]' : 'ml-[3.25rem]'} text-[11px] italic`}>note: {i.notes}</div> : null}
           </li>
         ))}
       </ul>
-      {untagged ? (
-        <div className="mt-1.5 text-[11px] font-bold">? = NOT TAGGED VEG / NON-VEG. CHECK.</div>
-      ) : null}
+      <MarkNotes items={kitchen} />
 
       {packing.length > 0 ? (
         <>
@@ -283,11 +320,12 @@ export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: Ko
  */
 export function KotSlip({ order, part }: { order: KotOrder; part: Part }) {
   const food = part.items.filter((i) => !i.isPacking)
+  const wideMarks = food.some((i) => i.diet !== null && !i.confirmed)
   const isBulk = order.orderType === 'BULK'
   const isLocal = order.orderType === 'LOCAL'
 
   return (
-    <div className={TICKET_CLASS}>
+    <div className={TICKET_CLASS} data-order-id={String(order._id)}>
       <div className="text-center text-[18px] font-bold">{order.externalOrderId}</div>
       <div className="flex items-center justify-center gap-2 text-[13px] font-bold">
         <PartLabel part={part} />
@@ -313,7 +351,7 @@ export function KotSlip({ order, part }: { order: KotOrder; part: Part }) {
       <ul className="space-y-0.5">
         {food.map((i) => (
           <li key={String(i._id)} className="flex gap-1.5">
-            <DietMark diet={i.diet} size={13} print className="mt-px" />
+            <ItemMark item={i} wide={wideMarks} />
             <span className="w-8 shrink-0 font-bold tabular-nums">{i.qty}×</span>
             <span className="font-bold uppercase">{i.name}</span>
           </li>

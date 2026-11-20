@@ -18,9 +18,9 @@ export default async function InternalPrintRunPage(props: PageProps<'/internal/p
 
   // INTERNAL_CTX is ADMIN-shaped and bypasses every outlet scope, so this run
   // holds every brand trading at the station. The enqueue step passes the
-  // exact ids it is entitled to print, and works out how many tickets those
-  // orders make from the same split KotTickets uses (expectedTicketCount in
-  // printer/queue.ts), so a mismatch means the two disagree.
+  // exact ids it is entitled to print, and checks the tickets that come back
+  // against them (checkRunRender in printer/queue.ts): each ticket names its
+  // order, so a mismatch means the two disagree.
   const wanted = typeof orderFilter === 'string' ? new Set(orderFilter.split(',')) : null
   const printable = wanted ? run.orders.filter((o) => wanted.has(String(o._id))) : run.orders
   if (printable.length === 0) notFound()

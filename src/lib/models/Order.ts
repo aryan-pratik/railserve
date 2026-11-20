@@ -8,6 +8,7 @@ import {
   TIMING_SOURCES,
 } from '../orderEnums'
 import { RTO_STATUSES } from '../rto'
+import { DIETS } from '../diet'
 
 const OrderItemSchema = new Schema(
   {
@@ -20,6 +21,10 @@ const OrderItemSchema = new Schema(
     // Tissue, spoon, water. Drives the PACKING section of the KOT.
     isPacking: { type: Boolean, default: false },
     notes: { type: String, default: null },
+    // Veg / non-veg for this item on this order only. Null, the usual case,
+    // means "as the menu database says" (lib/diet.ts tagFor). Set for an
+    // item that is not a dish the menu can name: a bulk thali.
+    diet: { type: String, default: null, enum: [...DIETS, null] },
   },
   { _id: true },
 )

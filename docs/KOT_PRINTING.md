@@ -382,10 +382,31 @@ separate stations.
   **triangle** for non-veg, each in a square, on the ticket heading and beside
   every item.
 - An item the menu has no tag for prints on the veg KOT with a `?` and the
-  line `? = NOT TAGGED VEG / NON-VEG. CHECK.` Tag it on `/admin/menu`.
-- New dishes are added to the menu when an order carrying them arrives, with a
-  suggested tag that shows under "Needs check" until an admin confirms it.
-  `npm run menu:seed -- --apply` does the same for every order already
-  received (run it once after deploying, after `npm run indexes`).
+  line `? ALONE = NOT TAGGED VEG / NON-VEG. CHECK.` Tag it on `/admin/menu`.
+- New dishes are added to the menu when an order carrying them arrives, when
+  an item is added or renamed on an existing order, and when an order is
+  moved to another aggregator. Each gets a suggested tag from its name
+  (`src/lib/dietSuggest.ts`), or no tag when the name could be either
+  ("Seekh Kebab", "Biryani"). Either way it shows under "Needs check" until an
+  admin confirms it.
+- A suggested tag still decides which KOT the item prints on, but until it is
+  confirmed the item's mark is followed by a `?` and the ticket carries the
+  line `? AFTER MARK = TAG NOT CONFIRMED. CHECK.` Confirming on `/admin/menu`
+  (one click per item, or "Confirm N suggested" per aggregator) removes it.
+- A **bulk thali** is not a dish the menu can name (its line is "Bulk thali ×
+  40" and the food is in its spec), so it is never looked up in the menu. It is
+  tagged on the order itself: "Thali is" on the bulk order and enquiry forms,
+  or the pencil on the item afterwards. Untagged, it prints on the veg KOT
+  with a `?`. The same per-item setting overrides the menu for any one item on
+  any one order.
+- `npm run menu:seed` lists every dish in the orders already received with
+  the tag it would suggest; `npm run menu:seed -- --apply` adds them. Run it
+  once after deploying. No index step is needed: a menu row's `_id` is the
+  aggregator and dish together, so one row per dish holds by construction.
 - The order total and the COD QR print on the first KOT only; the second says
-  `TOTAL ON KOT 1`, so it cannot be read as a second amount to collect.
+  `TOTAL ON KOT 1`, so it cannot be read as a second amount to collect. The
+  PAX box of a bulk order prints on the first KOT only, for the same reason.
+- A train's batch print is checked before anything is queued: every ticket
+  carries its order id (`data-order-id`), and the orders drawn must be exactly
+  the orders asked for, each with two tickets or four (`checkRunRender` in
+  `src/lib/printer/queue.ts`).

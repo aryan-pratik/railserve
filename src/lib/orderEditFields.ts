@@ -12,6 +12,7 @@
  */
 import { ORDER_SOURCES, ORDER_TYPES, PAYMENT_MODES, sourceLabel } from './orderEnums'
 import { formatIST, formatMoney, formatServiceDate } from './format'
+import { DIETS, DIET_LABEL, isDiet } from './diet'
 
 export type FieldKind =
   | 'text'
@@ -67,6 +68,9 @@ export const ITEM_EDIT_FIELDS = [
   { key: 'notes', label: 'Notes', kind: 'longtext', max: 500 },
   { key: 'spec', label: 'Spec', kind: 'longtext', max: 2000 },
   { key: 'isPacking', label: 'Packing item', kind: 'enum', options: ['true', 'false'] },
+  // Veg / non-veg for this item on this order only. Empty means "as the menu
+  // says". The one way to tag a bulk thali, whose name is not a dish.
+  { key: 'diet', label: 'Veg / non-veg', kind: 'enum', options: DIETS },
 ] as const satisfies readonly EditableField[]
 
 export type ItemEditKey = (typeof ITEM_EDIT_FIELDS)[number]['key']
@@ -92,6 +96,7 @@ export function enumOptionLabel(key: string, value: string): string {
   if (key === 'paymentMode') return value === 'COD' ? 'COD' : value.charAt(0) + value.slice(1).toLowerCase()
   if (key === 'orderType') return value.charAt(0) + value.slice(1).toLowerCase()
   if (key === 'isPacking') return value === 'true' ? 'Yes' : 'No'
+  if (key === 'diet') return isDiet(value) ? DIET_LABEL[value] : value
   return value
 }
 

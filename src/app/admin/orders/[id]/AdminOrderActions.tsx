@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { Button, FormNote, IconButton, inputClass, textareaClass } from '@/components/ui'
 import { PAYMENT_MODES } from '@/lib/orderEnums'
+import { DIETS, DIET_LABEL } from '@/lib/diet'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { ORDER_EDIT_FIELDS, enumOptionLabel, type EditableField } from '@/lib/orderEditFields'
 import { IconPencil, IconPlus } from '@/components/Icons'
@@ -303,13 +304,33 @@ function PackingBox({ id, checked }: { id: string; checked: boolean }) {
 }
 
 /**
+ * Veg / non-veg for this one item on this one order. Left on "As the menu
+ * says", the tag comes from the Menu page like every other item's. Picking
+ * one here wins over the menu, which is how a bulk thali gets tagged: its
+ * name is "Bulk thali × 40", not a dish the menu could know.
+ */
+function ItemDietSelect({ id, value }: { id: string; value?: string | null }) {
+  return (
+    <label htmlFor={id} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+      Veg / non-veg on this order
+      <select id={id} name="diet" defaultValue={value ?? ''} className={`${inputClass} w-auto`}>
+        <option value="">As the menu says</option>
+        {DIETS.map((d) => (
+          <option key={d} value={d}>{DIET_LABEL[d]}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+/**
  * Edit-in-place for one order item. Collapsed to a pencil button by default;
  * clicking it swaps the row for a small form so a wrong qty, price or name
  * doesn't need a full item delete/re-add. Stays open until the save goes
  * through, so a refused value is shown rather than lost with the form.
  */
 export function EditOrderItem({
-  orderId, itemId, name, qty, pricePaise, notes, spec, isPacking,
+  orderId, itemId, name, qty, pricePaise, notes, spec, isPacking, diet,
 }: {
   orderId: string
   itemId: string
@@ -319,6 +340,7 @@ export function EditOrderItem({
   notes?: string | null
   spec?: string | null
   isPacking?: boolean | null
+  diet?: string | null
 }) {
   const [editing, setEditing] = useState(false)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
@@ -381,6 +403,7 @@ export function EditOrderItem({
           className={textareaClass}
         />
         <PackingBox id={`item-packing-${itemId}`} checked={Boolean(isPacking)} />
+        <ItemDietSelect id={`item-diet-${itemId}`} value={diet} />
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" size="sm" variant="secondary" pending={pending}>Save</Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
@@ -445,6 +468,7 @@ export function AddOrderItem({ orderId }: { orderId: string }) {
       <label className="sr-only" htmlFor="new-item-notes">Notes</label>
       <textarea id="new-item-notes" name="notes" rows={2} placeholder="Notes" className={textareaClass} />
       <PackingBox id="new-item-packing" checked={false} />
+      <ItemDietSelect id="new-item-diet" />
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" size="sm" variant="secondary" pending={pending}>Add</Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>

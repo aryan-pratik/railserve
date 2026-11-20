@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useMemo, useState, useTransition } from 'react'
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, FormNote, Stat, StatStrip, focusRing, inputBase, segmentClass, segmentedClass, thClass } from '@/components/ui'
 import { IconChevronDown, IconSearch } from '@/components/Icons'
@@ -8,7 +8,7 @@ import { DietMark } from '@/components/DietMark'
 import { formatShortDateTime } from './when'
 import type { Diet } from '@/lib/diet'
 import type { MenuRow } from '@/lib/repo/menuRepo'
-import { addMenuItem, confirmSuggested, tagMenuItem, type MenuState } from './actions'
+import { addMenuItem, confirmSuggested, tagMenuItem, type MenuState, type TagResult } from './actions'
 
 type Filter = 'all' | 'check' | 'untagged' | 'VEG' | 'NON_VEG'
 
@@ -31,21 +31,62 @@ function matches(r: MenuRow, filter: Filter) {
 }
 
 /**
+ * A tag clicked here. Shown over the row's own data while its save is on the
+ * way (`pending`), and afterwards for as long as the rows on the page were
+ * read before the save landed (`at >= asOf`, both this server's clock). Once
+ * the page holds rows read after it, the row's own data is the truth again,
+ * so a later change by someone else is never masked by an old click.
+ */
+type Override = { diet: Diet | null; reviewed: boolean; pending: boolean; at: number; seq: number }
+
+/** How long after the last saved click the page re-reads the menu and its counts. */
+const REFRESH_AFTER_MS = 2500
+
+/**
  * The menu, one section per aggregator, with the veg / non-veg tag on every
  * row as two buttons. Filtering and search are done here in the browser: the
  * whole menu is a few hundred short rows and tagging is a click-through job,
  * so a round trip per keystroke would only slow it down.
  */
-export function MenuBoard({ rows, sources }: { rows: MenuRow[]; sources: { id: string; label: string }[] }) {
+export function MenuBoard({
+  rows,
+  asOf,
+  sources,
+}: {
+  rows: MenuRow[]
+  /** The server's clock just before `rows` was read. */
+  asOf: number
+  sources: { id: string; label: string }[]
+}) {
   const [filter, setFilter] = useState<Filter>('all')
   const [q, setQ] = useState('')
-  // Tags clicked but not yet back from the server, so a row answers at once.
-  const [local, setLocal] = useState<Record<string, { diet: Diet | null; reviewed: boolean }>>({})
-  const [error, setError] = useState<string | null>(null)
+  const [overrides, setOverrides] = useState<Record<string, Override>>({})
+  // Per row, and kept until that row saves: a failure on one row must not be
+  // wiped by the next click on another.
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const [, startTransition] = useTransition()
   const router = useRouter()
+  const seq = useRef(0)
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const merged = useMemo(() => rows.map((r) => (local[r.id] ? { ...r, ...local[r.id] } : r)), [rows, local])
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+  }, [])
+
+  /** One re-read after the clicking pauses, not one per click: it recounts every order. */
+  function refreshSoon() {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    refreshTimer.current = setTimeout(() => router.refresh(), REFRESH_AFTER_MS)
+  }
+
+  const merged = useMemo(
+    () =>
+      rows.map((r) => {
+        const o = overrides[r.id]
+        return o && (o.pending || o.at >= asOf) ? { ...r, diet: o.diet, reviewed: o.reviewed } : r
+      }),
+    [rows, overrides, asOf],
+  )
   const needle = q.trim().toLowerCase()
   const shown = merged.filter((r) => matches(r, filter) && (!needle || r.name.toLowerCase().includes(needle)))
 
@@ -57,35 +98,49 @@ export function MenuBoard({ rows, sources }: { rows: MenuRow[]; sources: { id: s
     NON_VEG: merged.filter((r) => r.diet === 'NON_VEG').length,
   }
 
-  function tag(row: MenuRow, diet: Diet) {
-    setError(null)
-    setLocal((s) => ({ ...s, [row.id]: { diet, reviewed: true } }))
-    startTransition(async () => {
-      const res = await tagMenuItem(row.id, diet)
-      if (res.error) {
-        setError(`${row.name}: ${res.error}`)
-        setLocal((s) => {
-          const { [row.id]: _dropped, ...rest } = s
-          return rest
-        })
-      }
-    })
-  }
-
-  function confirmAll(list: MenuRow[]) {
-    const ids = list.filter((r) => r.diet !== null && !r.reviewed).map((r) => r.id)
-    if (ids.length === 0) return
-    setError(null)
-    setLocal((s) => {
+  /** Shows the change at once, saves it, and settles or rolls back each row when the save answers. */
+  function save(changes: { id: string; name: string; diet: Diet | null }[], run: () => Promise<TagResult>) {
+    const mine = ++seq.current
+    const ids = changes.map((c) => c.id)
+    setOverrides((s) => {
       const next = { ...s }
-      for (const r of list) if (ids.includes(r.id)) next[r.id] = { diet: r.diet, reviewed: true }
+      for (const c of changes) next[c.id] = { diet: c.diet, reviewed: true, pending: true, at: 0, seq: mine }
       return next
     })
     startTransition(async () => {
-      const res = await confirmSuggested(ids)
-      if (res.error) setError(res.error)
-      router.refresh()
+      const res: TagResult = await run().catch(() => ({
+        error: 'Could not save. Check the connection and try again.',
+      }))
+      // A row clicked again since then belongs to that later click.
+      setOverrides((s) => {
+        const next = { ...s }
+        for (const id of ids) {
+          if (next[id]?.seq !== mine) continue
+          if ('error' in res) delete next[id]
+          else next[id] = { ...next[id], pending: false, at: res.at }
+        }
+        return next
+      })
+      setErrors((s) => {
+        const next = { ...s }
+        for (const id of ids) {
+          if ('error' in res) next[id] = res.error
+          else delete next[id]
+        }
+        return next
+      })
+      if (!('error' in res)) refreshSoon()
     })
+  }
+
+  function tag(row: MenuRow, diet: Diet) {
+    save([{ id: row.id, name: row.name, diet }], () => tagMenuItem(row.id, diet))
+  }
+
+  function confirmAll(list: MenuRow[]) {
+    const changes = list.filter((r) => r.diet !== null && !r.reviewed).map((r) => ({ id: r.id, name: r.name, diet: r.diet }))
+    if (changes.length === 0) return
+    save(changes, () => confirmSuggested(changes.map((c) => c.id)))
   }
 
   return (
@@ -98,13 +153,14 @@ export function MenuBoard({ rows, sources }: { rows: MenuRow[]; sources: { id: s
       </StatStrip>
 
       <Card className="flex flex-wrap items-center gap-3 p-3">
-        <div className={segmentedClass} role="tablist" aria-label="Filter items">
+        {/* A group of toggle buttons, not tabs: nothing here is a tab panel,
+            and a tablist promises arrow-key movement these do not have. */}
+        <div className={segmentedClass} role="group" aria-label="Filter items">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
-              role="tab"
-              aria-selected={filter === f.key}
+              aria-pressed={filter === f.key}
               onClick={() => setFilter(f.key)}
               className={segmentClass(filter === f.key)}
             >
@@ -124,12 +180,6 @@ export function MenuBoard({ rows, sources }: { rows: MenuRow[]; sources: { id: s
           />
         </label>
       </Card>
-
-      {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-inset ring-red-200">
-          {error}
-        </p>
-      ) : null}
 
       <AddItemForm sources={sources} />
 
@@ -222,11 +272,16 @@ export function MenuBoard({ rows, sources }: { rows: MenuRow[]; sources: { id: s
                               {r.diet === null ? (
                                 <span className="text-[11px] font-semibold text-amber-800">not tagged</span>
                               ) : !r.reviewed ? (
-                                <span className="text-[11px] text-amber-800" title="Filled in automatically from the item name. Click the right tag to confirm it.">
+                                <span className="text-[11px] text-amber-800" title="Filled in automatically from the item name. Click the right tag to confirm it. Until then it prints on the KOT with a ? after its mark.">
                                   suggested
                                 </span>
                               ) : null}
                             </span>
+                            {errors[r.id] ? (
+                              <p role="alert" className="mt-1 text-[11px] font-medium text-red-700">
+                                Not saved: {errors[r.id]}
+                              </p>
+                            ) : null}
                           </td>
                         </tr>
                       ))}
