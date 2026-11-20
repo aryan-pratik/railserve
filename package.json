@@ -27,7 +27,8 @@
     "print-agent:token": "tsx --env-file=.env.local scripts/set-print-agent-token.ts",
     "migrate:listings": "tsx --env-file=.env.local scripts/migrate-aggregator-listings.ts",
     "audit:riders": "tsx --env-file=.env.local scripts/audit-rider-records.ts",
-    "menu:seed": "tsx --env-file=.env.local scripts/seed-menu-items.ts"
+    "menu:seed": "tsx --env-file=.env.local scripts/seed-menu-items.ts",
+    "menu:split": "tsx --env-file=.env.local scripts/split-combined-items.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1120.0",

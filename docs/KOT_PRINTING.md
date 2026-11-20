@@ -403,6 +403,12 @@ separate stations.
   the tag it would suggest; `npm run menu:seed -- --apply` adds them. Run it
   once after deploying. No index step is needed: a menu row's `_id` is the
   aggregator and dish together, so one row per dish holds by construction.
+- An order line that carries several items ("2x Veg Maharaja Thali, 3x Butter
+  Tawa Roti") is split into one item per dish when the order is saved
+  (`src/lib/splitItems.ts`), so each dish has its own menu row and tag.
+  `npm run menu:split` lists orders saved before that with a combined item;
+  `npm run menu:split -- --apply` splits them and drops the combined menu
+  rows from the Menu page. Run it once after deploying.
 - The order total and the COD QR print on the first KOT only; the second says
   `TOTAL ON KOT 1`, so it cannot be read as a second amount to collect. The
   PAX box of a bulk order also prints once, on the KOT that carries the thali.

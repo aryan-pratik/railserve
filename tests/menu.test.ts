@@ -400,6 +400,13 @@ describe('menu database', () => {
     expect((await menuOverview(ADMIN)).map((r) => [r.id, r.orderCount])).toEqual([['ZOOP|egg curry', 2]])
   })
 
+  it('a back-fill from old orders does not put a deleted dish back', async () => {
+    await order('ZOOP', ['Egg Curry'])
+    await removeMenuItem(ADMIN, 'ZOOP|egg curry')
+    await registerMenuItems([{ source: 'ZOOP', name: 'Egg Curry' }, { source: 'ZOOP', name: 'Dal Fry' }], { restore: false })
+    expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['ZOOP|dal fry'])
+  })
+
   it('deleting one aggregator\'s dish leaves the same dish on another', async () => {
     await order('ZOOP', ['Aloo Paratha'])
     await order('OLF', ['Aloo Paratha'])

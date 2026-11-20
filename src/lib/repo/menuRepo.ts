@@ -47,7 +47,10 @@ function onlyDuplicates(err: unknown): boolean {
  * Safe to call from many requests at once: the row's _id is the (aggregator,
  * dish) pair, so the second writer of the same dish is simply a no-op.
  */
-export async function registerMenuItems(rows: MenuCandidate[]): Promise<number> {
+export async function registerMenuItems(rows: MenuCandidate[], opts: { restore?: boolean } = {}): Promise<number> {
+  // `restore: false` is for back-filling from orders already taken: those
+  // say nothing about a dish being ordered again, so a deleted one stays so.
+  const restore = opts.restore !== false
   const seen = new Map<string, { source: OrderSource; key: string; name: string; hint: string | null }>()
   for (const r of rows) {
     const key = menuKey(r.name)
@@ -67,7 +70,7 @@ export async function registerMenuItems(rows: MenuCandidate[]): Promise<number> 
           filter: { _id: id },
           update: {
             $setOnInsert: { source: r.source, key: r.key, name: r.name, diet: suggestDiet(r.name, r.hint), reviewed: false },
-            $set: { removedAt: null },
+            ...(restore ? { $set: { removedAt: null } } : {}),
           },
           upsert: true,
         },
