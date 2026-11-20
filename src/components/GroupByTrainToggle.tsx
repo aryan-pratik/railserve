@@ -30,7 +30,7 @@ export function GroupByTrainToggle({ href, isGrouped }: { href: string; isGroupe
         />
       </span>
       <span className="whitespace-nowrap">Group by train</span>
-      <LinkHint />
+      <LinkHint tucked />
     </Link>
   )
 }
