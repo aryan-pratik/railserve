@@ -40,8 +40,9 @@ function onlyDuplicates(err: unknown): boolean {
 /**
  * Adds any dish on these rows that the menu does not have yet, with a
  * suggested tag that stays unconfirmed (or no tag, when the name does not say
- * enough). Never touches a row that exists: a tag somebody set is not
- * overwritten by a new order.
+ * enough). Never changes the tag on a row that exists: a tag somebody set is
+ * not overwritten by a new order. A dish that was deleted from the Menu page
+ * is put back on it, tag as it was, because it is being ordered again.
  *
  * Safe to call from many requests at once: the row's _id is the (aggregator,
  * dish) pair, so the second writer of the same dish is simply a no-op.
@@ -66,6 +67,7 @@ export async function registerMenuItems(rows: MenuCandidate[]): Promise<number> 
           filter: { _id: id },
           update: {
             $setOnInsert: { source: r.source, key: r.key, name: r.name, diet: suggestDiet(r.name, r.hint), reviewed: false },
+            $set: { removedAt: null },
           },
           upsert: true,
         },
@@ -220,16 +222,28 @@ export async function menuOverview(ctx: AuthContext): Promise<MenuRow[]> {
     }
   }
 
-  const allItems = () => MenuItem.find({}).select('source name diet reviewed').lean()
+  // Deleted dishes are read too: they count as known, so the orders that
+  // still carry one do not add it straight back. They are left off below.
+  const allItems = () => MenuItem.find({}).select('source name diet reviewed removedAt').lean()
   let items = await allItems()
   const known = new Set(items.map((i) => i._id))
-  const missing = [...counts.entries()].filter(([id]) => !known.has(id)).map(([, c]) => c)
+  // A deleted dish on an order newer than its deletion should have been put
+  // back when that order arrived. If that was missed, it is put back here.
+  const removedAt = new Map(items.filter((i) => i.removedAt).map((i) => [i._id, i.removedAt as Date]))
+  const missing = [...counts.entries()]
+    .filter(([id, c]) => {
+      if (!known.has(id)) return true
+      const gone = removedAt.get(id)
+      return Boolean(gone && c.last && c.last > gone)
+    })
+    .map(([, c]) => c)
   if (missing.length > 0) {
     await registerMenuItems(missing.map((m) => ({ source: m.source, name: m.name })))
     items = await allItems()
   }
 
   return items
+    .filter((i) => !i.removedAt)
     .map((i) => {
       const c = counts.get(i._id)
       return {
@@ -282,4 +296,36 @@ export async function confirmMenuItems(ctx: AuthContext, ids: string[]): Promise
     { $set: { reviewed: true, reviewedBy: ctx.userId, reviewedAt: new Date() } },
   )
   return res.modifiedCount
+}
+
+/**
+ * Delete a dish from the Menu page.
+ *
+ * The row is kept and marked, not dropped. Orders already taken may still
+ * carry the dish: their KOTs go on reading its tag, and the Menu page, which
+ * adds every dish it finds on the orders, does not put it straight back. The
+ * next order that arrives with the dish does (registerMenuItems).
+ */
+export async function removeMenuItem(ctx: AuthContext, id: string): Promise<void> {
+  if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin may delete menu items.')
+  if (!isMenuId(id)) throw new Error('Unknown menu item')
+  await connectDb()
+  const res = await MenuItem.updateOne({ _id: id }, { $set: { removedAt: new Date() } })
+  if (res.matchedCount === 0) throw new Error('Unknown menu item')
+}
+
+/**
+ * Put a deleted dish back by hand, with the tag given and the name as typed
+ * now (it folds to the same key, or the id would differ). False when the dish
+ * is not a deleted one (it is on the menu already, or was never there).
+ */
+export async function restoreMenuItem(ctx: AuthContext, id: string, name: string, diet: Diet): Promise<boolean> {
+  if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin may add menu items.')
+  if (!isMenuId(id) || !isDiet(diet)) return false
+  await connectDb()
+  const res = await MenuItem.updateOne(
+    { _id: id, removedAt: { $ne: null } },
+    { $set: { removedAt: null, name, diet, reviewed: true, reviewedBy: ctx.userId, reviewedAt: new Date() } },
+  )
+  return res.modifiedCount === 1
 }

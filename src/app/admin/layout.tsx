@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
     countPendingReturns(ctx),
     // Dishes with no veg / non-veg tag, or only a suggested one. Until they
     // are checked the KOT split is trusting a guess.
-    MenuItem.countDocuments({ $or: [{ diet: null }, { reviewed: false }] }),
+    MenuItem.countDocuments({ removedAt: null, $or: [{ diet: null }, { reviewed: false }] }),
   ])
 
   return (

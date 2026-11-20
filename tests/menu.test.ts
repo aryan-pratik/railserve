@@ -7,7 +7,8 @@ import {
 import { suggestDiet } from '../src/lib/dietSuggest'
 import { MenuItem, Order } from '../src/lib/models'
 import {
-  confirmMenuItems, dietLookupFor, menuOverview, menuRowsOf, registerMenuItems, registerOrderMenu, setMenuItemDiet,
+  confirmMenuItems, dietLookupFor, menuOverview, menuRowsOf, registerMenuItems, registerOrderMenu, removeMenuItem,
+  restoreMenuItem, setMenuItemDiet,
 } from '../src/lib/repo/menuRepo'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 import { adminAddOrderItem, adminEditOrder, adminEditOrderItem } from '../src/lib/repo/adminEditOrder'
@@ -361,6 +362,67 @@ describe('menu database', () => {
     const manager: AuthContext = { ...ADMIN, role: 'STORE_MANAGER' }
     await expect(setMenuItemDiet(manager, row!._id, 'NON_VEG')).rejects.toThrow(/admin/)
     await expect(menuOverview(manager)).rejects.toThrow(/admin/)
+  })
+
+  it('deletes a dish from the Menu page without it coming back from the orders that carry it', async () => {
+    await order('ZOOP', ['Aloo Paratha', 'Egg Curry'])
+    await setMenuItemDiet(ADMIN, 'ZOOP|egg curry', 'NON_VEG')
+    await removeMenuItem(ADMIN, 'ZOOP|egg curry')
+
+    // Gone from the page, on this read and the next (the page back-fills from orders).
+    expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['ZOOP|aloo paratha'])
+    expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['ZOOP|aloo paratha'])
+    // The order that still carries it keeps its tag for the KOT.
+    const lookup = await dietLookupFor([{ source: 'ZOOP', items: [item('Egg Curry')] }])
+    expect(lookup.get('ZOOP|egg curry')).toEqual({ diet: 'NON_VEG', reviewed: true })
+  })
+
+  it('brings a deleted dish back, tag as it was, when a new order carries it', async () => {
+    await order('ZOOP', ['Egg Curry'])
+    await setMenuItemDiet(ADMIN, 'ZOOP|egg curry', 'NON_VEG')
+    await removeMenuItem(ADMIN, 'ZOOP|egg curry')
+    expect(await menuOverview(ADMIN)).toEqual([])
+
+    await order('ZOOP', ['egg  curry'])
+    const rows = await menuOverview(ADMIN)
+    expect(rows.map((r) => [r.id, r.diet, r.reviewed, r.orderCount])).toEqual([['ZOOP|egg curry', 'NON_VEG', true, 2]])
+    expect(await MenuItem.countDocuments({})).toBe(1)
+  })
+
+  it('puts a deleted dish back from the Menu page when a newer order carries it and registering was missed', async () => {
+    await order('ZOOP', ['Egg Curry'])
+    await removeMenuItem(ADMIN, 'ZOOP|egg curry')
+    // An order that reached the database without registering its dishes.
+    await Order.collection.insertOne({
+      source: 'ZOOP', status: 'RECEIVED', externalOrderId: 'MENU-RAW', createdAt: new Date(Date.now() + 60_000),
+      items: [{ name: 'Egg Curry', qty: 1 }],
+    })
+    expect((await menuOverview(ADMIN)).map((r) => [r.id, r.orderCount])).toEqual([['ZOOP|egg curry', 2]])
+  })
+
+  it('deleting one aggregator\'s dish leaves the same dish on another', async () => {
+    await order('ZOOP', ['Aloo Paratha'])
+    await order('OLF', ['Aloo Paratha'])
+    await removeMenuItem(ADMIN, 'ZOOP|aloo paratha')
+    expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['OLF|aloo paratha'])
+  })
+
+  it('restores a deleted dish by hand with the tag given, and only a deleted one', async () => {
+    await order('ZOOP', ['Seekh Kebab'])
+    expect(await restoreMenuItem(ADMIN, 'ZOOP|seekh kebab', 'Seekh Kebab', 'NON_VEG')).toBe(false)
+    await removeMenuItem(ADMIN, 'ZOOP|seekh kebab')
+    expect(await restoreMenuItem(ADMIN, 'ZOOP|seekh kebab', 'Seekh Kabab', 'NON_VEG')).toBe(true)
+    expect((await menuOverview(ADMIN)).map((r) => [r.id, r.name, r.diet, r.reviewed])).toEqual([['ZOOP|seekh kebab', 'Seekh Kabab', 'NON_VEG', true]])
+    expect(await restoreMenuItem(ADMIN, 'ZOOP|never there', 'Never There', 'VEG')).toBe(false)
+  })
+
+  it('only an admin may delete, and only a row that exists', async () => {
+    await order('ZOOP', ['Aloo Paratha'])
+    const manager: AuthContext = { ...ADMIN, role: 'STORE_MANAGER' }
+    await expect(removeMenuItem(manager, 'ZOOP|aloo paratha')).rejects.toThrow(/admin/)
+    await expect(removeMenuItem(ADMIN, 'ZOOP|no such dish')).rejects.toThrow(/Unknown/)
+    await expect(removeMenuItem(ADMIN, { $ne: null } as unknown as string)).rejects.toThrow(/Unknown/)
+    expect((await menuOverview(ADMIN)).length).toBe(1)
   })
 
   it('adds a dish to the menu the moment it is added to an existing order', async () => {

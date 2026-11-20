@@ -4,13 +4,14 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { MenuItem } from '@/lib/models'
-import { confirmMenuItems, setMenuItemDiet } from '@/lib/repo/menuRepo'
+import { confirmMenuItems, removeMenuItem, restoreMenuItem, setMenuItemDiet } from '@/lib/repo/menuRepo'
 import { isDiet, isMenuDish, menuKey, menuLookupKey } from '@/lib/diet'
 import { ORDER_SOURCES, type OrderSource } from '@/lib/orderEnums'
 
 /**
  * Actions behind the Menu page: tagging a dish veg or non-veg, accepting the
- * suggested tags, and adding a dish before its first order arrives.
+ * suggested tags, adding a dish before its first order arrives, and deleting
+ * one that should not be listed.
  * Admin-only, like the page.
  */
 
@@ -64,6 +65,20 @@ export async function confirmSuggested(ids: string[]): Promise<TagResult> {
   }
 }
 
+/**
+ * Delete a dish from the Menu page. Like tagging, it does not revalidate:
+ * the board hides the row itself and re-reads once the clicking pauses.
+ */
+export async function deleteMenuItem(id: string): Promise<TagResult> {
+  const ctx = await requireRole('ADMIN')
+  try {
+    await removeMenuItem(ctx, id)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not delete' }
+  }
+  return { ok: 'Deleted', at: Date.now() }
+}
+
 /** Add a dish by hand, already tagged, so its first order prints on the right KOT. */
 export async function addMenuItem(_prev: MenuState, formData: FormData): Promise<MenuState> {
   const ctx = await requireRole('ADMIN')
@@ -88,8 +103,12 @@ export async function addMenuItem(_prev: MenuState, formData: FormData): Promise
       source: source as OrderSource, key, name, diet, reviewed: true, reviewedBy: ctx.userId, reviewedAt: new Date(),
     })
   } catch (err) {
-    if ((err as { code?: number }).code === 11000) return { error: 'That item is already on this aggregator\'s menu.' }
-    throw err
+    if ((err as { code?: number }).code !== 11000) throw err
+    // The row is there. If it is one that was deleted, adding it again puts
+    // it back with the tag picked now.
+    if (!(await restoreMenuItem(ctx, menuLookupKey(source, name), name, diet))) {
+      return { error: 'That item is already on this aggregator\'s menu.' }
+    }
   }
   revalidatePath('/admin/menu')
   return { ok: `${name} added.` }
