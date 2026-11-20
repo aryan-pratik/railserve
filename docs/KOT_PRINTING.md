@@ -408,7 +408,7 @@ separate stations.
   (`src/lib/splitItems.ts`), so each dish has its own menu row and tag.
   `npm run menu:split` lists orders saved before that with a combined item;
   `npm run menu:split -- --apply` splits them and drops the combined menu
-  rows. Run it once after deploying.
+  rows from the Menu page. Run it once after deploying.
 - The order total and the COD QR print on the first KOT only; the second says
   `TOTAL ON KOT 1`, so it cannot be read as a second amount to collect. The
   PAX box of a bulk order also prints once, on the KOT that carries the thali.

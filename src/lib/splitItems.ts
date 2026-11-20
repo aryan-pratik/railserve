@@ -9,11 +9,16 @@
  * a dish at all. This takes such a name apart again.
  *
  * The cut is made only at a comma followed by "<number> x <name>", which is
- * how a second item starts and not something a dish name contains.
+ * how a second item starts. Two things that look the same are left alone: a
+ * list inside brackets, which describes one dish ("Veg Thali (Dal, 4 x Roti,
+ * Rice)"), and a size ("Water Bottle, 2 x 500 ml").
  */
 
 const NEXT_ITEM = /\s*[,;]\s*(?=\d{1,3}\s*[x×]\s+\S)/i
 const QTY_NAME = /^(\d{1,3})\s*[x×]\s+(.+)$/i
+
+/** Open brackets minus closed ones: not zero when a cut fell inside a pair. */
+const bracketDepth = (s: string) => (s.match(/[([{]/g)?.length ?? 0) - (s.match(/[)\]}]/g)?.length ?? 0)
 
 const tidy = (s: string) => s.replace(/\s+/g, ' ').replace(/[\s,.;]+$/, '').trim()
 
@@ -29,7 +34,7 @@ export function isCombinedName(name: string | null | undefined): boolean {
  */
 export function splitCombinedName(name: string): { first: string; rest: { name: string; qty: number }[] } {
   const chunks = name.split(NEXT_ITEM)
-  if (chunks.length < 2) return { first: name, rest: [] }
+  if (chunks.length < 2 || chunks.some((c) => bracketDepth(c) !== 0)) return { first: name, rest: [] }
   const first = tidy(chunks[0])
   const rest: { name: string; qty: number }[] = []
   for (const chunk of chunks.slice(1)) {
@@ -38,7 +43,8 @@ export function splitCombinedName(name: string): { first: string; rest: { name: 
     const part = m ? tidy(m[2]) : ''
     // Anything that does not read as "<n> x <name>" after all: leave the
     // whole name alone rather than guess.
-    if (!m || qty < 1 || !part) return { first: name, rest: [] }
+    // So does a size: "2 x 500 ml" is not two of a dish called "500 ml".
+    if (!m || qty < 1 || !part || /^\d/.test(part)) return { first: name, rest: [] }
     rest.push({ name: part, qty })
   }
   if (!first) return { first: name, rest: [] }
@@ -49,10 +55,12 @@ type ItemShape = { name?: unknown; isPacking?: unknown; spec?: unknown }
 
 /**
  * An order's items with every combined one taken apart. The first dish keeps
- * the item as it was (its quantity, price, note and tag); the ones that were
+ * the item as it was (its quantity, price and note); the ones that were
  * riding on it become items of their own with the quantity written before
- * them. Packing lines and composite items (a bulk thali's menu text) are
- * left alone.
+ * them. A veg / non-veg tag set on the combined item itself is dropped, since
+ * it spoke for the whole line: each dish then takes its tag from the menu.
+ * Packing lines and composite items (a bulk thali's menu text) are left
+ * alone.
  */
 export function splitCombinedItems<T extends ItemShape>(items: T[]): (T | { name: string; qty: number })[] {
   const out: (T | { name: string; qty: number })[] = []
@@ -67,7 +75,8 @@ export function splitCombinedItems<T extends ItemShape>(items: T[]): (T | { name
       out.push(item)
       continue
     }
-    out.push({ ...item, name: first }, ...rest)
+    const tagged = 'diet' in item && (item as { diet?: unknown }).diet != null
+    out.push({ ...item, name: first, ...(tagged ? { diet: null } : {}) }, ...rest)
   }
   return out
 }

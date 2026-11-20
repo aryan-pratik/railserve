@@ -33,6 +33,10 @@ describe('splitCombinedName', () => {
     'Thali, 2x',
     'Maggi 2x Masala',
     'Combo, 0x Nothing',
+    'Veg Thali (Dal, Sabzi, 4 x Roti, Rice)',
+    'Family Combo (2 x Paneer Curry, 4 x Roti)',
+    'Water Bottle, 2 x 500 ml',
+    'Pizza, 12 x 12 inch',
     '',
   ])('leaves "%s" alone', (name) => {
     expect(splitCombinedName(name)).toEqual({ first: name, rest: [] })
@@ -53,6 +57,15 @@ describe('splitCombinedItems', () => {
     ])
     // An item with nothing to split is handed back as the same object.
     expect(splitCombinedItems(items)[2]).toBe(items[1])
+  })
+
+  it('drops a tag set on the combined item, which spoke for the whole line', () => {
+    expect(splitCombinedItems([{ name: 'Veg Thali, 1x Egg Curry', qty: 1, diet: 'NON_VEG' }])).toEqual([
+      { name: 'Veg Thali', qty: 1, diet: null },
+      { name: 'Egg Curry', qty: 1 },
+    ])
+    // No tag, nothing added.
+    expect(splitCombinedItems([{ name: 'Veg Thali, 1x Roti', qty: 1, diet: null }])[0]).toEqual({ name: 'Veg Thali', qty: 1, diet: null })
   })
 
   it('leaves packing lines and composite items alone', () => {
