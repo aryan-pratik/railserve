@@ -3,13 +3,14 @@
 import { Fragment, useActionState, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, FormNote, Stat, StatStrip, focusRing, inputBase, segmentClass, segmentedClass, thClass } from '@/components/ui'
-import { IconSearch } from '@/components/Icons'
+import { IconSearch, IconTrash } from '@/components/Icons'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DietMark } from '@/components/DietMark'
 import { formatShortDateTime } from './when'
 import type { Diet } from '@/lib/diet'
 import { MENU_CATEGORIES, menuCategory } from '@/lib/menuCategory'
 import type { MenuRow } from '@/lib/repo/menuRepo'
-import { addMenuItem, confirmSuggested, forgetMenuPage, tagMenuItem, type MenuState, type TagResult } from './actions'
+import { addMenuItem, confirmSuggested, deleteMenuItem, forgetMenuPage, tagMenuItem, type MenuState, type TagResult } from './actions'
 
 type Filter = 'all' | 'check' | 'untagged' | 'VEG' | 'NON_VEG'
 
@@ -73,10 +74,19 @@ export function MenuBoard({
   // Per row, and kept until that row saves: a failure on one row must not be
   // wiped by the next click on another.
   const [errors, setErrors] = useState<Record<string, string>>({})
+  // Rows deleted here, hidden by the same rule as a tag override: while the
+  // delete is on the way, and until the page holds rows read after it.
+  const [removed, setRemoved] = useState<Record<string, { pending: boolean; at: number }>>({})
+  const [deleting, setDeleting] = useState<MenuRow | null>(null)
   const [, startTransition] = useTransition()
   const router = useRouter()
   const seq = useRef(0)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
+  // Each row's tag as this page first showed it, which is what the veg-first
+  // order goes by. Held for as long as the board is open, so that neither a
+  // click nor the re-read that follows it moves a row from under the pointer.
+  const [dietAtLoad] = useState(() => new Map(rows.map((r) => [r.id, r.diet])))
 
   const mounted = useRef(true)
 
@@ -111,27 +121,40 @@ export function MenuBoard({
 
   const merged = useMemo(
     () =>
-      rows.map((r) => {
-        const o = overrides[r.id]
-        return o && (o.pending || o.at >= asOf) ? { ...r, diet: o.diet, reviewed: o.reviewed } : r
-      }),
-    [rows, overrides, asOf],
+      rows
+        .filter((r) => {
+          const gone = removed[r.id]
+          return !(gone && (gone.pending || gone.at >= asOf))
+        })
+        .map((r) => {
+          const o = overrides[r.id]
+          return o && (o.pending || o.at >= asOf) ? { ...r, diet: o.diet, reviewed: o.reviewed } : r
+        }),
+    [rows, overrides, removed, asOf],
   )
   // The menu section each dish reads under (Thali, Biryani, Breads...), and
-  // the list in menu order: section by section, most ordered first in each.
+  // the list in menu order: section by section, and in each section the veg
+  // dishes first, then the non-veg, then the untagged, most ordered first.
+  // Sorted on the tags as the page was opened (dietAtLoad), not as they are
+  // now: the order catches up the next time the page is opened.
   const grouped = useMemo(() => {
     const rank = new Map(MENU_CATEGORIES.map((c, i) => [c, i]))
     const sectionOf = new Map(rows.map((r) => [r.id, menuCategory(r.name)]))
+    const dietRank = (r: MenuRow) => {
+      const diet = dietAtLoad.has(r.id) ? dietAtLoad.get(r.id) : r.diet
+      return diet === 'VEG' ? 0 : diet === 'NON_VEG' ? 1 : 2
+    }
     const order = [...rows]
       .sort(
         (a, b) =>
           (rank.get(sectionOf.get(a.id)!) ?? 99) - (rank.get(sectionOf.get(b.id)!) ?? 99) ||
+          dietRank(a) - dietRank(b) ||
           b.orderCount - a.orderCount ||
           a.name.localeCompare(b.name),
       )
       .map((r) => r.id)
     return { sectionOf, position: new Map(order.map((id, i) => [id, i])) }
-  }, [rows])
+  }, [rows, dietAtLoad])
   const sectionOf = (r: MenuRow) => grouped.sectionOf.get(r.id) ?? 'Other'
   const needle = q.trim().toLowerCase()
   const shown = merged
@@ -178,7 +201,7 @@ export function MenuBoard({
       setErrors((s) => {
         const next = { ...s }
         for (const id of ids) {
-          if ('error' in res) next[id] = res.error
+          if ('error' in res) next[id] = `Not saved: ${res.error}`
           else delete next[id]
         }
         return next
@@ -197,6 +220,33 @@ export function MenuBoard({
     save(changes, () => confirmSuggested(changes.map((c) => c.id)))
   }
 
+  /** Hides the row at once, deletes it, and puts it back with a note if the delete fails. */
+  function remove(row: MenuRow) {
+    setDeleting(null)
+    setRemoved((s) => ({ ...s, [row.id]: { pending: true, at: 0 } }))
+    // The dialog hands focus back to the button that opened it, and that
+    // button goes with the row. Keep the keyboard in the table instead.
+    requestAnimationFrame(() => tableRef.current?.focus())
+    startTransition(async () => {
+      const res: TagResult = await deleteMenuItem(row.id).catch(() => ({
+        error: 'Could not delete. Check the connection and try again.',
+      }))
+      setRemoved((s) => {
+        const next = { ...s }
+        if ('error' in res) delete next[row.id]
+        else next[row.id] = { pending: false, at: res.at }
+        return next
+      })
+      setErrors((s) => {
+        const next = { ...s }
+        if ('error' in res) next[row.id] = `Not deleted: ${res.error}`
+        else delete next[row.id]
+        return next
+      })
+      if (!('error' in res)) refreshSoon()
+    })
+  }
+
   // Everything below is one list: narrowed by aggregator, tag and search,
   // then cut into pages. All of it happens in the browser on rows already
   // loaded, so changing a filter or a page is instant.
@@ -210,7 +260,7 @@ export function MenuBoard({
   const suggested = visible.filter((r) => r.diet !== null && !r.reviewed).length
   const labelOf = new Map(sources.map((s) => [s.id, s.label]))
   const filtering = filter !== 'all' || source !== 'all' || category !== 'all' || needle !== ''
-  const columns = source === 'all' ? 6 : 5
+  const columns = source === 'all' ? 7 : 6
 
   return (
     <div className="space-y-4">
@@ -322,7 +372,7 @@ export function MenuBoard({
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[46rem] text-sm">
+            <table ref={tableRef} tabIndex={-1} className="w-full min-w-[46rem] text-sm outline-none">
               <thead className="border-b border-line bg-sunken/60">
                 <tr>
                   <th className={thClass}>Item</th>
@@ -331,6 +381,7 @@ export function MenuBoard({
                   <th className={`${thClass} w-20 text-right`}>Qty</th>
                   <th className={`${thClass} w-32 whitespace-nowrap`}>Last ordered</th>
                   <th className={`${thClass} w-64 whitespace-nowrap`}>Veg / non-veg</th>
+                  <th className={`${thClass} w-12`}><span className="sr-only">Delete</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -388,9 +439,20 @@ export function MenuBoard({
                       </span>
                       {errors[r.id] ? (
                         <p role="alert" className="mt-1 text-[11px] font-medium text-red-700">
-                          Not saved: {errors[r.id]}
+                          {errors[r.id]}
                         </p>
                       ) : null}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(r)}
+                        aria-label={`Delete ${r.name}`}
+                        title="Delete this item"
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-red-50 hover:text-red-700 ${focusRing}`}
+                      >
+                        <IconTrash size={15} />
+                      </button>
                     </td>
                   </tr>
                   </Fragment>
@@ -427,6 +489,33 @@ export function MenuBoard({
           </div>
         </Card>
       )}
+
+      {deleting ? (
+        <ConfirmDialog
+          titleId="delete-menu-item"
+          title="Delete this item?"
+          onCancel={() => setDeleting(null)}
+          actions={
+            <>
+              <Button type="button" variant="danger" className="flex-1" onClick={() => remove(deleting)}>
+                Delete
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setDeleting(null)}>
+                Cancel
+              </Button>
+            </>
+          }
+        >
+          <span className="font-medium text-ink">{deleting.name}</span> will be removed from the{' '}
+          {labelOf.get(deleting.source) ?? deleting.source} menu.
+          {deleting.orderCount === 0
+            ? ''
+            : deleting.diet !== null && deleting.reviewed
+              ? ` It is on ${deleting.orderCount} order${deleting.orderCount === 1 ? '' : 's'}: those keep their veg / non-veg mark.`
+              : ` It is on ${deleting.orderCount} order${deleting.orderCount === 1 ? '' : 's'} and its tag is not confirmed, so those print with a ? on the KOT. Tag it first if any of them is still to be cooked.`}{' '}
+          If a new order arrives with this item, it comes back on its own.
+        </ConfirmDialog>
+      ) : null}
     </div>
   )
 }

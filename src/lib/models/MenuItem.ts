@@ -18,6 +18,9 @@ import { DIETS } from '../diet'
  * gets a suggested tag (or none, when the name does not say) and
  * `reviewed: false` until somebody confirms it.
  *
+ * A dish deleted on the Menu page keeps its row with `removedAt` set: it is
+ * off the page, its tag still prints, and a new order brings it back.
+ *
  * `_id` is menuLookupKey(source, name): "RELFOOD|aloo paratha". That makes
  * one row per dish per aggregator a property of the collection itself. Two
  * orders arriving together cannot create the dish twice, and nothing depends
@@ -37,6 +40,11 @@ const MenuItemSchema = new Schema(
     reviewed: { type: Boolean, default: false },
     reviewedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     reviewedAt: { type: Date, default: null },
+    // Set when the dish is deleted from the Menu page. The row stays so that
+    // orders still carrying the dish keep their tag on the KOT, and so the
+    // Menu page does not add it straight back from those orders. Cleared by
+    // the next order that carries the dish (registerMenuItems).
+    removedAt: { type: Date, default: null },
   },
   { timestamps: true, strict: true, strictQuery: true },
 )
