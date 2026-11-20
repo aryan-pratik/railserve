@@ -9,6 +9,8 @@ import type { OrderStatus } from '@/lib/orderStatus'
 import { ROLE_LABEL } from '@/lib/roles'
 import type { CallNoteView } from '@/lib/callNotes'
 import { adminNextStatusOptions } from './statusOptions'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
+import { dietFor, type Diet } from '@/lib/diet'
 
 /**
  * Everything the slide-over shows, in one round trip.
@@ -51,7 +53,8 @@ export type OrderDetail = {
   notes: string | null
   /** A telecaller's (or admin's) instruction, printed on the KOT — see Order.kotNote. */
   kotNote: string | null
-  items: { id: string; name: string; qty: number; pricePaise: number | null; isPacking: boolean; spec: string | null; notes: string | null }[]
+  /** `diet` is the menu database's tag for the item; null when it has none (and on packing lines). */
+  items: { id: string; name: string; qty: number; pricePaise: number | null; isPacking: boolean; spec: string | null; notes: string | null; diet: Diet | null }[]
   events: { id: string; toStatus: string; fromStatus: string | null; actor: string; at: string; action: string | null }[]
   /** The call log, flattened the same way. See CallLog. */
   callLog: CallNoteView[]
@@ -73,13 +76,14 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
   const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
     (v) => v != null,
   )
-  const [outlet, actors, timings] = await Promise.all([
+  const [outlet, actors, timings, dietLookup] = await Promise.all([
     order.restaurantId
       ? Restaurant.findById(order.restaurantId).select('name stationCode').lean()
       : null,
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     // Cache-only: opening a panel must not block on an 8s provider call.
     timingForOrders([order], { allowFetch: false }),
+    dietLookupFor([order]),
   ])
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
@@ -126,6 +130,7 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
       isPacking: i.isPacking,
       spec: i.spec ?? null,
       notes: i.notes ?? null,
+      diet: dietFor(dietLookup, order.source, i),
     })),
     events: order.events.map((e) => ({
       id: String(e._id),

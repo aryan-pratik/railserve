@@ -13,6 +13,8 @@ import { IconTrash } from '@/components/Icons'
 import { TableFrame } from '@/components/OrdersTable'
 import { CallNoteHint } from '@/components/CallNoteHint'
 import { deleteOrderAction, updateOrderAmountAction, updateOrderStatusAction, type ActionState } from './actions'
+import { OrderDietMark } from '@/components/DietMark'
+import type { OrderDiet } from '@/lib/diet'
 
 type Maybe<T> = T | null | undefined
 
@@ -38,6 +40,8 @@ export type AdminOrderRow = {
   /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
   callNoteCount?: Maybe<number>
   callNoteHint?: Maybe<string>
+  /** Veg, non-veg, both or not tagged, from the menu database. */
+  diet?: OrderDiet
 }
 
 /**
@@ -164,6 +168,7 @@ function AdminOrderRow({
             <CallNoteHint orderId={order.id} count={order.callNoteCount} hint={order.callNoteHint} />
           </span>
           <TypeBadge type={order.orderType} />
+          <OrderDietMark diet={order.diet} />
         </Link>
       </td>
       <td className="whitespace-nowrap px-3 py-2.5 text-muted" title={formatServiceDate(order.serviceDate)}>

@@ -812,3 +812,15 @@ export function IconExternal({ size = 16, className = '', ...props }: IconProps)
     </svg>
   )
 }
+
+/** A plate under a cloche: the menu. */
+export function IconDish({ size = 20, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} {...stroke} className={className} {...props}>
+      <path d="M3 18h18" />
+      <path d="M5 18a7 7 0 0 1 14 0" />
+      <path d="M12 8V6" />
+      <path d="M10.5 6h3" />
+    </svg>
+  )
+}

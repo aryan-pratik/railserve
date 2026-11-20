@@ -1,5 +1,6 @@
 import type { OrderCardData } from '@/components/OrderCard'
 import { formatTimeIST } from './format'
+import { dietFor, type DietLookup } from './diet'
 import { allowedNextStatuses, type OrderStatus } from './orderStatus'
 
 type LeanCallNote = { text: string; createdAt: Date }
@@ -79,7 +80,7 @@ type LeanOrder = {
  * are not serialisable across that boundary, so they are flattened once, in one
  * place, rather than at each call site where one would eventually be missed.
  */
-export function toCardData(o: LeanOrder): OrderCardData {
+export function toCardData(o: LeanOrder, diets?: DietLookup): OrderCardData {
   return {
     id: String(o._id),
     externalOrderId: o.externalOrderId,
@@ -103,6 +104,8 @@ export function toCardData(o: LeanOrder): OrderCardData {
       spec: i.spec ?? null,
       notes: i.notes ?? null,
       isPacking: i.isPacking,
+      // Only where the caller looked the menu up (menuRepo.dietLookupFor).
+      ...(diets ? { diet: dietFor(diets, o.source, i) } : {}),
     })),
     createdAt: o.createdAt.toISOString(),
   }

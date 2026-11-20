@@ -2,7 +2,7 @@ import { AppShell } from '@/components/AppShell'
 import { AdminOrderToaster } from '@/components/AdminOrderToaster'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { UnparsedInbox } from '@/lib/models'
+import { MenuItem, UnparsedInbox } from '@/lib/models'
 import { countUnread } from '@/lib/repo/whatsappRepo'
 import { countPendingReturns } from '@/lib/repo/rtoRepo'
 
@@ -14,10 +14,13 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
   // nav rather than waiting to be discovered on a page nobody opens. The same
   // goes for a passenger waiting on WhatsApp with nobody answering.
   await connectDb()
-  const [unparsed, unread, returns] = await Promise.all([
+  const [unparsed, unread, returns, menuToCheck] = await Promise.all([
     UnparsedInbox.countDocuments({ resolved: false }),
     countUnread(ctx),
     countPendingReturns(ctx),
+    // Dishes with no veg / non-veg tag, or only a suggested one. Until they
+    // are checked the KOT split is trusting a guess.
+    MenuItem.countDocuments({ $or: [{ diet: null }, { reviewed: false }] }),
   ])
 
   return (
@@ -31,6 +34,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/chat', label: 'WhatsApp', icon: 'chat', count: unread },
         { href: '/admin/riders', label: 'Riders', icon: 'riders' },
         { href: '/admin/returns', label: 'Returns', icon: 'bag', count: returns },
+        { href: '/admin/menu', label: 'Menu', icon: 'dish', count: menuToCheck },
         { href: '/admin/trains', label: 'Train status', icon: 'train' },
         { href: '/admin/analytics', label: 'Analytics', icon: 'analytics' },
         { href: '/admin/activity', label: 'Activity log', icon: 'activity' },

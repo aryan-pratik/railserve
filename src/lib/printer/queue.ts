@@ -1,6 +1,8 @@
 import { headers } from 'next/headers'
 import { connectDb } from '@/lib/db'
 import { PrintJob, Station } from '@/lib/models'
+import { kotPartCounts } from '@/lib/repo/menuRepo'
+import { TICKETS_PER_PART } from '@/lib/diet'
 import { env } from '@/lib/env'
 import { renderKotScreenshots } from '@/lib/printer/screenshot'
 import { printImagesDirect } from '@/lib/printer/directPrint'
@@ -162,8 +164,19 @@ export async function getAppOrigin(): Promise<string> {
   return `${proto}://${host}`
 }
 
-/** Every order prints as this many tickets, each with its own cut: the KOT and the bag slip. */
-export const TICKETS_PER_ORDER = 2
+/**
+ * How many tickets these orders print between them.
+ *
+ * Every order prints a KOT and a bag slip, and an order carrying both veg and
+ * non-veg prints that pair twice, non-veg on its own (see lib/diet.ts). The
+ * count is worked out from the same menu tags and the same split the render
+ * page uses, so the two can be checked against each other. An id that is not
+ * an order counts as one plain pair; the render page refuses it anyway.
+ */
+export async function expectedTicketCount(orderIds: string[]): Promise<number> {
+  const parts = await kotPartCounts(orderIds)
+  return orderIds.reduce((n, id) => n + (parts.get(id) ?? 1) * TICKETS_PER_PART, 0)
+}
 
 /**
  * One PrintJob per ticket, never one job holding several.
@@ -274,7 +287,7 @@ export async function enqueueRunKotPrint(params: {
 
   // Now a genuine invariant rather than a coincidence: the page was told
   // which orders to render, so a mismatch means the two disagree.
-  const expected = orderIds.length * TICKETS_PER_ORDER
+  const expected = await expectedTicketCount(orderIds)
   if (images.length !== expected) {
     throw new Error(
       `Rendered ${images.length} ticket(s) but expected ${expected} for ${orderIds.length} order(s)`,

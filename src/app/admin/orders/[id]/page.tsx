@@ -30,6 +30,10 @@ import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
 import { viewReturn } from '@/lib/repo/rtoRepo'
 import { ReturnToOriginCard } from '@/components/ReturnToOrigin'
+import Link from 'next/link'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
+import { dietFor, DIET_LABEL } from '@/lib/diet'
+import { DietMark } from '@/components/DietMark'
 
 /** Statuses an order can only be in if its KOT has already been sent once. */
 const PRINTED_STATUSES = ['KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', 'FAILED']
@@ -69,13 +73,14 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
     ...riderIdsInLog.filter((id) => /^[0-9a-f]{24}$/i.test(id)),
   ].filter((v): v is NonNullable<typeof v> => Boolean(v))
 
-  const [outlets, agents, actors, timings, cancelRequest, rto] = await Promise.all([
+  const [outlets, agents, actors, timings, cancelRequest, rto, dietLookup] = await Promise.all([
     Restaurant.find().select('name stationCode stationName').sort({ name: 1 }).lean(),
     User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone restaurantIds').sort({ name: 1 }).lean(),
     User.find({ _id: { $in: actorIds } }).select('name role').lean(),
     timingForOrders([order]),
     viewCancelRequest(order),
     viewReturn(order),
+    dietLookupFor([order]),
   ])
   const outlet = order.restaurantId
     ? (outlets.find((o) => o._id.equals(order.restaurantId!)) ?? null)
@@ -239,12 +244,33 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
           </Card>
 
           <Card>
-            <CardHeader title="Items" />
+            <CardHeader
+              title="Items"
+              action={
+                <Link href="/admin/menu" className="text-xs font-medium text-accent underline-offset-2 hover:underline">
+                  Veg / non-veg tags
+                </Link>
+              }
+            />
             <ul className="divide-y divide-line">
-              {kitchenItems.map((i) => (
+              {kitchenItems.map((i) => {
+                // From the menu database, by aggregator and item name: the
+                // same lookup that decides which KOT this item prints on.
+                const diet = dietFor(dietLookup, order.source, i)
+                return (
                 <li key={String(i._id)} className="px-4 py-3 text-sm">
                   <div className="flex justify-between gap-4">
-                    <span className="font-medium text-ink">{i.name}</span>
+                    <span className="flex min-w-0 items-start gap-3">
+                      <span
+                        className={`mt-0.5 inline-flex w-[5.5rem] shrink-0 items-center gap-1.5 text-xs font-semibold ${
+                          diet === 'VEG' ? 'text-emerald-700' : diet === 'NON_VEG' ? 'text-red-700' : 'text-amber-800'
+                        }`}
+                      >
+                        <DietMark diet={diet} />
+                        {diet ? DIET_LABEL[diet] : 'Not tagged'}
+                      </span>
+                      <span className="font-medium text-ink">{i.name}</span>
+                    </span>
                     <span className="flex shrink-0 items-center gap-2 tabular-nums text-muted">
                       ×{i.qty}
                       {i.pricePaise !== null ? ` · ${formatMoney(i.pricePaise)}` : ''}
@@ -267,7 +293,8 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
                     <p className="mt-2 whitespace-pre-wrap text-xs italic text-muted">{i.notes}</p>
                   ) : null}
                 </li>
-              ))}
+                )
+              })}
               {packingItems.length > 0 ? (
                 <li className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted">Packing</li>
               ) : null}

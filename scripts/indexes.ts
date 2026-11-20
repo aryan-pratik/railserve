@@ -22,9 +22,18 @@ import {
   Listing,
   WaConversation,
   WaMessage,
+  MenuItem,
 } from '../src/lib/models'
 
 type Spec = { name: string; index: IndexDescription; why: string }
+
+const MENU_ITEM_INDEXES: Spec[] = [
+  {
+    name: 'source_key_unique',
+    index: { key: { source: 1, key: 1 }, unique: true },
+    why: 'one menu row per dish per aggregator; the KOT veg/non-veg lookup and the upserts depend on it',
+  },
+]
 
 const ORDER_INDEXES: Spec[] = [
   {
@@ -316,6 +325,7 @@ async function main() {
   await ensure('listings', Listing, LISTING_INDEXES)
   await ensure('waconversations', WaConversation, WA_CONVERSATION_INDEXES)
   await ensure('wamessages', WaMessage, WA_MESSAGE_INDEXES)
+  await ensure('menuitems', MenuItem, MENU_ITEM_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
   await Counter.collection.createIndex({ _id: 1 })

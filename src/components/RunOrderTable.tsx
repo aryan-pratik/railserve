@@ -8,6 +8,8 @@ import { sourceLabel } from '@/lib/orderEnums'
 import { CallNoteHint } from './CallNoteHint'
 import { CopyButton } from './CopyButton'
 import { useRunSelection } from './RunSelection'
+import { OrderDietMark } from './DietMark'
+import type { OrderDiet } from '@/lib/diet'
 
 /** One order as a run's table lists it. */
 export type RunTableOrder = {
@@ -31,6 +33,8 @@ export type RunTableOrder = {
   pax: number | null
   /** What is being cooked, one label each — see foodItemLabels. */
   itemNames: string[]
+  /** Veg, non-veg, both or not tagged, from the menu database. See lib/diet.ts. */
+  diet?: OrderDiet
   amountPaise: number | null
   paymentMode: string | null
   status: string
@@ -44,6 +48,13 @@ export type RunTableOrder = {
   callNoteHint?: string | null
 }
 
+const DIET_TEXT: Record<Exclude<OrderDiet, null>, string> = {
+  VEG: 'veg',
+  NON_VEG: 'non-veg',
+  MIXED: 'veg + non-veg',
+  UNTAGGED: 'veg/non-veg not tagged',
+}
+
 /** Everything shown in a row, as plain text for pasting elsewhere. */
 function orderDetailsText(o: RunTableOrder, trainText?: string): string {
   const seat = o.handoverPoint
@@ -55,7 +66,7 @@ function orderDetailsText(o: RunTableOrder, trainText?: string): string {
     o.source ? `Aggregator: ${sourceLabel(o.source)}` : null,
     `Passenger: ${o.contactName ?? '-'}${o.contactPhone ? ` (${o.contactPhone})` : ''}`,
     `Seat: ${seat}`,
-    `Items: ${items}`,
+    `Items: ${items}${o.diet ? ` (${DIET_TEXT[o.diet]})` : ''}`,
     `Amount: ${formatRupees(o.amountPaise)}${o.paymentMode ? ` (${o.paymentMode})` : ''}`,
     `Status: ${o.status}`,
     `Placed: ${o.orderTimeLabel}`,
@@ -110,7 +121,7 @@ export function RunOrderTable({
     // seven columns do not fit a phone, and a squeezed table is worse than
     // one that slides.
     <div className="overflow-x-auto border-t border-line">
-      <table className="w-full min-w-[46rem] text-sm">
+      <table className="w-full min-w-[49rem] text-sm">
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             {selection ? (
@@ -130,6 +141,7 @@ export function RunOrderTable({
             <th className={thClass}>Order</th>
             <th className={thClass}>Passenger</th>
             <th className={thClass}>Seat</th>
+            <th className={`${thClass} w-12`} title="Veg (circle) or non-veg (triangle), from the Menu">Veg</th>
             <th className={thClass}>Items</th>
             <th className={`${thClass} text-right`}>Amount</th>
             <th className={thClass}>Status</th>
@@ -222,6 +234,12 @@ export function RunOrderTable({
                 ) : (
                   <CoachChip coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
                 )}
+              </td>
+
+              {/* A column of its own, so a board can be scanned for the
+                  triangles without reading a single dish name. */}
+              <td className="px-3 py-2.5">
+                <OrderDietMark diet={o.diet} size={15} />
               </td>
 
               {/* Only the first dish fits; the rest sit behind the count and

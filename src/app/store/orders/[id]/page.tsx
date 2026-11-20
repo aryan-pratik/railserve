@@ -4,6 +4,7 @@ import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { ROLE_LABEL } from '@/lib/roles'
 import { BackLink, Card, CardHeader } from '@/components/ui'
 import { OrderCard } from '@/components/OrderCard'
@@ -64,7 +65,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
       <BackLink href={backQuery ? `/store?${backQuery}` : '/store'}>Back to the board</BackLink>
 
       <OrderCard
-        order={toCardData(order)}
+        order={toCardData(order, await dietLookupFor([order]))}
         href={`/store/orders/${id}`}
         showServiceDate
         actions={

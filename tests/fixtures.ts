@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Listing, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User, WaConversation, WaMessage } from '../src/lib/models'
+import { Counter, Listing, MenuItem, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User, WaConversation, WaMessage } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -22,6 +22,7 @@ export async function resetDb() {
     Listing.deleteMany({}),
     WaConversation.deleteMany({}),
     WaMessage.deleteMany({}),
+    MenuItem.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
@@ -29,6 +30,8 @@ export async function resetDb() {
     { gmailMessageId: 1 },
     { unique: true, name: 'gmailMessageId_unique', partialFilterExpression: { gmailMessageId: { $type: 'string' } } },
   )
+  // One menu row per dish per aggregator; registerMenuItems upserts on it.
+  await MenuItem.collection.createIndex({ source: 1, key: 1 }, { unique: true, name: 'source_key_unique' })
   // Payment ingestion is idempotent on the RRN, so the tests that assert that
   // need the index that enforces it.
   await Payment.collection.createIndex({ rrn: 1 }, { unique: true, name: 'rrn_unique' })

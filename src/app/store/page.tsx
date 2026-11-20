@@ -7,6 +7,7 @@ import { timingFor } from '@/lib/train/service'
 import { runTrainLabel, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatServiceDate, formatTimeIST, shiftServiceDate } from '@/lib/format'
 import { loadRunBoard, todayBoardFilter, yesterdayBoardFilter, type BoardMode } from '@/lib/board'
+import { orderDietsFor } from '@/lib/repo/menuRepo'
 import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { isSimulatedProvider } from '@/lib/train'
 import { TrainFeedNotice } from '@/components/TrainFeedNotice'
@@ -122,6 +123,8 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     boardQuery ? `/store/orders/${id}?back=${encodeURIComponent(boardQuery)}` : `/store/orders/${id}`
   const allOrders = runs.flatMap((r) => r.orders)
 
+  const diets = await orderDietsFor(allOrders)
+
   const cards = runs.map((run) => {
     const orders: RunTableOrder[] = run.orders.map((o) => ({
       id: String(o._id),
@@ -138,6 +141,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
       contactName: o.contactName ?? null,
       contactPhone: o.contactPhone ?? null,
       itemNames: foodItemLabels(o.items),
+      diet: diets.get(String(o._id)) ?? null,
       amountPaise: o.amountPaise ?? null,
       paymentMode: o.paymentMode ?? null,
       outletName: multiOutlet ? (outletName.get(String(o.restaurantId)) ?? null) : null,

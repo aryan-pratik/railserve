@@ -1,6 +1,9 @@
+import { Fragment } from 'react'
 import Image from 'next/image'
 import { formatIST, formatMoney, formatServiceDate, formatTimeIST } from '@/lib/format'
 import { sourceLabel } from '@/lib/orderEnums'
+import { splitKotParts, type DietLookup, type KotPart } from '@/lib/diet'
+import { DietMark } from './DietMark'
 
 /**
  * Kitchen Order Ticket. Plan §10.
@@ -13,6 +16,13 @@ import { sourceLabel } from '@/lib/orderEnums'
  * Every order prints as two tickets, each its own cut (see KotTickets below):
  * this one for the kitchen, and a short bag slip. A batch print stacks them;
  * the print queue sends each as its own job so the printer cuts between them.
+ *
+ * Non-veg is always its own KOT. An order carrying both prints the pair
+ * twice, veg first and then non-veg, because the two are cooked and packed at
+ * different stations (lib/diet.ts splitKotParts). Which is which comes from
+ * the menu database, never from reading the item's name here. Each ticket
+ * says VEG or NON-VEG beside a circle or a triangle, and every item carries
+ * the same shape: thermal paper has no colour, so the shape is the signal.
  *
  * Set in Inter, at medium weight. The ticket is printed as a 576-dot 1-bit
  * image, so a digit is about 16 dots tall and what survives is its outline,
@@ -64,6 +74,19 @@ export type KotOrder = {
   }[]
 }
 
+type KotItem = KotOrder['items'][number]
+type Part = KotPart<KotItem>
+
+/** "VEG" / "NON-VEG" with its shape, as the ticket's heading says it. */
+function PartLabel({ part, size = 14 }: { part: Part; size?: number }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <DietMark diet={part.diet} size={size} print />
+      <span>{part.diet === 'VEG' ? 'VEG' : 'NON-VEG'}</span>
+    </span>
+  )
+}
+
 export type KotOutlet = { name: string; stationName?: Maybe<string> } | null
 
 /**
@@ -88,9 +111,10 @@ function Line({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutlet }) {
-  const kitchen = order.items.filter((i) => !i.isPacking)
-  const packing = order.items.filter((i) => i.isPacking)
+export function KotTicket({ order, outlet, part }: { order: KotOrder; outlet: KotOutlet; part: Part }) {
+  const kitchen = part.items.filter((i) => !i.isPacking)
+  const packing = part.items.filter((i) => i.isPacking)
+  const untagged = kitchen.some((i) => i.diet === null)
   const isBulk = order.orderType === 'BULK'
   const isLocal = order.orderType === 'LOCAL'
 
@@ -112,9 +136,16 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
       <Rule />
 
       <div className="flex items-center justify-between font-bold">
-        <span className="text-[14px]">KOT</span>
+        <span className="inline-flex items-center gap-1.5 text-[14px]">
+          KOT <PartLabel part={part} size={15} />
+        </span>
         <span className="text-[14px]">{order.externalOrderId}</span>
       </div>
+      {part.of > 1 ? (
+        <div className="my-1 border border-black py-0.5 text-center text-[12px] font-bold">
+          KOT {part.index} OF {part.of} FOR THIS ORDER
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <span>{order.orderType}</span>
         <span>{formatServiceDate(order.serviceDate)}</span>
@@ -174,20 +205,24 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
       <ul className="mt-1 space-y-1.5">
         {kitchen.map((i) => (
           <li key={String(i._id)}>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
+              <DietMark diet={i.diet} size={13} print className="mt-px" />
               <span className="w-8 shrink-0 text-[13px] font-bold tabular-nums">{i.qty}×</span>
               <span className="font-bold uppercase">{i.name}</span>
             </div>
             {/* The composite thali text, printed once, verbatim. */}
             {i.spec ? (
-              <pre className="ml-8 mt-0.5 whitespace-pre-wrap break-words font-kot text-[11px]">
+              <pre className="ml-[3.25rem] mt-0.5 whitespace-pre-wrap break-words font-kot text-[11px]">
                 {i.spec}
               </pre>
             ) : null}
-            {i.notes ? <div className="ml-8 text-[11px] italic">note: {i.notes}</div> : null}
+            {i.notes ? <div className="ml-[3.25rem] text-[11px] italic">note: {i.notes}</div> : null}
           </li>
         ))}
       </ul>
+      {untagged ? (
+        <div className="mt-1.5 text-[11px] font-bold">? = NOT TAGGED VEG / NON-VEG. CHECK.</div>
+      ) : null}
 
       {packing.length > 0 ? (
         <>
@@ -216,12 +251,15 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
 
       <Rule />
 
+      {/* The amount is the whole order's, so it is printed once. On the
+          second KOT of a split order it would read as a second sum to
+          collect. */}
       <div className="flex items-center justify-between text-[13px] font-bold">
         <span>{order.paymentMode ?? '-'}</span>
-        <span>{formatMoney(order.amountPaise)}</span>
+        <span>{part.index === 1 ? formatMoney(order.amountPaise) : 'TOTAL ON KOT 1'}</span>
       </div>
 
-      {order.paymentMode === 'COD' ? (
+      {order.paymentMode === 'COD' && part.index === 1 ? (
         <>
           <Rule />
           <div className="flex flex-col items-center gap-1 text-center">
@@ -243,14 +281,18 @@ export function KotTicket({ order, outlet }: { order: KotOrder; outlet: KotOutle
  * and the food, and nothing else — the rider and the hand-off need to match a
  * bag to a seat at a glance, not read a kitchen docket.
  */
-export function KotSlip({ order }: { order: KotOrder }) {
-  const food = order.items.filter((i) => !i.isPacking)
+export function KotSlip({ order, part }: { order: KotOrder; part: Part }) {
+  const food = part.items.filter((i) => !i.isPacking)
   const isBulk = order.orderType === 'BULK'
   const isLocal = order.orderType === 'LOCAL'
 
   return (
     <div className={TICKET_CLASS}>
       <div className="text-center text-[18px] font-bold">{order.externalOrderId}</div>
+      <div className="flex items-center justify-center gap-2 text-[13px] font-bold">
+        <PartLabel part={part} />
+        {part.of > 1 ? <span>· BAG {part.index} OF {part.of}</span> : null}
+      </div>
 
       <Rule />
 
@@ -270,7 +312,8 @@ export function KotSlip({ order }: { order: KotOrder }) {
 
       <ul className="space-y-0.5">
         {food.map((i) => (
-          <li key={String(i._id)} className="flex gap-2">
+          <li key={String(i._id)} className="flex gap-1.5">
+            <DietMark diet={i.diet} size={13} print className="mt-px" />
             <span className="w-8 shrink-0 font-bold tabular-nums">{i.qty}×</span>
             <span className="font-bold uppercase">{i.name}</span>
           </li>
@@ -282,14 +325,30 @@ export function KotSlip({ order }: { order: KotOrder }) {
 
 /**
  * Everything one order prints, in print order. Every KOT surface renders
- * this rather than the tickets one by one, so the preview, the print and
- * TICKETS_PER_ORDER in printer/queue.ts cannot drift apart.
+ * this rather than the tickets one by one, so the preview, the print and the
+ * ticket count in printer/queue.ts cannot drift apart.
+ *
+ * `lookup` is the menu database's veg / non-veg tags for this order's items
+ * (menuRepo.dietLookupFor). One part for an order that is all veg or all
+ * non-veg; two, veg then non-veg, for one that carries both.
  */
-export function KotTickets({ order, outlet }: { order: KotOrder; outlet: KotOutlet }) {
+export function KotTickets({
+  order,
+  outlet,
+  lookup,
+}: {
+  order: KotOrder
+  outlet: KotOutlet
+  lookup: DietLookup
+}) {
   return (
     <>
-      <KotTicket order={order} outlet={outlet} />
-      <KotSlip order={order} />
+      {splitKotParts(lookup, order.source, order.items).map((part) => (
+        <Fragment key={part.diet}>
+          <KotTicket order={order} outlet={outlet} part={part} />
+          <KotSlip order={order} part={part} />
+        </Fragment>
+      ))}
     </>
   )
 }

@@ -5,6 +5,7 @@ import { runTrainLabel } from '@/lib/runs'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { KotTickets } from '@/components/KotTicket'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { PrintButton } from '../../../orders/[id]/kot/PrintButton'
 import { BackLink } from '@/components/ui'
 
@@ -36,6 +37,8 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
     .lean()
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
 
+  const lookup = await dietLookupFor(orders)
+
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
@@ -60,6 +63,7 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
             key={String(order._id)}
             order={order}
             outlet={outletById.get(String(order.restaurantId)) ?? null}
+            lookup={lookup}
           />
         ))}
       </div>
