@@ -1,5 +1,6 @@
 import type { OrderParser, ParseResult, ParsedOrder } from '../types'
 import { STATION_CODES, looksLikePhone, normalisePaymentMode, rupeeStringToPaise, stripEmoji } from './shared'
+import { splitCombinedItems } from '../../splitItems'
 
 /**
  * OLF parser.
@@ -110,7 +111,11 @@ export class OlfParser implements OrderParser {
     }
     const commentRaw = field(['Customer\\s*Comment'])
     const comment = commentRaw && !/^N\/?A$/i.test(commentRaw.trim()) ? commentRaw.trim() : null
-    const items = [{ name: itemMatch[2].trim(), qty: Number(itemMatch[1]), notes: comment }]
+    // The line can carry several items: "1x Veg Mini Thali, 2x Plain Tawa
+    // Roti". The customer's comment stays on the first.
+    const items = splitCombinedItems([{ name: itemMatch[2].trim(), qty: Number(itemMatch[1]), notes: comment }]).map(
+      (i) => ({ name: i.name, qty: i.qty, notes: 'notes' in i ? i.notes : null }),
+    )
 
     const amountRaw = field(['Amount'])
     const amountMatch = amountRaw ? /([\d,]+(?:\.\d+)?)/.exec(amountRaw) : null
