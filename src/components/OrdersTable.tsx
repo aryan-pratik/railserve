@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { formatRupees, formatServiceDate, formatShortDate, formatTimeIST } from '@/lib/format'
 import { CoachChip, Dash, EmptyState, SourceBadge, StatusBadge, TypeBadge, thClass } from './ui'
 import { CallNoteHint } from './CallNoteHint'
+import { OrderDietMark } from './DietMark'
+import type { OrderDiet } from '@/lib/diet'
 
 type Maybe<T> = T | null | undefined
 
@@ -27,9 +29,11 @@ export type OrderRow = {
   /** Call-note count and prebuilt tooltip text — see callNoteSummary. */
   callNoteCount?: Maybe<number>
   callNoteHint?: Maybe<string>
+  /** Veg, non-veg, both or not tagged, from the menu database. Shown with `showDiet`. */
+  diet?: OrderDiet
 }
 
-type OrderTableColumns = { showOutlet: boolean; showSource?: boolean; showRider?: boolean }
+type OrderTableColumns = { showOutlet: boolean; showSource?: boolean; showRider?: boolean; showDiet?: boolean }
 
 /**
  * The narrowest each column can be, in px, padding included — for the shared
@@ -45,9 +49,10 @@ type OrderTableColumns = { showOutlet: boolean; showSource?: boolean; showRider?
  * 72rem was 18px wider than the 1134px a 1440px laptop leaves the table, and
  * that alone made the page scroll sideways.
  */
-function orderTableColumnWidths({ showOutlet, showSource = false, showRider = false }: OrderTableColumns) {
+function orderTableColumnWidths({ showOutlet, showSource = false, showRider = false, showDiet = false }: OrderTableColumns) {
   return [
     110, // order id
+    ...(showDiet ? [52] : []), // veg / non-veg mark
     112, // date
     130, // train + scheduled time
     92, // seat
@@ -97,6 +102,7 @@ export function OrdersTable({
   showOutlet = false,
   showSource = false,
   showRider = false,
+  showDiet = false,
   emptyNote = 'Nothing matches these filters.',
 }: {
   orders: OrderRow[]
@@ -106,6 +112,8 @@ export function OrdersTable({
   showSource?: boolean
   /** Who has each order. On in history, where "who took this one" gets asked. */
   showRider?: boolean
+  /** The veg / non-veg mark, from the menu database. On for the admin board. */
+  showDiet?: boolean
   emptyNote?: string
 }) {
   if (orders.length === 0) {
@@ -120,12 +128,13 @@ export function OrdersTable({
           shown columns' minimums, so a screen with room never scrolls. */}
       <table
         className="w-full table-fixed text-sm"
-        style={{ minWidth: orderTableColumnWidths({ showOutlet, showSource, showRider }).reduce((a, b) => a + b, 0) }}
+        style={{ minWidth: orderTableColumnWidths({ showOutlet, showSource, showRider, showDiet }).reduce((a, b) => a + b, 0) }}
       >
-        <OrderTableColGroup showOutlet={showOutlet} showSource={showSource} showRider={showRider} />
+        <OrderTableColGroup showOutlet={showOutlet} showSource={showSource} showRider={showRider} showDiet={showDiet} />
         <thead className="border-b border-line bg-sunken/60">
           <tr>
             <th className={thClass}>Order</th>
+            {showDiet ? <th className={thClass} title="Veg (circle) or non-veg (triangle), from the Menu">Veg</th> : null}
             <th className={thClass}>Date</th>
             <th className={thClass}>Train</th>
             <th className={thClass}>Seat</th>
@@ -154,6 +163,7 @@ export function OrdersTable({
                   <TypeBadge type={o.orderType} />
                 </Link>
               </td>
+              {showDiet ? <td className="px-3 py-2.5"><OrderDietMark diet={o.diet} size={15} /></td> : null}
               <td className="whitespace-nowrap px-3 py-2.5 text-muted" title={formatServiceDate(o.serviceDate)}>
                 {formatShortDate(o.serviceDate)}
               </td>

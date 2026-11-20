@@ -703,7 +703,7 @@ export function Tabs({
               {t.count}
             </span>
           ) : null}
-          <LinkHint />
+          <LinkHint tucked />
         </Link>
       ))}
       </div>

@@ -192,7 +192,7 @@ function savedNote(changes: FieldChange[], what = 'Saved'): ActionState {
  */
 function itemInput(formData: FormData): Partial<Record<ItemEditKey, string>> {
   const input: Partial<Record<ItemEditKey, string>> = {}
-  for (const key of ['name', 'qty', 'pricePaise', 'notes', 'spec'] as const) {
+  for (const key of ['name', 'qty', 'pricePaise', 'notes', 'spec', 'diet'] as const) {
     if (formData.has(key)) input[key] = String(formData.get(key) ?? '')
   }
   if (formData.has('hasIsPacking')) input.isPacking = formData.get('isPacking') ? 'true' : 'false'

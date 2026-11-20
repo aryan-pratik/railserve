@@ -1,3 +1,5 @@
+import { DietMark } from './DietMark'
+import type { Diet } from '@/lib/diet'
 import Link from 'next/link'
 import { formatIST, formatMoney, formatServiceDate } from '@/lib/format'
 import { Card, Dash, PaymentBadge, SourceBadge, StatusBadge, TypeBadge } from '@/components/ui'
@@ -20,7 +22,8 @@ export type OrderCardData = {
   serviceDate: string
   amountPaise: number | null
   paymentMode: string | null
-  items: { id: string; name: string; qty: number; spec: string | null; notes: string | null; isPacking: boolean }[]
+  /** `diet` is the menu database's veg / non-veg tag; absent where the caller did not look it up. */
+  items: { id: string; name: string; qty: number; spec: string | null; notes: string | null; isPacking: boolean; diet?: Diet | null }[]
   createdAt: string
 }
 
@@ -99,6 +102,7 @@ export function OrderCard({
           <ul className="space-y-0.5">
             {kitchen.map((i) => (
               <li key={i.id} className="text-ink">
+                {i.diet !== undefined ? <DietMark diet={i.diet} className="mr-1.5" /> : null}
                 <span className="font-semibold tabular-nums">{i.qty}×</span> {i.name}
                 {i.spec ? (
                   <div className="mt-1 whitespace-pre-wrap rounded bg-sunken p-2 text-xs text-muted">

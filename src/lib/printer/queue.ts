@@ -1,8 +1,9 @@
 import { headers } from 'next/headers'
 import { connectDb } from '@/lib/db'
 import { PrintJob, Station } from '@/lib/models'
+import { TICKETS_PER_PART } from '@/lib/diet'
 import { env } from '@/lib/env'
-import { renderKotScreenshots } from '@/lib/printer/screenshot'
+import { renderKotScreenshots, type KotRender } from '@/lib/printer/screenshot'
 import { printImagesDirect } from '@/lib/printer/directPrint'
 import { parseRunKey } from '@/lib/runs'
 import { normaliseStationCode } from '@/lib/stations'
@@ -162,8 +163,40 @@ export async function getAppOrigin(): Promise<string> {
   return `${proto}://${host}`
 }
 
-/** Every order prints as this many tickets, each with its own cut: the KOT and the bag slip. */
-export const TICKETS_PER_ORDER = 2
+/**
+ * Checks a run's render against the orders that were asked for, using only
+ * what the page drew.
+ *
+ * Every order prints a KOT and a bag slip, and an order carrying both veg and
+ * non-veg prints that pair twice, non-veg on its own (see lib/diet.ts). So
+ * each requested order must have come back with two tickets or four, and no
+ * other order may have come back at all. Each ticket names its order
+ * (`data-order-id`), which is what makes this a check of the render itself: a
+ * tag changed on the Menu page between the render and the check cannot make a
+ * correct print look wrong, as counting from a fresh database read could.
+ */
+export function checkRunRender(orderIds: string[], renders: KotRender[]): void {
+  const perOrder = new Map<string, number>()
+  for (const r of renders) {
+    if (!r.orderId) throw new Error('Rendered a ticket that does not say which order it is for')
+    perOrder.set(r.orderId, (perOrder.get(r.orderId) ?? 0) + 1)
+  }
+  const wanted = new Set(orderIds)
+  const missing = orderIds.filter((id) => !perOrder.has(id))
+  const extra = [...perOrder.keys()].filter((id) => !wanted.has(id))
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `Rendered tickets for ${perOrder.size} order(s) but ${wanted.size} were asked for` +
+        (missing.length > 0 ? `; missing ${missing.join(', ')}` : '') +
+        (extra.length > 0 ? `; not asked for ${extra.join(', ')}` : ''),
+    )
+  }
+  for (const [id, n] of perOrder) {
+    if (n !== TICKETS_PER_PART && n !== TICKETS_PER_PART * 2) {
+      throw new Error(`Rendered ${n} ticket(s) for order ${id}; expected ${TICKETS_PER_PART} or ${TICKETS_PER_PART * 2}`)
+    }
+  }
+}
 
 /**
  * One PrintJob per ticket, never one job holding several.
@@ -224,7 +257,8 @@ export async function enqueueOrderKotPrint(params: {
 
   const pagePath = `/internal/print/order/${orderId}`
   const startedAt = Date.now()
-  const images = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
+  const renders = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
+  const images = renders.map((r) => r.image)
   const renderedAt = Date.now()
 
   await enqueueTickets({ stationCode, restaurantId, refType: 'order', refId: orderId, images })
@@ -269,17 +303,13 @@ export async function enqueueRunKotPrint(params: {
   const url = new URL(`/internal/print/run/${encodeURIComponent(runKey)}`, appOrigin)
   url.searchParams.set('orders', orderIds.join(','))
   const startedAt = Date.now()
-  const images = await renderKotScreenshots(url.toString())
+  const renders = await renderKotScreenshots(url.toString())
   const renderedAt = Date.now()
 
-  // Now a genuine invariant rather than a coincidence: the page was told
-  // which orders to render, so a mismatch means the two disagree.
-  const expected = orderIds.length * TICKETS_PER_ORDER
-  if (images.length !== expected) {
-    throw new Error(
-      `Rendered ${images.length} ticket(s) but expected ${expected} for ${orderIds.length} order(s)`,
-    )
-  }
+  // The page was told which orders to render, and each ticket says which
+  // order it is: a mismatch means the two disagree, and nothing is queued.
+  checkRunRender(orderIds, renders)
+  const images = renders.map((r) => r.image)
 
   await enqueueTickets({
     stationCode: identity.stationCode,

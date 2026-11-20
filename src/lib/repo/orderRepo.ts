@@ -7,6 +7,7 @@ import type { OrderSource } from '../orderEnums'
 import { rescheduledArrival, runBooking } from '../arrival'
 import { todayIST } from '../format'
 import { TERMINAL_STATUSES } from '../orderStatus'
+import { menuRowsOf, registerMenuItems } from './menuRepo'
 
 /**
  * THE ONLY PLACE Order.find / findOne / aggregate MAY BE CALLED.
@@ -766,7 +767,16 @@ export async function nextManualOrderId(serviceDate: string): Promise<string> {
 
 /** Order creation. Status is set here once, and only here, at birth. */
 export async function insertOrder(doc: Record<string, unknown>) {
-  return Order.create(doc)
+  const order = await Order.create(doc)
+  // Every dish a new order carries goes into the menu database, so the Menu
+  // page can show it for tagging before its KOT is printed. Best effort: a
+  // menu write must never be the reason an order is lost.
+  try {
+    await registerMenuItems(menuRowsOf(order))
+  } catch (err) {
+    console.error('[menu] could not register items for', order.externalOrderId, err)
+  }
+  return order
 }
 
 /**

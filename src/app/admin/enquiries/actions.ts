@@ -11,6 +11,7 @@ import { addOrderItems, findByIdOrThrow, updateOrderFields } from '@/lib/repo/or
 import { transitionOrder } from '@/lib/repo/transitionOrder'
 import { istLocalToUtc, rupeesToPaise } from '@/lib/format'
 import { PACKING_CHOICES } from '@/lib/validation/order'
+import { DIETS } from '@/lib/diet'
 
 export type EnquiryState = { error?: string; ok?: string }
 
@@ -21,6 +22,7 @@ const CreateInput = z.object({
   trainNo: z.string().trim().optional().nullable(),
   pax: z.coerce.number().int().min(1).optional().nullable(),
   menuSpec: z.string().trim().optional().nullable(),
+  thaliDiet: z.enum(DIETS).optional().nullable().or(z.literal('')),
   scheduledArrival: z.string().optional().nullable(),
   contactName: z.string().trim().optional().nullable(),
   contactPhone: z.string().trim().optional().nullable(),
@@ -48,6 +50,7 @@ export async function createEnquiryAction(
       trainNo: d.trainNo || null,
       pax: d.pax ?? null,
       menuSpec: d.menuSpec || null,
+      thaliDiet: d.thaliDiet || null,
       scheduledArrival: d.scheduledArrival || null,
       contactName: d.contactName || null,
       contactPhone: d.contactPhone || null,

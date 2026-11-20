@@ -15,7 +15,7 @@ export function GroupByTrainToggle({ href, isGrouped }: { href: string; isGroupe
       href={href}
       role="switch"
       aria-checked={isGrouped}
-      className={`inline-flex h-7 items-center gap-2 rounded-lg px-1 text-xs font-medium text-ink ${focusRing}`}
+      className={`inline-flex h-7 items-center gap-2 rounded-lg pl-1 pr-2.5 text-xs font-medium text-ink ${focusRing}`}
     >
       <span
         aria-hidden
@@ -30,7 +30,7 @@ export function GroupByTrainToggle({ href, isGrouped }: { href: string; isGroupe
         />
       </span>
       <span className="whitespace-nowrap">Group by train</span>
-      <LinkHint />
+      <LinkHint tucked />
     </Link>
   )
 }

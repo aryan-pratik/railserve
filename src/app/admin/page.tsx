@@ -24,6 +24,7 @@ import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
 import { PendingCancelRequests } from '@/components/CancelRequest'
 import { countPendingReturns } from '@/lib/repo/rtoRepo'
 import { ReturnsNotice } from '@/components/ReturnToOrigin'
+import { orderDietsFor } from '@/lib/repo/menuRepo'
 
 export const metadata = { title: 'Orders · RailServe' }
 
@@ -130,7 +131,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     ? dayOrders.filter((o) => tab.statuses!.includes(o.status))
     : dayOrders
 
-  const timings = await timingForOrders(visible)
+  const [timings, diets] = await Promise.all([timingForOrders(visible), orderDietsFor(visible)])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
   // Stations we serve are the ones with an outlet; the Station row, where one
   // exists, supplies the display name.
@@ -196,6 +197,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
           rawSeat: o.rawSeat ?? null,
           handoverPoint: o.handoverPoint ?? null,
           itemNames,
+          diet: diets.get(String(o._id)) ?? null,
           pax: o.pax ?? null,
           amountPaise: o.amountPaise ?? null,
           paymentMode: o.paymentMode ?? null,
@@ -308,11 +310,13 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
             amountPaise: o.amountPaise,
             outletName: outletName.get(String(o.restaurantId)) ?? null,
             remark: o.remark,
+            diet: diets.get(String(o._id)) ?? null,
             ...callNoteRow(o),
           }))}
           hrefFor={(id) => `/admin/orders/${id}`}
           showOutlet
           showSource
+          showDiet
         />
       )}
 

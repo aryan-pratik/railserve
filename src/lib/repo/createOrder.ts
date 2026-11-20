@@ -3,6 +3,7 @@ import { ForbiddenError, ownsOutlet, type AuthContext } from '../authContext'
 import { istLocalToUtc, rupeesToPaise } from '../format'
 import type { ManualOrderInput } from '../validation/order'
 import { insertOrder, nextManualOrderId } from './orderRepo'
+import { bulkThaliName } from '../diet'
 import { warmTrainStatus } from '../train/service'
 
 /**
@@ -47,12 +48,15 @@ export async function createManualOrder(ctx: AuthContext, input: ManualOrderInpu
   const items = isBulk
     ? [
         {
-          name: `Bulk thali × ${input.pax}`,
+          name: bulkThaliName(input.pax!),
           qty: input.pax!,
           pricePaise: null,
           spec: input.menuSpec ?? null,
           isPacking: false,
           notes: null,
+          // A thali is not a dish the menu database can name, so it is tagged
+          // here, on the order (lib/diet.ts tagFor). Null prints with a "?".
+          diet: input.thaliDiet ?? null,
         },
         ...input.packingItems.map((name) => ({
           name,

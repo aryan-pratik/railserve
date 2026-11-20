@@ -62,9 +62,14 @@ async function getBrowser(): Promise<Browser> {
  *   session involved (see printer/internalAuth.ts). Works equally whether
  *   the print was triggered by a click or by server-side logic with no
  *   request/cookie context at all.
- * @returns One PNG buffer per ticket on the page, in document order.
+ * @returns One PNG per ticket on the page, in document order, each with the
+ *   order it belongs to as the page itself declares it (`data-order-id` on
+ *   the ticket, see KotTicket.tsx). The caller checks what was drawn against
+ *   what it asked for from this, not from a second read of the database.
  */
-export async function renderKotScreenshots(pageUrl: string): Promise<Buffer[]> {
+export type KotRender = { image: Buffer; orderId: string | null }
+
+export async function renderKotScreenshots(pageUrl: string): Promise<KotRender[]> {
   const browser = await getBrowser()
   const page = await browser.newPage()
 
@@ -86,13 +91,14 @@ export async function renderKotScreenshots(pageUrl: string): Promise<Buffer[]> {
     const tickets = await page.$$('.kot')
     if (tickets.length === 0) throw new Error('No .kot ticket found on the print page')
 
-    const images: Buffer[] = []
+    const renders: KotRender[] = []
     for (const ticket of tickets) {
+      const orderId = await ticket.evaluate((el) => el.getAttribute('data-order-id'))
       const raw = await ticket.screenshot({ type: 'png' })
-      const resized = await sharp(raw).resize({ width: PRINTER_DOT_WIDTH }).png().toBuffer()
-      images.push(resized)
+      const image = await sharp(raw).resize({ width: PRINTER_DOT_WIDTH }).png().toBuffer()
+      renders.push({ image, orderId })
     }
-    return images
+    return renders
   } finally {
     await page.close()
   }

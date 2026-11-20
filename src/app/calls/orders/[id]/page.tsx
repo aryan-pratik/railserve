@@ -4,6 +4,7 @@ import { findById, viewCallNotes } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import { toCardData } from '@/lib/orderView'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { timingFor, timingForOrders } from '@/lib/train/service'
 import { TrainTiming } from '@/components/TrainTiming'
 import { allowedNextStatuses, canFlagRatingOrder, isTerminal, type OrderStatus } from '@/lib/orderStatus'
@@ -96,7 +97,7 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
       <BackLink href="/calls">Back to the call list</BackLink>
 
       <OrderCard
-        order={toCardData(order)}
+        order={toCardData(order, await dietLookupFor([order]))}
         href={`/calls/orders/${id}`}
         showServiceDate
         showMoney={false}

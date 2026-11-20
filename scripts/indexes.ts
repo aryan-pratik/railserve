@@ -318,6 +318,8 @@ async function main() {
   await ensure('wamessages', WaMessage, WA_MESSAGE_INDEXES)
 
   // Counter uses a natural string _id; the default _id index is all it needs.
+  // So does MenuItem: its _id is the (aggregator, dish) pair, so one row per
+  // dish holds without any index built here.
   await Counter.collection.createIndex({ _id: 1 })
 
   console.log('\nAll indexes created.')

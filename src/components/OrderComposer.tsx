@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react'
 import { Button, Card, CardHeader, Field, FormNote, inputClass, textareaClass } from '@/components/ui'
 import { IconPlus } from '@/components/Icons'
 import { PACKING_CHOICES } from '@/lib/validation/order'
+import { DIETS, DIET_LABEL } from '@/lib/diet'
 import { ORDER_TYPES, ORDER_TYPE_LABEL, type OrderType } from '@/lib/orderEnums'
 
 export type ComposerState = { error?: string; ok?: string }
@@ -193,6 +194,15 @@ export function OrderComposer({
                 <Field label="Menu" htmlFor="menuSpec"
                   hint="The whole thali as one block. This prints on the ticket verbatim.">
                   <textarea id="menuSpec" name="menuSpec" rows={4} className={textareaClass} />
+                </Field>
+                <Field label="Thali is" htmlFor="thaliDiet"
+                  hint="Decides which KOT it prints on. Left unset, it prints with a ? until set on the order.">
+                  <select id="thaliDiet" name="thaliDiet" defaultValue="" className={inputClass}>
+                    <option value="">Not said yet</option>
+                    {DIETS.map((d) => (
+                      <option key={d} value={d}>{DIET_LABEL[d]}</option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="Packing"
                   hint="The part of a large order that gets forgotten.">

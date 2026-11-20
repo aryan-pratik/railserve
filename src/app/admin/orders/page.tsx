@@ -7,6 +7,7 @@ import { IconDownload, IconPlus } from '@/components/Icons'
 import { ButtonAnchor, ButtonLink, Card, PageHeader, Pagination, Tabs, PAGE_SIZE_OPTIONS } from '@/components/ui'
 import { OrderFilterBar } from '@/components/OrderFilterBar'
 import { riderNamesFor } from '@/lib/repo/riderFilter'
+import { orderDietsFor } from '@/lib/repo/menuRepo'
 import {
   hasOrderFilters, orderFilterClause, orderFilterOptions, orderFilterParams, readOrderFilters,
 } from '@/lib/repo/orderFilters'
@@ -65,7 +66,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     countByPaymentMode(ctx, base),
     countOrders(ctx, filter),
   ])
-  const riderName = await riderNamesFor(orders)
+  const [riderName, diets] = await Promise.all([riderNamesFor(orders), orderDietsFor(orders)])
   const statusOptions = options.statuses
   const outletName = new Map(options.outlets.map((o) => [o.id, `${o.name} · ${o.stationCode}`]))
 
@@ -154,6 +155,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
           source: o.source,
           remark: o.remark,
           rider: riderName.get(String(o._id)),
+          diet: diets.get(String(o._id)) ?? null,
             ...callNoteRow(o),
         }))}
         showOutlet

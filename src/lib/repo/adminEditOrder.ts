@@ -9,6 +9,7 @@ import {
   type ItemEditKey,
 } from '../orderEditFields'
 import { scoped } from './orderRepo'
+import { registerOrderMenu } from './menuRepo'
 
 /**
  * An admin correcting any detail of an order, with every change written to
@@ -203,7 +204,7 @@ export async function adminEditOrder(
   const _id = new mongoose.Types.ObjectId(orderId)
 
   try {
-    return await inTransaction(async (session) => {
+    const made = await inTransaction(async (session) => {
       const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
       if (!current) throw new NotFoundError('Order not found')
       const row = current as unknown as Record<string, unknown>
@@ -258,6 +259,11 @@ export async function adminEditOrder(
         field: def.key, label: def.label, from: display(def, row[def.key]), to: display(def, value),
       }))
     })
+    // A dish belongs to an aggregator's menu, so an order moved to another
+    // aggregator may carry dishes that menu has never seen. After the commit,
+    // and never failing the edit: see registerOrderMenu.
+    if (made.some((c) => c.field === 'source')) await registerOrderMenu(orderId)
+    return made
   } catch (err) {
     if (isDuplicateKey(err)) throw new ConflictError('Another order already has that order id.')
     throw err
@@ -272,7 +278,11 @@ type ItemRow = {
   notes?: string | null
   spec?: string | null
   isPacking?: boolean | null
+  diet?: string | null
 }
+
+/** The item fields that decide whether, and under what name, the menu holds a row for it. */
+const MENU_FIELDS = new Set(['name', 'spec', 'isPacking'])
 
 /** Edits one item, logging one event per field of it that changed. */
 export async function adminEditOrderItem(
@@ -296,7 +306,7 @@ export async function adminEditOrderItem(
   const _id = new mongoose.Types.ObjectId(orderId)
   const iid = new mongoose.Types.ObjectId(itemId)
 
-  return inTransaction(async (session) => {
+  const made = await inTransaction(async (session) => {
     const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
     if (!current) throw new NotFoundError('Order not found')
     const item = (current.items as ItemRow[]).find((i) => i._id.equals(iid))
@@ -335,6 +345,10 @@ export async function adminEditOrderItem(
     if (res.matchedCount === 0) throw new ConflictError('This order changed underneath you. Reload and try again.')
     return out
   })
+  // A renamed item is a dish the menu may not have. Registered now, so it is
+  // on the Menu page (and gets its suggested tag) before the next KOT prints.
+  if (made.some((c) => MENU_FIELDS.has(c.field))) await registerOrderMenu(orderId)
+  return made
 }
 
 /** What an added or removed item is logged as. */
@@ -349,7 +363,7 @@ export async function adminAddOrderItem(
 ): Promise<void> {
   requireAdmin(ctx)
   if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
-  const doc: Record<string, unknown> = { isPacking: false, notes: null, spec: null, pricePaise: null }
+  const doc: Record<string, unknown> = { isPacking: false, notes: null, spec: null, pricePaise: null, diet: null }
   for (const def of ITEM_EDIT_FIELDS) {
     const raw = input[def.key]
     if (raw === undefined) {
@@ -381,6 +395,7 @@ export async function adminAddOrderItem(
     )
     if (res.matchedCount === 0) throw new ConflictError('This order changed underneath you. Reload and try again.')
   })
+  await registerOrderMenu(orderId)
 }
 
 export async function adminRemoveOrderItem(ctx: AuthContext, orderId: string, itemId: string): Promise<void> {

@@ -3,6 +3,7 @@ import { findById } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { KotTickets } from '@/components/KotTicket'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { requireInternalRenderToken, INTERNAL_CTX } from '@/lib/printer/internalAuth'
 
 export const dynamic = 'force-dynamic'
@@ -20,9 +21,11 @@ export default async function InternalPrintOrderPage(props: PageProps<'/internal
     ? await Restaurant.findById(order.restaurantId).select('name stationName').lean()
     : null
 
+  const lookup = await dietLookupFor([order])
+
   return (
     <div className="flex flex-col items-center gap-4 bg-white p-4">
-      <KotTickets order={order} outlet={outlet} />
+      <KotTickets order={order} outlet={outlet} lookup={lookup} />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { DietMark } from '@/components/DietMark'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, ButtonLink, Dash, FormNote, PaymentBadge, StatusBadge, statusLabel } from '@/components/ui'
@@ -263,7 +264,7 @@ export function OrderModal({
                   {detail.items.map((i) => (
                     <li key={i.id} className="flex items-baseline justify-between gap-3 py-2">
                       <span className="min-w-0 text-sm text-ink">
-                        {i.isPacking ? <span className="text-muted">packing · </span> : null}
+                        {i.isPacking ? <span className="text-muted">packing · </span> : <DietMark diet={i.diet} className="mr-1.5" />}
                         {i.name}
                         <span className="ml-1.5 tabular-nums text-muted">×{i.qty}</span>
                         {i.spec ? (

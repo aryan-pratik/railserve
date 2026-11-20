@@ -83,12 +83,12 @@ export function OrdersToolbar({
               <Link href={href({ upcoming: '', mode: '', month: '', from: '', to: '' })} className={segmentClass(!isUpcoming)} aria-current={!isUpcoming ? 'page' : undefined}>
                 Today
                 {todayCount !== undefined ? <span className="tabular-nums text-muted">{todayCount}</span> : null}
-                <LinkHint />
+                <LinkHint tucked />
               </Link>
               <Link href={href({ upcoming: '1', mode: '', month: '', from: '', to: '' })} className={segmentClass(isUpcoming)} aria-current={isUpcoming ? 'page' : undefined}>
                 Upcoming
                 {upcomingCount ? <span className="tabular-nums text-muted">{upcomingCount}</span> : null}
-                <LinkHint />
+                <LinkHint tucked />
               </Link>
             </div>
             <GroupByTrainToggle href={href({ group: isGrouped ? '0' : '1' })} isGrouped={isGrouped} />

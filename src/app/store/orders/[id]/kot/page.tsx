@@ -4,6 +4,7 @@ import { findById } from '@/lib/repo/orderRepo'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { KotTickets } from '@/components/KotTicket'
+import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { PrintButton } from './PrintButton'
 import { BackLink } from '@/components/ui'
 
@@ -21,6 +22,8 @@ export default async function KotPage(props: PageProps<'/store/orders/[id]/kot'>
     ? await Restaurant.findById(order.restaurantId).select('name stationName').lean()
     : null
 
+  const lookup = await dietLookupFor([order])
+
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
@@ -32,7 +35,7 @@ export default async function KotPage(props: PageProps<'/store/orders/[id]/kot'>
       </div>
 
       <div className="flex flex-col items-center gap-4">
-        <KotTickets order={order} outlet={outlet} />
+        <KotTickets order={order} outlet={outlet} lookup={lookup} />
       </div>
     </div>
   )

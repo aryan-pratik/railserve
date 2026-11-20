@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ORDER_TYPES, PAYMENT_MODES } from '../orderEnums'
+import { DIETS } from '../diet'
 
 /**
  * Shape of the admin manual-entry form.
@@ -51,6 +52,9 @@ export const ManualOrderInput = z
 
     // Bulk only: the full thali text, kept as one block.
     menuSpec: z.string().trim().optional().nullable(),
+    // Bulk only: whether that thali is veg or non-veg. Optional, because the
+    // kitchen may not have been told yet; it can be set on the order later.
+    thaliDiet: z.enum(DIETS).optional().nullable(),
     packingItems: z.array(z.string().trim().min(1)).default([]),
   })
   .superRefine((v, ctx) => {

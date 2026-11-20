@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Listing, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User, WaConversation, WaMessage } from '../src/lib/models'
+import { Counter, Listing, MenuItem, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User, WaConversation, WaMessage } from '../src/lib/models'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
@@ -22,6 +22,7 @@ export async function resetDb() {
     Listing.deleteMany({}),
     WaConversation.deleteMany({}),
     WaMessage.deleteMany({}),
+    MenuItem.deleteMany({}),
   ])
   // The tests exercise the unique/partial indexes, so they must exist.
   await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })

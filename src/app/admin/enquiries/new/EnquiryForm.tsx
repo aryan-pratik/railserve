@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { Button, Card, CardHeader, Field, FormNote, inputClass, textareaClass } from '@/components/ui'
 import { parseBulkEnquiry } from '@/lib/ingest/parsers/bulkEnquiry'
+import { DIETS, DIET_LABEL } from '@/lib/diet'
 import { createEnquiryAction, type EnquiryState } from '../actions'
 
 const initial: EnquiryState = {}
@@ -112,6 +113,15 @@ export function EnquiryForm({ today }: { today: string }) {
                   onChange={(e) => setMenuSpec(e.target.value)} className={textareaClass} />
               </Field>
             </div>
+            <Field label="Thali is" htmlFor="thaliDiet"
+              hint="Decides which KOT it prints on. Left unset, it prints with a ? until set on the order.">
+              <select id="thaliDiet" name="thaliDiet" defaultValue="" className={inputClass}>
+                <option value="">Not said yet</option>
+                {DIETS.map((d) => (
+                  <option key={d} value={d}>{DIET_LABEL[d]}</option>
+                ))}
+              </select>
+            </Field>
             <div className="sm:col-span-2">
               <Field label="Notes" htmlFor="notes"
                 hint="Anything the parser did not recognise lands here. Nothing is dropped.">

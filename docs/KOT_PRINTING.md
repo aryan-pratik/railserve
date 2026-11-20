@@ -90,7 +90,8 @@ don't control, or a network where exposing a port is not acceptable.
   `agent/print-agent.mjs`. Both also leave 1.5s (`CUT_DELAY_MS`) between tickets
   so the next one doesn't land while the printer is still taking in the last.
 - The queue itself now creates **one `PrintJob` per ticket** (each order prints
-  a KOT and a bag slip, so two jobs per order). A one-ticket job is cut on its
+  a KOT and a bag slip, so two jobs per order; an order carrying both veg and
+  non-veg prints that pair twice, non-veg on its own, see below). A one-ticket job is cut on its
   own whatever agent version a kitchen is running, which is what fixed train
   batches coming out as one uncut strip.
 
@@ -364,3 +365,48 @@ exactly as before, one job at a time.
 ## Adding a new ticket field / order type later
 - No print-pipeline changes needed — the ticket is a screenshot of `KotTicket.tsx`. Edit that component, the printed output updates automatically next print.
 - Exception: a genuinely different document (not a KOT variant, e.g. a customer receipt) needs its own new page under `src/app/internal/print/`, same pattern as the existing two.
+
+## Veg and non-veg KOTs
+
+Non-veg is always its own KOT, because veg and non-veg are cooked and packed at
+separate stations.
+
+- Whether an item is veg or non-veg comes from the **menu database**
+  (`MenuItem`, managed on `/admin/menu`), looked up by aggregator and item
+  name. Nothing reads the item name at print time to decide.
+- An order that is all veg prints one KOT and one bag slip marked VEG. All
+  non-veg prints one pair marked NON-VEG. An order with even one non-veg item
+  next to other food prints **two pairs**: veg first, then non-veg (`KOT 1 OF
+  2`, `BAG 1 OF 2`). The split is `splitKotParts` in `src/lib/diet.ts`.
+- Thermal paper has no colour, so the mark is a shape: a **circle** for veg, a
+  **triangle** for non-veg, each in a square, on the ticket heading and beside
+  every item.
+- An item the menu has no tag for prints on the veg KOT with a `?` and the
+  line `? ALONE = NOT TAGGED VEG / NON-VEG. CHECK.` Tag it on `/admin/menu`.
+- New dishes are added to the menu when an order carrying them arrives, when
+  an item is added or renamed on an existing order, and when an order is
+  moved to another aggregator. Each gets a suggested tag from its name
+  (`src/lib/dietSuggest.ts`), or no tag when the name could be either
+  ("Seekh Kebab", "Biryani"). Either way it shows under "Needs check" until an
+  admin confirms it.
+- A suggested tag still decides which KOT the item prints on, but until it is
+  confirmed the item's mark is followed by a `?` and the ticket carries the
+  line `? AFTER MARK = TAG NOT CONFIRMED. CHECK.` Confirming on `/admin/menu`
+  (one click per item, or "Confirm N suggested" per aggregator) removes it.
+- A **bulk thali** is not a dish the menu can name (its line is "Bulk thali ×
+  40" and the food is in its spec), so it is never looked up in the menu. It is
+  tagged on the order itself: "Thali is" on the bulk order and enquiry forms,
+  or the pencil on the item afterwards. Untagged, it prints on the veg KOT
+  with a `?`. The same per-item setting overrides the menu for any one item on
+  any one order.
+- `npm run menu:seed` lists every dish in the orders already received with
+  the tag it would suggest; `npm run menu:seed -- --apply` adds them. Run it
+  once after deploying. No index step is needed: a menu row's `_id` is the
+  aggregator and dish together, so one row per dish holds by construction.
+- The order total and the COD QR print on the first KOT only; the second says
+  `TOTAL ON KOT 1`, so it cannot be read as a second amount to collect. The
+  PAX box of a bulk order also prints once, on the KOT that carries the thali.
+- A train's batch print is checked before anything is queued: every ticket
+  carries its order id (`data-order-id`), and the orders drawn must be exactly
+  the orders asked for, each with two tickets or four (`checkRunRender` in
+  `src/lib/printer/queue.ts`).
