@@ -227,13 +227,11 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
           />
         ) : (
           <TableFrame>
-            <Table className="min-w-[860px]">
+            <Table className="min-w-[680px]">
               <thead>
                 <tr>
                   <Th>Order</Th>
-                  <Th>Why</Th>
-                  <Th>Rider</Th>
-                  {showOutlet ? <Th>Outlet</Th> : null}
+                  <Th>{showOutlet ? 'Rider · outlet' : 'Rider'}</Th>
                   <Th>{collected ? 'Returned' : 'Out since'}</Th>
                   {!isTelecaller ? <Th align="right">COD</Th> : null}
                   {/* relative: the sr-only label is absolutely positioned, and without a
@@ -259,20 +257,21 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                         <Sub>
                           {[r.trainNo, r.rawSeat, r.contactName, `${r.itemCount} item${r.itemCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
                         </Sub>
-                        {r.note ? <Sub className="text-v2-ink-2">&ldquo;{r.note}&rdquo;</Sub> : null}
+                        <Sub className="text-v2-ink-2">{rtoReasonLabel(r.reason)}{r.note ? ` · “${r.note}”` : ''}</Sub>
                       </Td>
-                      <Td className="align-top text-v2-ink-2">{rtoReasonLabel(r.reason)}</Td>
-                      <Td className="align-top">{r.riders.length ? r.riders.join(', ') : <span className="text-v2-faint">—</span>}</Td>
-                      {showOutlet ? <Td className="align-top text-v2-ink-2">{r.outletName ?? <span className="text-v2-faint">—</span>}</Td> : null}
+                      <Td className="align-top">
+                        {r.riders.length ? r.riders.join(', ') : <span className="text-v2-faint">—</span>}
+                        {showOutlet ? <Sub className="truncate max-w-[16rem]">{r.outletName ?? '—'}</Sub> : null}
+                      </Td>
                       <Td className="align-top">
                         <Mono className="text-xs text-v2-muted">{formatIST(collected ? r.returnedAt : r.openedAt)}</Mono>
                       </Td>
                       {!isTelecaller ? (
                         <Td align="right" className="align-top">
                           {r.codPaise !== null ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <Chip tone="cod">not collected</Chip>
+                            <span className="inline-flex flex-col items-end gap-1">
                               <Mono className="font-semibold">{formatRupees(r.codPaise)}</Mono>
+                              <Chip tone="cod">not collected</Chip>
                             </span>
                           ) : (
                             <span className="text-v2-faint">—</span>

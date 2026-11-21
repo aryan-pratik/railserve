@@ -39,6 +39,7 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
           label: 'Review',
           items: [
             { href: '/v2/inbox', label: 'Inbox', icon: 'inbox', count: c.unparsed, alert: true },
+            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
             { href: '/v2/menu', label: 'Menu', icon: 'menu', count: c.menuToCheck },
             { href: '/v2/analytics', label: 'Analytics', icon: 'analytics' },

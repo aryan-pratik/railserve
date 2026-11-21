@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import {
   LayoutGrid,
   ListOrdered,
@@ -53,6 +53,20 @@ const ICONS = {
 
 export function SidebarNav({ sections, collapsed = false }: { sections: V2NavSection[]; collapsed?: boolean }) {
   const pathname = usePathname()
+  const search = useSearchParams()
+  // An item that names a view (`?view=returns`) is active only on that view,
+  // and the plain item for the same path is active on every other view.
+  const isActive = (href: string, siblings: V2NavItem[]) => {
+    const [path, query] = href.split('?')
+    if (query) {
+      const wanted = new URLSearchParams(query)
+      return pathname === path && [...wanted].every(([k, v]) => search.get(k) === v)
+    }
+    if (path === '/v2/admin') return pathname === path
+    if (!pathname.startsWith(path)) return false
+    const viewed = siblings.some((it) => it.href !== href && it.href.startsWith(`${path}?`) && isActive(it.href, []))
+    return !viewed
+  }
   return (
     <nav className="grid content-start gap-0.5" aria-label="Main">
       {sections.map((section) => (
@@ -66,7 +80,7 @@ export function SidebarNav({ sections, collapsed = false }: { sections: V2NavSec
           )}
           {section.items.map((item) => {
             const Icon = ICONS[item.icon]
-            const active = item.href === '/v2/admin' ? pathname === item.href : pathname.startsWith(item.href)
+            const active = isActive(item.href, sections.flatMap((x) => x.items))
             return (
               <Link
                 key={item.href}
