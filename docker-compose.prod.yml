@@ -32,6 +32,10 @@ services:
     restart: always
 
   app:
+    # Normally a GHCR image built by .github/workflows/deploy-prod.yml; the
+    # deploy writes RAILSERVE_IMAGE into /root/railserve/.env. Without that
+    # file this falls back to a local `--build` tagged railserve-app.
+    image: ${RAILSERVE_IMAGE:-railserve-app}
     build: .
     container_name: railserve-app
     env_file: .env.production

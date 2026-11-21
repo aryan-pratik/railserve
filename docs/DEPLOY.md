@@ -15,10 +15,51 @@ Everything lives on one box: the app, the database, the cron scheduler, and
 the backups. Host, key and paths are in **`docs/INFRA.local.md`**, gitignored
 because this repo is public.
 
-## Deploying a change
+## Branches and environments
 
-Not a git push. Code is baked into the image at build time, so a code change
-is a **rebuild**, not a restart:
+| Branch | Goes to | How |
+|---|---|---|
+| `main` | Production, `bitestation.elvo.in` (VPS) | `.github/workflows/deploy-prod.yml`, after a manual approval |
+| `dev` | Staging on Vercel, database `railserve_staging` on Atlas | Vercel's Git integration, automatically on push |
+| anything else | CI checks only, plus a Vercel preview | `.github/workflows/ci.yml` |
+
+Work lands on `dev` first, gets clicked through on staging, then `dev` is
+merged into `main`. **Merging into `main` is the moment a change goes live**,
+which is why production waits for an approval.
+
+## Deploying a change (normal path)
+
+Push or merge to `main`. The workflow then:
+
+1. runs lint, typecheck and the test suite (against a throwaway Mongo replica
+   set in the runner, never Atlas);
+2. builds the production image on GitHub's runner and pushes it to
+   `ghcr.io/aryan-pratik/railserve:<commit sha>`, so the VPS never builds;
+3. **waits for approval** on the `production` environment (Actions tab →
+   the run → "Review deployments");
+4. on the VPS, runs `scripts/deploy/vps-deploy.sh`: a pre-deploy `mongodump`
+   (`/root/railserve-backups/predeploy-*.gz`, two newest kept), pulls and swaps
+   the container, checks `/login` answers 200, and **rolls back to the previous
+   image automatically** if it doesn't.
+
+The deployed image is recorded in `/root/railserve/.env` as `RAILSERVE_IMAGE`,
+which compose reads, so a later `docker compose up -d` keeps it. The GitHub
+secrets `VPS_HOST`, `VPS_SSH_KEY` (a deploy-only key, comment
+`github-actions-deploy@railserve` in the box's `authorized_keys`) and
+`VPS_KNOWN_HOSTS` live on the `production` environment only.
+
+### Rolling back by hand
+
+```bash
+ssh <vps> 'docker images ghcr.io/aryan-pratik/railserve'   # pick an older tag
+ssh <vps> 'cd /root/railserve && printf "RAILSERVE_IMAGE=%s\n" ghcr.io/aryan-pratik/railserve:<sha> > .env \
+           && docker compose -f docker-compose.prod.yml up -d --no-build app'
+```
+
+## Manual fallback (no GitHub)
+
+If Actions is unavailable, the old path still works. Code is baked into the
+image at build time, so a code change is a **rebuild**, not a restart:
 
 ```bash
 # from the repo root
@@ -27,10 +68,12 @@ rsync -az -e "ssh -i <key>" \
   --exclude '.env*' --exclude tsconfig.tsbuildinfo --exclude captures \
   ./ root@<vps>:/root/railserve/
 
-ssh <vps> 'cd /root/railserve && docker compose -f docker-compose.prod.yml up -d --build app'
+ssh <vps> 'cd /root/railserve && printf "RAILSERVE_IMAGE=railserve-app\n" > .env \
+           && docker compose -f docker-compose.prod.yml up -d --build app'
 ```
 
-Two excludes are load-bearing. `'.env*'` protects `/root/railserve/.env.production`,
+Rsync whatever is checked out, so be on `main`. Two excludes are load-bearing.
+`'.env*'` protects `/root/railserve/.env.production`,
 the only copy of the production secrets — overwrite it and the container loses
 its database URI and Gmail credentials on next start. `/mobile` needs the
 leading slash: without it rsync also matches `src/lib/mobile/`.

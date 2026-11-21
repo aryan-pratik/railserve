@@ -1,0 +1,83 @@
+# main -> production (the Contabo VPS).
+#
+# 1. The same checks as CI.
+# 2. Build the production image here on GitHub's runner, so the VPS never
+#    builds (it shares memory with the live app), and push it to GHCR.
+# 3. Wait for a human to approve the `production` environment.
+# 4. On the VPS: back up Mongo, pull the image, swap the container, check
+#    /login answers, and roll back to the previous image if it doesn't.
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://bitestation.elvo.in
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH setup
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf 'Host vps\n  HostName %s\n  User root\n  IdentityFile ~/.ssh/deploy\n' "${{ secrets.VPS_HOST }}" > ~/.ssh/config
+
+      - name: Ship compose file and deploy script
+        run: scp docker-compose.prod.yml scripts/deploy/vps-deploy.sh vps:/root/railserve/
+
+      - name: Pull image
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh vps "docker login ghcr.io -u ${{ github.actor }} --password-stdin >/dev/null"
+          ssh vps "docker pull ${{ env.IMAGE }}:${{ github.sha }}; rc=\$?; docker logout ghcr.io >/dev/null; exit \$rc"
+
+      - name: Back up, swap, verify
+        run: ssh vps "bash /root/railserve/vps-deploy.sh ${{ env.IMAGE }}:${{ github.sha }}"

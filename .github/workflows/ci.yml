@@ -1,0 +1,55 @@
+# Lint, typecheck and the test suite on every push and pull request.
+# Tests run against a throwaway single-node Mongo replica set inside the
+# runner (transactions need a replica set), never against Atlas, so CI can't
+# collide with local test runs and no database credentials live in GitHub.
+name: CI
+
+on:
+  push:
+    branches-ignore: [main] # main runs these checks inside deploy-prod.yml
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      # tsc over the whole app needs more than Node's default heap.
+      NODE_OPTIONS: --max-old-space-size=6144
+      MONGODB_URI_TEST: mongodb://localhost:27017/railserve_test?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Start Mongo replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 60); do
+            docker exec mongo mongosh --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec mongo mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})"
+          for i in $(seq 1 60); do
+            [ "$(docker exec mongo mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && exit 0
+            sleep 1
+          done
+          echo "Mongo never became primary" && exit 1
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test

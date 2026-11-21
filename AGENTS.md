@@ -15,24 +15,26 @@ Production is **self-hosted on the Contabo VPS**: `https://bitestation.elvo.in`
 a `railserve-mongo` container on the same box. Migrated off Vercel + Atlas on
 2026-09-15.
 
-Deploying is rsync + rebuild, **not** a git push:
+Deploying is **CI/CD from GitHub** (see `docs/DEPLOY.md`):
 
-```bash
-rsync -az --exclude node_modules --exclude .next --exclude .git \
-      --exclude /mobile --exclude '.env*' ./ root@<vps>:/root/railserve/
-ssh <vps> 'cd /root/railserve && docker compose -f docker-compose.prod.yml up -d --build app'
-```
+- `main` -> production. `.github/workflows/deploy-prod.yml` runs the checks,
+  builds the image on GitHub, then **waits for a manual approval** before it
+  backs up Mongo and swaps the container on the VPS (auto-rollback if
+  `/login` fails). Merging into `main` is the moment a change goes live.
+- `dev` -> staging on Vercel (project `railserve-staging`), database
+  `railserve_staging` on Atlas. Staging has Gmail, cron, WhatsApp sends and
+  KOT printing switched off.
+- Every other branch: CI checks only.
 
-Code is baked into the image at build time, so a code change needs a
-**rebuild**, not a restart. The build needs `DOCKER_BUILD=1`, which switches
-`next.config.ts` to `output: 'standalone'` — without it there is no
-`.next/standalone` for the Dockerfile to copy and the build fails.
+The old rsync + `docker compose up -d --build` path still works as a fallback.
+The build needs `DOCKER_BUILD=1`, which switches `next.config.ts` to
+`output: 'standalone'`.
 
-The **Vercel project was deleted on 2026-09-15** — `railserve.vercel.app` 404s
-and there is no Vercel fallback. MongoDB Atlas is disconnected but intact:
+The old Vercel production project was deleted on 2026-09-15; Vercel now hosts
+**staging only**, never production. MongoDB Atlas is disconnected but intact:
 `railserve` is a frozen pre-migration copy, while `railserve_dev` and
-`railserve_test` are **still used** by local dev and the test suite, so the
-cluster stays.
+`railserve_test` are **still used** by local dev and the test suite, and
+`railserve_staging` backs the staging site, so the cluster stays.
 
 Cron and Gmail push both target `bitestation.elvo.in`. Nightly `mongodump`
 backups run on the box — self-hosted Mongo has no managed backup behind it.
