@@ -19,6 +19,7 @@
  *
  *   npm run seed:rider
  */
+import { assertSeedTarget } from './seedGuard'
 import bcrypt from 'bcryptjs'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Restaurant, User } from '../src/lib/models'
@@ -35,6 +36,7 @@ const PASSWORD = 'rider@123'
 const inMinutes = (n: number) => utcToIstLocal(new Date(Date.now() + n * 60_000))
 
 async function main() {
+  assertSeedTarget()
   await connectDb()
   const today = todayIST()
 

@@ -8,6 +8,7 @@
  *   npm run seed
  *   npm run seed -- --reset
  */
+import { assertSeedTarget } from './seedGuard'
 import bcrypt from 'bcryptjs'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Order, Restaurant, User, type RestaurantDoc } from '../src/lib/models'
@@ -35,6 +36,7 @@ const RESTAURANTS = [
 ]
 
 async function main() {
+  assertSeedTarget()
   const reset = process.argv.includes('--reset')
   await connectDb()
 

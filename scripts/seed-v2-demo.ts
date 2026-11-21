@@ -3,7 +3,7 @@
  *
  *   npm run seed:v2
  *
- * Refuses to run unless MONGODB_URI names `railserve_dev`. Idempotent by
+ * Refuses to run unless MONGODB_URI names `railserve_dev` or `railserve_staging`. Idempotent by
  * replacement: everything it writes is tagged — orders `rawPayload.demoV2`,
  * payments `rawPayload.demoV2` + a `[demo-v2]` remark prefix, unparsed inbox
  * rows `rawPayload.demoV2`, WhatsApp threads on numbers 9000099xxx — and the
@@ -19,6 +19,7 @@
  * orders, outbound chat lines (the simulator would answer them), the unparsed
  * inbox and payment remarks.
  */
+import { assertSeedTarget } from './seedGuard'
 import { randomUUID } from 'node:crypto'
 import mongoose from 'mongoose'
 import { connectDb, disconnectDb } from '../src/lib/db'
@@ -274,10 +275,7 @@ const PAST_PATTERN: PastSpec[][] = [
 /* ── main ─────────────────────────────────────────────────────────────────── */
 
 async function main() {
-  const uri = process.env.MONGODB_URI ?? ''
-  if (!uri.includes('railserve_dev')) {
-    throw new Error('Refusing to run: MONGODB_URI must point at the railserve_dev database.')
-  }
+  assertSeedTarget()
   await connectDb()
 
   /* actors */
