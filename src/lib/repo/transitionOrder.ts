@@ -357,7 +357,7 @@ export async function adminOverrideStatus(params: {
           'The outlet has already taken this order back as a return, so it cannot be marked delivered',
         )
       }
-      if (from === 'DELIVERED' && (current.delivery?.codSettledAt || (current.delivery?.codPartPaidPaise ?? 0) > 0) && current.paymentMode === 'COD') {
+      if (from === 'DELIVERED' && current.delivery?.codSettledAt && current.paymentMode === 'COD') {
         throw new ConflictError(
           'The cash for this delivery has already been received from the rider, so it cannot stop being a delivery',
         )
@@ -597,7 +597,7 @@ export async function correctRiderOutcome(params: {
       if (!correctableUntil(closedAt, now)) {
         throw new ForbiddenError('This order closed more than 30 hours ago and can no longer be changed')
       }
-      if (current.delivery?.codSettledAt || (current.delivery?.codPartPaidPaise ?? 0) > 0) {
+      if (current.delivery?.codSettledAt) {
         throw new ForbiddenError('The cash for this order has been handed over, so it can no longer be changed')
       }
       if (from === 'CANCELLED' && !wasCancelledBy(current, ctx.userId)) {

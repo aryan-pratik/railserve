@@ -128,7 +128,6 @@ export async function teamView(
             id: o.id,
             externalOrderId: o.externalOrderId,
             trainNo: o.trainNo,
-            partPaidPaise: o.partPaidPaise,
             contactName: o.contactName,
             paise: o.paise,
             deliveredAt: o.deliveredAt,

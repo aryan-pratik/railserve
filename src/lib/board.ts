@@ -71,8 +71,7 @@ export function countLive(ctx: AuthContext, now: Date = new Date()) {
   return countOrders(ctx, liveFilter(now))
 }
 
-/** 'date' shows one chosen service day (opts.date), every status by default. */
-export type BoardMode = 'today' | 'yesterday' | 'upcoming' | 'date'
+export type BoardMode = 'today' | 'yesterday' | 'upcoming'
 
 type BoardRun = Run<Awaited<ReturnType<typeof findRuns>>[number]['orders'][number]>
 
@@ -103,7 +102,7 @@ export type RunBoard = {
 export async function loadRunBoard(
   ctx: AuthContext,
   mode: BoardMode,
-  opts: { allowFetch?: boolean; statuses?: OrderStatus[]; now?: Date; date?: string } = {},
+  opts: { allowFetch?: boolean; statuses?: OrderStatus[]; now?: Date } = {},
 ): Promise<RunBoard> {
   const now = opts.now ?? new Date()
   const today = todayIST(now)
@@ -111,14 +110,7 @@ export async function loadRunBoard(
 
   await connectDb()
   const [found, feedHealth, outlets] = await Promise.all([
-    mode === 'date'
-      ? // A picked day is history or a plan, so it shows every status unless
-        // the caller narrows it: an open order and a delivered one both belong.
-        findRunsWhere(ctx, {
-          serviceDate: opts.date ?? today,
-          ...(opts.statuses ? { status: { $in: opts.statuses } } : {}),
-        })
-      : mode === 'upcoming'
+    mode === 'upcoming'
       ? findUpcomingRuns(ctx, today, { statuses: opts.statuses })
       : mode === 'yesterday'
         ? // Every status: this view is for looking back at the whole of last
