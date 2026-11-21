@@ -1,30 +1,39 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import { cx, v2Focus } from './ui'
 
 /**
- * On a phone the filter bar's dropdowns fold away behind one "Filters" line,
- * so the search box and the table stay within a thumb's reach. From `md` up
- * the row is always open and the toggle is not drawn. Opens itself when a
- * filter is already set, so what narrows the list is never hidden.
+ * The orders list's filters, folded away behind one "Filters" button on every
+ * screen size: most visits only need the search box. The button says how many
+ * filters are on, and the panel opens by itself when any are, so what narrows
+ * the list is never hidden.
  */
-export function OrdersFilterMore({ active, children }: { active: number; children: ReactNode }) {
+export function OrdersFilterMore({ active, toolbar, after, children }: { active: number; toolbar: ReactNode; after?: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(active > 0)
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className={cx('inline-flex w-fit items-center gap-1.5 rounded-full px-1 text-[13px] font-semibold text-v2-ink-2 md:hidden', v2Focus)}
-      >
-        Filters
-        {active > 0 ? <span className="rounded-md bg-v2-brand-soft px-1.5 font-mono text-[11px] tabular-nums text-v2-brand-deep">{active}</span> : null}
-        <ChevronDown size={14} className={cx('transition-transform', open && 'rotate-180')} aria-hidden />
-      </button>
-      <div className={cx(open ? 'contents' : 'max-md:hidden md:contents')}>{children}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        {toolbar}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={active > 0 ? `Filters, ${active} on` : 'Filters'}
+          title="Filters"
+          className={cx(
+            'relative inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors',
+            open || active > 0 ? 'border-v2-brand bg-v2-brand-soft text-v2-brand' : 'border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2',
+            v2Focus,
+          )}
+        >
+          <SlidersHorizontal size={17} aria-hidden />
+          {active > 0 ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-v2-brand px-1 font-mono text-[11px] tabular-nums text-white">{active}</span> : null}
+        </button>
+        {after}
+      </div>
+      {open ? <div className="grid gap-5 rounded-v2-md border border-v2-line bg-v2-surface-2 p-4">{children}</div> : null}
     </>
   )
 }

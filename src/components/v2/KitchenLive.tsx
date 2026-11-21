@@ -192,15 +192,14 @@ export function KitchenLive({
             stale ? 'bg-v2-urgent' : connected ? 'bg-v2-brand shadow-[0_0_0_3px_var(--color-v2-brand-soft)] motion-safe:animate-pulse' : 'bg-v2-soon',
           )}
         />
-        {stale ? 'Not updating' : connected ? 'Live' : 'Reconnecting…'}
-        <span className={cx('font-normal', dark ? 'text-white/50' : 'text-v2-faint')}>· {stamp(renderedAt)}</span>
+        {stale ? 'Not updating, refresh the page' : connected ? 'Up to date' : 'Reconnecting…'}
       </span>
       <button
         type="button"
         onClick={toggleSound}
         aria-pressed={soundOn}
         className={cx(
-          'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 transition-colors',
+          'inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-[14px] transition-colors',
           soundOn
             ? dark
               ? 'border-v2-mint/40 bg-v2-mint/15 text-v2-mint'
@@ -213,7 +212,7 @@ export function KitchenLive({
         title={soundOn ? 'Chimes on new orders. Click to mute.' : 'Chime when a new order arrives'}
       >
         {soundOn ? <Volume2 size={14} aria-hidden /> : <VolumeX size={14} aria-hidden />}
-        {soundOn ? 'Sound on' : 'Sound off'}
+        {soundOn ? 'Ring on new order: on' : 'Ring on new order: off'}
       </button>
       {lastEvent ? (
         <span role="status" className={dark ? 'text-v2-mint' : 'text-v2-brand'}>

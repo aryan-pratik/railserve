@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { CountdownBand } from './Countdown'
 import { Mono, cx } from './ui'
 import { formatTimeIST } from '@/lib/format'
@@ -27,6 +27,8 @@ export type RunHeaderProps = {
   /** Buttons on the right (refresh, copy, collapse). */
   actions?: ReactNode
   href?: string
+  /** Makes the whole card a fold toggle: tap anywhere on it to open or close the orders under it. */
+  fold?: { open: boolean; onToggle: () => void; controls: string }
   className?: string
 }
 
@@ -42,13 +44,39 @@ export function RunHeader(p: RunHeaderProps) {
   const late = delayLabel(p.delayMinutes)
   const total = p.counts.fresh + p.counts.cooking + p.counts.ready + p.counts.out + p.counts.closed
   const Tag = p.href ? 'a' : 'div'
+  const fold = p.fold
+  // A tap on the card toggles it, except on its own buttons, links and menus.
+  const onClick = fold
+    ? (e: MouseEvent<HTMLElement>) => {
+        if ((e.target as HTMLElement).closest('a,button,summary,details,input,select,label,[role=listbox]')) return
+        fold.onToggle()
+      }
+    : undefined
 
   return (
     <Tag
       href={p.href}
+      onClick={onClick}
+      onKeyDown={
+        fold
+          ? (e: KeyboardEvent<HTMLElement>) => {
+              if (e.target !== e.currentTarget) return
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                fold.onToggle()
+              }
+            }
+          : undefined
+      }
+      role={fold ? 'button' : undefined}
+      tabIndex={fold ? 0 : undefined}
+      aria-expanded={fold ? fold.open : undefined}
+      aria-controls={fold ? fold.controls : undefined}
+      title={fold ? (fold.open ? 'Tap to hide the orders' : 'Tap to show the orders') : undefined}
       className={cx(
-        'grid grid-cols-[76px_minmax(0,1fr)] overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface',
-        p.href && 'transition-colors hover:bg-v2-surface-2',
+        'grid min-w-0 grid-cols-[64px_minmax(0,1fr)] overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface sm:grid-cols-[76px_minmax(0,1fr)]',
+        (p.href || fold) && 'cursor-pointer transition-colors hover:bg-v2-surface-2',
+        fold && 'select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-brand',
         p.className,
       )}
     >
@@ -61,28 +89,21 @@ export function RunHeader(p: RunHeaderProps) {
             <span className="truncate text-[15px] font-semibold text-v2-ink-2">{p.trainName ?? 'Train'}</span>
             <span className="text-[13px] text-v2-muted">
               {p.stationCode}
-              {p.platform ? ` · PF ${p.platform}` : ''}
+              {p.platform ? ` · Platform ${p.platform}` : ''}
             </span>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-v2-muted">
-            <span className="font-bold tabular-nums text-v2-ink">{total}</span>
-            <span className="flex flex-wrap gap-1" aria-label={`${p.counts.fresh} new, ${p.counts.cooking} cooking, ${p.counts.ready} ready, ${p.counts.out} out, ${p.counts.closed} closed`}>
-              {squares(p.counts.fresh, 'bg-v2-info')}
-              {squares(p.counts.cooking, 'bg-v2-soon')}
-              {squares(p.counts.ready, 'bg-v2-brand')}
-              {squares(p.counts.out, 'bg-v2-brand-deep')}
-              {squares(p.counts.closed, 'bg-v2-line-strong')}
-            </span>
-            {p.summary ? <span className="truncate">{p.summary}</span> : null}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-v2-ink-2">
+            <span className="font-semibold">{countSentence(p.counts, total)}</span>
+            {p.summary ? <span className="basis-full text-v2-muted">{p.summary}</span> : null}
           </div>
         </div>
 
         <div className="col-span-2 min-w-0 md:col-span-1 md:text-right">
-          <div className="flex flex-wrap items-baseline gap-x-2 md:justify-end">
-            <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-v2-faint">ETA</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 md:justify-end">
+            <span className="text-[12px] font-semibold text-v2-muted">Arrives</span>
             {booked ? <s className="font-mono text-sm text-v2-faint">{formatTimeIST(booked)}</s> : null}
             <Mono className="text-[20px] font-semibold leading-none">{p.etaIso ? formatTimeIST(p.etaIso) : '—'}</Mono>
-            {late && late !== 'on time' ? <span className="text-[13px] font-bold text-v2-over">{late}</span> : null}
+            {late && late !== 'on time' ? <span className="rounded-full bg-v2-bad-bg px-2 py-0.5 text-[12.5px] font-bold text-v2-bad">{late}</span> : null}
           </div>
           {p.trackingNote ? <div className="mt-0.5 truncate text-[12.5px] text-v2-muted">{p.trackingNote}</div> : null}
         </div>
@@ -93,15 +114,18 @@ export function RunHeader(p: RunHeaderProps) {
   )
 }
 
-/** Up to 12 squares per bucket; beyond that one square with a count keeps the strip short. */
-function squares(n: number, colour: string) {
-  if (n <= 0) return null
-  if (n > 12) {
-    return (
-      <span key={colour} className={cx('inline-flex h-2.5 items-center rounded-[3px] px-1 font-mono text-[9px] font-bold leading-none text-white', colour)}>
-        {n}
-      </span>
-    )
-  }
-  return Array.from({ length: n }, (_, i) => <i key={`${colour}${i}`} className={cx('inline-block h-2.5 w-2.5 rounded-[3px]', colour)} />)
+/**
+ * The train's orders in one short sentence, in the order the kitchen works:
+ * "3 orders · 1 new, 2 cooking". Words, not coloured squares, so nobody has
+ * to learn a legend.
+ */
+function countSentence(c: { fresh: number; cooking: number; ready: number; out: number; closed: number }, total: number): string {
+  const parts = [
+    c.fresh ? `${c.fresh} new` : null,
+    c.cooking ? `${c.cooking} cooking` : null,
+    c.ready ? `${c.ready} ready` : null,
+    c.out ? `${c.out} with rider` : null,
+    c.closed ? `${c.closed} done` : null,
+  ].filter(Boolean)
+  return `${total} order${total === 1 ? '' : 's'}${parts.length ? ` · ${parts.join(', ')}` : ''}`
 }

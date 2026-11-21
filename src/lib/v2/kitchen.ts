@@ -219,7 +219,9 @@ export function kitchenHref(
   const u = new URLSearchParams()
   if (q.day !== 'today') u.set('day', q.day)
   if (q.date) u.set('date', q.date)
-  if (q.statusKey) u.set('status', q.statusKey)
+  // Explicit "all": a store manager's kitchen opens on "To cook" when the
+  // URL names no status, so the All tab has to say so.
+  u.set('status', q.statusKey ?? 'all')
   if (q.outletId) u.set('outlet', q.outletId)
   if (q.stationCode) u.set('station', q.stationCode)
   if (q.wall) u.set('wall', '1')

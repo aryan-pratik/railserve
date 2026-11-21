@@ -185,9 +185,12 @@ export function startDateLabelFor(startDate: Date | string | null | undefined, s
 }
 
 /** What the ETA rests on, under it: stopped, when it was last asked, or the timetable. */
+/**
+ * One plain phrase about where the arrival time came from. Staff only need to
+ * know whether to trust it: "live" (or nothing) vs "timetable, may be late".
+ */
 export function trackingNoteFor(t: RunTimingNotes): string | null {
-  if (t.arrived) return 'arrived · tracking stopped'
-  if (t.source === 'SCHEDULED') return 'timetable'
-  const parts = [t.checkedAt ? `checked ${formatTimeIST(t.checkedAt)}` : null, t.nextCheckAt ? `next ${formatTimeIST(t.nextCheckAt)}` : null].filter(Boolean)
-  return parts.length ? parts.join(' · ') : null
+  if (t.arrived) return 'Train has arrived'
+  if (t.source === 'SCHEDULED') return 'Timetable time, live time not available'
+  return t.checkedAt ? `Live time, updated ${formatTimeIST(t.checkedAt)}` : null
 }

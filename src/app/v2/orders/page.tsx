@@ -1,5 +1,8 @@
 import Link from 'next/link'
 import { Download, LayoutList, Plus, TrainFront } from 'lucide-react'
+import { trackingNoteFor } from '@/lib/v2/kitchenView'
+import { foodItemLabels } from '@/lib/orderView'
+import { DateFilter } from '@/components/v2/DateFilter'
 import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
@@ -16,7 +19,6 @@ import { rtoReasonLabel } from '@/lib/rto'
 import { resolveDateRange } from '@/lib/dateFilter'
 import { formatDateRange, formatIST, formatRupees, formatServiceDate, formatShortDate, formatTimeIST, todayIST } from '@/lib/format'
 import {
-  VIEW_LABEL,
   defaultDateMode,
   maskPhone,
   mongoSort,
@@ -28,7 +30,7 @@ import {
   viewsFor,
   type OrderView,
 } from '@/lib/v2/orders'
-import { ButtonLink, Card, Chip, Mono, cx, statusChip } from '@/components/v2/ui'
+import { ButtonLink, Chip, Mono, cx, statusChip } from '@/components/v2/ui'
 import { EmptyState, PageHeader, Pagination, PillTabs, Sub, Table, TableFrame, Td, Th, readPaging, rowClass } from '@/components/v2/Table'
 import { OrdersFilterBar } from '@/components/v2/OrdersFilterBar'
 import { OrdersList, type OrdersGroup, type OrdersRow } from '@/components/v2/OrdersList'
@@ -58,7 +60,13 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
 
   const views = viewsFor(role)
   const requested = readView(sp.view)
-  const view: OrderView = views.includes(requested) ? requested : 'today'
+  // The date row above the search decides the day now, so "Today" is the
+  // all-orders view on today's date, and "Coming days" (upcoming) gives way
+  // as soon as a date is picked. Returns and group bookings have their own
+  // sidebar items and arrive here with their view in the URL.
+  let view: OrderView = views.includes(requested) ? requested : 'all'
+  if (view === 'today') view = 'all'
+  if (view === 'upcoming' && one(sp.mode)) view = 'all'
   const grouped = one(sp.group) === '1'
   const sort = readSort(sp.sort, view)
   const payment = (PAYMENT_MODES as readonly string[]).includes(one(sp.payment)) ? one(sp.payment) : ''
@@ -75,24 +83,21 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   const [options, filterClause] = await Promise.all([
     orderFilterOptions(ctx, filters.stations),
     // Today and Upcoming are dates already: their clause is built without the chips.
-    orderFilterClause(ctx, datesApply ? filters : { ...filters, mode: 'all' }),
+    orderFilterClause(ctx, datesApply && !(view === 'all' && filters.mode === 'today') ? filters : { ...filters, mode: 'all' }),
   ])
+  // "Today" on the date row keeps the board's own rule: today's orders plus
+  // last night's still-open ones on a train that is yet to come.
+  const todayMode = view === 'all' && filters.mode === 'today'
   const where: Clause = {
     $and: [
-      viewClause(view, now),
+      viewClause(todayMode ? 'today' : view, now),
       filterClause,
       ...(payment ? [{ paymentMode: payment }] : []),
       ...(called ? [{ 'callLog.0': { $exists: called === 'yes' } }] : []),
     ],
   }
 
-  // Tab badges count each view on its own, before anyone's filters.
-  const [counts, returnsPending, canCollect] = await Promise.all([
-    Promise.all(views.map(async (v) => [v, v === 'returns' ? await countPendingReturns(ctx) : await countOrders(ctx, viewClause(v, now))] as const)),
-    countPendingReturns(ctx),
-    mayCollectReturns(ctx),
-  ])
-  const countOf = new Map<OrderView, number>(counts)
+  const [returnsPending, canCollect] = await Promise.all([countPendingReturns(ctx), mayCollectReturns(ctx)])
 
   const outletName = new Map(options.outlets.map((o) => [o.id, o.name]))
   const showOutlet = isAdmin || ctx.restaurantIds.length > 1
@@ -128,9 +133,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
 
   const range = resolveDateRange(filters.mode, filters)
   const dateNote = !datesApply
-    ? view === 'today'
-      ? formatServiceDate(today)
-      : 'Booked for a later date'
+    ? 'Booked for a later date'
     : filters.mode === 'all'
       ? 'All time'
       : formatDateRange(range.from || today, range.to || today)
@@ -138,26 +141,30 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
 
   const header = (note: string) => (
     <PageHeader
-      title="Orders"
+      title={view === 'returns' ? 'Bags coming back' : view === 'enquiries' ? 'Group bookings' : 'Orders'}
       note={note}
       actions={
         <>
           {view !== 'returns' && view !== 'enquiries' ? (
             <span className="inline-flex rounded-full border border-v2-line p-0.5" role="group" aria-label="Layout">
-              <ModeLink href={qs({ group: false })} active={!grouped} icon={<LayoutList size={14} aria-hidden />} label="Flat" />
+              <ModeLink href={qs({ group: false })} active={!grouped} icon={<LayoutList size={14} aria-hidden />} label="List" />
               <ModeLink href={qs({ group: true })} active={grouped} icon={<TrainFront size={14} aria-hidden />} label="By train" />
             </span>
           ) : null}
           {isAdmin ? (
-            <a href={`/admin/orders/export?${exportQs}`} download className={cx('inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-v2-line-strong bg-v2-surface px-4 text-sm font-semibold hover:bg-v2-surface-2')}>
-              <Download size={15} aria-hidden />
-              Export CSV
+            <a
+              href={`/admin/orders/export?${exportQs}`}
+              download
+              aria-label="Download this list"
+              title="Download this list"
+              className={cx('grid h-10 w-10 shrink-0 place-items-center rounded-full border border-v2-line-strong bg-v2-surface text-v2-ink-2 hover:bg-v2-surface-2')}
+            >
+              <Download size={17} aria-hidden />
             </a>
           ) : null}
           {!isTelecaller ? (
-            <ButtonLink href="/v2/orders/new" variant="primary">
-              <Plus size={16} strokeWidth={2.2} aria-hidden />
-              New order
+            <ButtonLink href="/v2/orders/new" variant="primary" className="h-10 w-10 !px-0" aria-label="New order" title="New order">
+              <Plus size={19} strokeWidth={2.4} className="shrink-0" aria-hidden />
             </ButtonLink>
           ) : null}
         </>
@@ -165,20 +172,24 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
     />
   )
 
+  // The date row: the one obvious place to change the day, above the search.
   const tabs = (
-    <PillTabs
-      tabs={views.map((v) => ({
-        href: qs({ view: v }),
-        label: VIEW_LABEL[v],
-        count: countOf.get(v) ?? 0,
-        active: v === view,
-        tone: v === 'returns' ? ('bad' as const) : undefined,
-      }))}
+    <DateFilter
+      key={`${view}|${filters.mode}|${filters.month}|${filters.from}|${filters.to}`}
+      mode={filters.mode}
+      month={filters.month}
+      from={filters.from}
+      to={filters.to}
+      allowAll
+      simple
+      autoSubmit
+      inactive={view === 'upcoming'}
+      className="w-fit"
     />
   )
 
   const filterBar = (
-    <Card className="p-3.5">
+    <div className="grid gap-3">
       <OrdersFilterBar
         filters={filters}
         options={options}
@@ -187,12 +198,12 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
         sort={sort}
         showOutlet={isAdmin}
         showCalled={isTelecaller && view !== 'returns'}
-        showDates={datesApply}
-        showSort={view === 'today' || view === 'upcoming' || view === 'all'}
+        showDates={false}
+        showSort={view === 'upcoming' || view === 'all'}
         hidden={{ view, group: grouped ? '1' : '', rto: view === 'returns' && collected ? 'collected' : '' }}
         clearHref={`/v2/orders?view=${view}${grouped ? '&group=1' : ''}`}
       />
-    </Card>
+    </div>
   )
 
   /* ── Returns ──────────────────────────────────────────────────────────── */
@@ -233,7 +244,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                   <Th>Order</Th>
                   <Th>{showOutlet ? 'Rider · outlet' : 'Rider'}</Th>
                   <Th>{collected ? 'Returned' : 'Out since'}</Th>
-                  {!isTelecaller ? <Th align="right">COD</Th> : null}
+                  {!isTelecaller ? <Th align="right">Cash</Th> : null}
                   {/* relative: the sr-only label is absolutely positioned, and without a
                       positioned ancestor it escapes the TableFrame's scroll box and widens
                       the page on a phone. */}
@@ -371,7 +382,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   }
 
   /* ── Orders: Today, Upcoming, Cancelled, All ──────────────────────────── */
-  const columns = { outlet: showOutlet, amount: !isTelecaller, called: isTelecaller, date: view !== 'today' }
+  const columns = { outlet: showOutlet, amount: !isTelecaller, called: isTelecaller, date: !todayMode }
 
   const toRows = async (orders: OrderDoc[], timingOf: (o: OrderDoc) => { etaIso: string | null; arrived: boolean }): Promise<OrdersRow[]> => {
     const [riderName, diets] = await Promise.all([riderNamesFor(ctx, orders), orderDietsFor(ctx.tenantId, orders)])
@@ -406,6 +417,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
         paymentMode: o.paymentMode ?? null,
         rider: riderName.get(String(o._id)) || null,
         pax: o.pax ?? null,
+        itemNames: foodItemLabels(o.items),
+        note: o.kotNote?.trim() || o.remark?.trim() || null,
       }
     })
   }
@@ -447,12 +460,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
           arrived: t.arrived,
           counts: runCounts(run.orders.map((o) => o.status)),
           startDateLabel: run.serviceDate !== today ? `Started ${formatShortDate(run.serviceDate)}` : null,
-          summary: runSummary(runCounts(run.orders.map((o) => o.status))),
-          trackingNote: t.arrived
-            ? 'arrived · tracking stopped'
-            : t.checkedAt
-              ? `checked ${formatTimeIST(t.checkedAt)} · next ${t.nextCheckAt && t.nextCheckAt.getTime() > serverNowMs ? formatTimeIST(t.nextCheckAt) : 'due now'}`
-              : null,
+          summary: null,
+          trackingNote: trackingNoteFor(t),
         },
         rows: run.orders.map((o) => rowById.get(String(o._id))!),
       }
@@ -545,13 +554,3 @@ function newest(orders: { createdAt: Date }[]): number {
   return Math.max(0, ...orders.map((o) => o.createdAt?.getTime() ?? 0))
 }
 
-/** "1 new · 1 cooking · 1 on the way": what the run still needs, by stage. */
-function runSummary(c: { fresh: number; cooking: number; ready: number; out: number; closed: number }): string | null {
-  const parts = [
-    c.fresh ? `${c.fresh} new` : null,
-    c.cooking ? `${c.cooking} cooking` : null,
-    c.ready ? `${c.ready} ready` : null,
-    c.out ? `${c.out} on the way` : null,
-  ].filter(Boolean)
-  return parts.length ? parts.join(' · ') : null
-}

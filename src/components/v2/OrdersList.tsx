@@ -13,6 +13,8 @@ import { Button, Chip, Mono, Seat, VegMark, cx, statusChip, v2Focus } from './ui
 import { Table, TableFrame, Td, Th, rowClass, Sub } from './Table'
 import { Countdown } from './Countdown'
 import { RunHeader, type RunHeaderProps } from './RunHeader'
+import { useRunFold } from './KitchenBits'
+import { useLongPress } from './useLongPress'
 import { OrdersStatusPopover } from './OrdersStatusPopover'
 
 /** One order as the table lists it. Plain values only: this crosses to the client. */
@@ -48,6 +50,10 @@ export type OrdersRow = {
   paymentMode: string | null
   rider: string | null
   pax: number | null
+  /** One label per dish, as the kitchen list shows them. */
+  itemNames: string[]
+  /** The instruction for the kitchen: KOT note, else remark. */
+  note: string | null
 }
 
 export type OrdersGroup = {
@@ -112,35 +118,9 @@ export function OrdersList(p: OrdersListProps) {
           {p.footer}
         </TableFrame>
       ) : (
-        <div className="grid gap-3.5">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
           {p.groups.map((g) => (
-            <section key={g.header.trainLabel + g.header.stationCode + g.rows[0]?.runKey} className="grid gap-2">
-              <RunHeader
-                {...g.header}
-                serverNowMs={p.serverNowMs}
-                actions={
-                  p.canBulk ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setMany(g.rows.map((r) => r.id), !g.rows.every((r) => selected.has(r.id)))}
-                    >
-                      {g.rows.every((r) => selected.has(r.id)) ? 'Untick train' : 'Tick train'}
-                    </Button>
-                  ) : null
-                }
-              />
-              <TableFrame>
-                <OrdersTable
-                  rows={g.rows}
-                  cols={{ ...cols, compact: true }}
-                  selected={selected}
-                  toggle={toggle}
-                  setMany={setMany}
-                  list={p}
-                />
-              </TableFrame>
-            </section>
+            <TrainGroup key={g.header.trainLabel + g.header.stationCode + g.rows[0]?.runKey} group={g} list={p} cols={cols} selected={selected} toggle={toggle} setMany={setMany} />
           ))}
           {p.footer ? <TableFrame>{p.footer}</TableFrame> : null}
         </div>
@@ -154,6 +134,138 @@ export function OrdersList(p: OrdersListProps) {
 }
 
 type Cols = OrdersListProps['columns'] & { select: boolean; compact: boolean }
+
+/**
+ * One order inside a train card, laid out as on the kitchen list: seat, who,
+ * what to cook, how it is paid. Tap opens the order; tick or hold to pick it
+ * for the action bar.
+ */
+function TrainOrderRow({ o, cols, selected, onToggle }: { o: OrdersRow; cols: Cols; selected: boolean; onToggle: () => void }) {
+  const hold = useLongPress(() => (selected ? undefined : onToggle()))
+  const status = statusChip(o.status)
+  const cash = o.paymentMode === 'COD'
+  return (
+    <li
+      {...(cols.select ? hold : {})}
+      className={cx(
+        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]',
+        cols.select && 'select-none [-webkit-touch-callout:none]',
+        selected && 'bg-v2-brand-soft',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        {cols.select ? (
+          <input type="checkbox" aria-label={`Pick ${o.contactName ?? 'this order'}`} checked={selected} onChange={onToggle} className="mt-2 size-5 cursor-pointer accent-v2-brand" />
+        ) : null}
+        <span className="grid min-w-[4.5rem] place-items-center rounded-v2-md bg-v2-surface-2 px-2 py-1.5 text-center">
+          {o.handoverPoint ? (
+            <span className="max-w-[7rem] truncate text-[12px] font-semibold" title={o.handoverPoint}>
+              Group
+            </span>
+          ) : (
+            <Seat coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
+          )}
+        </span>
+      </div>
+      <Link href={`/v2/orders/${o.id}`} className={cx('min-w-0 rounded-v2-sm', v2Focus)}>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-[15px] font-semibold">{o.contactName ?? 'Passenger'}</span>
+          <Chip tone={status.tone}>{status.label}</Chip>
+          {cols.outlet && o.outletName ? <span className="text-xs text-v2-muted">{o.outletName}</span> : null}
+          {o.rider ? <span className="text-xs text-v2-muted">· with {o.rider}</span> : null}
+        </span>
+        <span className="mt-1 block text-[14.5px] leading-snug text-v2-ink-2">
+          {o.pax ? <span className="font-semibold">{o.pax} people (thali)</span> : o.itemNames.length ? o.itemNames.join(', ') : <span className="text-v2-faint">No dishes listed</span>}
+        </span>
+        {o.handoverPoint ? <span className="mt-0.5 block text-[12.5px] font-semibold text-v2-ink-2">Hand over at: {o.handoverPoint}</span> : null}
+        {o.note ? <span className="mt-1.5 block rounded-v2-sm bg-v2-info-bg px-2 py-1 text-[13.5px] font-semibold text-v2-info">Note: {o.note}</span> : null}
+      </Link>
+      {cols.amount ? (
+        <span className="col-start-2 sm:col-start-auto sm:text-right">
+          {cash ? (
+            <span className="inline-flex flex-col items-start gap-0.5 sm:items-end">
+              <span className="text-[12px] font-semibold text-v2-cod">Collect cash</span>
+              <Mono className="text-[17px] font-bold">{formatRupees(o.amountPaise)}</Mono>
+            </span>
+          ) : (
+            <span className="inline-flex flex-col items-start gap-0.5 sm:items-end">
+              <span className="text-[12px] font-semibold text-v2-ok">Paid online</span>
+              <Mono className="text-[15px] font-semibold text-v2-muted">{formatRupees(o.amountPaise)}</Mono>
+            </span>
+          )}
+        </span>
+      ) : null}
+    </li>
+  )
+}
+
+/** A table row you can also press and hold to tick, as on the kitchen list. */
+function HoldRow({
+  onHold,
+  className,
+  onClick,
+  children,
+}: {
+  onHold: (() => void) | null
+  className?: string
+  onClick: (e: MouseEvent<HTMLTableRowElement>) => void
+  children: ReactNode
+}) {
+  const hold = useLongPress(() => onHold?.())
+  return (
+    <tr {...(onHold ? hold : {})} className={cx(className, onHold && 'select-none [-webkit-touch-callout:none]')} onClick={onClick}>
+      {children}
+    </tr>
+  )
+}
+
+/**
+ * One train in the grouped list, foldable like the kitchen's: the header
+ * always shows, the orders under it open and close. A train whose orders are
+ * all finished starts folded, so the list opens on the trains still moving.
+ */
+function TrainGroup({
+  group: g,
+  list: p,
+  cols,
+  selected,
+  toggle,
+  setMany,
+}: {
+  group: OrdersListProps['groups'][number]
+  list: OrdersListProps
+  cols: Cols
+  selected: Set<string>
+  toggle: (id: string) => void
+  setMany: (ids: string[], on: boolean) => void
+}) {
+  const key = g.rows[0]?.runKey ?? g.header.trainLabel
+  const allDone = g.rows.every((r) => !isLive(r.status) && r.status !== 'DISPATCHED')
+  const [open, setOpen] = useRunFold('orders', key, !allDone)
+  const rowsId = `orders-run-${key.replace(/[^a-zA-Z0-9]/g, '-')}`
+  return (
+    <section className="grid grid-cols-[minmax(0,1fr)] overflow-hidden rounded-v2-xl border border-v2-line bg-v2-surface shadow-[0_1px_2px_rgba(16,24,20,0.04),0_10px_28px_-16px_rgba(16,24,20,0.18)]">
+      <RunHeader
+        className={cx('!rounded-none !border-x-0 !border-t-0', open ? '!border-b !border-v2-line' : '!border-b-0')}
+        {...g.header}
+        serverNowMs={p.serverNowMs}
+        fold={{ open, onToggle: () => setOpen(!open), controls: rowsId }}
+        actions={
+          p.canBulk && open ? (
+            <Button size="sm" variant="ghost" onClick={() => setMany(g.rows.map((r) => r.id), !g.rows.every((r) => selected.has(r.id)))}>
+              {g.rows.every((r) => selected.has(r.id)) ? 'Untick train' : 'Tick train'}
+            </Button>
+          ) : null
+        }
+      />
+      <ul id={rowsId} hidden={!open} className="divide-y divide-v2-line">
+        {g.rows.map((o) => (
+          <TrainOrderRow key={o.id} o={o} cols={cols} selected={selected.has(o.id)} onToggle={() => toggle(o.id)} />
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 function OrdersTable({
   rows,
@@ -217,7 +329,7 @@ function OrdersTable({
           const on = selected.has(o.id)
           const href = `/v2/orders/${o.id}`
           return (
-            <tr key={o.id} className={rowClass(on, true)} onClick={(e) => openRow(e, o.id)}>
+            <HoldRow key={o.id} className={rowClass(on, true)} onClick={(e) => openRow(e, o.id)} onHold={cols.select ? () => (on ? undefined : toggle(o.id)) : null}>
               {cols.select ? (
                 <Td>
                   <input
@@ -305,7 +417,7 @@ function OrdersTable({
                   ) : (
                     <span className="inline-flex flex-col items-end gap-1">
                       <Mono className="font-semibold">{formatRupees(o.amountPaise)}</Mono>
-                      {o.paymentMode === 'COD' ? <Chip tone="cod">COD</Chip> : null}
+                      {o.paymentMode === 'COD' ? <Chip tone="cod">Cash</Chip> : null}
                     </span>
                   )}
                 </Td>
@@ -316,7 +428,7 @@ function OrdersTable({
               <Td>
                 <span className="block max-w-[9rem] truncate text-v2-ink-2">{o.rider ?? <span className="text-v2-faint">—</span>}</span>
               </Td>
-            </tr>
+            </HoldRow>
           )
         })}
       </tbody>

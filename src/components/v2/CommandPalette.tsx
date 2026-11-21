@@ -97,8 +97,7 @@ export function CommandPalette({ nav }: { nav: V2NavSection[] }) {
         className={cx('hidden flex-[0_1_360px] items-center gap-2.5 rounded-full border border-v2-line bg-v2-surface-2 px-3.5 py-2 text-left text-sm text-v2-faint md:flex', v2Focus)}
       >
         <Search size={18} strokeWidth={1.8} aria-hidden />
-        <span className="flex-1">Search order, train, phone</span>
-        <kbd className="rounded-md border border-v2-line bg-v2-surface px-1.5 font-mono text-[11px] text-v2-muted">⌘K</kbd>
+        <span className="flex-1">Find a passenger, train or order</span>
       </button>
       <button type="button" onClick={() => setOpen(true)} aria-label="Search" className={cx('grid h-10 w-10 place-items-center rounded-full border border-v2-line text-v2-ink-2 md:hidden', v2Focus)}>
         <Search size={18} strokeWidth={1.8} aria-hidden />

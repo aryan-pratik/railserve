@@ -95,6 +95,9 @@ export function DateFilter({
   autoSubmit = false,
   carryUnchanged = true,
   size = 'md',
+  simple = false,
+  inactive = false,
+  extra,
   className,
 }: {
   mode: DateFilterMode
@@ -105,7 +108,13 @@ export function DateFilter({
   autoSubmit?: boolean
   /** False keeps the hidden inputs out until a chip is picked, so the page's own default applies. */
   carryUnchanged?: boolean
-  size?: 'sm' | 'md'
+  size?: 'sm' | 'md' | 'lg'
+  /** Only the everyday choices (All time, Today, Yesterday, Pick dates): no month picking. */
+  simple?: boolean
+  /** Nothing shown as picked: the page is on a choice this control does not own (e.g. "Coming days"). */
+  inactive?: boolean
+  /** Extra choices drawn inside the same group, after the built-in ones. */
+  extra?: ReactNode
   className?: string
 }) {
   const router = useRouter()
@@ -161,7 +170,7 @@ export function DateFilter({
     ...(allowAll ? [{ value: 'all' as const, label: 'All time' }] : []),
     { value: 'today', label: 'Today' },
     { value: 'yesterday', label: 'Yesterday' },
-    { value: 'month', label: 'This month' },
+    ...(simple ? [] : [{ value: 'month' as const, label: 'This month' }]),
   ]
   const monthLabel = mode === 'custom-month' && month ? `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}` : 'Month'
   const datesLabel =
@@ -171,8 +180,8 @@ export function DateFilter({
   const seg = (active: boolean) =>
     cx(
       'rounded-full font-semibold transition-colors whitespace-nowrap',
-      size === 'sm' ? 'px-2.5 py-1 text-[12.5px]' : 'px-3 py-1.5 text-[13px]',
-      active ? 'bg-v2-ink text-v2-bg' : 'text-v2-ink-2 hover:bg-v2-surface-2',
+      size === 'sm' ? 'px-2.5 py-1 text-[12.5px]' : size === 'lg' ? 'px-4 py-2 text-[14.5px]' : 'px-3 py-1.5 text-[13px]',
+      active && !inactive ? 'bg-v2-ink text-v2-bg' : 'text-v2-ink-2 hover:bg-v2-surface-2',
       v2Focus,
     )
 
@@ -184,7 +193,7 @@ export function DateFilter({
         </button>
       ))}
 
-      <span className="relative">
+      <span className={cx('relative', simple && 'hidden')}>
         <button type="button" aria-pressed={mode === 'custom-month'} aria-haspopup="dialog" aria-expanded={panel === 'month'} onClick={() => setPanel((p) => (p === 'month' ? null : 'month'))} className={seg(mode === 'custom-month')}>
           {monthLabel}
         </button>
@@ -249,6 +258,8 @@ export function DateFilter({
           </Popover>
         ) : null}
       </span>
+
+      {extra}
 
       {carryUnchanged || touched ? (
         <>

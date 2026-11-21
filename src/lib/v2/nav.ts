@@ -31,33 +31,33 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
           items: [
             { href: '/v2/admin', label: 'Today', icon: 'today', count: c.live },
             { href: '/v2/orders', label: 'Orders', icon: 'orders' },
-            { href: '/v2/kitchen', label: 'Kitchen', icon: 'kitchen' },
-            { href: '/v2/riders', label: 'Riders', icon: 'riders' },
+            { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
             { href: '/v2/chat', label: 'WhatsApp', icon: 'chat', count: c.unread },
           ],
         },
         {
-          label: 'Review',
+          label: 'Check and manage',
           items: [
-            { href: '/v2/inbox', label: 'Inbox', icon: 'inbox', count: c.unparsed, alert: true },
-            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
+            { href: '/v2/inbox', label: 'Emails to check', icon: 'inbox', count: c.unparsed, alert: true },
+            { href: '/v2/orders?view=enquiries', label: 'Group bookings', icon: 'enquiries' },
+            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
             { href: '/v2/menu', label: 'Menu', icon: 'menu', count: c.menuToCheck },
-            { href: '/v2/analytics', label: 'Analytics', icon: 'analytics' },
-            { href: '/v2/activity', label: 'Activity', icon: 'activity' },
+            { href: '/v2/analytics', label: 'Reports', icon: 'analytics' },
+            { href: '/v2/activity', label: 'History', icon: 'activity' },
           ],
         },
-        { label: 'General', items: [{ href: '/v2/settings', label: 'Settings', icon: 'settings' }] },
+        { label: 'Setup', items: [{ href: '/v2/settings', label: 'Settings', icon: 'settings' }] },
       ]
     case 'STORE_MANAGER':
       return [
         {
           label: 'Kitchen',
           items: [
-            { href: '/v2/kitchen', label: 'Kitchen board', icon: 'kitchen', count: c.live },
+            { href: '/v2/kitchen', label: 'Kitchen', icon: 'kitchen', count: c.live },
             { href: '/v2/orders', label: 'Orders', icon: 'orders' },
-            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
-            { href: '/v2/riders', label: 'Riders', icon: 'riders' },
+            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
+            { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
           ],
         },
@@ -67,10 +67,10 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
         {
           label: 'Call desk',
           items: [
-            { href: '/v2/calls', label: 'Call board', icon: 'calls', count: c.live },
+            { href: '/v2/calls', label: 'Calls to make', icon: 'calls', count: c.live },
             { href: '/v2/orders', label: 'Orders', icon: 'orders' },
             { href: '/v2/chat', label: 'WhatsApp', icon: 'chat', count: c.unread },
-            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
+            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
           ],
         },

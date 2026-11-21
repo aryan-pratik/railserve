@@ -46,13 +46,14 @@ export const metadata: Metadata = {
   description: 'Train food delivery order tracking',
 }
 
-// Runs before paint: with no explicit choice, follow the OS so a dark-mode
-// user never sees a light flash. The v2 shell's ThemeSwitch writes the cookie.
-const THEME_BOOT = `(function(){try{var m=document.cookie.match(/(?:^|; )rs_theme=(light|dark)/);var t=m?m[1]:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}})()`
+// Runs before paint: dark only when the person chose it (Settings → Screen),
+// light otherwise. The server sets the same attribute from the cookie; this
+// covers pages served from cache.
+const THEME_BOOT = `(function(){try{var d=/(?:^|; )rs_theme=dark/.test(document.cookie);document.documentElement.setAttribute('data-theme',d?'dark':'light')}catch(e){}})()`
 
 export default async function RootLayout({ children }: LayoutProps<'/'>) {
   const choice = (await cookies()).get(THEME_COOKIE)?.value
-  const theme = choice === 'dark' || choice === 'light' ? choice : undefined
+  const theme = choice === 'dark' ? 'dark' : 'light'
   return (
     <html lang="en" data-theme={theme} suppressHydrationWarning className={`${sans.variable} ${mono.variable} ${v2.variable} h-full antialiased`}>
       <head>

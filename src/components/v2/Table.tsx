@@ -1,3 +1,4 @@
+import { AlertCircle, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import Link from 'next/link'
 import type { ComponentProps, ReactNode } from 'react'
 import { ButtonLink, cx } from './ui'
@@ -165,15 +166,27 @@ export function EmptyState({ title, note, action, className }: { title: string; 
 }
 
 export function Notice({ tone = 'info', children, className }: { tone?: 'info' | 'ok' | 'warn' | 'bad'; children: ReactNode; className?: string }) {
-  const tones = {
-    info: 'bg-v2-info-bg text-v2-info',
-    ok: 'bg-v2-ok-bg text-v2-ok',
-    warn: 'bg-v2-warn-bg text-v2-warn',
-    bad: 'bg-v2-bad-bg text-v2-bad',
-  }
+  // A calm card: the colour is only the icon and a thin edge, the words stay
+  // dark and easy to read. A whole yellow or red block shouted at people.
+  const look = {
+    info: { Icon: Info, icon: 'text-v2-info bg-v2-info-bg', edge: 'border-l-v2-info' },
+    ok: { Icon: CheckCircle2, icon: 'text-v2-ok bg-v2-ok-bg', edge: 'border-l-v2-ok' },
+    warn: { Icon: AlertTriangle, icon: 'text-v2-warn bg-v2-warn-bg', edge: 'border-l-v2-warn' },
+    bad: { Icon: AlertCircle, icon: 'text-v2-bad bg-v2-bad-bg', edge: 'border-l-v2-bad' },
+  }[tone]
   return (
-    <div role={tone === 'bad' ? 'alert' : 'status'} className={cx('rounded-v2-md px-4 py-3 text-sm font-medium', tones[tone], className)}>
-      {children}
+    <div
+      role={tone === 'bad' ? 'alert' : 'status'}
+      className={cx(
+        'flex items-start gap-3 rounded-v2-md border border-l-4 border-v2-line bg-v2-surface px-3.5 py-2.5 text-[14px] text-v2-ink-2 [&_a]:font-semibold [&_a]:text-v2-brand [&_strong]:text-v2-ink',
+        look.edge,
+        className,
+      )}
+    >
+      <span className={cx('mt-px grid h-6 w-6 shrink-0 place-items-center rounded-full', look.icon)} aria-hidden>
+        <look.Icon size={14} strokeWidth={2.2} />
+      </span>
+      <div className="min-w-0 flex-1 self-center leading-snug">{children}</div>
     </div>
   )
 }
