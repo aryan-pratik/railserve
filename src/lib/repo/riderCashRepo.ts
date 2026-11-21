@@ -46,6 +46,11 @@ function cashOf(o: { amountPaise?: number | null; delivery?: { amountCollectedPa
   return o.delivery?.amountCollectedPaise ?? o.amountPaise ?? 0
 }
 
+/** What is still in the rider's hand for one order: its cash minus any part already handed in. */
+function dueOf(o: { amountPaise?: number | null; delivery?: { amountCollectedPaise?: number | null; codPartPaidPaise?: number | null } | null }) {
+  return Math.max(0, cashOf(o) - (o.delivery?.codPartPaidPaise ?? 0))
+}
+
 function holderOf(o: { delivery?: { collectedBy?: unknown; agentIds?: unknown[] | null } | null }) {
   return String(o.delivery?.collectedBy ?? o.delivery?.agentIds?.[0] ?? '')
 }
@@ -67,13 +72,13 @@ export async function pendingCashByRider(
   if (ids.length === 0) return out
 
   const orders = await Order.find(outletScoped(ctx, pendingFilter(ids, span)))
-    .select('amountPaise delivery.amountCollectedPaise delivery.collectedBy delivery.agentIds')
+    .select('amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.collectedBy delivery.agentIds')
     .lean()
 
   for (const o of orders) {
     const holder = holderOf(o)
     const prev = out.get(holder) ?? { ...EMPTY, orderIds: [] }
-    prev.paise += cashOf(o)
+    prev.paise += dueOf(o)
     prev.orders += 1
     prev.orderIds.push(String(o._id))
     out.set(holder, prev)
@@ -88,7 +93,10 @@ export type PendingCashOrder = {
   externalOrderId: string | null
   trainNo: string | null
   contactName: string | null
+  /** Still due on this order. */
   paise: number
+  /** Already handed in against this order by an earlier partial collection. */
+  partPaidPaise: number
   deliveredAt: string | null
 }
 
@@ -104,7 +112,7 @@ export async function pendingCashOrders(
   const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
   if (ids.length === 0) return []
   const orders = await Order.find(outletScoped(ctx, pendingFilter(ids)))
-    .select('externalOrderId trainNo contactName amountPaise delivery.amountCollectedPaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
+    .select('externalOrderId trainNo contactName amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
     .sort({ 'delivery.deliveredAt': 1 })
     .lean()
   return orders.map((o) => ({
@@ -113,7 +121,8 @@ export async function pendingCashOrders(
     externalOrderId: o.externalOrderId ?? null,
     trainNo: o.trainNo ?? null,
     contactName: o.contactName ?? null,
-    paise: cashOf(o),
+    paise: dueOf(o),
+    partPaidPaise: o.delivery?.codPartPaidPaise ?? 0,
     deliveredAt: o.delivery?.deliveredAt ? new Date(o.delivery.deliveredAt).toISOString() : null,
   }))
 }
@@ -166,9 +175,19 @@ export async function settleRiderCash(params: {
   ctx: AuthContext
   riderId: string
   orderIds: string[]
+  /**
+   * The cash actually received, in paise. Omitted means everything due on
+   * the listed orders. Less than that is a partial collection: it clears the
+   * oldest orders in full and records the remainder against the next one,
+   * which stays in the rider's wallet for the balance.
+   */
+  paise?: number
   now?: Date
-}): Promise<{ orders: number; paise: number }> {
+}): Promise<{ orders: number; paise: number; partial: { orderId: string; paidPaise: number; leftPaise: number } | null }> {
   const { ctx, riderId, now = new Date() } = params
+  if (params.paise !== undefined && (!Number.isInteger(params.paise) || params.paise <= 0)) {
+    throw new ConflictError('Enter the amount received, in whole rupees')
+  }
 
   if (!mongoose.isValidObjectId(riderId)) throw new ConflictError('Choose a rider')
 
@@ -198,45 +217,56 @@ export async function settleRiderCash(params: {
 
   const session = await mongoose.startSession()
   try {
-    let result = { orders: 0, paise: 0 }
+    let result: { orders: number; paise: number; partial: { orderId: string; paidPaise: number; leftPaise: number } | null } = { orders: 0, paise: 0, partial: null }
     await session.withTransaction(async () => {
       const mine = await Order.find(filter, null, { session })
-        .select('status amountPaise delivery.amountCollectedPaise')
+        .select('status amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.deliveredAt')
+        .sort({ 'delivery.deliveredAt': 1 })
         .lean()
       if (mine.length === 0) throw new ConflictError('This cash has already been collected')
 
-      const paise = mine.reduce((sum, o) => sum + cashOf(o), 0)
+      const dueTotal = mine.reduce((sum, o) => sum + dueOf(o), 0)
+      const received = params.paise ?? dueTotal
+      if (received > dueTotal) throw new ConflictError(`Only ₹${(dueTotal / 100).toFixed(0)} is due; enter that or less`)
+      const receivedAs = receiverLabel({ role: ctx.role, isTeamLead: receiver.isTeamLead })
+
+      // Oldest delivery first: whole orders clear while the cash lasts, and
+      // whatever is left lands on the next one as a part payment.
+      let carry = received
+      let settled = 0
+      let partial: { orderId: string; paidPaise: number; leftPaise: number } | null = null
       for (const o of mine) {
-        await Order.updateOne(
-          { _id: o._id, 'delivery.codSettledAt': null },
-          {
-            $set: {
-              'delivery.codSettledAt': now,
-              'delivery.codSettledBy': ctx.userId,
-              'delivery.codSettlementId': settlementId,
+        if (carry <= 0) break
+        const due = dueOf(o)
+        const event = (action: 'COD_SETTLED' | 'COD_PART_PAID', amountPaise: number) => ({
+          fromStatus: o.status,
+          toStatus: o.status,
+          userId: ctx.userId,
+          meta: { action, riderId, settlementId, receivedAs, amountPaise, handoverPaise: received, handoverOrders: mine.length },
+          createdAt: now,
+        })
+        if (carry >= due) {
+          await Order.updateOne(
+            { _id: o._id, 'delivery.codSettledAt': null },
+            {
+              $set: { 'delivery.codSettledAt': now, 'delivery.codSettledBy': ctx.userId, 'delivery.codSettlementId': settlementId },
+              $push: { events: event('COD_SETTLED', due) },
             },
-            $push: {
-              events: {
-                fromStatus: o.status,
-                toStatus: o.status,
-                userId: ctx.userId,
-                meta: {
-                  action: 'COD_SETTLED',
-                  riderId,
-                  settlementId,
-                  receivedAs: receiverLabel({ role: ctx.role, isTeamLead: receiver.isTeamLead }),
-                  amountPaise: cashOf(o),
-                  handoverPaise: paise,
-                  handoverOrders: mine.length,
-                },
-                createdAt: now,
-              },
-            },
-          },
-          { session },
-        )
+            { session },
+          )
+          carry -= due
+          settled += 1
+        } else {
+          await Order.updateOne(
+            { _id: o._id, 'delivery.codSettledAt': null },
+            { $inc: { 'delivery.codPartPaidPaise': carry }, $push: { events: event('COD_PART_PAID', carry) } },
+            { session },
+          )
+          partial = { orderId: String(o._id), paidPaise: carry, leftPaise: due - carry }
+          carry = 0
+        }
       }
-      result = { orders: mine.length, paise }
+      result = { orders: settled, paise: received, partial }
     })
     return result
   } finally {

@@ -166,6 +166,10 @@ const DeliverySchema = new Schema(
     // handed in at 9:40" can be read back as one collection with its orders.
     // Missing on handovers made before it existed, which group by the stamp.
     codSettlementId: { type: String, default: null },
+    // Cash handed in against this order before it was settled in full: a rider
+    // who gives ₹1,500 of ₹2,240 clears the oldest orders and leaves the rest
+    // here on the one that was only part covered. Never set once settled.
+    codPartPaidPaise: { type: Number, default: 0, min: 0 },
     rto: { type: ReturnToOriginSchema, default: null },
   },
   { _id: false },

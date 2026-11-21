@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authConfig } from './auth.config'
-import { ROLE_HOME, ROLE_PREFIX, type Role } from './lib/roles'
+import { ROLE_HOME, ROLE_PREFIX, isRetiredV1Page, type Role } from './lib/roles'
 
 /**
  * Next 16 renamed Middleware to Proxy. Same mechanics, `nodejs` runtime.
@@ -38,6 +38,11 @@ export default auth((req) => {
   // Signed in but wandering into another role's section.
   const ownPrefix = ROLE_PREFIX[role]
   if (isProtected && !pathname.startsWith(ownPrefix)) {
+    return NextResponse.redirect(new URL(ROLE_HOME[role], req.nextUrl))
+  }
+
+  // The old dashboards now land on the v2 home for that role.
+  if (isRetiredV1Page(pathname)) {
     return NextResponse.redirect(new URL(ROLE_HOME[role], req.nextUrl))
   }
 
