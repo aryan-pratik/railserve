@@ -15,104 +15,89 @@ Everything lives on one box: the app, the database, the cron scheduler, and
 the backups. Host, key and paths are in **`docs/INFRA.local.md`**, gitignored
 because this repo is public.
 
+## The one rule: code reaches production only through `main`
+
+> **Never copy code to the VPS by hand.** No `rsync`, `scp`, `git archive`
+> or editing files over SSH, and no `docker compose up --build` on the box.
+> That was how deploys worked before 2026-11-21. It shipped unreviewed,
+> uncommitted and half-finished code (v2 went live by accident that way) and
+> left no record of what was running.
+>
+> If anyone asks for a "quick deploy" straight to the server, do not do it.
+> Tell them how the work should go instead:
+>
+> 1. Create a branch, for example `fix/kitchen-timer`, from `dev`. For an
+>    urgent production fix, branch from `main` instead.
+> 2. Push the branch and open a pull request into `dev`, or into `main` for
+>    the urgent fix.
+> 3. CI must pass. Merge the pull request.
+> 4. `dev` deploys to staging by itself. Check the change there.
+> 5. Merge `dev` into `main` through a pull request. Production deploys by
+>    itself. An urgent fix that went straight to `main` is merged back into
+>    `dev` afterwards.
+>
+> The same applies to AI agents working in this repo: explain this flow to
+> the developer and stop, rather than deploying.
+
 ## Branches and environments
 
 | Branch | Goes to | How |
 |---|---|---|
-| `main` | Production, `bitestation.elvo.in` (VPS) | `.github/workflows/deploy-prod.yml`, after a manual approval |
-| `dev` | Staging on Vercel, database `railserve_staging` on Atlas | Vercel's Git integration, automatically on push |
-| anything else | CI checks only, plus a Vercel preview | `.github/workflows/ci.yml` |
+| `main` | Production, `bitestation.elvo.in` (VPS) | `.github/workflows/deploy-prod.yml`, automatically on every merge |
+| `dev` | Staging, `railserve-staging.vercel.app`, database `railserve_staging` on Atlas | Vercel's Git integration, automatically on every merge |
+| any other branch | Nothing. CI checks only | `.github/workflows/ci.yml` |
 
-Work lands on `dev` first, gets clicked through on staging, then `dev` is
-merged into `main`. **Merging into `main` is the moment a change goes live**,
-which is why production waits for an approval.
+**Nobody pushes to `main` or `dev` directly.** Both branches are protected on
+GitHub: every change arrives through a pull request, CI (lint, typecheck,
+tests) must pass first, force-pushes and deletion are blocked, and the rule
+applies to admins too. Merging into `main` is the moment a change goes live.
 
-## Deploying a change (normal path)
+`dev` currently carries the unfinished v2 UI, which `main` does not have. So
+`dev` is only merged into `main` once v2 is signed off; until then urgent
+production fixes go branch -> `main`, then `main` is merged into `dev`.
 
-Push or merge to `main`. The workflow then:
+## What a deploy does
 
-1. runs lint, typecheck and the test suite (against a throwaway Mongo replica
-   set in the runner, never Atlas);
+Every merge into `main` runs `.github/workflows/deploy-prod.yml`:
+
+1. lint, typecheck and the test suite, against a throwaway Mongo replica set
+   in the runner (never Atlas);
 2. builds the production image on GitHub's runner and pushes it to
    `ghcr.io/aryan-pratik/railserve:<commit sha>`, so the VPS never builds;
-3. **waits for approval** on the `production` environment (Actions tab →
-   the run → "Review deployments");
-4. on the VPS, runs `scripts/deploy/vps-deploy.sh`: a pre-deploy `mongodump`
+3. on the VPS, runs `scripts/deploy/vps-deploy.sh`: a pre-deploy `mongodump`
    (`/root/railserve-backups/predeploy-*.gz`, two newest kept), pulls and swaps
    the container, checks `/login` answers 200, and **rolls back to the previous
    image automatically** if it doesn't.
 
-The deployed image is recorded in `/root/railserve/.env` as `RAILSERVE_IMAGE`,
-which compose reads, so a later `docker compose up -d` keeps it. The GitHub
+There is no approval step. The deployed image is recorded in
+`/root/railserve/.env` as `RAILSERVE_IMAGE`, which compose reads. The GitHub
 secrets `VPS_HOST`, `VPS_SSH_KEY` (a deploy-only key, comment
 `github-actions-deploy@railserve` in the box's `authorized_keys`) and
-`VPS_KNOWN_HOSTS` live on the `production` environment only.
+`VPS_KNOWN_HOSTS` live on the `production` environment, which only `main` may
+deploy to.
 
-### Rolling back by hand
+## Rolling back
 
-```bash
-ssh <vps> 'docker images ghcr.io/aryan-pratik/railserve'   # pick an older tag
-ssh <vps> 'cd /root/railserve && printf "RAILSERVE_IMAGE=%s\n" ghcr.io/aryan-pratik/railserve:<sha> > .env \
-           && docker compose -f docker-compose.prod.yml up -d --no-build app'
-```
-
-## Manual fallback (no GitHub)
-
-If Actions is unavailable, the old path still works. Code is baked into the
-image at build time, so a code change is a **rebuild**, not a restart:
-
-```bash
-# from the repo root
-rsync -az -e "ssh -i <key>" \
-  --exclude node_modules --exclude .next --exclude .git --exclude /mobile \
-  --exclude '.env*' --exclude tsconfig.tsbuildinfo --exclude captures \
-  ./ root@<vps>:/root/railserve/
-
-ssh <vps> 'cd /root/railserve && printf "RAILSERVE_IMAGE=railserve-app\n" > .env \
-           && docker compose -f docker-compose.prod.yml up -d --build app'
-```
-
-Rsync whatever is checked out, so be on `main`. Two excludes are load-bearing.
-`'.env*'` protects `/root/railserve/.env.production`,
-the only copy of the production secrets — overwrite it and the container loses
-its database URI and Gmail credentials on next start. `/mobile` needs the
-leading slash: without it rsync also matches `src/lib/mobile/`.
-
-`npm run build` runs `verify` (lint + typecheck) first, so a type error fails
-the image build rather than shipping.
+Revert the bad commit in a pull request into `main`. Merging it deploys the
+previous code the normal way. If the new container never answers, the deploy
+script has already put the old image back by itself.
 
 ### Prove the deploy landed
 
 ```bash
-ssh <vps> 'docker ps --format "{{.Names}} {{.Status}}"
-           docker inspect railserve-app --format "image={{.Image}} started={{.State.StartedAt}}"'
+ssh <vps> 'docker ps --format "{{.Names}} {{.Status}} {{.Image}}"'
 curl -sI https://bitestation.elvo.in/login | head -1
 ```
 
-The container should read `Up` for *seconds* with a `StartedAt` from just now. If
-it says hours or days, the deploy did not happen — check the four traps below.
+`railserve-app` should be `Up` for minutes, on the image tagged with the
+merged commit. Reading the box like this is fine; changing it is not.
 
-### Four ways a deploy silently does nothing
+### A new environment variable
 
-1. **A failed build leaves the old container serving.** `up -d --build` exits
-   non-zero when `verify` fails inside the image, and the previous container
-   keeps running happily. Nothing looks broken; the change just isn't there.
-   Check the exit status, not the website.
-
-2. **`docker restart railserve-app` deploys nothing.** Code is baked into the
-   image, so a restart reuses the same image *and* the same env. It is never the
-   right command for a code change.
-
-3. **A new env var must be added on the box by hand.** `src/lib/env.ts` validates
-   with zod at startup, so shipping code that requires a new variable without
-   adding it to `/root/railserve/.env.production` crash-loops the container on
-   next recreate. Add it there first, then
-   `docker compose -f docker-compose.prod.yml up -d --force-recreate app` —
-   plain `up -d` may not notice an `env_file` edit.
-
-4. **Dropping the `'.env*'` exclude** overwrites production secrets with a dev
-   file; **dropping the slash on `/mobile`** also matches `src/lib/mobile/` and
-   ships a build missing those files.
+`src/lib/env.ts` validates with zod at startup, so code that needs a new
+variable crash-loops on deploy (and gets rolled back) unless the owner has
+added it to `/root/railserve/.env.production` first. That file is the only
+copy of the production secrets; only the owner edits it.
 
 ### The `DOCKER_BUILD` gate
 
@@ -138,7 +123,7 @@ Changes take effect on container **restart**, not rebuild:
 | `AUTH_TRUST_HOST` | **yes** | Set to `true`. Auth.js refuses every request with `UntrustedHost` otherwise, and it fails at runtime, not at build. |
 | `SEED_PASSWORD` | no | Only used by the seed script; irrelevant in production. |
 | `CRON_TOKEN` | recommended | Shared secret for every `/api/cron/*` endpoint (`train-poll`, `gmail-sync`, `gmail-watch`, `print-retry`). Leave unset and they are open. |
-| `TRAIN_API_PROVIDER` | no | `simulator` (default), `rapidapi`, `railkit` (RailKit v1/NTES only) or `railkit-v2` (v2/WIMT first, v1 as fallback) — currently `railkit`. The value is validated at boot, so an image older than `railkit-v2` refuses to start with it: switch to it in the same `up -d --build` that ships the code, and set it back to `railkit` **before** rolling back to an older image. Readings V1 had to serve are logged as `[train-fallback]`. |
+| `TRAIN_API_PROVIDER` | no | `simulator` (default), `rapidapi`, `railkit` (RailKit v1/NTES only) or `railkit-v2` (v2/WIMT first, v1 as fallback) — currently `railkit`. The value is validated at boot, so an image older than `railkit-v2` refuses to start with it: switch to it right before merging the code that supports it, and set it back to `railkit` **before** rolling back to an older image. Readings V1 had to serve are logged as `[train-fallback]`. |
 | `TRAIN_API_KEY` / `TRAIN_API_HOST` | no | `TRAIN_API_HOST` applies to the `rapidapi` provider only; the `railkit` adapter takes just the key and ignores it. |
 | `R2_ACCOUNT_ID` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | no | Delivery photo storage. All blank ⇒ photo capture does not appear and delivery still works. |
 | `GMAIL_*` | no | Email ingestion. All blank ⇒ orders are pasted or entered by hand. |

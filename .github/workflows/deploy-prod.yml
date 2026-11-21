@@ -1,10 +1,10 @@
-# main -> production (the Contabo VPS).
+# main -> production (the Contabo VPS), automatically on every merge.
+# This is the ONLY way code reaches the VPS; see docs/DEPLOY.md.
 #
 # 1. The same checks as CI.
 # 2. Build the production image here on GitHub's runner, so the VPS never
 #    builds (it shares memory with the live app), and push it to GHCR.
-# 3. Wait for a human to approve the `production` environment.
-# 4. On the VPS: back up Mongo, pull the image, swap the container, check
+# 3. On the VPS: back up Mongo, pull the image, swap the container, check
 #    /login answers, and roll back to the previous image if it doesn't.
 name: Deploy production
 

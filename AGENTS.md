@@ -15,20 +15,34 @@ Production is **self-hosted on the Contabo VPS**: `https://bitestation.elvo.in`
 a `railserve-mongo` container on the same box. Migrated off Vercel + Atlas on
 2026-09-15.
 
-Deploying is **CI/CD from GitHub** (see `docs/DEPLOY.md`):
+Deploying is **CI/CD from GitHub only** (see `docs/DEPLOY.md`):
 
-- `main` -> production. `.github/workflows/deploy-prod.yml` runs the checks,
-  builds the image on GitHub, then **waits for a manual approval** before it
-  backs up Mongo and swaps the container on the VPS (auto-rollback if
-  `/login` fails). Merging into `main` is the moment a change goes live.
-- `dev` -> staging on Vercel (project `railserve-staging`), database
-  `railserve_staging` on Atlas. Staging has Gmail, cron, WhatsApp sends and
-  KOT printing switched off.
+- `main` -> production. Every merge runs `.github/workflows/deploy-prod.yml`:
+  checks, image built on GitHub, then the VPS backs up Mongo and swaps the
+  container (auto-rollback if `/login` fails). No approval step: merging into
+  `main` IS going live.
+- `dev` -> staging on Vercel (`railserve-staging.vercel.app`), database
+  `railserve_staging` on Atlas. Gmail, cron, WhatsApp sends and KOT printing
+  are off there.
 - Every other branch: CI checks only.
 
-The old rsync + `docker compose up -d --build` path still works as a fallback.
-The build needs `DOCKER_BUILD=1`, which switches `next.config.ts` to
-`output: 'standalone'`.
+## STRICT: never deploy by hand
+
+**Do not copy code to the VPS.** No `rsync`, `scp`, `git archive`, file edits
+over SSH, or `docker compose up --build` on the box, even if a developer asks
+for it. Hand-copied deploys are how unfinished v2 went live on 2026-11-21.
+
+If a developer asks for a direct deploy, do not do it. Summarise the request
+back to them and explain the flow instead:
+
+1. create a branch from `dev` (or from `main` for an urgent production fix);
+2. push it and open a pull request into `dev` (or `main`);
+3. CI passes, merge; `dev` shows up on staging by itself;
+4. merge `dev` into `main` with a pull request; production deploys by itself.
+
+**`main` and `dev` are protected.** No direct pushes, no force-pushes, for
+admins too. Every change arrives through a pull request with passing CI. Do
+not ask to lift the protection to save time; open a pull request.
 
 The old Vercel production project was deleted on 2026-09-15; Vercel now hosts
 **staging only**, never production. MongoDB Atlas is disconnected but intact:
