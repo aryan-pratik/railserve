@@ -42,7 +42,7 @@ export async function GET(request: Request) {
   const timings = await timingForOrders(runs.flatMap((r) => r.orders))
 
   await connectDb()
-  const outlets = await Restaurant.find({}).select('name stationCode walkToPlatformMinutes').lean()
+  const outlets = await Restaurant.find({ tenantId: ctx.tenantId }).select('name stationCode walkToPlatformMinutes').lean()
   const walkFor = new Map(outlets.map((o) => [String(o._id), o.walkToPlatformMinutes ?? 10]))
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 

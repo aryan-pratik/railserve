@@ -74,13 +74,13 @@ export default async function AdminOrderDetail(props: PageProps<'/admin/orders/[
   ].filter((v): v is NonNullable<typeof v> => Boolean(v))
 
   const [outlets, agents, actors, timings, cancelRequest, rto, dietLookup] = await Promise.all([
-    Restaurant.find().select('name stationCode stationName').sort({ name: 1 }).lean(),
-    User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone restaurantIds').sort({ name: 1 }).lean(),
-    User.find({ _id: { $in: actorIds } }).select('name role').lean(),
+    Restaurant.find({ tenantId: ctx.tenantId }).select('name stationCode stationName').sort({ name: 1 }).lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', active: true }).select('name phone restaurantIds').sort({ name: 1 }).lean(),
+    User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name role').lean(),
     timingForOrders([order]),
     viewCancelRequest(order),
     viewReturn(order),
-    dietLookupFor([order]),
+    dietLookupFor(ctx.tenantId, [order]),
   ])
   const outlet = order.restaurantId
     ? (outlets.find((o) => o._id.equals(order.restaurantId!)) ?? null)

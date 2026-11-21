@@ -1,5 +1,6 @@
 import { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 import { ORDER_SOURCES } from '../orderEnums'
 import { DIETS } from '../diet'
 
@@ -28,6 +29,8 @@ import { DIETS } from '../diet'
  */
 const MenuItemSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     _id: { type: String, required: true },
     source: { type: String, required: true, enum: ORDER_SOURCES },
     // menuKey(name): the second half of _id, kept apart for reading.
@@ -50,6 +53,9 @@ const MenuItemSchema = new Schema(
 )
 
 export type MenuItemDoc = InferSchemaType<typeof MenuItemSchema> & { _id: string }
+
+// Every MenuItem belongs to one tenant; the guard refuses unscoped queries.
+MenuItemSchema.plugin(tenantScoped)
 
 export const MenuItem: Model<MenuItemDoc> = registerModel<MenuItemDoc>('MenuItem', MenuItemSchema)
 

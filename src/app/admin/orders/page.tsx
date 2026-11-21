@@ -56,7 +56,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
   // taken from everything except it. Resolved before any query runs, so the
   // list, its count and the payment tab counts all read the very same filter.
   await connectDb()
-  const base: QueryFilter<Record<string, unknown>> = await orderFilterClause(filters)
+  const base: QueryFilter<Record<string, unknown>> = await orderFilterClause(ctx, filters)
 
   const filter = payment ? { ...base, paymentMode: payment } : base
 
@@ -66,7 +66,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin/orders'>)
     countByPaymentMode(ctx, base),
     countOrders(ctx, filter),
   ])
-  const [riderName, diets] = await Promise.all([riderNamesFor(orders), orderDietsFor(orders)])
+  const [riderName, diets] = await Promise.all([riderNamesFor(ctx, orders), orderDietsFor(ctx.tenantId, orders)])
   const statusOptions = options.statuses
   const outletName = new Map(options.outlets.map((o) => [o.id, `${o.name} · ${o.stationCode}`]))
 

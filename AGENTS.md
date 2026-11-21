@@ -26,6 +26,12 @@ Deploying is **CI/CD from GitHub only** (see `docs/DEPLOY.md`):
   are off there.
 - Every other branch: CI checks only.
 
+## Tenancy
+
+RailServe is multi-tenant. Every query on a tenant-owned model must include
+`tenantId` (a guard throws if it doesn't), and access is checked with
+`requirePermission`. Read `docs/TENANCY.md` before touching data access.
+
 ## STRICT: never deploy by hand
 
 **Do not copy code to the VPS.** No `rsync`, `scp`, `git archive`, file edits

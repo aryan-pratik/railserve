@@ -78,12 +78,12 @@ export async function fetchOrderDetail(orderId: string): Promise<OrderDetail | n
   )
   const [outlet, actors, timings, dietLookup] = await Promise.all([
     order.restaurantId
-      ? Restaurant.findById(order.restaurantId).select('name stationCode').lean()
+      ? Restaurant.findOne({ _id: order.restaurantId, tenantId: ctx.tenantId }).select('name stationCode').lean()
       : null,
-    User.find({ _id: { $in: actorIds } }).select('name role').lean(),
+    User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name role').lean(),
     // Cache-only: opening a panel must not block on an 8s provider call.
     timingForOrders([order], { allowFetch: false }),
-    dietLookupFor([order]),
+    dietLookupFor(ctx.tenantId, [order]),
   ])
 
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))

@@ -108,13 +108,13 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
 
   await connectDb()
 
-  const outlets = await Restaurant.find({ _id: { $in: ctx.restaurantIds } })
+  const outlets = await Restaurant.find({ _id: { $in: ctx.restaurantIds }, tenantId: ctx.tenantId })
     .sort({ active: -1, name: 1 })
     .lean()
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
   const stationTone = stationToneMap(outlets.map((o) => o.stationCode))
 
-  const riderFilter = { role: 'DELIVERY_AGENT' as const, restaurantIds: { $in: ctx.restaurantIds } }
+  const riderFilter = { tenantId: ctx.tenantId, role: 'DELIVERY_AGENT' as const, restaurantIds: { $in: ctx.restaurantIds } }
   const [riders, riderCount, editingUser] = await Promise.all([
     User.find(riderFilter)
       .sort({ active: -1, name: 1 })
@@ -122,7 +122,7 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
       .limit(pageSize)
       .lean(),
     User.countDocuments(riderFilter),
-    editId ? User.findById(editId).lean() : undefined,
+    editId ? User.findOne({ _id: editId, tenantId: ctx.tenantId }).lean() : undefined,
   ])
 
   // Cash each rider on this page is carrying for these outlets: delivered COD
@@ -131,9 +131,9 @@ export default async function StoreStaffPage(props: PageProps<'/store/staff'>) {
   const [cash, collections, me] = await Promise.all([
     pendingCashByRider(ctx, riderIds),
     collectionHistory(ctx, riderIds, { latestPerRider: true }),
-    User.findById(ctx.userId).select('role isTeamLead canReceiveCash').lean(),
+    User.findOne({ _id: ctx.userId, tenantId: ctx.tenantId }).select('role isTeamLead canReceiveCash').lean(),
   ])
-  const receivers = await receiversOf(collections)
+  const receivers = await receiversOf(ctx, collections)
   const mayReceive = canReceiveCash({ role: ctx.role, canReceiveCash: me?.canReceiveCash, isTeamLead: me?.isTeamLead })
   // One row per rider: their latest handover.
   const lastOf = new Map<string, { at: string; paise: number; receivedBy: string | null }>()

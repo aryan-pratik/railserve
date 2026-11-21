@@ -120,7 +120,7 @@ export async function approveCancellation(ctx: AuthContext, orderId: string): Pr
   // underneath us) the request is still pending, which is the truth. The
   // status filter keeps a concurrent refusal from being overwritten.
   await Order.updateOne(
-    { _id: order._id, 'cancelRequest.status': 'PENDING' },
+    { _id: order._id, tenantId: ctx.tenantId, 'cancelRequest.status': 'PENDING' },
     {
       $set: {
         'cancelRequest.status': 'APPROVED',
@@ -192,16 +192,20 @@ export type CancelRequestView = {
   decisionNote: string | null
 }
 
-/** Resolves the names on one order's request, or null when there is none. */
+/**
+ * Resolves the names on one order's request, or null when there is none.
+ * The people named are the order's own tenant's staff, so its tenantId scopes
+ * the lookup.
+ */
 export async function viewCancelRequest(
-  order: Pick<OrderDoc, 'cancelRequest'>,
+  order: Pick<OrderDoc, 'cancelRequest' | 'tenantId'>,
 ): Promise<CancelRequestView | null> {
   const req = order.cancelRequest
   if (!req) return null
   const ids = [req.requestedBy, req.decidedBy].filter(
     (v): v is mongoose.Types.ObjectId => Boolean(v),
   )
-  const users = await User.find({ _id: { $in: ids } }).select('name role').lean()
+  const users = await User.find({ _id: { $in: ids }, tenantId: order.tenantId }).select('name role').lean()
   const label = new Map(
     users.map((u) => [String(u._id), `${u.name} · ${ROLE_LABEL[u.role] ?? u.role}`]),
   )
@@ -249,7 +253,7 @@ export async function listPendingCancelRequests(
     .lean()
   if (rows.length === 0) return []
 
-  const users = await User.find({ _id: { $in: rows.map((r) => r.cancelRequest!.requestedBy) } })
+  const users = await User.find({ _id: { $in: rows.map((r) => r.cancelRequest!.requestedBy) }, tenantId: ctx.tenantId })
     .select('name')
     .lean()
   const name = new Map(users.map((u) => [String(u._id), u.name]))

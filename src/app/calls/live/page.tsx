@@ -96,7 +96,7 @@ export default async function LiveBoardPage(props: PageProps<'/calls/live'>) {
   let actorName = new Map<string, string>()
   if (lastAuthorIds.length > 0) {
     await connectDb()
-    const authors = await User.find({ _id: { $in: lastAuthorIds } }).select('name').lean()
+    const authors = await User.find({ _id: { $in: lastAuthorIds }, tenantId: ctx.tenantId }).select('name').lean()
     actorName = new Map(authors.map((a) => [String(a._id), a.name]))
   }
 

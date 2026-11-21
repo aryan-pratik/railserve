@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { WaMessage } from '../src/lib/models'
 import { findConversation, listMessages, recordInbound } from '../src/lib/repo/whatsappRepo'
-import { ctxFor, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeUser, resetDb, tenantId } from './fixtures'
 import type { AuthContext } from '../src/lib/authContext'
 
 /**
@@ -61,18 +61,18 @@ describe('POST /api/whatsapp/webhook', () => {
     const again = await (await POST(post(body))).json()
     expect(again).toMatchObject({ ok: true, inbound: 0, duplicates: 1 })
 
-    const m = await WaMessage.findOne({ providerMessageId: 'wamid.w1' }).lean()
+    const m = await WaMessage.findOne({ tenantId: tenantId(), providerMessageId: 'wamid.w1' }).lean()
     expect(m).toMatchObject({ direction: 'IN', text: 'Is my order on the way?' })
     const c = await findConversation(admin, String(m!.conversationId))
     expect(c).toMatchObject({ phone: '919811111113', customerName: 'Webhook Passenger', unreadCount: 1 })
   })
 
   it('applies a status report to the message it names', async () => {
-    const r = await recordInbound({
+    const r = await recordInbound(tenantId(), {
       type: 'inbound', phone: '919811111114', customerName: null, providerMessageId: 'wamid.in.s1', kind: 'TEXT',
       text: 'hi', button: null, mediaUrl: null, mediaCaption: null, at: new Date(),
     })
-    await WaMessage.create({
+    await WaMessage.create({ tenantId: tenantId(),
       conversationId: r.conversationId, direction: 'OUT', kind: 'TEXT', text: 'On its way', status: 'SENT',
       providerMessageId: 'wamid.out.s1', providerRequestId: 'req-s1', createdAt: new Date(),
     })

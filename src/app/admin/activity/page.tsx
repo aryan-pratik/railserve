@@ -71,8 +71,8 @@ export default async function ActivityPage(props: PageProps<'/admin/activity'>) 
       skip,
       limit: pageSize,
     }),
-    User.find().select('name role active').sort({ role: 1, name: 1 }).lean(),
-    Restaurant.distinct('stationCode'),
+    User.find({ tenantId: ctx.tenantId }).select('name role active').sort({ role: 1, name: 1 }).lean(),
+    Restaurant.distinct('stationCode', { tenantId: ctx.tenantId }),
   ])
 
   // Every filter in play, for the tabs, the pager and the Clear link.

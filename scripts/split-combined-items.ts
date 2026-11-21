@@ -26,10 +26,12 @@ import { MenuItem, Order } from '../src/lib/models'
 import { menuLookupKey } from '../src/lib/diet'
 import { isCombinedName, splitCombinedItems, splitCombinedName } from '../src/lib/splitItems'
 import { registerMenuItems } from '../src/lib/repo/menuRepo'
+import { scriptTenant } from './scriptTenant'
 
 async function main() {
   const apply = process.argv.includes('--apply')
   await connectDb()
+  const T = await scriptTenant()
   console.log(`Database: ${mongoose.connection.name}  (host ${mongoose.connection.host})`)
 
   // A loose first cut that cannot miss; splitCombinedItems is what decides.
@@ -62,7 +64,7 @@ async function main() {
     }
     // Rows for the dishes that now stand alone. A dish somebody deleted from
     // the Menu page is not put back by an old order.
-    await registerMenuItems(added.map((i) => ({ source: o.source, name: i.name })), { restore: false })
+    await registerMenuItems(T, added.map((i) => ({ source: o.source, name: i.name })), { restore: false })
   }
 
   const rows = (await MenuItem.find({ removedAt: null }).select('name source diet reviewed').lean()).filter(

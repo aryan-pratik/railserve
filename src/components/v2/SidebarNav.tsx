@@ -19,7 +19,7 @@ import {
   TrainFront,
   Settings,
   type LucideIcon,
-} from 'lucide-react'
+ Building2 } from 'lucide-react'
 import { cx, v2Focus } from './ui'
 
 export type V2NavItem = {
@@ -49,6 +49,7 @@ const ICONS = {
   activity: Activity,
   trains: TrainFront,
   settings: Settings,
+  platform: Building2,
 } satisfies Record<string, LucideIcon>
 
 export function SidebarNav({ sections, collapsed = false }: { sections: V2NavSection[]; collapsed?: boolean }) {

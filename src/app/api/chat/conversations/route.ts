@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   await connectDb()
   const { rows, total } = await listConversations(ctx, { q, filter, skip, limit })
-  const labels = await labelsFor(rows)
+  const labels = await labelsFor(ctx, rows)
   const me = String(ctx.userId)
   return NextResponse.json({
     rows: rows.map((c) => toConversationRow(c, labels, me)),

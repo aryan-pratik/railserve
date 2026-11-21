@@ -94,7 +94,7 @@ export async function quoteEnquiryAction(
   const d = parsed.data
 
   await connectDb()
-  const outlet = await Restaurant.findOne({ _id: d.restaurantId, active: true })
+  const outlet = await Restaurant.findOne({ _id: d.restaurantId, tenantId: ctx.tenantId, active: true })
     .select('stationCode')
     .lean()
   if (!outlet) return { error: 'That outlet does not exist or is inactive.' }

@@ -93,10 +93,11 @@ export async function pushFoodOnTrainsStatus(
 
 /** The FoodOnTrains key saved on one of our outlets, or null when it has none. */
 export async function foodOnTrainsKeyFor(
+  tenantId: mongoose.Types.ObjectId,
   restaurantId: mongoose.Types.ObjectId | string | null | undefined,
 ): Promise<string | null> {
   if (!restaurantId) return null
-  const outlet = await Restaurant.findById(restaurantId).select('+foodOnTrainsApiKey').lean()
+  const outlet = await Restaurant.findOne({ _id: restaurantId, tenantId }).select('+foodOnTrainsApiKey').lean()
   return outlet?.foodOnTrainsApiKey?.trim() || null
 }
 
@@ -107,6 +108,8 @@ const chains = new Map<string, Promise<void>>()
  * committed; returns at once and never throws.
  */
 export function reportFoodOnTrainsStatus(order: {
+  /** The key is per outlet, and the outlet is the order's tenant's. */
+  tenantId: mongoose.Types.ObjectId
   externalOrderId?: string | null
   restaurantId?: mongoose.Types.ObjectId | string | null
   status: string
@@ -118,7 +121,7 @@ export function reportFoodOnTrainsStatus(order: {
 
     const next = (chains.get(orderId) ?? Promise.resolve())
       .then(async () => {
-        const apiKey = await foodOnTrainsKeyFor(order.restaurantId)
+        const apiKey = await foodOnTrainsKeyFor(order.tenantId, order.restaurantId)
         if (!apiKey) return null
         return pushFoodOnTrainsStatus(orderId, status, { apiUrl: env.FOODONTRAINS_API_URL, apiKey })
       })

@@ -33,7 +33,7 @@ export default async function AgentRunPage(props: PageProps<'/agent/runs/[runKey
   const [timings, outlet] = await Promise.all([
     timingForOrders(run.orders),
     // Walk time is a property of the outlet, not the train.
-    Restaurant.findById(run.orders[0]?.restaurantId).select('walkToPlatformMinutes').lean(),
+    Restaurant.findOne({ _id: run.orders[0]?.restaurantId, tenantId: ctx.tenantId }).select('walkToPlatformMinutes').lean(),
   ])
   const timing = timingFor(run.orders[0], timings)
 

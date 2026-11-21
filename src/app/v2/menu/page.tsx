@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Search } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { menuOverview } from '@/lib/repo/menuRepo'
 import { MENU_CATEGORIES, menuCategory } from '@/lib/menuCategory'
 import { ORDER_SOURCES, SOURCE_LABEL } from '@/lib/orderEnums'
@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic'
  * and paging happen here on the server, so the URL is the state.
  */
 export default async function V2MenuPage(props: PageProps<'/v2/menu'>) {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('menu.manage')
   const sp = await props.searchParams
   const f = readMenuFilters(sp)
   const { page, pageSize } = readPaging(sp)

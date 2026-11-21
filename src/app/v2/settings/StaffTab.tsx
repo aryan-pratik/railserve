@@ -29,7 +29,7 @@ export async function StaffTab({
   role: string
 }) {
   const roleFilter = isRole(role) ? role : undefined
-  const { rows, total, leads } = await loadStaff({ q, role: roleFilter }, { skip: paging.skip, limit: paging.pageSize })
+  const { rows, total, leads } = await loadStaff(ctx, { q, role: roleFilter }, { skip: paging.skip, limit: paging.pageSize })
   const leadName = new Map(leads.map((l) => [l.id, l.name]))
   const outletById = new Map(base.outlets.map((o) => [o.id, o]))
   const me = String(ctx.userId)

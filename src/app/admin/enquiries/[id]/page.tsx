@@ -19,8 +19,8 @@ export default async function EnquiryDetail(props: PageProps<'/admin/enquiries/[
   await connectDb()
   const actorIds = order.events.map((e) => e.userId).filter((v): v is NonNullable<typeof v> => Boolean(v))
   const [outlets, actors] = await Promise.all([
-    Restaurant.find({ active: true }).select('name stationCode').sort({ name: 1 }).lean(),
-    User.find({ _id: { $in: actorIds } }).select('name').lean(),
+    Restaurant.find({ tenantId: ctx.tenantId, active: true }).select('name stationCode').sort({ name: 1 }).lean(),
+    User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name').lean(),
   ])
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
 

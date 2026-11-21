@@ -38,7 +38,7 @@ export function listQuery(p: { q: string; filter: ConversationFilter }) {
 export async function ChatList({ ctx, params, activeId }: { ctx: AuthContext; params: ListParams; activeId?: string }) {
   const p = readListParams(params)
   const { rows, total } = await listConversations(ctx, { q: p.q, filter: p.filter, skip: 0, limit: RAIL_PAGE })
-  const labels = await labelsFor(rows)
+  const labels = await labelsFor(ctx, rows)
   const me = String(ctx.userId)
   const query = listQuery(p).toString()
 

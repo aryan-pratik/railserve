@@ -6,7 +6,7 @@ import { inRollover, liveServiceDates, REFRESH_SECONDS, ROLLOVER_ARRIVAL_GRACE_H
 import { callBoardRow, foodItemLabels } from '../src/lib/orderView'
 import { shiftServiceDate, todayIST } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 /** An IST wall-clock moment on a given service date. */
 const ist = (date: string, hhmm: string) => new Date(`${date}T${hhmm}:00+05:30`)
@@ -136,7 +136,7 @@ describe('which day an order is on, past midnight', () => {
   }
   const idsIn = async (filter: Parameters<typeof countOrders>[1]) => {
     const { Order } = await import('../src/lib/models')
-    const docs = await Order.find(filter).select('trainNo').lean()
+    const docs = await Order.find({ ...filter, tenantId: tenantId() }).select('trainNo').lean()
     return docs.map((d) => d.trainNo).sort()
   }
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Order } from '../src/lib/models'
 import { migrateLegacyStatuses } from '../scripts/migrate-legacy-statuses'
-import { resetDb, makeOrder } from './fixtures'
+import { resetDb, makeOrder, tenantId } from './fixtures'
 
 beforeEach(resetDb)
 
@@ -25,7 +25,7 @@ describe('migrateLegacyStatuses', () => {
 
     expect(report.ordersRenamed.MISSED_DELEVERY).toBe(1)
 
-    const updated = await Order.findById(order._id).lean()
+    const updated = await Order.findOne({ _id: order._id, tenantId: tenantId() }).lean()
     expect(updated!.status).toBe('MISSED_DELIVERY')
     expect(updated!.events.map((e) => e.toStatus)).toEqual(['RECEIVED', 'MISSED_DELIVERY'])
     expect(updated!.events.map((e) => e.fromStatus)).toEqual([null, 'RECEIVED'])
@@ -49,8 +49,8 @@ describe('migrateLegacyStatuses', () => {
     const report = await migrateLegacyStatuses()
 
     expect(report.ordersRenamed.REFUND).toBe(1)
-    expect(await Order.countDocuments({ status: 'REFUNDED' })).toBe(1)
-    expect(await Order.countDocuments({ status: 'REFUND' })).toBe(0)
+    expect(await Order.countDocuments({ tenantId: tenantId(), status: 'REFUNDED' })).toBe(1)
+    expect(await Order.countDocuments({ tenantId: tenantId(), status: 'REFUND' })).toBe(0)
   })
 
   it('is idempotent: a second run renames nothing further', async () => {
@@ -71,6 +71,6 @@ describe('migrateLegacyStatuses', () => {
 
     expect(report.ordersRenamed.MISSED_DELEVERY).toBe(0)
     expect(report.ordersRenamed.REFUND).toBe(0)
-    expect(await Order.countDocuments({ status: 'RECEIVED' })).toBe(1)
+    expect(await Order.countDocuments({ tenantId: tenantId(), status: 'RECEIVED' })).toBe(1)
   })
 })

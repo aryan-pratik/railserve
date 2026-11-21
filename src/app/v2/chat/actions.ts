@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { openConversationForOrder, openConversationForPhone } from '@/lib/repo/whatsappRepo'
 import {
@@ -65,7 +65,7 @@ export async function markReadV2(conversationId: string): Promise<void> {
 
 /** "New chat" with a typed number: opens or finds the thread and goes there. */
 export async function startChatV2(_prev: ChatActionState, formData: FormData): Promise<ChatActionState> {
-  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const ctx = await requirePermission('chat.use')
   const phone = String(formData.get('phone') ?? '')
   const name = String(formData.get('name') ?? '').trim() || null
   await connectDb()
@@ -81,7 +81,7 @@ export async function startChatV2(_prev: ChatActionState, formData: FormData): P
 
 /** "WhatsApp" from an order: for the order workspace to call. redirect() throws, so it sits outside the try. */
 export async function openChatForOrderV2(_prev: ChatActionState, formData: FormData): Promise<ChatActionState> {
-  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const ctx = await requirePermission('chat.use')
   const orderId = String(formData.get('orderId') ?? '')
   await connectDb()
   let id: string

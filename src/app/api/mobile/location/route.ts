@@ -53,6 +53,7 @@ export async function POST(request: Request) {
   }
 
   const { accepted, storedAt } = await recordFixes(
+    ctx.tenantId,
     ctx.userId,
     parsed.data.pings.map((p) => ({
       lat: p.lat,

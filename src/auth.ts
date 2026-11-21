@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { authConfig } from './auth.config'
 import { connectDb } from './lib/db'
-import { User } from './lib/models'
+import { Tenant, User } from './lib/models'
 import { env } from './lib/env'
 
 const CredentialsSchema = z.object({
@@ -27,8 +27,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!parsed.success) return null
 
         await connectDb()
-        const user = await User.findOne({ phone: parsed.data.phone, active: true })
+        // Phone numbers are unique across the whole platform (v2.0 decision),
+        // so the login lookup is the one User query that runs before the
+        // tenant is known.
+        const user = await User.findOne({ phone: parsed.data.phone, active: true }).setOptions({ allTenants: true })
         if (!user) return null
+        const tenant = await Tenant.findById(user.tenantId).select('status').lean()
+        if (!tenant || tenant.status !== 'ACTIVE') return null
 
         const ok = await bcrypt.compare(parsed.data.password, user.passwordHash)
         if (!ok) return null

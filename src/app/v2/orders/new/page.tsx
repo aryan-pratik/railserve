@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { todayIST } from '@/lib/format'
@@ -10,10 +10,10 @@ import { OrderComposerV2 } from '@/components/v2/OrderComposerV2'
 export const metadata = { title: 'New order · RailServe' }
 
 export default async function V2NewOrderPage() {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('orders.create')
   await connectDb()
   // Only the outlets this person holds: the repository refuses the rest anyway.
-  const outlets = await Restaurant.find(ctx.role === 'ADMIN' ? { active: true } : { _id: { $in: ctx.restaurantIds }, active: true })
+  const outlets = await Restaurant.find(ctx.role === 'ADMIN' ? { tenantId: ctx.tenantId, active: true } : { _id: { $in: ctx.restaurantIds }, tenantId: ctx.tenantId, active: true })
     .select('name stationCode')
     .sort({ name: 1 })
     .lean()

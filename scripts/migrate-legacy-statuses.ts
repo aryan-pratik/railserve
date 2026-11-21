@@ -38,19 +38,19 @@ export async function migrateLegacyStatuses(): Promise<LegacyStatusMigrationRepo
   const report: LegacyStatusMigrationReport = { ordersRenamed: {}, eventsRewritten: 0 }
 
   for (const [legacy, correct] of Object.entries(RENAMES)) {
-    const statusResult = await Order.updateMany({ status: legacy }, { $set: { status: correct } })
+    const statusResult = await Order.updateMany({ status: legacy }, { $set: { status: correct } }).setOptions({ allTenants: true })
     report.ordersRenamed[legacy] = statusResult.modifiedCount
 
     const toResult = await Order.updateMany(
       { 'events.toStatus': legacy },
       { $set: { 'events.$[e].toStatus': correct } },
       { arrayFilters: [{ 'e.toStatus': legacy }] },
-    )
+    ).setOptions({ allTenants: true }) // platform-wide rename: every company's orders
     const fromResult = await Order.updateMany(
       { 'events.fromStatus': legacy },
       { $set: { 'events.$[e].fromStatus': correct } },
       { arrayFilters: [{ 'e.fromStatus': legacy }] },
-    )
+    ).setOptions({ allTenants: true })
     report.eventsRewritten += toResult.modifiedCount + fromResult.modifiedCount
   }
 

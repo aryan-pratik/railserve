@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { env } from '@/lib/env'
 import type { AuthContext } from '@/lib/authContext'
+import { systemContext } from '@/lib/tenancy/userContext'
 
 /**
  * Guards the /internal/print/* pages: the only caller is this server's own
@@ -23,8 +24,13 @@ export async function requireInternalRenderToken(): Promise<void> {
  * server-to-itself render needs and exactly why the token check must run
  * first on every call site.
  */
-export const INTERNAL_CTX: AuthContext = {
-  userId: new mongoose.Types.ObjectId(),
-  role: 'ADMIN',
-  restaurantIds: [],
+/**
+ * The print renderer acts as the tenant's administrator. The tenant comes from
+ * the `t` query parameter the print queue puts on the URL, which is only
+ * trusted because the render token above has already been checked.
+ */
+export function internalCtx(tenant: string | string[] | undefined): AuthContext {
+  const id = Array.isArray(tenant) ? tenant[0] : tenant
+  if (!id || !mongoose.isValidObjectId(id)) notFound()
+  return systemContext(id)
 }

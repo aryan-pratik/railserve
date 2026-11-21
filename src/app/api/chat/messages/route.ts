@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   await connectDb()
   try {
     const { rows, hasMore } = await listMessagesPage(ctx, c, { before })
-    const labels = await labelsFor([], rows.map((m) => m.sentBy))
+    const labels = await labelsFor(ctx, [], rows.map((m) => m.sentBy))
     const me = String(ctx.userId)
     return NextResponse.json({
       messages: rows.map((m) => toMessageView(m, (uid) => (uid === me ? 'You' : (labels.userName.get(uid) ?? null)))),

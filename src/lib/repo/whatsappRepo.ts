@@ -18,6 +18,7 @@ import { sessionWindow } from '../whatsapp/session'
 import { renderTemplateBody } from '../whatsapp/template'
 import type { WhatsAppProvider } from '../whatsapp/provider'
 import type { InboundEvent, StatusEvent } from '../whatsapp/webhook'
+import { tenantKey } from '../tenancy/primary'
 
 /**
  * THE ONLY PLACE WaConversation / WaMessage MAY BE READ OR WRITTEN.
@@ -26,7 +27,7 @@ import type { InboundEvent, StatusEvent } from '../whatsapp/webhook'
  * never see a passenger talking to another. Every read here is filtered by
  * the caller's context first; the two system entry points that take no
  * context (recordInbound, applyStatus) are the webhook's and are named for
- * it.
+ * it. They take the tenant whose WhatsApp number the webhook is for.
  */
 
 /** The roles that may open the chat at all. */
@@ -40,18 +41,19 @@ function assertChatRole(ctx: AuthContext) {
  * ADMIN sees everything. A TELECALLER sees the threads of the outlets they
  * hold, plus threads no outlet has claimed — a number that wrote in with no
  * order on file is nobody's until somebody answers it, and leaving it
- * invisible to everyone would mean it is never answered.
+ * invisible to everyone would mean it is never answered. Everyone, ADMIN
+ * included, is confined to their own tenant.
  */
 function scopeFilter(ctx: AuthContext): QueryFilter<WaConversationDoc> {
   assertChatRole(ctx)
-  if (ctx.role === 'ADMIN') return {}
-  if (ctx.restaurantIds.length === 0) return { _id: { $exists: false } }
-  return { $or: [{ restaurantId: { $in: ctx.restaurantIds } }, { restaurantId: null }] }
+  const tenantId = ctx.tenantId
+  if (ctx.role === 'ADMIN') return { tenantId }
+  if (ctx.restaurantIds.length === 0) return { tenantId, _id: { $exists: false } }
+  return { tenantId, $or: [{ restaurantId: { $in: ctx.restaurantIds } }, { restaurantId: null }] }
 }
 
 function scoped(ctx: AuthContext, filter: QueryFilter<WaConversationDoc> = {}): QueryFilter<WaConversationDoc> {
   const scope = scopeFilter(ctx)
-  if (Object.keys(scope).length === 0) return filter
   if (Object.keys(filter).length === 0) return scope
   return { $and: [scope, filter] }
 }
@@ -118,7 +120,7 @@ export async function listMessagesPage(
 ) {
   const c = await findConversationOrThrow(ctx, conversationId)
   const limit = Math.min(Math.max(opts.limit ?? THREAD_PAGE, 1), 200)
-  const filter: QueryFilter<WaMessageDoc> = { conversationId: c._id }
+  const filter: QueryFilter<WaMessageDoc> = { tenantId: ctx.tenantId, conversationId: c._id }
   if (opts.before) filter.createdAt = { $lt: opts.before }
   // One extra row answers "is there more" without a second count query.
   const rows = await WaMessage.find(filter)
@@ -186,7 +188,7 @@ export async function openConversationForOrder(ctx: AuthContext, orderId: string
   const existing = await WaConversation.findOne(scoped(ctx, { phone })).lean()
   if (existing) {
     await WaConversation.updateOne(
-      { _id: existing._id },
+      { _id: existing._id, tenantId: ctx.tenantId },
       {
         $set: {
           orderId: order._id,
@@ -200,11 +202,12 @@ export async function openConversationForOrder(ctx: AuthContext, orderId: string
     return String(existing._id)
   }
 
-  const anywhere = await WaConversation.exists({ phone })
+  const anywhere = await WaConversation.exists({ phone, tenantId: ctx.tenantId })
   if (anywhere) throw new ForbiddenError('That passenger is already in a conversation at another outlet')
 
   const now = new Date()
   const c = await WaConversation.create({
+    tenantId: ctx.tenantId,
     phone,
     customerName: order.contactName ?? null,
     restaurantId: order.restaurantId ?? null,
@@ -233,23 +236,24 @@ export async function openConversationForPhone(
   const existing = await WaConversation.findOne(scoped(ctx, { phone })).lean()
   if (existing) {
     if (name && !existing.customerName) {
-      await WaConversation.updateOne({ _id: existing._id }, { $set: { customerName: name } })
+      await WaConversation.updateOne({ _id: existing._id, tenantId: ctx.tenantId }, { $set: { customerName: name } })
     }
     return String(existing._id)
   }
 
   // Exists but out of scope: say "not yours" rather than create a duplicate
   // that would then collide on the unique phone index.
-  const anywhere = await WaConversation.exists({ phone })
+  const anywhere = await WaConversation.exists({ phone, tenantId: ctx.tenantId })
   if (anywhere) throw new ForbiddenError('That number is already in a conversation at another outlet')
 
   // A matching order within scope decides the outlet; otherwise the one
   // outlet this telecaller holds, if it is only one.
-  const linked = await latestOrderFor(phone, ctx.role === 'ADMIN' ? null : ctx.restaurantIds)
+  const linked = await latestOrderFor(ctx.tenantId, phone, ctx.role === 'ADMIN' ? null : ctx.restaurantIds)
   const restaurantId =
     linked?.restaurantId ?? (ctx.role === 'TELECALLER' && ctx.restaurantIds.length === 1 ? ctx.restaurantIds[0] : null)
 
   const c = await WaConversation.create({
+    tenantId: ctx.tenantId,
     phone,
     customerName: name?.trim() || linked?.contactName || null,
     restaurantId,
@@ -265,8 +269,13 @@ export async function openConversationForPhone(
  * outlets. Orders store the number as the aggregator wrote it, so the match
  * is on the last ten digits.
  */
-async function latestOrderFor(phone: string, restaurantIds: mongoose.Types.ObjectId[] | null) {
+async function latestOrderFor(
+  tenantId: mongoose.Types.ObjectId,
+  phone: string,
+  restaurantIds: mongoose.Types.ObjectId[] | null,
+) {
   const filter: QueryFilter<OrderDoc> = {
+    tenantId,
     contactPhone: { $regex: `${escapeRegExp(phoneTail(phone))}\\s*$` },
   }
   if (restaurantIds) filter.restaurantId = { $in: restaurantIds }
@@ -283,7 +292,9 @@ async function recordOutbound(
   send: () => Promise<{ providerMessageId: string | null; providerRequestId: string | null }>,
 ) {
   const now = new Date()
+  const tenantId = ctx.tenantId
   const msg = await WaMessage.create({
+    tenantId,
     conversationId: c._id,
     direction: 'OUT',
     kind: draft.kind,
@@ -297,7 +308,7 @@ async function recordOutbound(
   // The thread shows the line at once, as "sending": a telecaller should not
   // watch a blank space for the two seconds the provider takes.
   await WaConversation.updateOne(
-    { _id: c._id },
+    { _id: c._id, tenantId },
     {
       $set: {
         lastMessageAt: now,
@@ -312,7 +323,7 @@ async function recordOutbound(
   try {
     const result = await send()
     await WaMessage.updateOne(
-      { _id: msg._id },
+      { _id: msg._id, tenantId },
       {
         $set: {
           status: 'SENT',
@@ -322,14 +333,14 @@ async function recordOutbound(
         },
       },
     )
-    await WaConversation.updateOne({ _id: c._id }, { $currentDate: { updatedAt: true } })
+    await WaConversation.updateOne({ _id: c._id, tenantId }, { $currentDate: { updatedAt: true } })
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'Send failed'
     await WaMessage.updateOne(
-      { _id: msg._id },
+      { _id: msg._id, tenantId },
       { $set: { status: 'FAILED', statusAt: new Date(), failReason: reason } },
     )
-    await WaConversation.updateOne({ _id: c._id }, { $currentDate: { updatedAt: true } })
+    await WaConversation.updateOne({ _id: c._id, tenantId }, { $currentDate: { updatedAt: true } })
     throw err
   }
   void provider
@@ -384,8 +395,14 @@ export async function sendOpenerTemplate(
   // point at another outlet's order, whose details are not this caller's to send.
   const order = await linkedOrder(ctx, c)
   const [outlet, station] = await Promise.all([
-    c.restaurantId ? Restaurant.findById(c.restaurantId).select('name stationName').lean() : null,
-    order?.stationCode ? Station.findById(order.stationCode).select('name').lean() : null,
+    c.restaurantId
+      ? Restaurant.findOne({ _id: c.restaurantId, tenantId: ctx.tenantId }).select('name stationName').lean()
+      : null,
+    order?.stationCode
+      ? Station.findOne({ _id: await tenantKey(ctx.tenantId, order.stationCode), tenantId: ctx.tenantId })
+          .select('name')
+          .lean()
+      : null,
   ])
   const orderRef = order?.externalOrderId ?? ''
   const stationName = station?.name ?? outlet?.stationName ?? null
@@ -420,7 +437,7 @@ export async function sendOpenerTemplate(
 export async function markRead(ctx: AuthContext, conversationId: string): Promise<void> {
   const c = await findConversationOrThrow(ctx, conversationId)
   if (c.unreadCount === 0) return
-  await WaConversation.updateOne({ _id: c._id }, { $set: { unreadCount: 0 } })
+  await WaConversation.updateOne({ _id: c._id, tenantId: ctx.tenantId }, { $set: { unreadCount: 0 } })
 }
 
 /**
@@ -446,11 +463,11 @@ export async function assignConversation(
   }
   if (userId !== null) {
     if (!mongoose.isValidObjectId(userId)) throw new NotFoundError('User not found')
-    const u = await User.exists({ _id: userId, active: true, role: { $in: ['TELECALLER', 'ADMIN'] } })
+    const u = await User.exists({ _id: userId, tenantId: ctx.tenantId, active: true, role: { $in: ['TELECALLER', 'ADMIN'] } })
     if (!u) throw new NotFoundError('User not found')
   }
   await WaConversation.updateOne(
-    { _id: c._id },
+    { _id: c._id, tenantId: ctx.tenantId },
     { $set: { assignedTo: userId ? new mongoose.Types.ObjectId(userId) : null } },
   )
 }
@@ -463,14 +480,15 @@ export async function assignConversation(
  * at their newest order if any outlet has one from this number.
  */
 export async function recordInbound(
+  tenantId: mongoose.Types.ObjectId,
   ev: InboundEvent,
 ): Promise<{ conversationId: string; messageId: string | null; duplicate: boolean }> {
-  let c = await WaConversation.findOne({ phone: ev.phone }).lean()
+  let c = await WaConversation.findOne({ tenantId, phone: ev.phone }).lean()
   if (!c) {
-    const linked = await latestOrderFor(ev.phone, null)
+    const linked = await latestOrderFor(tenantId, ev.phone, null)
     c = (
       await WaConversation.findOneAndUpdate(
-        { phone: ev.phone },
+        { tenantId, phone: ev.phone },
         {
           $setOnInsert: {
             phone: ev.phone,
@@ -490,6 +508,7 @@ export async function recordInbound(
   let messageId: string | null = null
   try {
     const m = await WaMessage.create({
+      tenantId,
       conversationId: c._id,
       direction: 'IN',
       kind: ev.kind,
@@ -512,7 +531,7 @@ export async function recordInbound(
   }
 
   await WaConversation.updateOne(
-    { _id: c._id },
+    { _id: c._id, tenantId },
     {
       $set: {
         lastMessageAt: ev.at,
@@ -535,20 +554,20 @@ const RANK: Record<string, number> = { QUEUED: 0, SENT: 1, DELIVERED: 2, READ: 3
  * A delivery report on something we sent. Only ever moves forward: a late
  * "delivered" arriving after "read" is ignored, and FAILED overrides all.
  */
-export async function applyStatus(ev: StatusEvent): Promise<boolean> {
+export async function applyStatus(tenantId: mongoose.Types.ObjectId, ev: StatusEvent): Promise<boolean> {
   const byId: QueryFilter<WaMessageDoc>[] = []
   if (ev.providerMessageId) byId.push({ providerMessageId: ev.providerMessageId })
   if (ev.providerRequestId) byId.push({ providerRequestId: ev.providerRequestId })
   if (byId.length === 0) return false
 
-  const msg = await WaMessage.findOne({ direction: 'OUT', $or: byId }).lean()
+  const msg = await WaMessage.findOne({ tenantId, direction: 'OUT', $or: byId }).lean()
   if (!msg) return false
 
   const forward = (RANK[ev.status] ?? 0) > (RANK[msg.status] ?? 0)
   if (!forward) return false
 
   await WaMessage.updateOne(
-    { _id: msg._id },
+    { _id: msg._id, tenantId },
     {
       $set: {
         status: ev.status,
@@ -559,7 +578,7 @@ export async function applyStatus(ev: StatusEvent): Promise<boolean> {
       },
     },
   )
-  await WaConversation.updateOne({ _id: msg.conversationId }, { $currentDate: { updatedAt: true } })
+  await WaConversation.updateOne({ _id: msg.conversationId, tenantId }, { $currentDate: { updatedAt: true } })
   return true
 }
 
@@ -572,7 +591,7 @@ export async function applyStatus(ev: StatusEvent): Promise<boolean> {
  */
 export async function listAssignableChatUsers(ctx: AuthContext) {
   if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin can reassign conversations')
-  const rows = await User.find({ active: true, role: { $in: ['TELECALLER', 'ADMIN'] } })
+  const rows = await User.find({ tenantId: ctx.tenantId, active: true, role: { $in: ['TELECALLER', 'ADMIN'] } })
     .select('name role')
     .sort({ role: -1, name: 1 })
     .lean()
@@ -581,6 +600,7 @@ export async function listAssignableChatUsers(ctx: AuthContext) {
 
 /** Outlet and user names for a page of threads, one query each. */
 export async function labelsFor(
+  ctx: AuthContext,
   rows: Pick<WaConversationDoc, 'restaurantId' | 'assignedTo'>[],
   extraUserIds: (mongoose.Types.ObjectId | null | undefined)[] = [],
 ) {
@@ -589,8 +609,8 @@ export async function labelsFor(
     (v): v is mongoose.Types.ObjectId => Boolean(v),
   )
   const [outlets, users] = await Promise.all([
-    rIds.length ? Restaurant.find({ _id: { $in: rIds } }).select('name').lean() : [],
-    uIds.length ? User.find({ _id: { $in: uIds } }).select('name').lean() : [],
+    rIds.length ? Restaurant.find({ _id: { $in: rIds }, tenantId: ctx.tenantId }).select('name').lean() : [],
+    uIds.length ? User.find({ _id: { $in: uIds }, tenantId: ctx.tenantId }).select('name').lean() : [],
   ])
   return {
     outletName: new Map(outlets.map((o) => [String(o._id), o.name])),

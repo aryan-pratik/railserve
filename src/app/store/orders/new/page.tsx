@@ -15,7 +15,9 @@ export default async function StoreNewOrderPage() {
   // Only the outlets this manager actually holds — the repository would refuse
   // anything else anyway, so offering it in the dropdown is just a dead end.
   const outlets = await Restaurant.find(
-    ctx.role === 'ADMIN' ? { active: true } : { _id: { $in: ctx.restaurantIds }, active: true },
+    ctx.role === 'ADMIN'
+      ? { tenantId: ctx.tenantId, active: true }
+      : { _id: { $in: ctx.restaurantIds }, tenantId: ctx.tenantId, active: true },
   )
     .select('name stationCode')
     .sort({ name: 1 })

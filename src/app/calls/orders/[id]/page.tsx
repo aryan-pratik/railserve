@@ -51,7 +51,7 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   const [timings, cancelRequest, riders, rto] = await Promise.all([
     timingForOrders([order], { allowFetch: false }),
     viewCancelRequest(order),
-    listAssignableRiders(order.restaurantId),
+    listAssignableRiders(ctx, order.restaurantId),
     viewReturn(order),
   ])
   // Both logs draw their authors from one query — $in dedupes server-side, so
@@ -65,7 +65,7 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   const actorIds = [...order.events.map((e) => e.userId), ...callLog.map((n) => n.userId)].filter(
     (v): v is NonNullable<typeof v> => Boolean(v),
   )
-  const actors = await User.find({ _id: { $in: actorIds } }).select('name role').lean()
+  const actors = await User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name role').lean()
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
   // Only the call log carries the role: both a telecaller and an admin write
   // there, and a manager reading a note cares which. The event log's actors
@@ -97,7 +97,7 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
       <BackLink href="/calls">Back to the call list</BackLink>
 
       <OrderCard
-        order={toCardData(order, await dietLookupFor([order]))}
+        order={toCardData(order, await dietLookupFor(ctx.tenantId, [order]))}
         href={`/calls/orders/${id}`}
         showServiceDate
         showMoney={false}

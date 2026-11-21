@@ -13,7 +13,7 @@ import {
 } from '../src/lib/riderLocation'
 import { issueMobileToken } from '../src/lib/mobile/token'
 import { POST as postLocation } from '../src/app/api/mobile/location/route'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 import type { LocationFix } from '../src/lib/riderLocation'
 import type { AuthContext } from '../src/lib/authContext'
 
@@ -88,10 +88,10 @@ describe('recording fixes from a phone', () => {
     riderId = rider._id
   })
 
-  const stored = () => RiderLocation.findOne({ userId: riderId }).lean()
+  const stored = () => RiderLocation.findOne({ tenantId: tenantId(), userId: riderId }).lean()
 
   it('creates the rider row on the first batch, trail and all', async () => {
-    await recordFixes(riderId, [fix(-30_000), fix(-20_000, { lat: 26.45 })])
+    await recordFixes(tenantId(), riderId, [fix(-30_000), fix(-20_000, { lat: 26.45 })])
     const row = await stored()
     expect(row?.lat).toBe(26.45)
     expect(row?.trail).toHaveLength(2)
@@ -102,7 +102,7 @@ describe('recording fixes from a phone', () => {
     const before = await stored()
     // The classic case: no signal in the station, then a dump of stale fixes
     // that arrive after a newer one already got through.
-    await recordFixes(riderId, [fix(-300_000, { lat: 1.111 }), fix(-290_000, { lat: 2.222 })])
+    await recordFixes(tenantId(), riderId, [fix(-300_000, { lat: 1.111 }), fix(-290_000, { lat: 2.222 })])
     const after = await stored()
     expect(after?.lat).toBe(before?.lat)
     expect(after?.recordedAt.getTime()).toBe(before?.recordedAt.getTime())
@@ -112,16 +112,16 @@ describe('recording fixes from a phone', () => {
 
   it('is safe to replay the same batch twice', async () => {
     const batch = [fix(-5_000, { lat: 26.4601 })]
-    await recordFixes(riderId, batch)
+    await recordFixes(tenantId(), riderId, batch)
     const once = await stored()
-    await recordFixes(riderId, batch)
+    await recordFixes(tenantId(), riderId, batch)
     const twice = await stored()
     expect(twice?.lat).toBe(26.4601)
     expect(twice?.trail).toHaveLength(once!.trail.length)
   })
 
   it('advances on a batch that is newer, in time order whatever order it arrives', async () => {
-    await recordFixes(riderId, [
+    await recordFixes(tenantId(), riderId, [
       fix(-1_000, { lat: 26.47 }),
       fix(-3_000, { lat: 26.46 }),
       fix(-2_000, { lat: 26.465 }),
@@ -135,16 +135,16 @@ describe('recording fixes from a phone', () => {
   it('clamps a fix from a phone whose clock runs fast, rather than wedging the row', async () => {
     // A future stamp stored as-is would make every later fix "older" and stick
     // the rider on the map forever.
-    const { storedAt } = await recordFixes(riderId, [fix(60 * 60_000, { lat: 26.48 })])
+    const { storedAt } = await recordFixes(tenantId(), riderId, [fix(60 * 60_000, { lat: 26.48 })])
     expect(storedAt!.getTime()).toBeLessThanOrEqual(Date.now() + 1_000)
 
-    await recordFixes(riderId, [fix(1_000, { lat: 26.49 })])
+    await recordFixes(tenantId(), riderId, [fix(1_000, { lat: 26.49 })])
     expect((await stored())?.lat).toBe(26.49)
   })
 
   it('drops yesterday’s walk and a failed fix at Null Island', async () => {
     const before = await stored()
-    const result = await recordFixes(riderId, [
+    const result = await recordFixes(tenantId(), riderId, [
       fix(-25 * 60 * 60_000, { lat: 26.5 }),
       fix(-1_000, { lat: 0, lng: 0 }),
     ])
@@ -156,7 +156,7 @@ describe('recording fixes from a phone', () => {
     const many = Array.from({ length: TRAIL_MAX_POINTS + 25 }, (_, i) =>
       fix(i * 100, { lat: 26.4 + i / 10_000 }),
     )
-    await recordFixes(riderId, many)
+    await recordFixes(tenantId(), riderId, many)
     const row = await stored()
     expect(row?.trail).toHaveLength(TRAIL_MAX_POINTS)
     // What survived is the newest end of the walk, not the oldest.
@@ -176,7 +176,7 @@ describe('the admin board', () => {
     sharing = (await makeUser('DELIVERY_AGENT', '9100000011', outlet._id))._id
     silent = (await makeUser('DELIVERY_AGENT', '9100000012', outlet._id))._id
 
-    await recordFixes(sharing, [fix(-4_000)])
+    await recordFixes(tenantId(), sharing, [fix(-4_000)])
 
     await makeOrder({
       serviceDate: '2026-09-27',
@@ -292,7 +292,7 @@ describe('the admin board', () => {
   it('still lists a rider switched off since, on the days they worked', async () => {
     const day = '2026-09-30'
     const gone = await makeUser('DELIVERY_AGENT', '9100000013')
-    await User.updateOne({ _id: gone._id }, { active: false })
+    await User.updateOne({ tenantId: tenantId(), _id: gone._id }, { active: false })
     await makeOrder({ serviceDate: day, status: 'DELIVERED', amountPaise: 15000, delivery: { agentIds: [gone._id] } })
 
     const board = await riderBoard(admin, { serviceDate: day })

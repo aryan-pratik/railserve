@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose'
 import { Payment } from '../../models'
 import { SlicePaymentParser } from './slice'
 import type { ParsedPayment, PaymentParser } from './types'
@@ -46,6 +47,7 @@ export type PaymentRecordResult =
  * is partial on strings and a stored null would collide with the next one.
  */
 export async function recordPayment(
+  tenantId: Types.ObjectId,
   parsed: ParsedPayment,
   rawPayload: unknown,
   gmailMessageId: string | null,
@@ -53,9 +55,9 @@ export async function recordPayment(
 ): Promise<PaymentRecordResult> {
   try {
     const res = await Payment.updateOne(
-      { rrn: parsed.rrn },
+      { tenantId, rrn: parsed.rrn },
       {
-        // rrn is deliberately absent — Mongo takes it from the equality
+        // rrn and tenantId are deliberately absent — Mongo takes them from the equality
         // filter on insert, and naming it here as well is a write conflict.
         $setOnInsert: {
           provider: parsed.provider,

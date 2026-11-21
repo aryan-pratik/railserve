@@ -3,6 +3,7 @@ import { env } from '@/lib/env'
 import { connectDb } from '@/lib/db'
 import { parseMsg91Webhook } from '@/lib/whatsapp/webhook'
 import { applyStatus, recordInbound } from '@/lib/repo/whatsappRepo'
+import { getPrimaryTenantId } from '@/lib/tenancy/primary'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,9 @@ export async function POST(request: Request) {
 
   try {
     await connectDb()
+    // The MSG91 number is configured by environment, so it is the primary
+    // tenant's, and so is every passenger who writes to it.
+    const tenantId = await getPrimaryTenantId()
     for (const raw of events) {
       const ev = parseMsg91Webhook(raw)
       if (!ev) {
@@ -53,11 +57,11 @@ export async function POST(request: Request) {
         continue
       }
       if (ev.type === 'inbound') {
-        const out = await recordInbound(ev)
+        const out = await recordInbound(tenantId, ev)
         if (out.duplicate) summary.duplicates += 1
         else summary.inbound += 1
       } else {
-        const applied = await applyStatus(ev)
+        const applied = await applyStatus(tenantId, ev)
         if (applied) summary.status += 1
         else summary.ignored += 1
       }

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
 import { User } from '../src/lib/models'
-import { makeRestaurant, makeUser, resetDb } from './fixtures'
+import { makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 // The session is the only thing faked: it carries what a stale cookie would —
 // the outlets and role frozen at login.
@@ -31,7 +31,7 @@ describe('session reflects the database, not the login cookie', () => {
     const manager = await makeUser('STORE_MANAGER', '9000000001', a._id)
     cookieFor(manager, 'STORE_MANAGER', [String(a._id)])
 
-    await User.updateOne({ _id: manager._id }, { restaurantIds: [a._id, b._id] })
+    await User.updateOne({ tenantId: tenantId(), _id: manager._id }, { restaurantIds: [a._id, b._id] })
 
     const ctx = await getAuthContext()
     expect(ctx?.restaurantIds.map(String)).toEqual([String(a._id), String(b._id)])
@@ -43,7 +43,7 @@ describe('session reflects the database, not the login cookie', () => {
     const manager = await makeUser('STORE_MANAGER', '9000000002', [a._id, b._id])
     cookieFor(manager, 'STORE_MANAGER', [String(a._id), String(b._id)])
 
-    await User.updateOne({ _id: manager._id }, { restaurantIds: [a._id] })
+    await User.updateOne({ tenantId: tenantId(), _id: manager._id }, { restaurantIds: [a._id] })
 
     expect((await getAuthContext())?.restaurantIds.map(String)).toEqual([String(a._id)])
   })
@@ -57,7 +57,7 @@ describe('session reflects the database, not the login cookie', () => {
   it('refuses a deactivated user and clears their cookie', async () => {
     const manager = await makeUser('STORE_MANAGER', '9000000004', null)
     cookieFor(manager, 'STORE_MANAGER', [])
-    await User.updateOne({ _id: manager._id }, { active: false })
+    await User.updateOne({ tenantId: tenantId(), _id: manager._id }, { active: false })
 
     expect(await getAuthContext()).toBeNull()
     await expect(requireAuth()).rejects.toThrow('REDIRECT:/api/session/reset')
@@ -66,7 +66,7 @@ describe('session reflects the database, not the login cookie', () => {
   it('refuses a deleted user and clears their cookie', async () => {
     const manager = await makeUser('STORE_MANAGER', '9000000005', null)
     cookieFor(manager, 'STORE_MANAGER', [])
-    await User.deleteOne({ _id: manager._id })
+    await User.deleteOne({ tenantId: tenantId(), _id: manager._id })
 
     await expect(requireAuth()).rejects.toThrow('REDIRECT:/api/session/reset')
   })

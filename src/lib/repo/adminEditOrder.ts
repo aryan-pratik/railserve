@@ -219,7 +219,7 @@ export async function adminEditOrder(
       // The unique index is the real guard (the catch below); this is the same
       // check made first, so a database built without it still refuses.
       const newId = changes.find(([d]) => d.key === 'externalOrderId')?.[1]
-      if (newId && (await Order.exists({ externalOrderId: newId, _id: { $ne: _id } }).session(session))) {
+      if (newId && (await Order.exists({ tenantId: ctx.tenantId, externalOrderId: newId, _id: { $ne: _id } }).session(session))) {
         throw new ConflictError('Another order already has that order id.')
       }
 
@@ -227,7 +227,7 @@ export async function adminEditOrder(
       if (changes.some(([d]) => d.kind === 'outlet')) {
         // Both ends: the outlet it moved from is named in the log as well.
         const outletLookups = current.restaurantId ? [...outletIds, current.restaurantId] : outletIds
-        const found = await Restaurant.find({ _id: { $in: outletLookups } }, 'name stationCode', { session }).lean()
+        const found = await Restaurant.find({ _id: { $in: outletLookups }, tenantId: ctx.tenantId }, 'name stationCode', { session }).lean()
         for (const r of found) outletNames.set(String(r._id), `${r.name} · ${r.stationCode}`)
         for (const id of outletIds) {
           if (!outletNames.has(String(id))) throw new FieldValidationError('That outlet no longer exists.')
@@ -249,7 +249,7 @@ export async function adminEditOrder(
       })
 
       const res = await Order.updateOne(
-        { _id, status: current.status },
+        { _id, tenantId: ctx.tenantId, status: current.status },
         { $set, $push: { events: { $each: events } } },
         { session, runValidators: true },
       )
@@ -262,7 +262,7 @@ export async function adminEditOrder(
     // A dish belongs to an aggregator's menu, so an order moved to another
     // aggregator may carry dishes that menu has never seen. After the commit,
     // and never failing the edit: see registerOrderMenu.
-    if (made.some((c) => c.field === 'source')) await registerOrderMenu(orderId)
+    if (made.some((c) => c.field === 'source')) await registerOrderMenu(ctx.tenantId, orderId)
     return made
   } catch (err) {
     if (isDuplicateKey(err)) throw new ConflictError('Another order already has that order id.')
@@ -338,7 +338,7 @@ export async function adminEditOrderItem(
     })
 
     const res = await Order.updateOne(
-      { _id, status: current.status, 'items._id': iid },
+      { _id, tenantId: ctx.tenantId, status: current.status, 'items._id': iid },
       { $set, $push: { events: { $each: events } } },
       { session, runValidators: true },
     )
@@ -347,7 +347,7 @@ export async function adminEditOrderItem(
   })
   // A renamed item is a dish the menu may not have. Registered now, so it is
   // on the Menu page (and gets its suggested tag) before the next KOT prints.
-  if (made.some((c) => MENU_FIELDS.has(c.field))) await registerOrderMenu(orderId)
+  if (made.some((c) => MENU_FIELDS.has(c.field))) await registerOrderMenu(ctx.tenantId, orderId)
   return made
 }
 
@@ -379,7 +379,7 @@ export async function adminAddOrderItem(
     const current = await Order.findOne(scoped(ctx, { _id }), 'status', { session }).lean<OrderDoc>()
     if (!current) throw new NotFoundError('Order not found')
     const res = await Order.updateOne(
-      { _id, status: current.status },
+      { _id, tenantId: ctx.tenantId, status: current.status },
       {
         $push: {
           items: { _id: itemId, ...doc },
@@ -395,7 +395,7 @@ export async function adminAddOrderItem(
     )
     if (res.matchedCount === 0) throw new ConflictError('This order changed underneath you. Reload and try again.')
   })
-  await registerOrderMenu(orderId)
+  await registerOrderMenu(ctx.tenantId, orderId)
 }
 
 export async function adminRemoveOrderItem(ctx: AuthContext, orderId: string, itemId: string): Promise<void> {
@@ -413,7 +413,7 @@ export async function adminRemoveOrderItem(ctx: AuthContext, orderId: string, it
     if (!item) throw new NotFoundError('Item not found')
 
     const res = await Order.updateOne(
-      { _id, status: current.status, 'items._id': iid },
+      { _id, tenantId: ctx.tenantId, status: current.status, 'items._id': iid },
       {
         $pull: { items: { _id: iid } },
         $push: {

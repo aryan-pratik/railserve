@@ -8,13 +8,15 @@ import { createManualOrder } from '../src/lib/repo/createOrder'
 import { ManualOrderInput } from '../src/lib/validation/order'
 import { todayIST, shiftServiceDate, utcToIstLocal } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
+import { scriptTenant } from './scriptTenant'
 
 async function main() {
   await connectDb()
+  const T = await scriptTenant()
 
   const admin = await User.findOne({ role: 'ADMIN' })
   if (!admin) throw new Error('No admin user. Run `npm run seed` first.')
-  const ctx: AuthContext = { userId: admin._id, role: 'ADMIN', restaurantIds: [] }
+  const ctx: AuthContext = { tenantId: T, userId: admin._id, role: 'ADMIN', restaurantIds: [] }
 
   const ganga = await Restaurant.findOne({ name: 'HOTEL GANGA GALAXY' })
   const annapurna = await Restaurant.findOne({ name: 'SHREE ANNAPURNA BHOJNALAYA' })

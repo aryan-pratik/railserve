@@ -24,8 +24,8 @@ export type PaymentQuery = {
 }
 
 /** Everything except the free-text search, which several callers apply separately. */
-function buildFilter({ from, to, q }: PaymentQuery): QueryFilter<PaymentDoc> {
-  const filter: QueryFilter<PaymentDoc> = {}
+function buildFilter(ctx: AuthContext, { from, to, q }: PaymentQuery): QueryFilter<PaymentDoc> {
+  const filter: QueryFilter<PaymentDoc> = { tenantId: ctx.tenantId }
 
   if (from || to) {
     const range: Record<string, string> = {}
@@ -48,9 +48,9 @@ function buildFilter({ from, to, q }: PaymentQuery): QueryFilter<PaymentDoc> {
   return filter
 }
 
-export async function findPayments(query: PaymentQuery = {}, limit = 500, skip = 0) {
+export async function findPayments(ctx: AuthContext, query: PaymentQuery = {}, limit = 500, skip = 0) {
   await connectDb()
-  return Payment.find(buildFilter(query))
+  return Payment.find(buildFilter(ctx, query))
     // Newest first, and `receivedAt` breaks the tie — several credits share a
     // transactionDate, and the alert's own date carries no time of day.
     .sort({ transactionDate: -1, receivedAt: -1 })
@@ -62,10 +62,10 @@ export async function findPayments(query: PaymentQuery = {}, limit = 500, skip =
 export type PaymentTotals = { count: number; totalPaise: number }
 
 /** Count and sum for the filtered range — what the summary card reports. */
-export async function paymentTotals(query: PaymentQuery = {}): Promise<PaymentTotals> {
+export async function paymentTotals(ctx: AuthContext, query: PaymentQuery = {}): Promise<PaymentTotals> {
   await connectDb()
   const [row] = await Payment.aggregate<{ count: number; totalPaise: number }>([
-    { $match: buildFilter(query) },
+    { $match: buildFilter(ctx, query) },
     { $group: { _id: null, count: { $sum: 1 }, totalPaise: { $sum: '$amountPaise' } } },
   ])
   return { count: row?.count ?? 0, totalPaise: row?.totalPaise ?? 0 }
@@ -74,20 +74,21 @@ export async function paymentTotals(query: PaymentQuery = {}): Promise<PaymentTo
 /**
  * A cheap fingerprint of the collection, for the live stream to poll.
  *
- * Deliberately two index-only reads rather than a real query: the newest _id
- * (ObjectIds are monotonic, and _id is always indexed) plus a count taken from
- * collection metadata rather than by scanning. This runs every few seconds per
- * open tab, so it has to cost close to nothing.
+ * Deliberately two index-only reads rather than a real query: the tenant's
+ * newest _id (ObjectIds are monotonic) plus a count over the tenantId index.
+ * The collection-metadata count it used to take is every tenant's payments,
+ * so another tenant's credit would wake this tenant's tabs. This runs every
+ * few seconds per open tab, so it has to cost close to nothing.
  *
  * Catches an arriving payment, which is the thing anyone is waiting on. A
  * remark edited by someone else does not move it — the editor's own action
  * revalidates their page, and a second viewer picks it up on their next load.
  */
-export async function paymentsSignature(): Promise<string> {
+export async function paymentsSignature(ctx: AuthContext): Promise<string> {
   await connectDb()
   const [newest, count] = await Promise.all([
-    Payment.findOne().sort({ _id: -1 }).select('_id').lean(),
-    Payment.estimatedDocumentCount(),
+    Payment.findOne({ tenantId: ctx.tenantId }).sort({ _id: -1 }).select('_id').lean(),
+    Payment.countDocuments({ tenantId: ctx.tenantId }),
   ])
   return `${newest ? String(newest._id) : 'none'}:${count}`
 }
@@ -109,7 +110,7 @@ export async function latestBalance(ctx: AuthContext): Promise<BalanceReading> {
   if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin may view the account balance.')
 
   await connectDb()
-  const row = await Payment.findOne({ availableBalancePaise: { $ne: null } })
+  const row = await Payment.findOne({ tenantId: ctx.tenantId, availableBalancePaise: { $ne: null } })
     .sort({ transactionDate: -1, receivedAt: -1 })
     .select('availableBalancePaise receivedAt')
     .lean()
@@ -137,7 +138,7 @@ export async function setPaymentRemark(
 
   await connectDb()
   const res = await Payment.updateOne(
-    { _id: paymentId },
+    { _id: paymentId, tenantId: ctx.tenantId },
     { $set: { remark, remarkById: ctx.userId, remarkAt: new Date() } },
   )
   if (res.matchedCount === 0) throw new NotFoundError('That payment no longer exists.')

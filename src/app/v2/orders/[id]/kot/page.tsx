@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { findById } from '@/lib/repo/orderRepo'
 import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { connectDb } from '@/lib/db'
@@ -22,7 +22,7 @@ const PRINTED = new Set(['KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'DELIVERED', '
  * the printer again without touching the status.
  */
 export default async function OrderKotPreview(props: PageProps<'/v2/orders/[id]/kot'>) {
-  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const ctx = await requirePermission('kitchen.operate')
   const { id } = await props.params
 
   const order = await findById(ctx, id)
@@ -30,8 +30,8 @@ export default async function OrderKotPreview(props: PageProps<'/v2/orders/[id]/
 
   await connectDb()
   const [outlet, lookup] = await Promise.all([
-    order.restaurantId ? Restaurant.findById(order.restaurantId).select('name stationName').lean() : Promise.resolve(null),
-    dietLookupFor([order]),
+    order.restaurantId ? Restaurant.findOne({ _id: order.restaurantId, tenantId: ctx.tenantId }).select('name stationName').lean() : Promise.resolve(null),
+    dietLookupFor(ctx.tenantId, [order]),
   ])
 
   return (

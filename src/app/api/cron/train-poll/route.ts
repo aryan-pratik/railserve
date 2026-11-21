@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { runTrainPollingTick, pruneOldTrainStatuses } from '@/lib/queue/trainPolling'
+import { runTrainPollingTick, pruneOldTrainStatuses, type PollSummary } from '@/lib/queue/trainPolling'
 import { cronAuthFailure } from '@/lib/cronAuth'
+import { connectDb } from '@/lib/db'
+import { Tenant } from '@/lib/models'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +22,9 @@ export const dynamic = 'force-dynamic'
  *
  * Protected by CRON_TOKEN when one is set. It is a cheap endpoint, but it does
  * hit the upstream train API, so it should not be free for anyone to spin.
+ *
+ * One tick covers every active tenant's trains, one tenant at a time, and
+ * reports the sum.
  */
 async function handle(request: Request) {
   const failure = cronAuthFailure(request)
@@ -28,7 +33,18 @@ async function handle(request: Request) {
   const prune = new URL(request.url).searchParams.get('prune') === '1'
 
   try {
-    const summary = await runTrainPollingTick()
+    await connectDb()
+    const tenants = await Tenant.find({ status: 'ACTIVE' }).select('_id').lean()
+    const now = new Date()
+    const summary: PollSummary = { trainsConsidered: 0, refreshed: 0, skippedFresh: 0, failures: 0, leaveNowFired: [] }
+    for (const t of tenants) {
+      const s = await runTrainPollingTick(t._id, now)
+      summary.trainsConsidered += s.trainsConsidered
+      summary.refreshed += s.refreshed
+      summary.skippedFresh += s.skippedFresh
+      summary.failures += s.failures
+      summary.leaveNowFired.push(...s.leaveNowFired)
+    }
     const removed = prune ? await pruneOldTrainStatuses() : null
 
     return NextResponse.json({

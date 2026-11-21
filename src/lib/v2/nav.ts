@@ -1,5 +1,6 @@
 import type { Role } from '@/lib/roles'
 import type { V2NavSection } from '@/components/v2/SidebarNav'
+import type { Permission } from '@/lib/permissions'
 
 /** Where each role lands in v2. */
 export const V2_HOME: Record<Role, string> = {
@@ -77,4 +78,31 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
     case 'DELIVERY_AGENT':
       return [{ label: 'Rider', items: [{ href: '/agent', label: 'My runs', icon: 'riders' }] }]
   }
+}
+
+/** The permission each section needs; a link the caller cannot use is not shown. */
+const NAV_PERMISSION: [prefix: string, permission: Permission][] = [
+  ['/v2/orders', 'orders.view'],
+  ['/v2/kitchen', 'kitchen.operate'],
+  ['/v2/riders', 'riders.manage'],
+  ['/v2/chat', 'chat.use'],
+  ['/v2/calls', 'calls.operate'],
+  ['/v2/inbox', 'inbox.review'],
+  ['/v2/payments', 'payments.view'],
+  ['/v2/menu', 'menu.manage'],
+  ['/v2/analytics', 'analytics.view'],
+  ['/v2/activity', 'activity.view'],
+]
+
+/** Drops the links whose section the caller's permissions do not open. */
+export function filterNav(sections: V2NavSection[], perms: Set<Permission>): V2NavSection[] {
+  return sections
+    .map((sec) => ({
+      ...sec,
+      items: sec.items.filter((item) => {
+        const rule = NAV_PERMISSION.find(([prefix]) => item.href.startsWith(prefix))
+        return !rule || perms.has(rule[1])
+      }),
+    }))
+    .filter((sec) => sec.items.length > 0)
 }

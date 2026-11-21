@@ -37,7 +37,7 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
   await connectDb()
   // The same search as the admin's All orders: id, passenger, phone, train,
   // seat, aggregator, outlet, rider. Still inside this caller's scope.
-  const search = await orderSearchClause(q)
+  const search = await orderSearchClause(ctx, q)
   andClause(filter, search)
   const multiOutlet = ctx.restaurantIds.length > 1 || ctx.role === 'ADMIN'
   // Paged, not capped: findMany used to stop at its default 200 silently, and
@@ -45,10 +45,10 @@ export default async function StoreHistoryPage(props: PageProps<'/store/history'
   const [orders, total, outlets, riders] = await Promise.all([
     findMany(ctx, filter, { sort: { serviceDate: -1, createdAt: -1 }, limit: pageSize, skip }),
     countOrders(ctx, filter),
-    multiOutlet ? Restaurant.find({}).select('name').lean() : Promise.resolve([]),
+    multiOutlet ? Restaurant.find({ tenantId: ctx.tenantId }).select('name').lean() : Promise.resolve([]),
     riderOptions(ctx),
   ])
-  const riderName = await riderNamesFor(orders)
+  const riderName = await riderNamesFor(ctx, orders)
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
   return (

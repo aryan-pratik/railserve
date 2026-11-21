@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { addMenuItem as addMenuItemV1, type MenuState } from '@/app/admin/menu/actions'
 
 /*
@@ -18,6 +18,6 @@ export async function addMenuItem(prev: MenuState, formData: FormData): Promise<
 
 /** Drops the cached v2 Menu page, for a Back after tags saved but not re-read. */
 export async function forgetMenuPage(): Promise<void> {
-  await requireRole('ADMIN')
+  await requirePermission('menu.manage')
   revalidatePath('/v2/menu')
 }

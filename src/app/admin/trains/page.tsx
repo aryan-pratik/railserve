@@ -16,10 +16,10 @@ export const metadata = { title: 'Train status · RailServe' }
  * against the train API plan.
  */
 export default async function TrainStatusPage() {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
 
   await connectDb()
-  const outlets = await Restaurant.find({ active: true }).select('stationCode').lean()
+  const outlets = await Restaurant.find({ tenantId: ctx.tenantId, active: true }).select('stationCode').lean()
   const stations = [...new Set(outlets.map((o) => o.stationCode.toUpperCase()))].sort()
 
   return (

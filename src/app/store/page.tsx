@@ -99,6 +99,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     countOrders(ctx, yesterdayBoardFilter(now, statusFilter?.statuses)),
     countOrders(ctx, { serviceDate: { $gt: today }, ...(picked ?? live) }),
     User.find({
+      tenantId: ctx.tenantId,
       role: 'DELIVERY_AGENT',
       active: true,
       ...(ctx.role === 'STORE_MANAGER' ? { restaurantIds: { $in: ctx.restaurantIds } } : {}),
@@ -123,7 +124,7 @@ export default async function StoreBoardPage(props: PageProps<'/store'>) {
     boardQuery ? `/store/orders/${id}?back=${encodeURIComponent(boardQuery)}` : `/store/orders/${id}`
   const allOrders = runs.flatMap((r) => r.orders)
 
-  const diets = await orderDietsFor(allOrders)
+  const diets = await orderDietsFor(ctx.tenantId, allOrders)
 
   const cards = runs.map((run) => {
     const orders: RunTableOrder[] = run.orders.map((o) => ({

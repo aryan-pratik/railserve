@@ -128,7 +128,7 @@ export async function loadRunBoard(
     trainFeedHealth(),
     // Outlet names only matter to someone who holds more than one.
     multiOutlet
-      ? Restaurant.find({ _id: { $in: ctx.restaurantIds } }).select('name').lean()
+      ? Restaurant.find({ _id: { $in: ctx.restaurantIds }, tenantId: ctx.tenantId }).select('name').lean()
       : Promise.resolve([]),
   ])
 

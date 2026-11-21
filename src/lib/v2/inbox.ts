@@ -1,3 +1,4 @@
+import type { AuthContext } from '@/lib/authContext'
 import { UnparsedInbox, User } from '@/lib/models'
 import { connectDb } from '@/lib/db'
 import { formatIST } from '@/lib/format'
@@ -16,21 +17,22 @@ export { REASON_SHORT, resolutionLabel } from './inboxShared'
 export type { InboxRow } from './inboxShared'
 import type { InboxRow } from './inboxShared'
 
-export async function loadInboxPage(filter: InboxFilter, paging: { skip: number; pageSize: number }) {
+export async function loadInboxPage(ctx: AuthContext, filter: InboxFilter, paging: { skip: number; pageSize: number }) {
   await connectDb()
-  const query = inboxQuery(filter)
+  const tenantId = ctx.tenantId
+  const query = { ...inboxQuery(filter), tenantId }
   const [rows, total, openCount, reasonCounts, sources, senders] = await Promise.all([
     UnparsedInbox.find(query).sort({ createdAt: -1 }).skip(paging.skip).limit(paging.pageSize).lean(),
     UnparsedInbox.countDocuments(query),
-    UnparsedInbox.countDocuments({ resolved: false }),
+    UnparsedInbox.countDocuments({ tenantId, resolved: false }),
     // Per reason under every other filter: a chip says what clicking it leaves.
     UnparsedInbox.aggregate<{ _id: string; n: number }>([
-      { $match: inboxQuery(filter, 'reason') },
+      { $match: { ...inboxQuery(filter, 'reason'), tenantId } },
       { $group: { _id: '$reason', n: { $sum: 1 } } },
     ]),
-    UnparsedInbox.distinct('source', { resolved: filter.resolved }),
+    UnparsedInbox.distinct('source', { tenantId, resolved: filter.resolved }),
     UnparsedInbox.aggregate<{ _id: string | null; n: number }>([
-      { $match: { resolved: filter.resolved } },
+      { $match: { tenantId, resolved: filter.resolved } },
       { $group: { _id: '$rawPayload.from', n: { $sum: 1 } } },
       { $sort: { n: -1 } },
       { $limit: 200 },
@@ -39,7 +41,7 @@ export async function loadInboxPage(filter: InboxFilter, paging: { skip: number;
 
   const resolverIds = [...new Set(rows.map((r) => r.resolvedById).filter(Boolean).map(String))]
   const resolvers = resolverIds.length
-    ? new Map((await User.find({ _id: { $in: resolverIds } }).select('name').lean()).map((u) => [String(u._id), u.name]))
+    ? new Map((await User.find({ _id: { $in: resolverIds }, tenantId }).select('name').lean()).map((u) => [String(u._id), u.name]))
     : new Map<string, string>()
 
   const view: InboxRow[] = rows.map((row) => {

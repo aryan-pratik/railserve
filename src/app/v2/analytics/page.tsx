@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowUpRight, Download } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { findMany } from '@/lib/repo/orderRepo'
 import { analyticsMatch, codSummary, countOrdersBy, countOverdueOpen } from '@/lib/repo/analyticsRepo'
@@ -36,7 +36,7 @@ const PAYMENT_LABEL: Record<string, string> = { COD: 'Cash on delivery', PREPAID
  * figure reads the filters in the URL, and so does the export.
  */
 export default async function V2AnalyticsPage(props: PageProps<'/v2/analytics'>) {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('analytics.view')
   const sp = await props.searchParams
   let f = readV2AnalyticsFilters(sp)
 
@@ -73,7 +73,7 @@ export default async function V2AnalyticsPage(props: PageProps<'/v2/analytics'>)
 
   const page = Math.min(rawPage, Math.max(1, Math.ceil(inView.total / pageSize)))
   const orders = showOrders ? await findMany(ctx, match, { sort: { serviceDate: -1, createdAt: -1 }, limit: pageSize, skip: (page - 1) * pageSize }) : []
-  const riderName = await riderNamesFor(orders)
+  const riderName = await riderNamesFor(ctx, orders)
 
   const outletName = new Map(options.outlets.map((o) => [o.id, `${o.name} · ${o.stationCode}`]))
   const stationName = new Map(options.stations.map((s) => [s.code, s.name]))

@@ -23,13 +23,14 @@ export async function GET(request: Request) {
   if (q.length < 2) return Response.json({ orders: [], runs: [], riders: [] }, { headers: { 'Cache-Control': 'no-store' } })
 
   await connectDb()
-  const clause = await orderSearchClause(q)
+  const clause = await orderSearchClause(ctx, q)
   const rx = { $regex: escapeRegExp(q), $options: 'i' }
   const [orders, riderDocs] = await Promise.all([
     clause ? findMany(ctx, clause, { sort: { createdAt: -1 }, limit: 8 }) : Promise.resolve([]),
     ctx.role === 'TELECALLER'
       ? Promise.resolve([])
       : User.find({
+          tenantId: ctx.tenantId,
           role: 'DELIVERY_AGENT',
           name: rx,
           ...(ctx.role === 'ADMIN' ? {} : { restaurantIds: { $in: ctx.restaurantIds } }),

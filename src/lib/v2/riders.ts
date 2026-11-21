@@ -53,11 +53,11 @@ const NO_WORK: RiderView['work'] = {
   duePaise: 0, dueOrders: 0, earlierDuePaise: 0, earlierDueOrders: 0, stations: [],
 }
 
-/** Who a store manager may see: riders at their outlets. An admin sees everyone. */
+/** Who a store manager may see: riders at their outlets. An admin sees everyone in the tenant. */
 function riderScope(ctx: AuthContext) {
   return ctx.role === 'ADMIN'
-    ? { role: 'DELIVERY_AGENT' as const }
-    : { role: 'DELIVERY_AGENT' as const, restaurantIds: { $in: ctx.restaurantIds } }
+    ? { tenantId: ctx.tenantId, role: 'DELIVERY_AGENT' as const }
+    : { tenantId: ctx.tenantId, role: 'DELIVERY_AGENT' as const, restaurantIds: { $in: ctx.restaurantIds } }
 }
 
 /**
@@ -76,7 +76,7 @@ export async function loadRiderRoster(ctx: AuthContext, opts: { serviceDate?: st
   const [board, accounts, outletDocs] = await Promise.all([
     riderBoard(ctx, { serviceDate, now }),
     User.find(riderScope(ctx)).select('name phone active restaurantIds isTeamLead teamLeadId canReceiveCash').sort({ name: 1 }).lean(),
-    Restaurant.find({}).select('name stationCode').lean(),
+    Restaurant.find({ tenantId: ctx.tenantId }).select('name stationCode').lean(),
   ])
   const outletLabel = new Map(outletDocs.map((o) => [String(o._id), `${o.name} · ${o.stationCode}`]))
   const byId = new Map(board.riders.map((r) => [r.id, r]))
@@ -89,14 +89,14 @@ export async function loadRiderRoster(ctx: AuthContext, opts: { serviceDate?: st
     return w.carrying > 0 || w.done > 0 || w.booked > 0 || w.duePaise > 0 || w.earlierDuePaise > 0
   })
   const outsiderAccounts = outsiders.length
-    ? await User.find({ _id: { $in: outsiders.map((r) => r.id) } }).select('name phone active restaurantIds isTeamLead teamLeadId canReceiveCash').lean()
+    ? await User.find({ _id: { $in: outsiders.map((r) => r.id) }, tenantId: ctx.tenantId }).select('name phone active restaurantIds isTeamLead teamLeadId canReceiveCash').lean()
     : []
   const everyone = [...accounts, ...outsiderAccounts]
   const ids = everyone.map((a) => a._id)
   const leadName = new Map(everyone.filter((a) => a.isTeamLead).map((a) => [String(a._id), a.name]))
 
   const [due, last] = await Promise.all([pendingCashOrders(ctx, ids), collectionHistory(ctx, ids, { latestPerRider: true })])
-  const receivers = await receiversOf(last)
+  const receivers = await receiversOf(ctx, last)
   const lastOf = new Map(last.map((c) => [c.riderId, c]))
 
   const riders: RosterRider[] = everyone.map((a) => {
@@ -146,7 +146,7 @@ export async function loadRiderRoster(ctx: AuthContext, opts: { serviceDate?: st
 /** Whether the signed-in person may take cash from riders, read off their record as it is now. */
 export async function loadCashReceiver(ctx: AuthContext): Promise<boolean> {
   await connectDb()
-  const me = await User.findById(ctx.userId).select('role isTeamLead canReceiveCash').lean()
+  const me = await User.findOne({ _id: ctx.userId, tenantId: ctx.tenantId }).select('role isTeamLead canReceiveCash').lean()
   return canReceiveCash({ role: ctx.role, canReceiveCash: me?.canReceiveCash, isTeamLead: me?.isTeamLead })
 }
 
@@ -155,7 +155,9 @@ export type OutletChoice = { id: string; label: string; station: string }
 /** The outlets a rider may be attached to from here: the caller's own, or all for an admin. */
 export async function loadOutletChoices(ctx: AuthContext): Promise<OutletChoice[]> {
   await connectDb()
-  const filter = ctx.role === 'ADMIN' ? { active: true } : { _id: { $in: ctx.restaurantIds } }
+  const filter = ctx.role === 'ADMIN'
+    ? { tenantId: ctx.tenantId, active: true }
+    : { tenantId: ctx.tenantId, _id: { $in: ctx.restaurantIds } }
   const outlets = await Restaurant.find(filter).select('name stationCode').sort({ stationCode: 1, name: 1 }).lean()
   return outlets.map((o) => ({ id: String(o._id), label: `${o.name} · ${o.stationCode}`, station: o.stationCode }))
 }
@@ -164,7 +166,7 @@ export async function loadOutletChoices(ctx: AuthContext): Promise<OutletChoice[
 export async function loadTeamLeads(ctx: AuthContext): Promise<{ id: string; name: string }[]> {
   if (ctx.role !== 'ADMIN') return []
   await connectDb()
-  const leads = await User.find({ role: 'DELIVERY_AGENT', isTeamLead: true, active: true }).select('name').sort({ name: 1 }).lean()
+  const leads = await User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: true, active: true }).select('name').sort({ name: 1 }).lean()
   return leads.map((l) => ({ id: String(l._id), name: l.name }))
 }
 

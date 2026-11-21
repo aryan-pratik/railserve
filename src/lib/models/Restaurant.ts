@@ -1,8 +1,11 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 const RestaurantSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     name: { type: String, required: true, trim: true },
     stationCode: { type: String, required: true, uppercase: true, trim: true },
     stationName: { type: String, default: null, trim: true },
@@ -31,6 +34,9 @@ const RestaurantSchema = new Schema(
 )
 
 export type RestaurantDoc = InferSchemaType<typeof RestaurantSchema> & { _id: mongoose.Types.ObjectId }
+
+// Every Restaurant belongs to one tenant; the guard refuses unscoped queries.
+RestaurantSchema.plugin(tenantScoped)
 
 export const Restaurant: Model<RestaurantDoc> =
   registerModel<RestaurantDoc>('Restaurant', RestaurantSchema)

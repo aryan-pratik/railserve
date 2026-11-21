@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { tenantId } from './fixtures'
 
 /**
  * Printing is routed by station, not by outlet. A Restaurant is an aggregator
@@ -44,7 +45,7 @@ const {
 const { GET: pollForJob } = await import('../src/app/api/print-agent/poll/route')
 
 /** Jobs in the order an agent claims them, matching the poll route's sort. */
-const jobsInPrintOrder = () => PrintJob.find({}).sort({ createdAt: 1, _id: 1 })
+const jobsInPrintOrder = () => PrintJob.find({ tenantId: tenantId() }).sort({ createdAt: 1, _id: 1 })
 const { PrintJob, Station } = await import('../src/lib/models')
 const { resetDb, makeRestaurant, makeStation } = await import('./fixtures')
 
@@ -62,9 +63,9 @@ describe('enqueueRunKotPrint', () => {
     // The whole point of the station migration. Under the old per-outlet
     // fan-out this needed three agents on one printer.
     const orderIds = ['aaaaaaaaaaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaaaaaaaaaa2', 'aaaaaaaaaaaaaaaaaaaaaaa3']
-    await enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds })
+    await enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds })
 
-    const jobs = await PrintJob.find({})
+    const jobs = await PrintJob.find({ tenantId: tenantId() })
     expect(jobs).toHaveLength(6)
     for (const job of jobs) {
       expect(job.stationCode).toBe('CNB')
@@ -78,7 +79,7 @@ describe('enqueueRunKotPrint', () => {
     // One job holding the whole train came out of the printer as one uncut
     // strip. One ticket per job prints the way a single order always has.
     const orderIds = ['aaaaaaaaaaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaaaaaaaaaa2']
-    await enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds })
+    await enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds })
 
     const jobs = await jobsInPrintOrder()
     expect(jobs.map((j) => j.images.length)).toEqual([1, 1, 1, 1])
@@ -94,7 +95,7 @@ describe('enqueueRunKotPrint', () => {
     // The internal render page runs under an ADMIN-shaped context that
     // bypasses outlet scoping, so without this the run would print every
     // brand's tickets to a manager who holds one of them.
-    await enqueueRunKotPrint({
+    await enqueueRunKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       runKey: '12487~2026-09-19~CNB',
       orderIds: ['aaaaaaaaaaaaaaaaaaaaaaa1'],
@@ -102,23 +103,23 @@ describe('enqueueRunKotPrint', () => {
 
     const url = new URL(renderKotScreenshots.mock.calls[0][0])
     expect(url.searchParams.get('orders')).toBe('aaaaaaaaaaaaaaaaaaaaaaa1')
-    expect(await PrintJob.countDocuments({})).toBe(2)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId() })).toBe(2)
   })
 
   it('takes the station from the run key', async () => {
-    await enqueueRunKotPrint({
+    await enqueueRunKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       runKey: '12487~2026-09-19~PRYJ',
       orderIds: ['aaaaaaaaaaaaaaaaaaaaaaa1'],
     })
-    expect((await PrintJob.findOne({}))!.stationCode).toBe('PRYJ')
+    expect((await PrintJob.findOne({ tenantId: tenantId() }))!.stationCode).toBe('PRYJ')
   })
 
   it('refuses a malformed run key rather than queueing a job with no station', async () => {
     await expect(
-      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: 'nonsense', orderIds: ['a'] }),
+      enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: 'nonsense', orderIds: ['a'] }),
     ).rejects.toThrow(/Malformed run key/)
-    expect(await PrintJob.countDocuments({})).toBe(0)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('throws when the render is missing an order that was asked for', async () => {
@@ -127,9 +128,9 @@ describe('enqueueRunKotPrint', () => {
       { image: Buffer.from('b'), orderId: 'a' },
     ])
     await expect(
-      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a', 'b'] }),
+      enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a', 'b'] }),
     ).rejects.toThrow(/Rendered tickets for 1 order\(s\) but 2 were asked for; missing b/)
-    expect(await PrintJob.countDocuments({})).toBe(0)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('throws when the render carries an order nobody asked for', async () => {
@@ -140,9 +141,9 @@ describe('enqueueRunKotPrint', () => {
       { image: Buffer.from('d'), orderId: 'z' },
     ])
     await expect(
-      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
+      enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
     ).rejects.toThrow(/not asked for z/)
-    expect(await PrintJob.countDocuments({})).toBe(0)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('accepts four tickets for an order that splits into veg and non-veg', async () => {
@@ -151,7 +152,7 @@ describe('enqueueRunKotPrint', () => {
     renderKotScreenshots.mockResolvedValueOnce(
       ['kot-veg', 'slip-veg', 'kot-nonveg', 'slip-nonveg'].map((t) => ({ image: Buffer.from(t), orderId: 'a' })),
     )
-    await enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] })
+    await enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] })
     expect((await jobsInPrintOrder()).map((j) => j.images.map(String))).toEqual([
       ['kot-veg'], ['slip-veg'], ['kot-nonveg'], ['slip-nonveg'],
     ])
@@ -162,9 +163,9 @@ describe('enqueueRunKotPrint', () => {
       ['1', '2', '3'].map((t) => ({ image: Buffer.from(t), orderId: 'a' })),
     )
     await expect(
-      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
+      enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
     ).rejects.toThrow(/Rendered 3 ticket\(s\) for order a; expected 2 or 4/)
-    expect(await PrintJob.countDocuments({})).toBe(0)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('throws on a ticket that does not name its order', async () => {
@@ -173,14 +174,14 @@ describe('enqueueRunKotPrint', () => {
       { image: Buffer.from('b'), orderId: null },
     ])
     await expect(
-      enqueueRunKotPrint({ appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
+      enqueueRunKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, runKey: '12487~2026-09-19~CNB', orderIds: ['a'] }),
     ).rejects.toThrow(/does not say which order/)
   })
 })
 
 describe('enqueueOrderKotPrint', () => {
   it('prints the KOT and then the bag slip, each as its own job', async () => {
-    await enqueueOrderKotPrint({
+    await enqueueOrderKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       stationCode: 'CNB',
       orderId: 'aaaaaaaaaaaaaaaaaaaaaaa1',
@@ -193,14 +194,14 @@ describe('enqueueOrderKotPrint', () => {
 
   it('routes by station and keeps the outlet as provenance', async () => {
     const outlet = await makeRestaurant('YATRI BHOJAN', 'CNB')
-    await enqueueOrderKotPrint({
+    await enqueueOrderKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       stationCode: 'CNB',
       restaurantId: outlet._id,
       orderId: 'aaaaaaaaaaaaaaaaaaaaaaa1',
     })
 
-    const job = (await PrintJob.findOne({}))!
+    const job = (await PrintJob.findOne({ tenantId: tenantId() }))!
     expect(job.stationCode).toBe('CNB')
     expect(String(job.restaurantId)).toBe(String(outlet._id))
   })
@@ -208,22 +209,22 @@ describe('enqueueOrderKotPrint', () => {
   it('prints an order whose outlet matching failed', async () => {
     // Order.restaurantId is nullable but stationCode is required, so an
     // unmatched order was unprintable before and is not now.
-    await enqueueOrderKotPrint({
+    await enqueueOrderKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       stationCode: 'CNB',
       restaurantId: null,
       orderId: 'aaaaaaaaaaaaaaaaaaaaaaa1',
     })
-    expect((await PrintJob.findOne({}))!.stationCode).toBe('CNB')
+    expect((await PrintJob.findOne({ tenantId: tenantId() }))!.stationCode).toBe('CNB')
   })
 
   it('normalises a lowercase station code so it cannot miss its station', async () => {
-    await enqueueOrderKotPrint({
+    await enqueueOrderKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       stationCode: 'cnb',
       orderId: 'aaaaaaaaaaaaaaaaaaaaaaa1',
     })
-    expect((await PrintJob.findOne({}))!.stationCode).toBe('CNB')
+    expect((await PrintJob.findOne({ tenantId: tenantId() }))!.stationCode).toBe('CNB')
   })
 })
 
@@ -235,7 +236,7 @@ describe('enqueueOrderKotPrint', () => {
  */
 describe('direct printing', () => {
   const orderJob = () =>
-    enqueueOrderKotPrint({
+    enqueueOrderKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       stationCode: 'CNB',
       restaurantId: null,
@@ -247,7 +248,7 @@ describe('direct printing', () => {
     await orderJob()
 
     expect(printImagesDirect).not.toHaveBeenCalled()
-    const job = (await PrintJob.findOne({}))!
+    const job = (await PrintJob.findOne({ tenantId: tenantId() }))!
     expect(job.status).toBe('pending')
     expect(job.error ?? null).toBeNull()
   })
@@ -255,7 +256,7 @@ describe('direct printing', () => {
   it('does the same for a station nobody has registered at all', async () => {
     await orderJob()
     expect(printImagesDirect).not.toHaveBeenCalled()
-    expect((await PrintJob.findOne({}))!.status).toBe('pending')
+    expect((await PrintJob.findOne({ tenantId: tenantId() }))!.status).toBe('pending')
   })
 
   it('delivers at enqueue time for a direct station, and marks the jobs done', async () => {
@@ -268,12 +269,12 @@ describe('direct printing', () => {
     expect(host).toBe('203.0.113.7')
     expect(port).toBe(9200)
 
-    for (const job of await PrintJob.find({})) {
+    for (const job of await PrintJob.find({ tenantId: tenantId() })) {
       expect(job.status).toBe('done')
       expect(job.doneAt).toBeInstanceOf(Date)
     }
     // The station's own "last printed" clock, which the setup screen reads.
-    expect((await Station.findById('CNB'))!.agentLastPrintedAt).toBeInstanceOf(Date)
+    expect((await Station.findOne({ _id: 'CNB', tenantId: tenantId() }))!.agentLastPrintedAt).toBeInstanceOf(Date)
   })
 
   it('falls back to 9100 when the station names no port', async () => {
@@ -284,7 +285,7 @@ describe('direct printing', () => {
 
   it('sends a whole run one ticket at a time, in order', async () => {
     await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
-    await enqueueRunKotPrint({
+    await enqueueRunKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       runKey: '12487~2026-09-19~CNB',
       orderIds: ['aaaaaaaaaaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaaaaaaaaaa2'],
@@ -296,7 +297,7 @@ describe('direct printing', () => {
       ['kot-aaaaaaaaaaaaaaaaaaaaaaa2'],
       ['slip-aaaaaaaaaaaaaaaaaaaaaaa2'],
     ])
-    expect(await PrintJob.countDocuments({ status: 'done' })).toBe(4)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId(), status: 'done' })).toBe(4)
   })
 
   it('records an unreachable printer and leaves the job to be retried', async () => {
@@ -318,7 +319,7 @@ describe('direct printing', () => {
 
 describe('retryDirectPrintJobs', () => {
   const pendingJobAt = (stationCode: string) =>
-    PrintJob.create({
+    PrintJob.create({ tenantId: tenantId(),
       stationCode,
       restaurantId: null,
       refType: 'order',
@@ -331,9 +332,9 @@ describe('retryDirectPrintJobs', () => {
     await makeStation('CNB')
     await pendingJobAt('CNB')
 
-    expect(await retryDirectPrintJobs()).toEqual({ attempted: 0, delivered: 0 })
+    expect(await retryDirectPrintJobs(tenantId())).toEqual({ attempted: 0, delivered: 0 })
     expect(printImagesDirect).not.toHaveBeenCalled()
-    expect((await PrintJob.findOne({}))!.status).toBe('pending')
+    expect((await PrintJob.findOne({ tenantId: tenantId() }))!.status).toBe('pending')
   })
 
   it('retries only the direct station, never the agent station beside it', async () => {
@@ -342,11 +343,11 @@ describe('retryDirectPrintJobs', () => {
     await pendingJobAt('CNB')
     await pendingJobAt('PRYJ')
 
-    expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 1 })
+    expect(await retryDirectPrintJobs(tenantId())).toEqual({ attempted: 1, delivered: 1 })
     expect(printImagesDirect).toHaveBeenCalledTimes(1)
-    expect((await PrintJob.findOne({ stationCode: 'CNB' }))!.status).toBe('done')
+    expect((await PrintJob.findOne({ tenantId: tenantId(), stationCode: 'CNB' }))!.status).toBe('done')
     // The agent's job is still the agent's to claim.
-    expect((await PrintJob.findOne({ stationCode: 'PRYJ' }))!.status).toBe('pending')
+    expect((await PrintJob.findOne({ tenantId: tenantId(), stationCode: 'PRYJ' }))!.status).toBe('pending')
   })
 
   it('reports a printer that is still down, and keeps the job for next time', async () => {
@@ -354,8 +355,8 @@ describe('retryDirectPrintJobs', () => {
     await pendingJobAt('CNB')
     printImagesDirect.mockRejectedValue(new Error('still offline'))
 
-    expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 0 })
-    const job = (await PrintJob.findOne({}))!
+    expect(await retryDirectPrintJobs(tenantId())).toEqual({ attempted: 1, delivered: 0 })
+    const job = (await PrintJob.findOne({ tenantId: tenantId() }))!
     expect(job.status).toBe('pending')
     expect(job.error).toMatch(/still offline/)
   })
@@ -366,14 +367,14 @@ describe('retryDirectPrintJobs', () => {
     await pendingJobAt('CNB')
     printImagesDirect.mockRejectedValueOnce(new Error('paper out'))
 
-    await retryDirectPrintJobs()
+    await retryDirectPrintJobs(tenantId())
     expect(printImagesDirect).toHaveBeenCalledTimes(1)
-    expect(await PrintJob.countDocuments({ status: 'pending' })).toBe(2)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId(), status: 'pending' })).toBe(2)
   })
 
   it('does not re-send a job that already printed', async () => {
     await makeStation('CNB', { directPrinterHost: '203.0.113.7' })
-    await PrintJob.create({
+    await PrintJob.create({ tenantId: tenantId(),
       stationCode: 'CNB',
       restaurantId: null,
       refType: 'order',
@@ -383,7 +384,7 @@ describe('retryDirectPrintJobs', () => {
       doneAt: new Date(),
     })
 
-    expect(await retryDirectPrintJobs()).toEqual({ attempted: 0, delivered: 0 })
+    expect(await retryDirectPrintJobs(tenantId())).toEqual({ attempted: 0, delivered: 0 })
     expect(printImagesDirect).not.toHaveBeenCalled()
   })
 })
@@ -395,7 +396,7 @@ describe('retryDirectPrintJobs', () => {
  */
 describe('stale jobs', () => {
   const jobAged = async (stationCode: string, ageMs: number) => {
-    const job = await PrintJob.create({
+    const job = await PrintJob.create({ tenantId: tenantId(),
       stationCode,
       restaurantId: null,
       refType: 'order',
@@ -427,7 +428,7 @@ describe('stale jobs', () => {
     expect(first.job?.id).toBe(String(fresh._id))
     expect((await poll('cnb-token')).job).toBeNull()
 
-    const expired = (await PrintJob.findById(old._id))!
+    const expired = (await PrintJob.findOne({ _id: old._id, tenantId: tenantId() }))!
     expect(expired.status).toBe('failed')
     expect(expired.error).toMatch(/expired/)
   })
@@ -438,7 +439,7 @@ describe('stale jobs', () => {
     const theirs = await jobAged('PRYJ', PRINT_JOB_MAX_AGE_MS + 60_000)
 
     await poll('cnb-token')
-    expect((await PrintJob.findById(theirs._id))!.status).toBe('pending')
+    expect((await PrintJob.findOne({ _id: theirs._id, tenantId: tenantId() }))!.status).toBe('pending')
   })
 
   it('does not send a stale ticket on the direct-print retry sweep either', async () => {
@@ -446,9 +447,9 @@ describe('stale jobs', () => {
     const old = await jobAged('CNB', PRINT_JOB_MAX_AGE_MS + 60_000)
     await jobAged('CNB', 60_000)
 
-    expect(await retryDirectPrintJobs()).toEqual({ attempted: 1, delivered: 1 })
+    expect(await retryDirectPrintJobs(tenantId())).toEqual({ attempted: 1, delivered: 1 })
     expect(printImagesDirect).toHaveBeenCalledTimes(1)
-    expect((await PrintJob.findById(old._id))!.status).toBe('failed')
+    expect((await PrintJob.findOne({ _id: old._id, tenantId: tenantId() }))!.status).toBe('failed')
   })
 })
 
@@ -474,7 +475,7 @@ describe('agent poll: waiting and batches', () => {
     return (await res.json()) as PollBody
   }
   const runOfTwo = () =>
-    enqueueRunKotPrint({
+    enqueueRunKotPrint({ tenantId: tenantId(),
       appOrigin: ORIGIN,
       runKey: '12487~2026-09-19~CNB',
       orderIds: ['aaaaaaaaaaaaaaaaaaaaaaa1', 'aaaaaaaaaaaaaaaaaaaaaaa2'],
@@ -491,7 +492,7 @@ describe('agent poll: waiting and batches', () => {
     const body = await poll()
     expect(body.jobs).toHaveLength(1)
     expect(body.job?.id).toBe(body.jobs[0].id)
-    expect(await PrintJob.countDocuments({ status: 'pending' })).toBe(3)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId(), status: 'pending' })).toBe(3)
   })
 
   it('hands out a whole train in print order when asked for a batch', async () => {
@@ -504,12 +505,12 @@ describe('agent poll: waiting and batches', () => {
       'slip-aaaaaaaaaaaaaaaaaaaaaaa2',
     ])
     expect(body.job?.id).toBe(body.jobs[0].id)
-    expect(await PrintJob.countDocuments({ status: 'claimed' })).toBe(4)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId(), status: 'claimed' })).toBe(4)
   })
 
   it('never hands out more than the cap in one answer', async () => {
     for (let i = 0; i < 7; i++) {
-      await enqueueOrderKotPrint({ appOrigin: ORIGIN, stationCode: 'CNB', orderId: `order-${i}` })
+      await enqueueOrderKotPrint({ tenantId: tenantId(), appOrigin: ORIGIN, stationCode: 'CNB', orderId: `order-${i}` })
     }
     expect((await poll('?max=1000')).jobs).toHaveLength(12)
   })
@@ -547,7 +548,7 @@ describe('agent poll: waiting and batches', () => {
     await runOfTwo()
     await poll('?max=12')
     expect((await poll('?max=12')).jobs).toEqual([])
-    expect(await PrintJob.countDocuments({ status: 'claimed' })).toBe(4)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId(), status: 'claimed' })).toBe(4)
   })
 
   it('claims nothing for an agent that has already hung up', async () => {
@@ -555,23 +556,23 @@ describe('agent poll: waiting and batches', () => {
     await runOfTwo()
     const body = await poll('?wait=10&max=12', { signal: AbortSignal.abort() })
     expect(body.jobs).toEqual([])
-    expect(await PrintJob.countDocuments({ status: 'pending' })).toBe(4)
+    expect(await PrintJob.countDocuments({ tenantId: tenantId(), status: 'pending' })).toBe(4)
   })
 })
 
 describe('waitForPrintJob', () => {
   it('wakes as soon as its station is notified', async () => {
     const startedAt = Date.now()
-    const waiting = waitForPrintJob('CNB', 5_000)
-    notifyPrintAgents('CNB')
+    const waiting = waitForPrintJob(tenantId(), 'CNB', 5_000)
+    notifyPrintAgents(tenantId(), 'CNB')
     await waiting
     expect(Date.now() - startedAt).toBeLessThan(1_000)
   })
 
   it("does not wake for another station's ticket", async () => {
     let woke = false
-    const waiting = waitForPrintJob('CNB', 200).then(() => (woke = true))
-    notifyPrintAgents('PRYJ')
+    const waiting = waitForPrintJob(tenantId(), 'CNB', 200).then(() => (woke = true))
+    notifyPrintAgents(tenantId(), 'PRYJ')
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(woke).toBe(false)
     await waiting
@@ -580,7 +581,7 @@ describe('waitForPrintJob', () => {
   it('gives up when the request is aborted', async () => {
     const controller = new AbortController()
     const startedAt = Date.now()
-    const waiting = waitForPrintJob('CNB', 5_000, controller.signal)
+    const waiting = waitForPrintJob(tenantId(), 'CNB', 5_000, controller.signal)
     controller.abort()
     await waiting
     expect(Date.now() - startedAt).toBeLessThan(1_000)

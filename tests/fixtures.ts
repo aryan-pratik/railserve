@@ -1,52 +1,55 @@
 import mongoose from 'mongoose'
 import { connectDb } from '../src/lib/db'
-import { Counter, Listing, MenuItem, Order, Payment, PrintJob, Restaurant, RiderLocation, Station, UnparsedInbox, User, WaConversation, WaMessage } from '../src/lib/models'
+import { Order, Restaurant, Station, Tenant, User } from '../src/lib/models'
+import { ensureIndexes } from '../src/lib/indexes'
+import { TENANT_COLLECTIONS } from '../src/lib/tenancy/bootstrap'
+import { setFallbackTenantId } from '../src/lib/tenancy/plugin'
+import { forgetPrimaryTenant, tenantKey } from '../src/lib/tenancy/primary'
 import type { AuthContext } from '../src/lib/authContext'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 
+/**
+ * Every fixture belongs to a tenant. resetDb() makes a fresh primary tenant
+ * and makes it current; makeTenant() adds another, and switchTenant() switches
+ * which one the make* helpers write into, for two-tenant isolation tests.
+ */
+let currentTenantId: mongoose.Types.ObjectId | null = null
+
+export function tenantId(): mongoose.Types.ObjectId {
+  if (!currentTenantId) throw new Error('No test tenant: call resetDb() first.')
+  return currentTenantId
+}
+
+export function switchTenant(id: mongoose.Types.ObjectId): void {
+  currentTenantId = id
+}
+
+export async function makeTenant(name: string, opts: { primary?: boolean } = {}) {
+  const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new mongoose.Types.ObjectId().toHexString().slice(-6)}`
+  return Tenant.create({ name, slug, primary: opts.primary ?? false, status: 'ACTIVE' })
+}
+
 export async function resetDb() {
   await connectDb()
-  await Promise.all([
-    Order.deleteMany({}),
-    Restaurant.deleteMany({}),
-    User.deleteMany({}),
-    // Counters are deliberately monotonic in production — an order id must
-    // never be reused after a deletion — so they survive deleteMany on orders
-    // and have to be cleared explicitly for a test to see a fresh sequence.
-    Counter.deleteMany({}),
-    UnparsedInbox.deleteMany({}),
-    Payment.deleteMany({}),
-    PrintJob.deleteMany({}),
-    Station.deleteMany({}),
-    RiderLocation.deleteMany({}),
-    Listing.deleteMany({}),
-    WaConversation.deleteMany({}),
-    WaMessage.deleteMany({}),
-    MenuItem.deleteMany({}),
-  ])
-  // The tests exercise the unique/partial indexes, so they must exist.
-  await Order.collection.createIndex({ externalOrderId: 1 }, { unique: true, name: 'externalOrderId_unique' })
-  await Order.collection.createIndex(
-    { gmailMessageId: 1 },
-    { unique: true, name: 'gmailMessageId_unique', partialFilterExpression: { gmailMessageId: { $type: 'string' } } },
+  const db = mongoose.connection.db!
+  // Raw collection calls: the reset is platform-level and deliberately
+  // crosses every tenant. Counters included: they are monotonic in production
+  // and must be cleared for a test to see a fresh sequence.
+  await Promise.all(
+    [...TENANT_COLLECTIONS, 'tenants'].map((name) => db.collection(name).deleteMany({})),
   )
-  // Payment ingestion is idempotent on the RRN, so the tests that assert that
-  // need the index that enforces it.
-  await Payment.collection.createIndex({ rrn: 1 }, { unique: true, name: 'rrn_unique' })
-  // One live position per rider; the ingest path upserts against this.
-  await RiderLocation.collection.createIndex({ userId: 1 }, { unique: true, name: 'userId_unique' })
-  // One WhatsApp thread per number, and a replayed webhook must not duplicate
-  // a message: both are enforced by index, so the tests need them in place.
-  await WaConversation.collection.createIndex({ phone: 1 }, { unique: true, name: 'phone_unique' })
-  await WaMessage.collection.createIndex(
-    { providerMessageId: 1 },
-    { unique: true, name: 'providerMessageId_unique', partialFilterExpression: { providerMessageId: { $type: 'string' } } },
-  )
+  forgetPrimaryTenant()
+  const primary = await makeTenant('Test Primary', { primary: true })
+  currentTenantId = primary._id
+  setFallbackTenantId(primary._id)
+  // Every index the app has, in multi-tenant form: the tests exercise the
+  // unique and partial ones, and some create a second tenant.
+  await ensureIndexes({ multiTenant: true })
 }
 
 export async function makeRestaurant(name: string, stationCode: string, aliases: string[] = []) {
   return Restaurant.create({
-    name, stationCode, stationName: name, aliases, walkToPlatformMinutes: 10,
+    tenantId: tenantId(), name, stationCode, stationName: name, aliases, walkToPlatformMinutes: 10,
   })
 }
 
@@ -61,7 +64,8 @@ export async function makeStation(
   } = {},
 ) {
   return Station.create({
-    _id: code,
+    _id: await tenantKey(tenantId(), code),
+    tenantId: tenantId(),
     name: opts.name ?? `${code} Junction`,
     printAgentToken: opts.printAgentToken ?? null,
     directPrinterHost: opts.directPrinterHost ?? null,
@@ -76,15 +80,17 @@ export async function makeUser(
   outlets: mongoose.Types.ObjectId | mongoose.Types.ObjectId[] | null = null,
 ) {
   const restaurantIds = outlets === null ? [] : Array.isArray(outlets) ? outlets : [outlets]
-  return User.create({ name: `${role} ${phone}`, phone, passwordHash: 'x', role, restaurantIds })
+  return User.create({ tenantId: tenantId(), name: `${role} ${phone}`, phone, passwordHash: 'x', role, restaurantIds })
 }
 
 export function ctxFor(user: {
   _id: mongoose.Types.ObjectId
   role: string
   restaurantIds?: mongoose.Types.ObjectId[] | null
+  tenantId?: mongoose.Types.ObjectId | null
 }): AuthContext {
   return {
+    tenantId: user.tenantId ?? tenantId(),
     userId: user._id,
     role: user.role as AuthContext['role'],
     restaurantIds: user.restaurantIds ?? [],
@@ -96,6 +102,7 @@ let seq = 0
 export async function makeOrder(overrides: Record<string, unknown> = {}) {
   seq += 1
   return insertOrder({
+    tenantId: tenantId(),
     source: 'MANUAL',
     orderType: 'RETAIL',
     externalOrderId: `TEST-${Date.now()}-${seq}`,
@@ -137,7 +144,7 @@ export async function assignRider(
   // assignedAt too, as assignRiders writes it: it is what marks the order as
   // the office's choice rather than one a rider took off the counter.
   await Order.updateOne(
-    { _id: orderId },
+    { _id: orderId, tenantId: tenantId() },
     { $addToSet: { 'delivery.agentIds': riderId }, $set: { 'delivery.assignedAt': new Date() } },
   )
 }

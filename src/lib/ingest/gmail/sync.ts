@@ -1,8 +1,19 @@
+import type { Types } from 'mongoose'
 import { connectDb } from '../../db'
 import { GMAIL_STATE_ID, IngestState } from '../../models'
 import { env } from '../../env'
 import { ingestEmail, type IngestOutcome } from '../index'
 import { extractBody, gmailClient, headerValue, isGmailConfigured } from './client'
+import { getPrimaryTenantId, tenantKey } from '../../tenancy/primary'
+
+/**
+ * The Gmail state row's filter. The mailbox is configured by environment, so
+ * it is the primary tenant's, and so is everything ingested from it.
+ */
+async function gmailStateFilter() {
+  const tenantId = await getPrimaryTenantId()
+  return { _id: await tenantKey(tenantId, GMAIL_STATE_ID), tenantId }
+}
 
 /**
  * Registers (or renews) the Gmail push watch.
@@ -27,7 +38,7 @@ export async function renewGmailWatch(): Promise<{ expiresAt: Date | null; histo
   const historyId = res.data.historyId ?? null
 
   await IngestState.findOneAndUpdate(
-    { _id: GMAIL_STATE_ID },
+    await gmailStateFilter(),
     {
       $set: { watchExpiresAt: expiresAt, lastWatchRenewalAt: new Date(), lastError: null },
       // Only seed historyId on first registration — overwriting it on every
@@ -62,7 +73,7 @@ async function seedHistoryIdFromLatestMessage(gmail: ReturnType<typeof gmailClie
   const historyId = msg.data.historyId ?? null
   if (historyId) {
     await IngestState.findOneAndUpdate(
-      { _id: GMAIL_STATE_ID },
+      await gmailStateFilter(),
       { $set: { historyId, lastError: null } },
       { upsert: true },
     )
@@ -112,7 +123,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
 
   await connectDb()
   const gmail = gmailClient()
-  const state = await IngestState.findOne({ _id: GMAIL_STATE_ID })
+  const state = await IngestState.findOne(await gmailStateFilter())
 
   if (!state?.historyId) {
     // No resume point yet — seed one from the latest message and catch up
@@ -153,7 +164,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
     // there to surface.
     const message = err instanceof Error ? err.message : 'history.list failed'
     summary.errors.push(message)
-    await IngestState.updateOne({ _id: GMAIL_STATE_ID }, { $set: { lastError: message } })
+    await IngestState.updateOne(await gmailStateFilter(), { $set: { lastError: message } })
     if (/404|startHistoryId/i.test(message)) await seedHistoryIdFromLatestMessage(gmail)
     return summary
   }
@@ -172,6 +183,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
       }
       const headers = msg.data.payload?.headers
       const outcome: IngestOutcome = await ingestEmail({
+        tenantId: state.tenantId,
         body: extractBody(msg.data.payload),
         receivedAt: msg.data.internalDate ? new Date(Number(msg.data.internalDate)) : new Date(),
         gmailMessageId: id,
@@ -194,7 +206,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
   }
 
   await IngestState.updateOne(
-    { _id: GMAIL_STATE_ID },
+    await gmailStateFilter(),
     {
       $set: {
         historyId: newHistoryId,
@@ -212,16 +224,19 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
  * A silent watch expiry is invisible otherwise — the system looks healthy and
  * simply stops receiving work.
  */
-export async function checkIngestStaleness(now = new Date()): Promise<{
+export async function checkIngestStaleness(now = new Date(), tenantId?: Types.ObjectId): Promise<{
   stale: boolean
   hoursSinceLastOrder: number | null
   watchExpiresInHours: number | null
   message: string | null
 }> {
   await connectDb()
-  const state = await IngestState.findOne({ _id: GMAIL_STATE_ID }).lean()
+  // The mailbox is the primary tenant's; for any other company there is
+  // nothing to go stale.
+  const notMine = tenantId ? !(await getPrimaryTenantId()).equals(tenantId) : false
+  const state = notMine ? null : await IngestState.findOne(await gmailStateFilter()).lean()
 
-  if (!isGmailConfigured()) {
+  if (notMine || !isGmailConfigured()) {
     return { stale: false, hoursSinceLastOrder: null, watchExpiresInHours: null, message: null }
   }
 

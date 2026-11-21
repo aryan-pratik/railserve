@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { requireRole } from '@/lib/session'
+import { requireRole, requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, Station } from '@/lib/models'
 import { createManualOrder } from '@/lib/repo/createOrder'
@@ -15,6 +15,8 @@ import { parseBulkEnquiry } from '@/lib/ingest/parsers/bulkEnquiry'
 import { manualOrderFromFormData } from '@/lib/validation/orderForm'
 import { paiseToRupees, utcToIstLocal } from '@/lib/format'
 import { DIETS } from '@/lib/diet'
+import { naturalKey } from '@/lib/tenancy/primary'
+import type { Types } from 'mongoose'
 
 /*
  * The v2 composer's actions. Creation goes through the same repository
@@ -59,7 +61,7 @@ export type ParsePasteResult =
  * tried as a WhatsApp bulk enquiry, whose parser pre-fills what it can.
  */
 export async function parsePasteAction(text: string): Promise<ParsePasteResult> {
-  await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('orders.create')
   const body = text.trim()
   if (!body) return { kind: 'none', detail: 'Paste the message first.' }
 
@@ -69,7 +71,7 @@ export async function parsePasteAction(text: string): Promise<ParsePasteResult> 
     if (!result.ok) return { kind: 'none', detail: result.detail }
     const o = result.order
     await connectDb()
-    const outlet = await matchOutlet(o.outletName, o.stationCode, o.source)
+    const outlet = await matchOutlet(ctx.tenantId, o.outletName, o.stationCode, o.source)
     return {
       kind: 'order',
       source: o.source,
@@ -105,7 +107,7 @@ export async function parsePasteAction(text: string): Promise<ParsePasteResult> 
     prefill: {
       orderType: 'BULK',
       serviceDate: e.serviceDate ?? undefined,
-      stationCode: e.location ? await stationCodeFor(e.location) : undefined,
+      stationCode: e.location ? await stationCodeFor(ctx.tenantId, e.location) : undefined,
       location: e.location ?? undefined,
       trainNo: e.trainNo ?? undefined,
       pax: e.pax ? String(e.pax) : undefined,
@@ -121,17 +123,17 @@ export async function parsePasteAction(text: string): Promise<ParsePasteResult> 
  * needs a station code and the message never carries one; a miss leaves the
  * field for the admin.
  */
-async function stationCodeFor(location: string): Promise<string | undefined> {
+async function stationCodeFor(tenantId: Types.ObjectId, location: string): Promise<string | undefined> {
   const loc = location.toLowerCase()
   const words = new Set(loc.split(/[^a-z0-9]+/).filter((w) => w.length >= 3))
   await connectDb()
   const [stations, outlets] = await Promise.all([
-    Station.find({ active: { $ne: false } }).select('name').lean(),
-    Restaurant.find({ active: { $ne: false } }).select('stationCode stationName').lean(),
+    Station.find({ tenantId, active: { $ne: false } }).select('name').lean(),
+    Restaurant.find({ tenantId, active: { $ne: false } }).select('stationCode stationName').lean(),
   ])
   // Station rows rarely carry a name yet; outlets each say where they are.
   const known: { code: string; name: string }[] = [
-    ...stations.map((s) => ({ code: String(s._id), name: (s.name ?? '').toLowerCase() })),
+    ...stations.map((s) => ({ code: naturalKey(String(s._id)), name: (s.name ?? '').toLowerCase() })),
     ...outlets.map((o) => ({ code: String(o.stationCode), name: String(o.stationName ?? '').toLowerCase() })),
   ].filter((k) => k.code)
   for (const k of known) {
@@ -147,7 +149,7 @@ async function stationCodeFor(location: string): Promise<string | undefined> {
 
 /** The whole message becomes the order, source and id and all, as ingestion would make it. */
 export async function pasteOrderV2(_prev: ComposerState, formData: FormData): Promise<ComposerState> {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('orders.create')
   const result = await createOrderFromPaste(ctx, String(formData.get('body') ?? ''))
   if (!result.ok) return { error: result.detail }
   revalidatePath('/v2/orders')
@@ -156,7 +158,7 @@ export async function pasteOrderV2(_prev: ComposerState, formData: FormData): Pr
 }
 
 export async function createOrderV2(_prev: ComposerState, formData: FormData): Promise<ComposerState> {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('orders.create')
   const parsed = manualOrderFromFormData(formData)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Check the form.' }
 

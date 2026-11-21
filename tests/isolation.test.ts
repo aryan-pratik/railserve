@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
+import { User } from '../src/lib/models'
 import { findById, findMany, countByStatus } from '../src/lib/repo/orderRepo'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
 import { NotFoundError } from '../src/lib/authContext'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeTenant, makeUser, resetDb, tenantId, switchTenant } from './fixtures'
 import type { AuthContext } from '../src/lib/authContext'
 
 /**
@@ -111,6 +112,7 @@ describe('cross-tenant store isolation', () => {
     // here would silently promote them to admin.
     for (const role of ['STORE_MANAGER', 'DELIVERY_AGENT'] as const) {
       const orphan: AuthContext = {
+        tenantId: tenantId(),
         userId: new mongoose.Types.ObjectId(),
         role,
         restaurantIds: [],
@@ -176,5 +178,72 @@ describe('multi-outlet store managers', () => {
   it('counts aggregate across held outlets only', async () => {
     expect(await countByStatus(bothCtx)).toEqual({ RECEIVED: 2 })
     expect(await countByStatus(singleCtx)).toEqual({ RECEIVED: 1 })
+  })
+})
+
+/**
+ * Two companies on one database. Everything that names a thing is the same on
+ * both sides (outlet names, staff phones, order ids), so the only thing that
+ * can keep them apart is the tenant itself. An admin is "everything" only
+ * inside their own tenant.
+ */
+describe('cross-company (tenant) isolation', () => {
+  let adminA: AuthContext
+  let managerA: AuthContext
+  let orderA: string
+  let orderB: string
+
+  beforeAll(async () => {
+    await resetDb()
+    const tenantA = (await makeTenant('Company A'))._id
+    const tenantB = (await makeTenant('Company B'))._id
+
+    // A phone is a login, so it is unique across tenants; the names are not.
+    const build = async (tenant: mongoose.Types.ObjectId, phonePrefix: string) => {
+      switchTenant(tenant)
+      const ganga = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
+      const admin = await makeUser('ADMIN', `${phonePrefix}01`)
+      const manager = await makeUser('STORE_MANAGER', `${phonePrefix}02`, ganga._id)
+      await User.updateOne({ _id: admin._id, tenantId: tenant }, { $set: { name: 'Same Admin' } })
+      await User.updateOne({ _id: manager._id, tenantId: tenant }, { $set: { name: 'Same Manager' } })
+      const order = await makeOrder({ restaurantId: ganga._id, stationCode: 'CNB', externalOrderId: 'SAME-ORDER-1' })
+      return { admin: ctxFor(admin), manager: ctxFor(manager), order: String(order._id) }
+    }
+    const a = await build(tenantA, '90000001')
+    const b = await build(tenantB, '90000002')
+    adminA = a.admin
+    managerA = a.manager
+    orderA = a.order
+    orderB = b.order
+    switchTenant(tenantA)
+  })
+
+  afterAll(async () => {
+    await disconnectDb()
+  })
+
+  it("tenant A's admin cannot fetch tenant B's order by id", async () => {
+    expect(await findById(adminA, orderB)).toBeNull()
+    expect(String((await findById(adminA, orderA))?._id)).toBe(orderA)
+  })
+
+  it("tenant A's admin lists and counts only tenant A's orders", async () => {
+    expect((await findMany(adminA)).map((o) => String(o._id))).toEqual([orderA])
+    expect(await countByStatus(adminA)).toEqual({ RECEIVED: 1 })
+  })
+
+  it("tenant A's admin cannot move tenant B's order (a 404, not a 403)", async () => {
+    await expect(
+      transitionOrder({ ctx: adminA, orderId: orderB, to: 'ACCEPTED' }),
+    ).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it("tenant A's store manager sees nothing of tenant B, even at a same-named outlet", async () => {
+    expect(await findById(managerA, orderB)).toBeNull()
+    expect((await findMany(managerA)).map((o) => String(o._id))).toEqual([orderA])
+    expect(await countByStatus(managerA)).toEqual({ RECEIVED: 1 })
+    await expect(
+      transitionOrder({ ctx: managerA, orderId: orderB, to: 'ACCEPTED' }),
+    ).rejects.toBeInstanceOf(NotFoundError)
   })
 })

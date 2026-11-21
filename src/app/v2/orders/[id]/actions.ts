@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { deleteOrder } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
 import type { OrderStatus } from '@/lib/orderStatus'
@@ -97,7 +97,7 @@ export const confirmEnquiryV2 = wrap(enquiries.confirmEnquiryAction)
  * engine with one, so the kitchen alert and the history can quote it.
  */
 export async function adminOutcomeV2(_prev: WorkspaceState, formData: FormData): Promise<WorkspaceState> {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('orders.overrideStatus')
   const orderId = String(formData.get('orderId') ?? '')
   const to = String(formData.get('to') ?? '') as OrderStatus
   const reason = String(formData.get('reason') ?? '').trim()
@@ -117,7 +117,7 @@ export async function adminOutcomeV2(_prev: WorkspaceState, formData: FormData):
 
 /** Mark lost, with the reason, landing on the enquiries view rather than v1's list. */
 export async function markLostV2(_prev: WorkspaceState, formData: FormData): Promise<WorkspaceState> {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('orders.overrideStatus')
   const orderId = String(formData.get('orderId') ?? '')
   const reason = String(formData.get('reason') ?? '').trim()
   try {
@@ -132,7 +132,7 @@ export async function markLostV2(_prev: WorkspaceState, formData: FormData): Pro
 
 /** Permanent. The v1 action redirects to /admin/orders; this one lands on the v2 table. */
 export async function deleteOrderV2(_prev: WorkspaceState, formData: FormData): Promise<WorkspaceState> {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('orders.overrideStatus')
   const orderId = String(formData.get('orderId') ?? '')
   let ok: boolean
   try {

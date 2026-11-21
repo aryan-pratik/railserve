@@ -24,6 +24,7 @@ import mongoose from 'mongoose'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { UnparsedInbox } from '../src/lib/models'
 import { PAYMENT_PARSERS, recordPayment } from '../src/lib/ingest/payments'
+import { scriptTenant } from './scriptTenant'
 
 const APPLY = process.argv.includes('--apply')
 
@@ -46,6 +47,7 @@ function readRawPayload(payload: unknown, fallbackDate: Date): Row {
 
 async function main() {
   await connectDb()
+  const T = await scriptTenant()
 
   // Named before anything is scanned, for the same reason indexes.ts does it:
   // a backfill that quietly ran against the wrong database reports a tidy
@@ -88,6 +90,7 @@ async function main() {
     }
 
     const recorded = await recordPayment(
+      T,
       p,
       row.rawPayload,
       // The inbox row already holds this message's gmailMessageId; reusing it

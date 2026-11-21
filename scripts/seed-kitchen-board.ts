@@ -43,6 +43,7 @@ import { ManualOrderInput } from '../src/lib/validation/order'
 import { todayIST, utcToIstLocal } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
 import type { OrderStatus } from '../src/lib/orderStatus'
+import { scriptTenant } from './scriptTenant'
 
 /** The pipeline a store manager walks an order down, in order. */
 const PIPELINE: OrderStatus[] = ['ACCEPTED', 'KOT_PRINTED', 'PREPARED']
@@ -251,6 +252,7 @@ function arg(flag: string): string {
 
 async function main() {
   await connectDb()
+  const T = await scriptTenant()
 
   const wanted = arg('--outlet')
   if (!wanted) {
@@ -267,7 +269,7 @@ async function main() {
 
   const admin = await User.findOne({ role: 'ADMIN' })
   if (!admin) throw new Error('No admin user. Run `npm run seed` first.')
-  const ctx: AuthContext = { userId: admin._id, role: 'ADMIN', restaurantIds: [] }
+  const ctx: AuthContext = { tenantId: T, userId: admin._id, role: 'ADMIN', restaurantIds: [] }
 
   // Escaped, not interpolated raw: an outlet name is data here, and a stray
   // regex metacharacter should not silently match a different kitchen.

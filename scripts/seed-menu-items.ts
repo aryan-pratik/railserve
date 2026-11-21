@@ -19,12 +19,14 @@ import { isMenuDish, menuKey, menuLookupKey, menuSource } from '../src/lib/diet'
 import { suggestDiet } from '../src/lib/dietSuggest'
 import { registerMenuItems } from '../src/lib/repo/menuRepo'
 import { ORDER_SOURCES, sourceLabel } from '../src/lib/orderEnums'
+import { scriptTenant } from './scriptTenant'
 
 const MARK = { VEG: '● veg     ', NON_VEG: '▲ non-veg ', none: '? no guess' } as const
 
 async function main() {
   const apply = process.argv.includes('--apply')
   await connectDb()
+  const T = await scriptTenant()
   console.log(`Database: ${mongoose.connection.name}  (host ${mongoose.connection.host})`)
 
   // Newest first, so a row takes the spelling the aggregator uses today.
@@ -86,7 +88,7 @@ async function main() {
   if (!apply) {
     console.log('Nothing written. Re-run with --apply to add them.')
   } else {
-    const added = await registerMenuItems([...fresh.values()])
+    const added = await registerMenuItems(T, [...fresh.values()])
     console.log(`Added ${added} item(s). Every one is unconfirmed: check them on /admin/menu (filter: Needs check).`)
   }
   await disconnectDb()

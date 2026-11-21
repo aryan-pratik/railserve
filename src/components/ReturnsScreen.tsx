@@ -46,7 +46,7 @@ export async function ReturnsScreen({
   const filters = readOrderFilters(searchParams, { defaultMode })
   const filtered = hasOrderFilters(filters)
   await connectDb()
-  const where = await orderFilterClause(filters)
+  const where = await orderFilterClause(ctx, filters)
 
   const [{ rows, total }, pendingTotal, canCollect, options] = await Promise.all([
     listReturns(ctx, { status, limit: pageSize, skip, where }),

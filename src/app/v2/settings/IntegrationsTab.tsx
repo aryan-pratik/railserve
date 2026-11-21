@@ -1,3 +1,4 @@
+import type { AuthContext } from '@/lib/authContext'
 import { Card, Chip, Mono } from '@/components/v2/ui'
 import { KeyValue, Notice } from '@/components/v2/Table'
 import { agentPresence, loadIntegrations, relativeAgo, relativeUntil, type loadSetupBase } from '@/lib/v2/settings'
@@ -10,8 +11,8 @@ type Base = Awaited<ReturnType<typeof loadSetupBase>>
  * the server and only "set or not", provider names and a masked number reach
  * the page.
  */
-export async function IntegrationsTab({ base, now }: { base: Base; now: Date }) {
-  const s = await loadIntegrations(now)
+export async function IntegrationsTab({ ctx, base, now }: { ctx: AuthContext; base: Base; now: Date }) {
+  const s = await loadIntegrations(ctx, now)
   const nowMs = now.getTime()
   const g = s.gmail
 

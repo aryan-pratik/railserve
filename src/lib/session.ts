@@ -1,10 +1,10 @@
 import { cache } from 'react'
-import mongoose from 'mongoose'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { auth } from '@/auth'
-import { connectDb } from './db'
-import { User } from './models'
+import { contextOf, loadUser } from './tenancy/userContext'
 import type { AuthContext } from './authContext'
+import { can } from './access'
+import type { Permission } from './permissions'
 import { ROLE_HOME, type Role } from './roles'
 
 /**
@@ -28,31 +28,13 @@ import { ROLE_HOME, type Role } from './roles'
  */
 const getFreshUser = cache(async () => {
   const session = await auth()
-  if (!session?.user?.id || !mongoose.isValidObjectId(session.user.id)) return null
-
-  await connectDb()
-  const user = await User.findOne({ _id: session.user.id, active: true })
-    .select('name role restaurantIds')
-    .lean()
-  if (!user) return null
-
-  return {
-    id: String(user._id),
-    name: user.name ?? '',
-    role: user.role,
-    restaurantIds: (user.restaurantIds ?? []).map(String),
-  }
+  if (!session?.user?.id) return null
+  return loadUser(session.user.id)
 })
 
 export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const user = await getFreshUser()
-  if (!user) return null
-
-  return {
-    userId: new mongoose.Types.ObjectId(user.id),
-    role: user.role,
-    restaurantIds: user.restaurantIds.map((id) => new mongoose.Types.ObjectId(id)),
-  }
+  return user ? contextOf(user) : null
 })
 
 export const getSessionUser = getFreshUser
@@ -79,4 +61,23 @@ export async function requireRole(...roles: Role[]): Promise<AuthContext> {
   const ctx = await requireAuth()
   if (!roles.includes(ctx.role)) redirect(ROLE_HOME[ctx.role])
   return ctx
+}
+
+/**
+ * Redirects to the caller's own home unless their role, as their tenant has
+ * configured it, carries the permission. The permission-based successor to
+ * requireRole for pages and server actions.
+ */
+export async function requirePermission(permission: Permission): Promise<AuthContext> {
+  const ctx = await requireAuth()
+  if (!(await can(ctx, permission))) redirect(ROLE_HOME[ctx.role])
+  return ctx
+}
+
+/** Our own super admins only; everyone else gets a 404, not a hint that the page exists. */
+export async function requirePlatformAdmin(): Promise<AuthContext> {
+  const user = await getFreshUser()
+  if (!user) return redirectToLogin()
+  if (!user.platformAdmin) notFound()
+  return contextOf(user)
 }

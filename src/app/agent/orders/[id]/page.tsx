@@ -37,7 +37,7 @@ export default async function AgentOrderPage(props: PageProps<'/agent/orders/[id
   let returnTo: string | null = null
   if (rto && order.restaurantId) {
     await connectDb()
-    const outlet = await Restaurant.findById(order.restaurantId).select('name stationCode').lean()
+    const outlet = await Restaurant.findOne({ _id: order.restaurantId, tenantId: ctx.tenantId }).select('name stationCode').lean()
     returnTo = outlet ? `${outlet.name} · ${outlet.stationCode}` : null
   }
 

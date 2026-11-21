@@ -3,7 +3,7 @@ import { disconnectDb } from '../src/lib/db'
 import { Order, Restaurant, Station, UnparsedInbox } from '../src/lib/models'
 import { ingestEmail } from '../src/lib/ingest'
 import { createOrderFromPaste } from '../src/lib/ingest/paste'
-import { ctxFor, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 import type { AuthContext } from '../src/lib/authContext'
 import * as fx from './fixtures/yatriRestro'
 import * as relfoodFx from './fixtures/relfood'
@@ -62,7 +62,7 @@ describe('paste-to-create', () => {
   // no-op rather than a second order for the kitchen to cook.
   it('reports the WhatsApp copy of an order its mail already created', async () => {
     await makeRestaurant('THE COSMOZIN LOUNGE', 'CNB')
-    const mailed = await ingestEmail({
+    const mailed = await ingestEmail({ tenantId: tenantId(),
       body: relfoodFx.MAIL_SAMPLE,
       receivedAt: new Date('2026-10-09T05:00:00Z'),
     })
@@ -71,15 +71,15 @@ describe('paste-to-create', () => {
     const r = await createOrderFromPaste(admin, relfoodFx.WHATSAPP_SAMPLE)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.detail).toMatch(/1192186 is already in the system/)
-    expect(await Order.countDocuments({ source: 'RELFOOD' })).toBe(1)
+    expect(await Order.countDocuments({ tenantId: tenantId(), source: 'RELFOOD' })).toBe(1)
   })
 
   // The "New Order Notification" message names no outlet: it routes through
   // the station's default kitchen, by mail or by paste, and the IRCTC id keeps
   // the second copy from becoming a second order.
   it('creates a pasted New Order Notification at the station default, and dedupes the mailed copy', async () => {
-    const g = await Restaurant.findOne({ name: 'HOTEL GANGA GALAXY' })
-    await Station.create({ _id: 'CNB', name: 'Kanpur Central', defaultRestaurantId: g!._id })
+    const g = await Restaurant.findOne({ tenantId: tenantId(), name: 'HOTEL GANGA GALAXY' })
+    await Station.create({ tenantId: tenantId(), _id: 'CNB', name: 'Kanpur Central', defaultRestaurantId: g!._id })
 
     const r = await createOrderFromPaste(admin, notifyFx.SAMPLE_ESCAPED)
     expect(r.ok).toBe(true)
@@ -88,10 +88,10 @@ describe('paste-to-create', () => {
       expect(r.outletName).toBe('HOTEL GANGA GALAXY')
     }
 
-    const mailed = await ingestEmail({ body: notifyFx.SAMPLE, receivedAt: new Date('2026-11-13T05:00:00Z') })
+    const mailed = await ingestEmail({ tenantId: tenantId(), body: notifyFx.SAMPLE, receivedAt: new Date('2026-11-13T05:00:00Z') })
     expect(mailed.status).toBe('DUPLICATE')
 
-    const order = await Order.findOne({ externalOrderId: '2504099482' }).lean()
+    const order = await Order.findOne({ tenantId: tenantId(), externalOrderId: '2504099482' }).lean()
     expect(order).toMatchObject({
       source: 'NOTIFICATION', stationCode: 'CNB', trainNo: '05094', coach: 'A2', berth: '39',
       contactName: 'Jitu Singh', amountPaise: 19700, paymentMode: 'PREPAID',
@@ -102,13 +102,13 @@ describe('paste-to-create', () => {
     const r = await createOrderFromPaste(admin, fx.GARBAGE)
     expect(r.ok).toBe(false)
     // The unparsed inbox is for unattended email. A human pasting gets told.
-    expect(await UnparsedInbox.countDocuments({})).toBe(0)
+    expect(await UnparsedInbox.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('refuses an outlet that matches nothing, without guessing', async () => {
     const r = await createOrderFromPaste(admin, fx.UNKNOWN_OUTLET)
     expect(r.ok).toBe(false)
-    expect(await UnparsedInbox.countDocuments({})).toBe(0)
+    expect(await UnparsedInbox.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('rejects empty input', async () => {

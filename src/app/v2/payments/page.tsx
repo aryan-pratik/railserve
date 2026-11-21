@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Download } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { findPayments, latestBalance, paymentTotals } from '@/lib/repo/paymentRepo'
 import { findMany } from '@/lib/repo/orderRepo'
@@ -21,7 +21,7 @@ export const metadata = { title: 'Payments · RailServe' }
  * and whether the remark can be edited (admin and store manager).
  */
 export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER', 'TELECALLER')
+  const ctx = await requirePermission('payments.view')
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => ((Array.isArray(v) ? v[0] : v) ?? '').trim()
 
@@ -41,10 +41,10 @@ export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
 
   await connectDb()
   const [payments, totals, balance] = await Promise.all([
-    findPayments(query, pageSize, skip),
+    findPayments(ctx, query, pageSize, skip),
     // Counts the whole range: the stat and the pager both read this, never
     // the page length.
-    paymentTotals(query),
+    paymentTotals(ctx, query),
     isAdmin ? latestBalance(ctx) : Promise.resolve(null),
   ])
 

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { Restaurant } from '../src/lib/models'
-import { makeRestaurant, resetDb } from './fixtures'
+import { makeRestaurant, resetDb, tenantId } from './fixtures'
 import {
   foodOnTrainsKeyFor,
   foodOnTrainsStatusFor,
@@ -48,20 +48,20 @@ describe('foodOnTrainsKeyFor', () => {
     const cnb = await makeRestaurant('ZAIKA', 'CNB')
     const gaya = await makeRestaurant('ZAIKA', 'GAYA')
     const bare = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
-    await Restaurant.updateOne({ _id: cnb._id }, { foodOnTrainsApiKey: 'ftk_cnb' })
-    await Restaurant.updateOne({ _id: gaya._id }, { foodOnTrainsApiKey: 'ftk_gaya' })
+    await Restaurant.updateOne({ tenantId: tenantId(), _id: cnb._id }, { foodOnTrainsApiKey: 'ftk_cnb' })
+    await Restaurant.updateOne({ tenantId: tenantId(), _id: gaya._id }, { foodOnTrainsApiKey: 'ftk_gaya' })
 
-    expect(await foodOnTrainsKeyFor(cnb._id)).toBe('ftk_cnb')
-    expect(await foodOnTrainsKeyFor(String(gaya._id))).toBe('ftk_gaya')
-    expect(await foodOnTrainsKeyFor(bare._id)).toBeNull()
-    expect(await foodOnTrainsKeyFor(null)).toBeNull()
+    expect(await foodOnTrainsKeyFor(tenantId(), cnb._id)).toBe('ftk_cnb')
+    expect(await foodOnTrainsKeyFor(tenantId(), String(gaya._id))).toBe('ftk_gaya')
+    expect(await foodOnTrainsKeyFor(tenantId(), bare._id)).toBeNull()
+    expect(await foodOnTrainsKeyFor(tenantId(), null)).toBeNull()
   })
 
   it('never loads the key unless asked for it by name', async () => {
     await resetDb()
     const cnb = await makeRestaurant('ZAIKA', 'CNB')
-    await Restaurant.updateOne({ _id: cnb._id }, { foodOnTrainsApiKey: 'ftk_cnb' })
-    const plain = await Restaurant.findById(cnb._id).lean()
+    await Restaurant.updateOne({ tenantId: tenantId(), _id: cnb._id }, { foodOnTrainsApiKey: 'ftk_cnb' })
+    const plain = await Restaurant.findOne({ _id: cnb._id, tenantId: tenantId() }).lean()
     expect(plain).not.toHaveProperty('foodOnTrainsApiKey')
   })
 })
@@ -109,7 +109,7 @@ describe('reportFoodOnTrainsStatus', () => {
   it('sends nothing for an order whose outlet has no key', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
-    expect(() => reportFoodOnTrainsStatus({ externalOrderId: 'FT-1', restaurantId: null, status: 'ACCEPTED' })).not.toThrow()
+    expect(() => reportFoodOnTrainsStatus({ tenantId: tenantId(), externalOrderId: 'FT-1', restaurantId: null, status: 'ACCEPTED' })).not.toThrow()
     await new Promise((r) => setTimeout(r, 10))
     expect(fetch).not.toHaveBeenCalled()
   })

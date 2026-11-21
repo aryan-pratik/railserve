@@ -7,7 +7,7 @@ import {
 import { runTrainPollingTick } from '../src/lib/queue/trainPolling'
 import { findMany } from '../src/lib/repo/orderRepo'
 import { transitionOrder } from '../src/lib/repo/transitionOrder'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 import { shiftServiceDate, todayIST } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
 import * as providerFactory from '../src/lib/train'
@@ -197,7 +197,7 @@ describe('train status cache', () => {
     }
 
     beforeEach(async () => {
-      await Order.deleteMany({ trainNo: { $in: [RUN.trainNo, '12427'] } })
+      await Order.deleteMany({ tenantId: tenantId(), trainNo: { $in: [RUN.trainNo, '12427'] } })
       // The evening of the 29th, with the train still to come. Only Date is
       // faked: the database driver's own timers keep running.
       vi.useFakeTimers({ toFake: ['Date'] })
@@ -214,7 +214,7 @@ describe('train status cache', () => {
       const row = await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
       expect(row.timetableAt).toEqual(TIMETABLE)
 
-      const after = await Order.findById(order._id).lean()
+      const after = await Order.findOne({ _id: order._id, tenantId: tenantId() }).lean()
       expect(after!.scheduledArrival).toEqual(TIMETABLE)
       expect(after!.bookedArrival).toEqual(BOOKED)
       // The day it reaches the platform, so the 29th's board and polls have it.
@@ -235,7 +235,7 @@ describe('train status cache', () => {
       railway()
 
       await refreshTrainStatus(RUN)
-      const after = await Order.findById(order._id).lean()
+      const after = await Order.findOne({ _id: order._id, tenantId: tenantId() }).lean()
       expect(after!.scheduledArrival).toEqual(TIMETABLE)
       expect(after!.serviceDate).toBe(RUN.serviceDate)
       expect(after!.events.filter((e) => e.meta?.via === 'railway-timetable').map((e) => e.meta?.field))
@@ -252,7 +252,7 @@ describe('train status cache', () => {
       railway(timetable)
 
       await refreshTrainStatus(run)
-      const after = await Order.findById(order._id).lean()
+      const after = await Order.findOne({ _id: order._id, tenantId: tenantId() }).lean()
       expect(after!.scheduledArrival).toEqual(timetable)
       expect(after!.serviceDate).toBe('2026-10-29')
     })
@@ -274,7 +274,7 @@ describe('train status cache', () => {
       await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
       await timingForOrders([{ ...RUN, scheduledArrival: BOOKED }], { allowFetch: false })
 
-      const after = await Order.findById(order._id).lean()
+      const after = await Order.findOne({ _id: order._id, tenantId: tenantId() }).lean()
       expect(after!.events.filter((e) => e.meta?.field === 'scheduledArrival')).toHaveLength(1)
       expect(after!.bookedArrival).toEqual(BOOKED)
     })
@@ -284,7 +284,7 @@ describe('train status cache', () => {
       railway(new Date('2026-10-30T00:20:00+05:30'))
 
       await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
-      const after = await Order.findById(order._id).lean()
+      const after = await Order.findOne({ _id: order._id, tenantId: tenantId() }).lean()
       expect(after!.scheduledArrival).toEqual(BOOKED)
       expect(after!.bookedArrival).toBeNull()
     })
@@ -303,7 +303,7 @@ describe('train status cache', () => {
 
       await refreshTrainStatus(RUN, { scheduledArrival: BOOKED })
       for (const id of [closed._id, byHand._id]) {
-        const after = await Order.findById(id).lean()
+        const after = await Order.findOne({ _id: id, tenantId: tenantId() }).lean()
         expect(after!.scheduledArrival).toEqual(BOOKED)
         expect(after!.serviceDate).toBe(RUN.serviceDate)
       }
@@ -317,7 +317,7 @@ describe('train status cache', () => {
       // A second booking arrives inside the reading's tier: no fetch is due.
       const late = await makeOrder({ ...RUN, scheduledArrival: BOOKED })
       await timingForOrders([late])
-      const after = await Order.findById(late._id).lean()
+      const after = await Order.findOne({ _id: late._id, tenantId: tenantId() }).lean()
       expect(after!.scheduledArrival).toEqual(TIMETABLE)
     })
 
@@ -439,20 +439,20 @@ describe('polling worker tick', () => {
   })
 
   it('polls one row per train, ignoring the trainless order', async () => {
-    const s = await runTrainPollingTick()
+    const s = await runTrainPollingTick(tenantId())
     expect(s.trainsConsidered).toBe(2)
     expect(s.refreshed).toBe(2)
     expect(await TrainStatus.countDocuments({})).toBe(2)
   })
 
   it('skips trains whose reading is still inside its tier', async () => {
-    const s = await runTrainPollingTick()
+    const s = await runTrainPollingTick(tenantId())
     expect(s.refreshed).toBe(0)
     expect(s.skippedFresh).toBe(2)
   })
 
   it('does not fire leave-now while the kitchen still has the order', async () => {
-    const s = await runTrainPollingTick()
+    const s = await runTrainPollingTick(tenantId())
     expect(s.leaveNowFired).toEqual([])
   })
 
@@ -470,7 +470,7 @@ describe('polling worker tick', () => {
       { $set: { etaAt: new Date(Date.now() - 60 * 60_000), fetchedAt: new Date() } },
     )
 
-    const s = await runTrainPollingTick()
+    const s = await runTrainPollingTick(tenantId())
     expect(s.leaveNowFired.length).toBe(1)
 
     const after = await findMany(admin, { trainNo: '12506' })
@@ -480,7 +480,7 @@ describe('polling worker tick', () => {
   })
 
   it('does not fire leave-now twice for the same run', async () => {
-    const s = await runTrainPollingTick()
+    const s = await runTrainPollingTick(tenantId())
     expect(s.leaveNowFired).toEqual([])
 
     const after = await findMany(admin, { trainNo: '12506' })
@@ -498,7 +498,7 @@ describe('polling worker tick', () => {
     // Tomorrow afternoon: nothing to learn yet.
     await makeOrder({ restaurantId: r._id, serviceDate: tomorrow, trainNo: '12555', stationCode: 'CNB', scheduledArrival: new Date(Date.now() + 20 * 3_600_000) })
 
-    await runTrainPollingTick()
+    await runTrainPollingTick(tenantId())
     expect(await TrainStatus.countDocuments({ trainNo: '15565', serviceDate: tomorrow })).toBe(1)
     expect(await TrainStatus.countDocuments({ trainNo: '12555' })).toBe(0)
   })
@@ -516,7 +516,7 @@ describe('polling worker tick', () => {
       { $set: { fetchedAt: veryOld, arrived: true } },
     )
 
-    await runTrainPollingTick()
+    await runTrainPollingTick(tenantId())
 
     const row = await TrainStatus.findOne({ trainNo: '12312' })
     // Untouched fetchedAt is the proof: no upstream call was made for it.

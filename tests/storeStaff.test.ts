@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { User } from '../src/lib/models'
-import { makeRestaurant, makeUser, resetDb } from './fixtures'
+import { makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 // Same fake-session pattern as sessionFresh.test.ts: staffActions.ts calls
 // requireRole() internally, which reads the session, so the session is what
@@ -52,7 +52,7 @@ describe('store manager staff scoping', () => {
     )
 
     expect(result.ok).toBeTruthy()
-    const created = await User.findOne({ phone: '9300000002' }).lean()
+    const created = await User.findOne({ tenantId: tenantId(), phone: '9300000002' }).lean()
     expect(created?.role).toBe('DELIVERY_AGENT')
   })
 
@@ -73,7 +73,7 @@ describe('store manager staff scoping', () => {
     )
 
     expect(result.error).toMatch(/only add or edit riders/i)
-    expect(await User.findOne({ phone: '9300000004' }).lean()).toBeNull()
+    expect(await User.findOne({ tenantId: tenantId(), phone: '9300000004' }).lean()).toBeNull()
   })
 
   it('refuses to assign an outlet outside their own', async () => {
@@ -114,7 +114,7 @@ describe('store manager staff scoping', () => {
     )
 
     expect(result.error).toMatch(/not a rider at one of your outlets/i)
-    expect((await User.findById(someoneElse._id).lean())?.role).toBe('TELECALLER')
+    expect((await User.findOne({ _id: someoneElse._id, tenantId: tenantId() }).lean())?.role).toBe('TELECALLER')
   })
 
   it('toggleUserActive refuses a target outside the manager’s own riders', async () => {
@@ -128,7 +128,7 @@ describe('store manager staff scoping', () => {
     // defence in depth and simply does nothing rather than surfacing an
     // error nobody should ever hit through the UI.
     await toggleUserActive(formOf({ id: String(notMyRider._id), active: 'false' }))
-    expect((await User.findById(notMyRider._id).lean())?.active).toBe(true)
+    expect((await User.findOne({ _id: notMyRider._id, tenantId: tenantId() }).lean())?.active).toBe(true)
   })
 
   it('toggleUserActive works on their own rider', async () => {
@@ -138,7 +138,7 @@ describe('store manager staff scoping', () => {
     loginAs(manager, 'STORE_MANAGER', [String(mine._id)])
 
     await toggleUserActive(formOf({ id: String(myRider._id), active: 'false' }))
-    expect((await User.findById(myRider._id).lean())?.active).toBe(false)
+    expect((await User.findOne({ _id: myRider._id, tenantId: tenantId() }).lean())?.active).toBe(false)
   })
 
   it('deleteUser is out of reach for a store manager entirely — no UI, no server path', async () => {
@@ -149,6 +149,6 @@ describe('store manager staff scoping', () => {
 
     const { deleteUser } = await import('../src/app/admin/setup/staffActions')
     await expect(deleteUser({}, formOf({ id: String(myRider._id) }))).rejects.toThrow(/^REDIRECT:/)
-    expect(await User.findById(myRider._id).lean()).not.toBeNull()
+    expect(await User.findOne({ _id: myRider._id, tenantId: tenantId() }).lean()).not.toBeNull()
   })
 })

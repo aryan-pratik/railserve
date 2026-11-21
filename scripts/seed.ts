@@ -13,6 +13,7 @@ import bcrypt from 'bcryptjs'
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Order, Restaurant, User, type RestaurantDoc } from '../src/lib/models'
 import { env } from '../src/lib/env'
+import { scriptTenant } from './scriptTenant'
 
 const RESTAURANTS = [
   {
@@ -39,9 +40,10 @@ async function main() {
   assertSeedTarget()
   const reset = process.argv.includes('--reset')
   await connectDb()
+  const T = await scriptTenant()
 
   if (reset) {
-    const { deletedCount } = await Order.deleteMany({})
+    const { deletedCount } = await Order.deleteMany({ tenantId: T })
     console.log(`--reset: deleted ${deletedCount} order(s)\n`)
   }
 
@@ -51,7 +53,7 @@ async function main() {
   const restaurants: RestaurantDoc[] = []
   for (const r of RESTAURANTS) {
     const doc = await Restaurant.findOneAndUpdate(
-      { name: r.name },
+      { tenantId: T, name: r.name },
       { $set: r, $setOnInsert: { active: true } },
       { upsert: true, returnDocument: 'after' },
     )
@@ -99,7 +101,7 @@ async function main() {
   console.log('\nusers')
   for (const u of users) {
     await User.findOneAndUpdate(
-      { phone: u.phone },
+      { tenantId: T, phone: u.phone },
       // $unset the old singular field so re-seeding an existing database does
       // not leave a stale restaurantId shadowing the array.
       {

@@ -4,7 +4,7 @@ import { connectDb } from '@/lib/db'
 import { Restaurant } from '@/lib/models'
 import { KotTickets } from '@/components/KotTicket'
 import { dietLookupFor } from '@/lib/repo/menuRepo'
-import { requireInternalRenderToken, INTERNAL_CTX } from '@/lib/printer/internalAuth'
+import { requireInternalRenderToken, internalCtx } from '@/lib/printer/internalAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,16 +12,18 @@ export const dynamic = 'force-dynamic'
 export default async function InternalPrintOrderPage(props: PageProps<'/internal/print/order/[id]'>) {
   await requireInternalRenderToken()
   const { id } = await props.params
+  // The print queue puts the tenant on the URL (`?t=`); see printer/queue.ts.
+  const ctx = internalCtx((await props.searchParams).t)
 
-  const order = await findById(INTERNAL_CTX, id)
+  const order = await findById(ctx, id)
   if (!order) notFound()
 
   await connectDb()
   const outlet = order.restaurantId
-    ? await Restaurant.findById(order.restaurantId).select('name stationName').lean()
+    ? await Restaurant.findOne({ _id: order.restaurantId, tenantId: ctx.tenantId }).select('name stationName').lean()
     : null
 
-  const lookup = await dietLookupFor([order])
+  const lookup = await dietLookupFor(ctx.tenantId, [order])
 
   return (
     <div className="flex flex-col items-center gap-4 bg-white p-4">

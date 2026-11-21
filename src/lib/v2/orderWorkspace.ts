@@ -145,19 +145,19 @@ export async function loadOrderWorkspace(ctx: AuthContext, id: string): Promise<
 
   const isAdmin = ctx.role === 'ADMIN'
   const [outlets, actors, timings, cancelRequest, rto, dietLookup, scopedRiders, allRiders, canCollect] = await Promise.all([
-    Restaurant.find(isAdmin ? {} : { _id: { $in: ctx.restaurantIds } })
+    Restaurant.find(isAdmin ? { tenantId: ctx.tenantId } : { tenantId: ctx.tenantId, _id: { $in: ctx.restaurantIds } })
       .select('name stationCode walkToPlatformMinutes active')
       .sort({ name: 1 })
       .lean(),
-    User.find({ _id: { $in: actorIds } }).select('name role').lean(),
+    User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name role').lean(),
     // Cache-only for the call desk, like its own page; the kitchen and admin may fetch.
     timingForOrders([order], { allowFetch: isAdmin || ctx.role === 'STORE_MANAGER' }),
     viewCancelRequest(order),
     viewReturn(order),
-    dietLookupFor([order]),
-    listAssignableRiders(order.restaurantId),
+    dietLookupFor(ctx.tenantId, [order]),
+    listAssignableRiders(ctx, order.restaurantId),
     isAdmin
-      ? User.find({ role: 'DELIVERY_AGENT', active: true }).select('name phone restaurantIds').sort({ name: 1 }).lean()
+      ? User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', active: true }).select('name phone restaurantIds').sort({ name: 1 }).lean()
       : Promise.resolve([]),
     mayCollectReturns(ctx),
   ])

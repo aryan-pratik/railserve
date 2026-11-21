@@ -13,7 +13,7 @@ import {
 } from '../src/lib/repo/rtoRepo'
 import { canCollectReturns, opensReturn } from '../src/lib/rto'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
-import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 /**
  * Return to origin: an order cancelled or not delivered after a rider took
@@ -50,7 +50,7 @@ describe('return to origin', () => {
   /** A store manager an admin has ticked "collects returns" for. */
   async function allowedManager(phone: string, outlet: mongoose.Types.ObjectId) {
     const u = await makeUser('STORE_MANAGER', phone, outlet)
-    await User.updateOne({ _id: u._id }, { $set: { canCollectReturns: true } })
+    await User.updateOne({ tenantId: tenantId(), _id: u._id }, { $set: { canCollectReturns: true } })
     return u
   }
 
@@ -165,10 +165,10 @@ describe('return to origin', () => {
     expect((await findById(admin, id))!.delivery.rto!.status).toBe('PENDING')
 
     // The tick is read fresh, so granting it takes effect on the next click.
-    await User.updateOne({ _id: untickedManager.userId }, { $set: { canCollectReturns: true } })
+    await User.updateOne({ tenantId: tenantId(), _id: untickedManager.userId }, { $set: { canCollectReturns: true } })
     await markReturnedToOrigin({ ctx: untickedManager, orderId: id })
     expect((await findById(admin, id))!.delivery.rto!.status).toBe('RETURNED')
-    await User.updateOne({ _id: untickedManager.userId }, { $set: { canCollectReturns: false } })
+    await User.updateOne({ tenantId: tenantId(), _id: untickedManager.userId }, { $set: { canCollectReturns: false } })
 
     // Nobody ticked at all: still the admin.
     const another = await dispatchedOrder()

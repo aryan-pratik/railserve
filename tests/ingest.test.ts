@@ -1,9 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
-import { Order, UnparsedInbox } from '../src/lib/models'
+import { Order, Restaurant, UnparsedInbox } from '../src/lib/models'
 import { ingestEmail } from '../src/lib/ingest'
 import { matchOutlet } from '../src/lib/ingest/outletMatch'
-import { makeRestaurant, resetDb } from './fixtures'
+import { makeRestaurant, resetDb, tenantId } from './fixtures'
 import * as fx from './fixtures/yatriRestro'
 import * as bookingFx from './fixtures/yatriRestroBooking'
 import * as relfoodFx from './fixtures/relfood'
@@ -16,6 +16,7 @@ const email = (body: string, gmailMessageId?: string) => ({
   gmailMessageId,
   subject: 'New order',
   from: 'orders@yatrirestro.example',
+  tenantId: tenantId(),
 })
 
 describe('retail ingestion', () => {
@@ -33,7 +34,7 @@ describe('retail ingestion', () => {
     const r = await ingestEmail(email(fx.SAMPLE_WITH_EMOJI, 'gmail-1'))
     expect(r.status).toBe('CREATED')
 
-    const order = await Order.findOne({ externalOrderId: '1000584805' }).lean()
+    const order = await Order.findOne({ tenantId: tenantId(), externalOrderId: '1000584805' }).lean()
     expect(order).not.toBeNull()
     expect(order!.source).toBe('YATRIRESTRO')
     expect(order!.status).toBe('RECEIVED')
@@ -55,14 +56,14 @@ describe('retail ingestion', () => {
     const second = await ingestEmail(email(fx.SAMPLE_WITH_EMOJI, 'gmail-1'))
     expect(second.status).toBe('DUPLICATE')
 
-    expect(await Order.countDocuments({ externalOrderId: '1000584805' })).toBe(1)
+    expect(await Order.countDocuments({ tenantId: tenantId(), externalOrderId: '1000584805' })).toBe(1)
   })
 
   it('deduplicates on externalOrderId even when the message id differs', async () => {
     await ingestEmail(email(fx.SAMPLE_WITH_EMOJI, 'gmail-1'))
     const resent = await ingestEmail(email(fx.SAMPLE_WITH_EMOJI, 'gmail-DIFFERENT'))
     expect(resent.status).toBe('DUPLICATE')
-    expect(await Order.countDocuments({})).toBe(1)
+    expect(await Order.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 
   it('files a malformed email in the unparsed inbox instead of dropping it', async () => {
@@ -71,8 +72,8 @@ describe('retail ingestion', () => {
     if (r.status !== 'UNPARSED') return
     expect(r.reason).toBe('MISSING_FIELD')
 
-    expect(await Order.countDocuments({})).toBe(0)
-    const row = await UnparsedInbox.findById(r.inboxId).lean()
+    expect(await Order.countDocuments({ tenantId: tenantId() })).toBe(0)
+    const row = await UnparsedInbox.findOne({ _id: r.inboxId, tenantId: tenantId() }).lean()
     expect(row!.resolved).toBe(false)
     // What the parser did understand is kept, so a human is not starting cold.
     expect((row!.partial as { externalOrderId?: string })?.externalOrderId).toBe('1000585222')
@@ -83,7 +84,7 @@ describe('retail ingestion', () => {
     expect(r.status).toBe('UNPARSED')
     if (r.status !== 'UNPARSED') return
     expect(r.reason).toBe('UNKNOWN_OUTLET')
-    expect(await Order.countDocuments({})).toBe(0)
+    expect(await Order.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('files an email no parser recognises rather than discarding it', async () => {
@@ -100,7 +101,7 @@ describe('retail ingestion', () => {
       allowedSenders: ['@yatrirestro.example'],
     })
     expect(r).toEqual({ status: 'IGNORED', from: 'news@shop.example' })
-    expect(await UnparsedInbox.countDocuments({})).toBe(0)
+    expect(await UnparsedInbox.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('still parses, and still files failures from, a listed sender', async () => {
@@ -118,6 +119,7 @@ describe('retail ingestion', () => {
     await makeRestaurant('THE COSMOZIN LOUNGE', 'CNB')
     const r = await ingestEmail({
       body: relfoodFx.MAIL_SAMPLE_GMAIL,
+      tenantId: tenantId(),
       receivedAt: new Date('2026-10-08T01:59:40Z'),
       gmailMessageId: 'gmail-relfood-1',
       subject: 'REL FOOD Order Invoice No.: 1190676',
@@ -126,7 +128,7 @@ describe('retail ingestion', () => {
     })
     expect(r.status).toBe('CREATED')
 
-    const order = await Order.findOne({ externalOrderId: '1190676' }).lean()
+    const order = await Order.findOne({ tenantId: tenantId(), externalOrderId: '1190676' }).lean()
     expect(order).toMatchObject({
       source: 'RELFOOD',
       stationCode: 'CNB',
@@ -140,14 +142,14 @@ describe('retail ingestion', () => {
   it('does not pile up inbox rows when the same bad message is replayed', async () => {
     await ingestEmail(email(fx.GARBAGE, 'gmail-4'))
     await ingestEmail(email(fx.GARBAGE, 'gmail-4'))
-    expect(await UnparsedInbox.countDocuments({ resolved: false })).toBe(1)
+    expect(await UnparsedInbox.countDocuments({ tenantId: tenantId(), resolved: false })).toBe(1)
   })
 
   it('handles a multi-item order end to end', async () => {
     const r = await ingestEmail(email(fx.MULTI_ITEM, 'gmail-5'))
     expect(r.status).toBe('CREATED')
 
-    const order = await Order.findOne({ externalOrderId: '1000584999' }).lean()
+    const order = await Order.findOne({ tenantId: tenantId(), externalOrderId: '1000584999' }).lean()
     expect(order!.items).toHaveLength(3)
     expect(order!.items.map((i) => i.qty)).toEqual([2, 3, 1])
     expect(order!.items[1].notes).toBe('extra sugar')
@@ -159,7 +161,7 @@ describe('retail ingestion', () => {
     const r = await ingestEmail(email(bookingFx.SAMPLE_PARTNER_NO_OUTLET, 'gmail-6'))
     expect(r.status).toBe('CREATED')
 
-    const order = await Order.findOne({ externalOrderId: '1000591444' }).lean()
+    const order = await Order.findOne({ tenantId: tenantId(), externalOrderId: '1000591444' }).lean()
     expect(order).not.toBeNull()
     expect(order!.stationCode).toBe('CNB')
   })
@@ -187,26 +189,26 @@ describe('outlet matching (plan §6: never guess)', () => {
 
   it('matches on the exact name', async () => {
     await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
-    const m = await matchOutlet('HOTEL GANGA GALAXY', 'CNB')
+    const m = await matchOutlet(tenantId(), 'HOTEL GANGA GALAXY', 'CNB')
     expect(m.ok).toBe(true)
   })
 
   it('matches on an alias, case and spacing insensitive', async () => {
     await makeRestaurant('HOTEL GANGA GALAXY', 'CNB', ['Ganga  Galaxy'])
-    const m = await matchOutlet('  ganga galaxy ', 'CNB')
+    const m = await matchOutlet(tenantId(), '  ganga galaxy ', 'CNB')
     expect(m.ok).toBe(true)
   })
 
   it('refuses a near-miss rather than fuzzy-matching it', async () => {
     await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
     // One character out. Routing to the wrong kitchen is worse than a delay.
-    const m = await matchOutlet('HOTEL GANGA GALAXI', 'CNB')
+    const m = await matchOutlet(tenantId(), 'HOTEL GANGA GALAXI', 'CNB')
     expect(m.ok).toBe(false)
   })
 
   it('refuses a right name at the wrong station', async () => {
     await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
-    const m = await matchOutlet('HOTEL GANGA GALAXY', 'PRYJ')
+    const m = await matchOutlet(tenantId(), 'HOTEL GANGA GALAXY', 'PRYJ')
     expect(m.ok).toBe(false)
     if (m.ok) return
     expect(m.detail).toMatch(/registered at CNB/)
@@ -215,7 +217,7 @@ describe('outlet matching (plan §6: never guess)', () => {
   it('disambiguates a shared alias by station when it can', async () => {
     await makeRestaurant('GANGA CNB', 'CNB', ['GANGA'])
     await makeRestaurant('GANGA PRYJ', 'PRYJ', ['GANGA'])
-    const m = await matchOutlet('GANGA', 'PRYJ')
+    const m = await matchOutlet(tenantId(), 'GANGA', 'PRYJ')
     expect(m.ok).toBe(true)
     if (!m.ok) return
     expect(m.name).toBe('GANGA PRYJ')
@@ -224,7 +226,7 @@ describe('outlet matching (plan §6: never guess)', () => {
   it('refuses when a shared alias cannot be disambiguated', async () => {
     await makeRestaurant('GANGA ONE', 'CNB', ['GANGA'])
     await makeRestaurant('GANGA TWO', 'CNB', ['GANGA'])
-    const m = await matchOutlet('GANGA', 'CNB')
+    const m = await matchOutlet(tenantId(), 'GANGA', 'CNB')
     expect(m.ok).toBe(false)
     if (m.ok) return
     expect(m.detail).toMatch(/refusing to guess/)
@@ -232,8 +234,8 @@ describe('outlet matching (plan §6: never guess)', () => {
 
   it('ignores deactivated outlets', async () => {
     const r = await makeRestaurant('HOTEL GANGA GALAXY', 'CNB')
-    await r.updateOne({ $set: { active: false } })
-    const m = await matchOutlet('HOTEL GANGA GALAXY', 'CNB')
+    await Restaurant.updateOne({ _id: r._id, tenantId: tenantId() }, { $set: { active: false } })
+    const m = await matchOutlet(tenantId(), 'HOTEL GANGA GALAXY', 'CNB')
     expect(m.ok).toBe(false)
   })
 
@@ -242,7 +244,7 @@ describe('outlet matching (plan §6: never guess)', () => {
   // the order gets filed under.
   it('matches on the name alone when the order carries no station', async () => {
     await makeRestaurant('KHANA KHAZANA', 'GAYA')
-    const m = await matchOutlet('KHANA KHAZANA', null)
+    const m = await matchOutlet(tenantId(), 'KHANA KHAZANA', null)
     expect(m.ok).toBe(true)
     if (!m.ok) return
     expect(m.stationCode).toBe('GAYA')
@@ -250,7 +252,7 @@ describe('outlet matching (plan §6: never guess)', () => {
 
   it('still refuses a near-miss when there is no station to fall back on', async () => {
     await makeRestaurant('KHANA KHAZANA', 'GAYA')
-    const m = await matchOutlet('KHANA KHAJANA', null)
+    const m = await matchOutlet(tenantId(), 'KHANA KHAJANA', null)
     expect(m.ok).toBe(false)
   })
 
@@ -259,7 +261,7 @@ describe('outlet matching (plan §6: never guess)', () => {
     // so a missing station makes matching stricter rather than looser.
     await makeRestaurant('GANGA CNB', 'CNB', ['GANGA'])
     await makeRestaurant('GANGA PRYJ', 'PRYJ', ['GANGA'])
-    const m = await matchOutlet('GANGA', null)
+    const m = await matchOutlet(tenantId(), 'GANGA', null)
     expect(m.ok).toBe(false)
     if (m.ok) return
     expect(m.detail).toMatch(/refusing to guess/)

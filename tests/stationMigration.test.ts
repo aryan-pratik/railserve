@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Restaurant, PrintJob, Station } from '../src/lib/models'
 import { migrateStationPrinting } from '../scripts/migrate-station-printing'
-import { resetDb, makeRestaurant } from './fixtures'
+import { resetDb, makeRestaurant, tenantId } from './fixtures'
 
 /**
  * The migration's one job that really matters: the token a live kitchen agent
@@ -15,14 +15,14 @@ describe('migrateStationPrinting', () => {
   it('adopts the live outlet token onto its station, unchanged', async () => {
     const token = 'e4gzvMsO3l0pl_UaSo-iQ5SXnB6k77jd'
     await makeRestaurant('YATRI BHOJAN', 'CNB')
-    await Restaurant.updateOne({ name: 'YATRI BHOJAN' }, { $set: { printAgentToken: token } })
+    await Restaurant.updateOne({ tenantId: tenantId(), name: 'YATRI BHOJAN' }, { $set: { printAgentToken: token } })
     await makeRestaurant('YATRI RESTRO', 'CNB')
 
     const report = await migrateStationPrinting()
 
     expect(report.stationsCreated).toEqual(['CNB'])
     expect(report.tokensAdopted).toEqual(['CNB'])
-    expect((await Station.findById('CNB'))!.printAgentToken).toBe(token)
+    expect((await Station.findOne({ _id: 'CNB', tenantId: tenantId() }))!.printAgentToken).toBe(token)
   })
 
   it('creates one station for many brands trading there', async () => {
@@ -32,48 +32,49 @@ describe('migrateStationPrinting', () => {
 
     await migrateStationPrinting()
 
-    expect(await Station.countDocuments({})).toBe(1)
+    expect(await Station.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 
   it('is idempotent and never rotates a token out from under a live agent', async () => {
     await makeRestaurant('YATRI BHOJAN', 'CNB')
-    await Restaurant.updateOne({}, { $set: { printAgentToken: 'original' } })
+    await Restaurant.updateOne({ tenantId: tenantId() }, { $set: { printAgentToken: 'original' } })
 
     await migrateStationPrinting()
     const second = await migrateStationPrinting()
 
     expect(second.stationsCreated).toEqual([])
     expect(second.tokensAdopted).toEqual([])
-    expect((await Station.findById('CNB'))!.printAgentToken).toBe('original')
+    expect((await Station.findOne({ _id: 'CNB', tenantId: tenantId() }))!.printAgentToken).toBe('original')
   })
 
   it('refuses to guess when two outlets at one station hold tokens', async () => {
     await makeRestaurant('YATRI BHOJAN', 'CNB')
     await makeRestaurant('YATRI RESTRO', 'CNB')
-    await Restaurant.updateOne({ name: 'YATRI BHOJAN' }, { $set: { printAgentToken: 'tok-a' } })
-    await Restaurant.updateOne({ name: 'YATRI RESTRO' }, { $set: { printAgentToken: 'tok-b' } })
+    await Restaurant.updateOne({ tenantId: tenantId(), name: 'YATRI BHOJAN' }, { $set: { printAgentToken: 'tok-a' } })
+    await Restaurant.updateOne({ tenantId: tenantId(), name: 'YATRI RESTRO' }, { $set: { printAgentToken: 'tok-b' } })
 
     const report = await migrateStationPrinting()
 
     // Picking one would 401 the other agent with no explanation.
-    expect((await Station.findById('CNB'))!.printAgentToken).toBeNull()
+    expect((await Station.findOne({ _id: 'CNB', tenantId: tenantId() }))!.printAgentToken).toBeNull()
     expect(report.warnings.join(' ')).toMatch(/refusing to guess/)
   })
 
   it('settles one authoritative station name and reports the disagreement', async () => {
-    await Restaurant.create({ name: 'A', stationCode: 'CNB', stationName: 'Kanpur Central' })
-    await Restaurant.create({ name: 'B', stationCode: 'CNB', stationName: 'Kanpur Central' })
-    await Restaurant.create({ name: 'C', stationCode: 'CNB', stationName: 'KANPUR CNTRL' })
+    await Restaurant.create({ tenantId: tenantId(), name: 'A', stationCode: 'CNB', stationName: 'Kanpur Central' })
+    await Restaurant.create({ tenantId: tenantId(), name: 'B', stationCode: 'CNB', stationName: 'Kanpur Central' })
+    await Restaurant.create({ tenantId: tenantId(), name: 'C', stationCode: 'CNB', stationName: 'KANPUR CNTRL' })
 
     const report = await migrateStationPrinting()
 
-    expect((await Station.findById('CNB'))!.name).toBe('Kanpur Central')
+    expect((await Station.findOne({ _id: 'CNB', tenantId: tenantId() }))!.name).toBe('Kanpur Central')
     expect(report.warnings.join(' ')).toMatch(/disagree on the station name/)
   })
 
   it('backfills in-flight jobs queued under the old per-outlet shape', async () => {
     const outlet = await makeRestaurant('YATRI BHOJAN', 'CNB')
     await PrintJob.collection.insertOne({
+      tenantId: tenantId(),
       restaurantId: outlet._id,
       refType: 'order',
       refId: 'order-1',
@@ -92,6 +93,7 @@ describe('migrateStationPrinting', () => {
   it('reports a job pointing at a deleted outlet rather than guessing its station', async () => {
     await makeRestaurant('YATRI BHOJAN', 'CNB')
     await PrintJob.collection.insertOne({
+      tenantId: tenantId(),
       restaurantId: new (await import('mongoose')).default.Types.ObjectId(),
       refType: 'order',
       refId: 'orphan',
@@ -109,13 +111,14 @@ describe('migrateStationPrinting', () => {
 
   it('resolves a lowercase outlet station code to the uppercase station', async () => {
     await Restaurant.collection.insertOne({
+      tenantId: tenantId(),
       name: 'sloppy', stationCode: 'cnb', active: true, aliases: [],
       createdAt: new Date(), updatedAt: new Date(),
     })
 
     await migrateStationPrinting()
 
-    expect(await Station.findById('CNB')).not.toBeNull()
-    expect(await Station.countDocuments({})).toBe(1)
+    expect(await Station.findOne({ _id: 'CNB', tenantId: tenantId() })).not.toBeNull()
+    expect(await Station.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 })

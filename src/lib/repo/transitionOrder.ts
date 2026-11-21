@@ -240,7 +240,7 @@ export async function transitionOrder(params: {
         )
       }
 
-      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
     })
 
     // After the commit, never inside the callback: withTransaction retries
@@ -437,7 +437,7 @@ export async function adminOverrideStatus(params: {
         )
       }
 
-      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
     })
 
     reportFoodOnTrainsStatus(updated!)
@@ -514,7 +514,7 @@ export async function flagRatingOrder(params: {
         )
       }
 
-      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
     })
 
     return updated!
@@ -679,7 +679,7 @@ export async function correctRiderOutcome(params: {
         throw new ConflictError(`Order changed underneath you: it is no longer ${from}. Reload and retry.`)
       }
 
-      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
     })
 
     reportFoodOnTrainsStatus(updated!)
@@ -754,7 +754,7 @@ export async function assignAgents(params: {
       // only a record, and the record may name whoever really carried it.
       if (open && ids.length > 0) {
         const atOutlet = await User.countDocuments(
-          { _id: { $in: ids }, role: 'DELIVERY_AGENT', restaurantIds: current.restaurantId },
+          { _id: { $in: ids }, tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', restaurantIds: current.restaurantId },
           { session },
         )
         if (atOutlet !== ids.length) {
@@ -781,7 +781,7 @@ export async function assignAgents(params: {
       }
 
       await Order.updateOne(
-        { _id },
+        { _id, tenantId: ctx.tenantId },
         {
           $set: {
             'delivery.agentIds': ids,
@@ -804,7 +804,7 @@ export async function assignAgents(params: {
         },
         { session },
       )
-      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
     })
     return updated!
   } finally {
@@ -857,6 +857,7 @@ export async function assignRiders(params: {
         const riders = await User.find(
           {
             _id: { $in: ids },
+            tenantId: ctx.tenantId,
             role: 'DELIVERY_AGENT',
             active: true,
             // For an admin as well. A rider only ever sees orders at their
@@ -884,7 +885,7 @@ export async function assignRiders(params: {
       const nextCarrier = current.status === 'DISPATCHED' && ids.length === 1 ? ids[0] : null
 
       await Order.updateOne(
-        { _id },
+        { _id, tenantId: ctx.tenantId },
         {
           $set: {
             'delivery.agentIds': ids,
@@ -908,7 +909,7 @@ export async function assignRiders(params: {
         },
         { session },
       )
-      updated = await Order.findOne({ _id }, null, { session }).lean<OrderDoc>()
+      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
     })
     return updated!
   } finally {
@@ -918,11 +919,12 @@ export async function assignRiders(params: {
 
 /** Active riders an office user may pick for an order: those at its outlet. */
 export async function listAssignableRiders(
+  ctx: AuthContext,
   restaurantId: mongoose.Types.ObjectId | null | undefined,
 ): Promise<{ id: string; name: string; phone: string }[]> {
   // An enquiry has no outlet yet, so there is no one to pick.
   if (!restaurantId) return []
-  const riders = await User.find({ role: 'DELIVERY_AGENT', active: true, restaurantIds: restaurantId })
+  const riders = await User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', active: true, restaurantIds: restaurantId })
     .select('name phone')
     .sort({ name: 1 })
     .lean()

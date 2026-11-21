@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Monitor, Plus } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { env } from '@/lib/env'
 import { formatIST, formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
 import { isSimulatedProvider } from '@/lib/train'
@@ -30,7 +30,7 @@ export const metadata = { title: 'Kitchen board · RailServe' }
  * manager sees their own.
  */
 export default async function KitchenBoardPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const ctx = await requirePermission('kitchen.operate')
   const sp = await props.searchParams
   const isAdmin = ctx.role === 'ADMIN'
   const wall = sp.wall === '1'

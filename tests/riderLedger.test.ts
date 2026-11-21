@@ -22,7 +22,7 @@ import { opsDayOf, opsDayRange } from '../src/lib/opsDay'
 import { kitchenStatus, overallStatus, riderStatus } from '../src/lib/orderViews'
 import { canReceiveCash } from '../src/lib/collections'
 import { shiftServiceDate, todayIST } from '../src/lib/format'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 type Id = mongoose.Types.ObjectId
 
@@ -106,7 +106,7 @@ describe('rider record: one source for the app and the office', () => {
 
   const ready = (extra: Record<string, unknown> = {}) =>
     makeOrder({ restaurantId: outlet, status: 'PREPARED', serviceDate: todayIST(), trainNo: '12878', ...extra })
-  const get = async (id: string) => (await Order.findById(id).lean())!
+  const get = async (id: string) => (await Order.findOne({ _id: id, tenantId: tenantId() }).lean())!
   const history = async (token: string, qs = '') =>
     (await getHistory(new Request(`http://localhost/api/mobile/history?v=3${qs}`, {
       headers: { authorization: `Bearer ${token}` },
@@ -388,7 +388,7 @@ describe('rider record: one source for the app and the office', () => {
 
   describe('teams and collections', () => {
     it('lets only an admin arrange teams, one level deep', async () => {
-      await User.updateOne({ _id: leadId }, { $set: { isTeamLead: true } })
+      await User.updateOne({ tenantId: tenantId(), _id: leadId }, { $set: { isTeamLead: true } })
       await expect(setTeam({ ctx: manager, riderIds: [String(aId)], leadId: String(leadId) })).rejects.toBeInstanceOf(ForbiddenError)
       await expect(setTeam({ ctx: admin, riderIds: [String(aId)], leadId: String(bId) })).rejects.toBeInstanceOf(ConflictError)
       await expect(setTeam({ ctx: admin, riderIds: [String(leadId)], leadId: String(leadId) })).rejects.toBeInstanceOf(ConflictError)
@@ -430,7 +430,7 @@ describe('rider record: one source for the app and the office', () => {
         }))
 
       expect((await post(aId, [mine])).status).toBe(403)
-      await User.updateOne({ _id: leadId }, { $set: { canReceiveCash: true } })
+      await User.updateOne({ tenantId: tenantId(), _id: leadId }, { $set: { canReceiveCash: true } })
       // B is not on this leader's team.
       expect((await post(bId, [theirs])).status).toBe(403)
       // Nobody receives their own cash.
@@ -496,11 +496,11 @@ describe('rider record: one source for the app and the office', () => {
       await assignRiders({ ctx: manager, orderId: o, riderIds: [String(bId)] })
       await transitionOrder({ ctx: b, orderId: o, to: 'DISPATCHED' })
       await transitionOrder({ ctx: b, orderId: o, to: 'DELIVERED' })
-      await User.updateOne({ _id: managerId }, { $set: { canReceiveCash: false } })
+      await User.updateOne({ tenantId: tenantId(), _id: managerId }, { $set: { canReceiveCash: false } })
       await expect(
         settleRiderCash({ ctx: manager, riderId: String(bId), orderIds: [o] }),
       ).rejects.toBeInstanceOf(ForbiddenError)
-      await User.updateOne({ _id: managerId }, { $set: { canReceiveCash: true } })
+      await User.updateOne({ tenantId: tenantId(), _id: managerId }, { $set: { canReceiveCash: true } })
       const r = await settleRiderCash({ ctx: manager, riderId: String(bId), orderIds: [o] })
       expect(r.orders).toBe(1)
     })
@@ -585,7 +585,7 @@ describe('rider record: one source for the app and the office', () => {
       await transitionOrder({ ctx: a, orderId: o, to: 'FAILED', apply: { failureReason: 'train left' } })
       // As if that happened on an earlier day.
       const earlier = new Date(Date.now() - 3 * 86_400_000)
-      await Order.updateOne({ _id: o }, { $set: { 'delivery.closedAt': earlier } })
+      await Order.updateOne({ tenantId: tenantId(), _id: o }, { $set: { 'delivery.closedAt': earlier } })
 
       const reopened = await adminOverrideStatus({ ctx: admin, orderId: o, to: 'DISPATCHED' })
       expect(reopened.delivery.closedAt).toBeNull()
@@ -621,7 +621,7 @@ describe('rider record: one source for the app and the office', () => {
       andClause(filter, null)
       expect(filter.$and).toHaveLength(2)
       expect(filter.$or).toBeUndefined()
-      const found = await Order.find(filter).select('delivery.pickedUpBy delivery.agentIds').lean()
+      const found = await Order.find({ ...filter, tenantId: tenantId() }).select('delivery.pickedUpBy delivery.agentIds').lean()
       expect(found.length).toBeGreaterThan(0)
       for (const f of found) {
         const mine = String(f.delivery?.pickedUpBy ?? '') === String(aId) ||

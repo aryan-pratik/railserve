@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import mongoose from 'mongoose'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 import { activityFeed, riderStatusCounts } from '../src/lib/repo/activityRepo'
 import { ACTIVITY_KINDS, istDaysToRange, kindOf, panelOf } from '../src/lib/activity'
 import { ForbiddenError, type AuthContext } from '../src/lib/authContext'
@@ -193,7 +193,7 @@ describe('activityFeed', () => {
   })
 
   it('is admin only, and refuses an unbounded read', async () => {
-    const manager: AuthContext = { userId: ids.manager, role: 'STORE_MANAGER', restaurantIds: [] }
+    const manager: AuthContext = { tenantId: tenantId(), userId: ids.manager, role: 'STORE_MANAGER', restaurantIds: [] }
     await expect(activityFeed(manager, { range, skip: 0, limit: 1 })).rejects.toBeInstanceOf(ForbiddenError)
     await expect(activityFeed(admin, { range: null, skip: 0, limit: 1 })).rejects.toThrow(/date range/)
   })

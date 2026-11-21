@@ -33,6 +33,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/runs/[run
   try {
     assertPrintAgentConfigured()
     await enqueueRunKotPrint({
+      tenantId: auth.tenantId,
       appOrigin: await getAppOrigin(),
       runKey,
       orderIds,

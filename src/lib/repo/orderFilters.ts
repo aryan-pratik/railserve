@@ -1,5 +1,6 @@
 import type { AuthContext } from '@/lib/authContext'
 import { Restaurant, Station } from '@/lib/models'
+import { naturalKey } from '@/lib/tenancy/primary'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { ORDER_TYPES } from '@/lib/orderEnums'
 import { EXCLUDED_STATUS } from '@/lib/analytics'
@@ -111,7 +112,7 @@ export function orderFilterParams(f: OrderFilters): URLSearchParams {
  * whoever runs the query, never instead of it. Dates read `serviceDate`,
  * the day the order is for, on every screen.
  */
-export async function orderFilterClause(f: OrderFilters): Promise<Record<string, unknown>> {
+export async function orderFilterClause(ctx: AuthContext, f: OrderFilters): Promise<Record<string, unknown>> {
   const clause: Record<string, unknown> = {}
   if (f.outlet) clause.restaurantId = f.outlet
   if (f.stations.length) clause.stationCode = { $in: f.stations }
@@ -129,7 +130,7 @@ export async function orderFilterClause(f: OrderFilters): Promise<Record<string,
   if (f.type) clause.orderType = f.type
   const byRider = riderClause(f.rider)
   andClause(clause, byRider)
-  const search = await orderSearchClause(f.q)
+  const search = await orderSearchClause(ctx, f.q)
   andClause(clause, search)
   return clause
 }
@@ -147,10 +148,12 @@ export type OrderFilterOptions = {
  * listed, so a selection never silently drops out.
  */
 export async function orderFilterOptions(ctx: AuthContext, picked: string[] = []): Promise<OrderFilterOptions> {
-  const outletFilter = ctx.role === 'ADMIN' ? {} : { _id: { $in: ctx.restaurantIds } }
+  const outletFilter = ctx.role === 'ADMIN'
+    ? { tenantId: ctx.tenantId }
+    : { tenantId: ctx.tenantId, _id: { $in: ctx.restaurantIds } }
   const [outlets, stationDocs, statusesInUse, riders] = await Promise.all([
     Restaurant.find(outletFilter).select('name stationCode stationName').sort({ name: 1 }).lean(),
-    Station.find({}).select('name').lean(),
+    Station.find({ tenantId: ctx.tenantId }).select('name').lean(),
     distinctStatuses(ctx),
     riderOptions(ctx),
   ])
@@ -163,7 +166,7 @@ export async function orderFilterOptions(ctx: AuthContext, picked: string[] = []
   // Named from the station record, falling back to whatever an outlet calls it.
   const stationName = new Map<string, string>()
   for (const o of outlets) if (o.stationName && !stationName.has(o.stationCode)) stationName.set(o.stationCode, o.stationName)
-  for (const s of stationDocs) if (s.name) stationName.set(String(s._id), s.name)
+  for (const s of stationDocs) if (s.name) stationName.set(naturalKey(String(s._id)), s.name)
 
   return {
     outlets: outlets.map((o) => ({ id: String(o._id), name: o.name, stationCode: o.stationCode })),

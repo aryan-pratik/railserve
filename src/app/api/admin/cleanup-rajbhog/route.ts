@@ -16,6 +16,7 @@ async function handle() {
   await connectDb()
 
   const candidates = await Restaurant.find({
+    tenantId: ctx.tenantId,
     active: false,
     $or: [{ name: /rajbhog/i }, { aliases: /rajbhog/i }],
   })
@@ -41,7 +42,7 @@ async function handle() {
     )
   }
 
-  await Restaurant.deleteOne({ _id: r._id })
+  await Restaurant.deleteOne({ _id: r._id, tenantId: ctx.tenantId })
 
   return NextResponse.json({ ok: true, deleted: { id: String(r._id), name: r.name } })
 }

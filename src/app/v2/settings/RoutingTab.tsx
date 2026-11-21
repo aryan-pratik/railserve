@@ -15,7 +15,7 @@ type Base = Awaited<ReturnType<typeof loadSetupBase>>
  * is a fallback for.
  */
 export async function RoutingTab({ ctx, base }: { ctx: AuthContext; base: Base }) {
-  const [senders, listingCounts] = await Promise.all([loadAllowedSenders(), orderCountsForListings(ctx, base.listings)])
+  const [senders, listingCounts] = await Promise.all([loadAllowedSenders(ctx), orderCountsForListings(ctx, base.listings)])
   const outletById = new Map(base.outlets.map((o) => [o.id, o]))
   const codes = [...new Set(base.listings.map((l) => l.stationCode))].sort()
 

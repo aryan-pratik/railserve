@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 import { ORDER_SOURCES } from '../orderEnums'
 
 /**
@@ -27,6 +28,8 @@ import { ORDER_SOURCES } from '../orderEnums'
  */
 const ListingSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     // Exactly as the aggregator writes it. Matched case- and
     // whitespace-insensitively; stored as-seen so the admin screen shows the
     // operator what the mail actually says.
@@ -49,6 +52,9 @@ const ListingSchema = new Schema(
 )
 
 export type ListingDoc = InferSchemaType<typeof ListingSchema> & { _id: mongoose.Types.ObjectId }
+
+// Every Listing belongs to one tenant; the guard refuses unscoped queries.
+ListingSchema.plugin(tenantScoped)
 
 export const Listing: Model<ListingDoc> = registerModel<ListingDoc>('Listing', ListingSchema)
 

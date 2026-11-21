@@ -4,7 +4,7 @@ import { findById } from '../src/lib/repo/orderRepo'
 import { assignRiders, listAssignableRiders, transitionOrder } from '../src/lib/repo/transitionOrder'
 import { User } from '../src/lib/models'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 /**
  * The office routes an order to a rider. The rider's app only ever shows what
@@ -32,7 +32,7 @@ describe('assigning riders to one order', () => {
     riderB = (await makeUser('DELIVERY_AGENT', '9300000005', ganga))._id
     farRider = (await makeUser('DELIVERY_AGENT', '9300000006', other))._id
     idleRider = (await makeUser('DELIVERY_AGENT', '9300000007', ganga))._id
-    await User.updateOne({ _id: idleRider }, { active: false })
+    await User.updateOne({ tenantId: tenantId(), _id: idleRider }, { active: false })
   })
 
   afterAll(async () => {
@@ -134,7 +134,7 @@ describe('assigning riders to one order', () => {
   })
 
   it('lists only active riders at the outlet', async () => {
-    const list = await listAssignableRiders(ganga)
+    const list = await listAssignableRiders(admin, ganga)
     expect(list.map((r) => r.id).sort()).toEqual([String(riderA), String(riderB)].sort())
   })
 })

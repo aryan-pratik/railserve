@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { activityFeed } from '@/lib/repo/activityRepo'
@@ -24,7 +24,7 @@ export const metadata = { title: 'Activity · RailServe' }
  * activityFeed for what that does and does not cover.
  */
 export default async function V2ActivityPage(props: PageProps<'/v2/activity'>) {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('activity.view')
   const sp = await props.searchParams
   const p = readActivityParams(sp)
   const { page, pageSize, skip } = readPaging(sp)
@@ -42,8 +42,8 @@ export default async function V2ActivityPage(props: PageProps<'/v2/activity'>) {
       skip,
       limit: pageSize,
     }),
-    User.find().select('name role active').sort({ role: 1, name: 1 }).lean(),
-    Restaurant.distinct('stationCode'),
+    User.find({ tenantId: ctx.tenantId }).select('name role active').sort({ role: 1, name: 1 }).lean(),
+    Restaurant.distinct('stationCode', { tenantId: ctx.tenantId }),
   ])
 
   const allCount = Object.values(feed.panelCounts).reduce((a, b) => a + b, 0)

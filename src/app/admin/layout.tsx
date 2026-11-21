@@ -15,12 +15,12 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
   // goes for a passenger waiting on WhatsApp with nobody answering.
   await connectDb()
   const [unparsed, unread, returns, menuToCheck] = await Promise.all([
-    UnparsedInbox.countDocuments({ resolved: false }),
+    UnparsedInbox.countDocuments({ tenantId: ctx.tenantId, resolved: false }),
     countUnread(ctx),
     countPendingReturns(ctx),
     // Dishes with no veg / non-veg tag, or only a suggested one. Until they
     // are checked the KOT split is trusting a guess.
-    MenuItem.countDocuments({ removedAt: null, $or: [{ diet: null }, { reviewed: false }] }),
+    MenuItem.countDocuments({ tenantId: ctx.tenantId, removedAt: null, $or: [{ diet: null }, { reviewed: false }] }),
   ])
 
   return (

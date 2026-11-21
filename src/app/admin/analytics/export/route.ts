@@ -59,7 +59,7 @@ export async function GET(request: Request) {
   const span = f.from === f.to ? f.from : `${f.from}_to_${f.to}`
 
   await connectDb()
-  const outlets = await Restaurant.find({}).select('name stationCode').lean()
+  const outlets = await Restaurant.find({ tenantId: ctx.tenantId }).select('name stationCode').lean()
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
 
   if (url.searchParams.get('report') === 'summary') {
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
   }
 
   const orders = await findMany(ctx, match, { sort: { serviceDate: 1, createdAt: 1 }, limit: MAX_ROWS })
-  const riderName = await riderNamesFor(orders)
+  const riderName = await riderNamesFor(ctx, orders)
 
   const header = [
     'Order ID', 'Service date', 'Status', 'Outcome', 'Overall status', 'Reporting day (3am-3am)', 'Type', 'Aggregator', 'Outlet', 'Station',

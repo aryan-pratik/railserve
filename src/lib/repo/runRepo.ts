@@ -166,6 +166,7 @@ export async function handRunToRider(
   await connectDb()
   const rider = await User.findOne({
     _id: riderId,
+    tenantId: ctx.tenantId,
     role: 'DELIVERY_AGENT',
     active: true,
   })

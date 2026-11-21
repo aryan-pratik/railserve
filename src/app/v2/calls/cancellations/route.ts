@@ -1,4 +1,4 @@
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { recentCancellations } from '@/lib/repo/orderRepo'
 import { todayIST } from '@/lib/format'
 
@@ -17,7 +17,7 @@ const WINDOW_MINUTES = 120
  * Scoped per subscriber, like every other read.
  */
 export async function GET(request: Request) {
-  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const ctx = await requirePermission('calls.operate')
 
   const read = () =>
     recentCancellations(ctx, {

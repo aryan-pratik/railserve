@@ -94,6 +94,19 @@ const EnvSchema = z.object({
   // one-variable "{{1}} = order id" shape; the order-confirmation card uses
   // "name,order,amount,station,train,seat".
   MSG91_OPENER_TEMPLATE_VARS: z.string().default('order'),
+  // Tenancy (src/lib/tenancy). The name given to tenant #1 the first time a
+  // database is migrated; renamed later from the Company settings.
+  PRIMARY_TENANT_NAME: z.string().min(1).default('Primary company'),
+  // `throw`: a query without a tenantId is an error. `log`: logged and, for
+  // writes, put on the primary tenant. Unset means `log` in production (the
+  // rollout, while only tenant #1 exists there) and `throw` everywhere else,
+  // including tests. Staging sets `throw` so misses surface there first.
+  TENANT_GUARD: z.enum(['throw', 'log']).optional(),
+  // Comma-separated phone numbers of the platform's super admins (our own
+  // team). They must also be users of the primary tenant. Kept out of the
+  // database so nobody can grant themselves platform access from the app.
+  PLATFORM_ADMIN_PHONES: z.string().default(''),
+
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 })
 

@@ -119,7 +119,7 @@ export async function adminTransitionAction(
       assertPrintAgentConfigured()
       // Routed by station, and every order has one — an order whose outlet
       // matching failed used to be unprintable and now is not.
-      await enqueueOrderKotPrint({
+      await enqueueOrderKotPrint({ tenantId: ctx.tenantId,
         appOrigin: await getAppOrigin(),
         stationCode: order.stationCode,
         restaurantId: order.restaurantId,

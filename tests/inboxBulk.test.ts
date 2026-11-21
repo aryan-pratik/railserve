@@ -10,14 +10,14 @@ import {
   reopenInboxRows,
 } from '../src/lib/repo/inboxRepo'
 import { ForbiddenError, type AuthContext } from '../src/lib/authContext'
-import { ctxFor, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 import * as fx from './fixtures/yatriRestro'
 
 const RECEIVED = new Date('2026-08-27T08:00:00Z')
 
 /** Files one email in the inbox and returns its row id. */
 async function unparsed(body: string, from = 'orders@yatrirestro.example', subject = 'New order') {
-  const r = await ingestEmail({ body, receivedAt: RECEIVED, subject, from })
+  const r = await ingestEmail({ tenantId: tenantId(), body, receivedAt: RECEIVED, subject, from })
   if (r.status !== 'UNPARSED') throw new Error(`expected UNPARSED, got ${r.status}`)
   return r.inboxId
 }
@@ -50,10 +50,10 @@ describe('inbox bulk actions', () => {
     expect(r.count).toBe(2)
     expect(r.bulkActionId).toBeTruthy()
 
-    const rowA = await UnparsedInbox.findById(a).lean()
+    const rowA = await UnparsedInbox.findOne({ _id: a, tenantId: tenantId() }).lean()
     expect(rowA).toMatchObject({ resolved: true, resolution: 'DISMISSED', bulkActionCount: 2 })
     expect(String(rowA!.resolvedById)).toBe(String(admin.userId))
-    expect((await UnparsedInbox.findById(c).lean())!.resolved).toBe(false)
+    expect((await UnparsedInbox.findOne({ _id: c, tenantId: tenantId() }).lean())!.resolved).toBe(false)
 
     // A second dismiss of the same rows changes nothing.
     expect((await dismissInboxRows(admin, { ids: [a, b] })).count).toBe(0)
@@ -61,11 +61,11 @@ describe('inbox bulk actions', () => {
     // Another batch, then undo the first: the second stays dismissed.
     const second = await dismissInboxRows(admin, { ids: [c] })
     expect(await reopenInboxRows(admin, { bulkActionId: r.bulkActionId! })).toBe(2)
-    expect(await UnparsedInbox.countDocuments({ resolved: false })).toBe(2)
-    expect((await UnparsedInbox.findById(a).lean())).toMatchObject({
+    expect(await UnparsedInbox.countDocuments({ tenantId: tenantId(), resolved: false })).toBe(2)
+    expect((await UnparsedInbox.findOne({ _id: a, tenantId: tenantId() }).lean())).toMatchObject({
       resolved: false, resolution: null, resolvedById: null, bulkActionId: null,
     })
-    expect((await UnparsedInbox.findById(c).lean())!.bulkActionId).toBe(second.bulkActionId)
+    expect((await UnparsedInbox.findOne({ _id: c, tenantId: tenantId() }).lean())!.bulkActionId).toBe(second.bulkActionId)
   })
 
   it('dismisses every row matching the filters, and only those', async () => {
@@ -75,7 +75,7 @@ describe('inbox bulk actions', () => {
 
     const r = await dismissInboxRows(admin, { filter: readInboxFilter({ sender: 'promo@shop.example' }) })
     expect(r.count).toBe(2)
-    expect((await UnparsedInbox.findById(keep).lean())!.resolved).toBe(false)
+    expect((await UnparsedInbox.findOne({ _id: keep, tenantId: tenantId() }).lean())!.resolved).toBe(false)
 
     // The filter's own tab is ignored: a dismiss only ever closes open rows.
     const again = await dismissInboxRows(admin, { filter: readInboxFilter({ show: 'resolved' }) })
@@ -92,11 +92,11 @@ describe('inbox bulk actions', () => {
     expect(r).toMatchObject({ resolved: 1, failed: 1, remaining: 0 })
     expect(r.errors[0]).toMatch(/No parser/)
 
-    const row = await UnparsedInbox.findById(outlet).lean()
+    const row = await UnparsedInbox.findOne({ _id: outlet, tenantId: tenantId() }).lean()
     expect(row).toMatchObject({ resolved: true, resolution: 'ORDER' })
-    const order = await Order.findById(row!.resolvedOrderId).lean()
+    const order = await Order.findOne({ _id: row!.resolvedOrderId, tenantId: tenantId() }).lean()
     expect(order?.externalOrderId).toBe('1000585333')
-    expect((await UnparsedInbox.findById(junk).lean())!.resolved).toBe(false)
+    expect((await UnparsedInbox.findOne({ _id: junk, tenantId: tenantId() }).lean())!.resolved).toBe(false)
 
     // A row that became an order can never be reopened into a second one.
     expect(await reopenInboxRows(admin, { ids: [outlet] })).toBe(0)
@@ -105,11 +105,11 @@ describe('inbox bulk actions', () => {
   it('re-ingesting a row whose order already exists links it rather than failing', async () => {
     const id = await unparsed(fx.UNKNOWN_OUTLET)
     await makeRestaurant('SOME RANDOM DHABA', 'CNB')
-    await ingestEmail({ body: fx.UNKNOWN_OUTLET, receivedAt: RECEIVED, from: 'orders@yatrirestro.example' })
+    await ingestEmail({ tenantId: tenantId(), body: fx.UNKNOWN_OUTLET, receivedAt: RECEIVED, from: 'orders@yatrirestro.example' })
 
     const r = await reingestInboxRow(admin, id, fx.UNKNOWN_OUTLET)
     expect(r.ok).toMatch(/already existed/)
-    const row = await UnparsedInbox.findById(id).lean()
+    const row = await UnparsedInbox.findOne({ _id: id, tenantId: tenantId() }).lean()
     expect(row!.resolvedOrderId).not.toBeNull()
   })
 

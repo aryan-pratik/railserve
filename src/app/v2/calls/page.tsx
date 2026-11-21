@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import Link from 'next/link'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, User } from '@/lib/models'
 import { countOrders } from '@/lib/repo/orderRepo'
@@ -38,7 +38,7 @@ type Day = 'today' | 'yesterday' | 'upcoming'
  * an amount, whoever is looking.
  */
 export default async function V2CallsPage(props: PageProps<'/v2/calls'>) {
-  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const ctx = await requirePermission('calls.operate')
   const sp = await props.searchParams
   const { page, pageSize, skip } = readPaging(sp)
   const filter = readCallFilter(sp)
@@ -69,14 +69,14 @@ export default async function V2CallsPage(props: PageProps<'/v2/calls'>) {
     listPendingCancelRequests(ctx),
     // An admin sees every outlet, so the board names them the way a
     // multi-outlet telecaller's does.
-    isAdmin ? Restaurant.find({}).select('name').sort({ name: 1 }).lean() : Promise.resolve([]),
+    isAdmin ? Restaurant.find({ tenantId: ctx.tenantId }).select('name').sort({ name: 1 }).lean() : Promise.resolve([]),
   ])
   const outletName = isAdmin ? new Map(adminOutlets.map((o) => [String(o._id), o.name])) : board.outletName
   const multiOutlet = isAdmin ? outletName.size > 1 : board.multiOutlet
 
   // Who wrote the latest note on each order, in one query.
   const lastAuthorIds = board.runs.flatMap((r) => r.orders.flatMap((o) => (o.callLog?.at(-1)?.userId ? [String(o.callLog.at(-1)!.userId)] : [])))
-  const authors = lastAuthorIds.length ? await User.find({ _id: { $in: lastAuthorIds } }).select('name').lean() : []
+  const authors = lastAuthorIds.length ? await User.find({ _id: { $in: lastAuthorIds }, tenantId: ctx.tenantId }).select('name').lean() : []
   const actorName = new Map(authors.map((a) => [String(a._id), a.name]))
 
   const outletOk = (restaurantId: unknown) => !filter.outlet || String(restaurantId) === filter.outlet

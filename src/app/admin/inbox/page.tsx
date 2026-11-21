@@ -25,11 +25,11 @@ import { InboxList, type InboxRowView } from './InboxList'
 export const metadata = { title: 'Inbox · RailServe' }
 
 export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const sp = await props.searchParams
   const filter = readInboxFilter(sp)
   const { page, pageSize, skip } = readPage(sp)
-  const query = inboxQuery(filter)
+  const query = { ...inboxQuery(filter), tenantId: ctx.tenantId }
 
   await connectDb()
   // Paged, not capped: this stopped at 100 silently, which on a bad day is
@@ -37,23 +37,23 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
   const [rows, total, openCount, reasonCounts, sources, senders, ingest] = await Promise.all([
     UnparsedInbox.find(query).sort({ createdAt: -1 }).skip(skip).limit(pageSize).lean(),
     UnparsedInbox.countDocuments(query),
-    UnparsedInbox.countDocuments({ resolved: false }),
+    UnparsedInbox.countDocuments({ tenantId: ctx.tenantId, resolved: false }),
     // Per reason, under every other filter: the chips say what clicking one
     // would leave, not what the whole inbox holds.
     UnparsedInbox.aggregate<{ _id: string; n: number }>([
-      { $match: inboxQuery(filter, 'reason') },
+      { $match: { ...inboxQuery(filter, 'reason'), tenantId: ctx.tenantId } },
       { $group: { _id: '$reason', n: { $sum: 1 } } },
     ]),
-    UnparsedInbox.distinct('source', { resolved: filter.resolved }),
+    UnparsedInbox.distinct('source', { tenantId: ctx.tenantId, resolved: filter.resolved }),
     UnparsedInbox.aggregate<{ _id: string | null; n: number }>([
-      { $match: { resolved: filter.resolved } },
+      { $match: { tenantId: ctx.tenantId, resolved: filter.resolved } },
       { $group: { _id: '$rawPayload.from', n: { $sum: 1 } } },
       { $sort: { n: -1 } },
       { $limit: 200 },
     ]),
     // A lapsed Gmail watch stops ingestion outright and raises no error
     // anywhere; this page is where ingestion health belongs.
-    checkIngestStaleness(),
+    checkIngestStaleness(new Date(), ctx.tenantId),
   ])
 
   const byReason = new Map(reasonCounts.map((r) => [r._id, r.n]))
@@ -76,7 +76,7 @@ export default async function InboxPage(props: PageProps<'/admin/inbox'>) {
   const resolverIds = [...new Set(rows.map((r) => r.resolvedById).filter(Boolean).map(String))]
   const resolvers = resolverIds.length
     ? new Map(
-        (await User.find({ _id: { $in: resolverIds } }).select('name').lean()).map((u) => [String(u._id), u.name]),
+        (await User.find({ _id: { $in: resolverIds }, tenantId: ctx.tenantId }).select('name').lean()).map((u) => [String(u._id), u.name]),
       )
     : new Map<string, string>()
 

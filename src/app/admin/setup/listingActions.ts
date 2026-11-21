@@ -7,6 +7,7 @@ import { connectDb } from '@/lib/db'
 import { Listing, Restaurant, Station } from '@/lib/models'
 import { repointOrdersBetweenOutlets } from '@/lib/repo/orderRepo'
 import { normaliseStationCode } from '@/lib/stations'
+import { tenantKey } from '@/lib/tenancy/primary'
 import type { OrderSource } from '@/lib/orderEnums'
 
 /**
@@ -41,7 +42,7 @@ export async function setListingOutlet(
   if (!mongoose.isValidObjectId(listingId)) return { error: 'Unknown listing' }
 
   await connectDb()
-  const listing = await Listing.findById(listingId)
+  const listing = await Listing.findOne({ _id: listingId, tenantId: ctx.tenantId })
   if (!listing) return { error: 'Unknown listing' }
 
   // Empty means "unmapped": the station default takes over again, which is a
@@ -57,7 +58,7 @@ export async function setListingOutlet(
   }
 
   if (!mongoose.isValidObjectId(restaurantId)) return { error: 'Unknown outlet' }
-  const outlet = await Restaurant.findById(restaurantId).select('name stationCode active').lean()
+  const outlet = await Restaurant.findOne({ _id: restaurantId, tenantId: ctx.tenantId }).select('name stationCode active').lean()
   if (!outlet) return { error: 'Unknown outlet' }
 
   // A storefront at Kanpur cannot be cooked at Gaya. Refusing here is the same
@@ -100,13 +101,13 @@ export async function setListingOutlet(
 
 /** Retire a storefront an aggregator has stopped using. */
 export async function toggleListingActive(formData: FormData) {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const id = String(formData.get('id') ?? '')
   const active = String(formData.get('active') ?? '') === 'true'
   if (!mongoose.isValidObjectId(id)) return
 
   await connectDb()
-  await Listing.updateOne({ _id: id }, { $set: { active } })
+  await Listing.updateOne({ _id: id, tenantId: ctx.tenantId }, { $set: { active } })
   revalidatePath('/admin/setup')
 }
 
@@ -118,24 +119,26 @@ export async function toggleListingActive(formData: FormData) {
  * silently stalling orders on its first day.
  */
 export async function setStationDefault(formData: FormData) {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const stationCode = normaliseStationCode(String(formData.get('stationCode') ?? ''))
   const restaurantId = String(formData.get('restaurantId') ?? '')
   if (!stationCode) return
 
   await connectDb()
+  const stationId = await tenantKey(ctx.tenantId, stationCode)
   if (!restaurantId) {
-    await Station.updateOne({ _id: stationCode }, { $set: { defaultRestaurantId: null } })
+    await Station.updateOne({ _id: stationId, tenantId: ctx.tenantId }, { $set: { defaultRestaurantId: null } })
     revalidatePath('/admin/setup')
     return
   }
   if (!mongoose.isValidObjectId(restaurantId)) return
 
-  const outlet = await Restaurant.findById(restaurantId).select('stationCode').lean()
+  const outlet = await Restaurant.findOne({ _id: restaurantId, tenantId: ctx.tenantId }).select('stationCode').lean()
   if (!outlet || normaliseStationCode(outlet.stationCode) !== stationCode) return
 
+  // tenantId in the filter is what an upsert stamps on a new Station.
   await Station.updateOne(
-    { _id: stationCode },
+    { _id: stationId, tenantId: ctx.tenantId },
     { $set: { defaultRestaurantId: outlet._id }, $setOnInsert: { active: true } },
     { upsert: true },
   )
