@@ -239,13 +239,44 @@ describe('rider self-service: pickup, correction, cash', () => {
     ).rejects.toBeInstanceOf(ForbiddenError)
 
     const r = await settleRiderCash({ ctx: manager, riderId: String(riderBId), orderIds: shown.orderIds })
-    expect(r).toEqual({ orders: 2, paise: 80000 })
+    expect(r).toMatchObject({ orders: 2, paise: 80000, partial: null })
     expect(await pendingCashFor(riderB, riderBId)).toMatchObject({ paise: 9000, orderIds: [late] })
     expect(await lastSettlementFor(riderB, riderBId)).toMatchObject({ paise: 80000, orders: 2 })
 
     await expect(
       settleRiderCash({ ctx: manager, riderId: String(riderBId), orderIds: shown.orderIds }),
     ).rejects.toBeInstanceOf(ConflictError)
+  })
+
+  it('a partial collection clears the oldest orders whole and leaves the balance on the next', async () => {
+    // Pending: the 9000 that landed late, then two more deliveries.
+    const second = await delivered(riderB, { amountPaise: 30000 })
+    await delivered(riderB, { amountPaise: 20000 })
+    const shown = await pendingCashFor(manager, riderBId)
+    expect(shown).toMatchObject({ paise: 59000, orders: 3 })
+
+    await expect(
+      settleRiderCash({ ctx: manager, riderId: String(riderBId), orderIds: shown.orderIds, paise: 60000 }),
+    ).rejects.toBeInstanceOf(ConflictError)
+    await expect(
+      settleRiderCash({ ctx: manager, riderId: String(riderBId), orderIds: shown.orderIds, paise: 0 }),
+    ).rejects.toBeInstanceOf(ConflictError)
+
+    // ₹350 of ₹590: the ₹90 order clears, ₹260 lands on the ₹300 one, ₹200 untouched.
+    const part = await settleRiderCash({ ctx: manager, riderId: String(riderBId), orderIds: shown.orderIds, paise: 35000 })
+    expect(part).toMatchObject({ orders: 1, paise: 35000, partial: { orderId: second, paidPaise: 26000, leftPaise: 4000 } })
+    expect(await pendingCashFor(riderB, riderBId)).toMatchObject({ paise: 24000, orders: 2 })
+
+    // Cash has changed hands on the part-paid order, so the rider can no longer un-deliver it.
+    await expect(
+      correctRiderOutcome({ ctx: riderB, orderId: second, from: 'DELIVERED', to: 'FAILED', reason: 'x' }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+
+    // The rest comes in later, in full.
+    const rest = await pendingCashFor(manager, riderBId)
+    const done = await settleRiderCash({ ctx: manager, riderId: String(riderBId), orderIds: rest.orderIds })
+    expect(done).toMatchObject({ orders: 2, paise: 24000, partial: null })
+    expect(await pendingCashFor(riderB, riderBId)).toMatchObject({ paise: 0, orders: 0 })
   })
 
   it('once the cash is handed over the rider can no longer change the order', async () => {
