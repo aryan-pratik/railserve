@@ -21,6 +21,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # so these placeholders are never actually used to reach anything.
 ENV MONGODB_URI="mongodb://placeholder:27017/placeholder"
 ENV AUTH_SECRET="build-time-placeholder-not-used-at-runtime"
+# tsc over the app needs more than Node's default ~2 GB heap since the v2 screens landed.
+ENV NODE_OPTIONS="--max-old-space-size=3584"
 RUN npm run build
 
 FROM node:24-alpine AS runner
