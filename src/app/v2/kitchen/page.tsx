@@ -2,14 +2,14 @@ import Link from 'next/link'
 import { Monitor, Plus } from 'lucide-react'
 import { requirePermission } from '@/lib/session'
 import { env } from '@/lib/env'
-import { formatIST, formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
+import { formatServiceDate, shiftServiceDate, todayIST } from '@/lib/format'
 import { isSimulatedProvider } from '@/lib/train'
 import { countPendingReturns } from '@/lib/repo/rtoRepo'
 import { kitchenHref, loadKitchenBoard, parseKitchenQuery } from '@/lib/v2/kitchen'
-import { KITCHEN_DAYS, KITCHEN_STATUS_FILTERS } from '@/lib/v2/kitchenView'
+import { KITCHEN_STATUS_FILTERS } from '@/lib/v2/kitchenView'
 import type { TrainFeedHealth } from '@/lib/train/service'
 import { ButtonLink, cx } from '@/components/v2/ui'
-import { EmptyState, Notice, PageHeader, Pagination, PillTabs, readPaging } from '@/components/v2/Table'
+import { EmptyState, Notice, PageHeader, Pagination, readPaging } from '@/components/v2/Table'
 import { KitchenRun } from '@/components/v2/KitchenRun'
 import { KitchenWall } from '@/components/v2/KitchenWall'
 import { KitchenLive, KitchenStaleNotice } from '@/components/v2/KitchenLive'
@@ -17,7 +17,15 @@ import { KitchenCancellations } from '@/components/v2/KitchenCancellations'
 import { KitchenFilters } from '@/components/v2/KitchenFilters'
 import { DayPicker } from '@/components/v2/DayPicker'
 
-export const metadata = { title: 'Kitchen board · RailServe' }
+export const metadata = { title: 'Kitchen · RailServe' }
+
+/** The status filters in the words a kitchen uses. */
+const STAGE_LABEL: Record<string, string> = {
+  live: 'To cook',
+  platform: 'With rider',
+  returned: 'Cancelled or returned',
+  delivered: 'Delivered',
+}
 
 /**
  * The kitchen board: one strip per train, ordered by when the train actually
@@ -38,7 +46,10 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
 
   const now = new Date()
   const today = todayIST(now)
-  const q = parseKitchenQuery(sp, isAdmin, today)
+  // A store manager opens on what is left to cook, so finished trains do not
+  // crowd the list on a busy day; "All orders" is one tap away.
+  const parsed = parseKitchenQuery(sp, isAdmin, today)
+  const q = !isAdmin && !('status' in sp) ? { ...parsed, statusKey: 'live' } : parsed
   const [board, pendingReturns] = await Promise.all([loadKitchenBoard(ctx, q, now), countPendingReturns(ctx)])
   const filter = KITCHEN_STATUS_FILTERS.find((f) => f.key === q.statusKey) ?? null
   // A picked day shows that service day; the tabs are the shortcuts around it.
@@ -80,41 +91,25 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
   return (
     <div className="grid gap-[18px]">
       <PageHeader
-        title="Kitchen board"
+        title="Kitchen"
         note={
           <>
-            {dayNote} · {total} train{total === 1 ? '' : 's'} · {totalOrders} order{totalOrders === 1 ? '' : 's'}
+            {dayNote} · {totalOrders} order{totalOrders === 1 ? '' : 's'} on {total} train{total === 1 ? '' : 's'}
           </>
         }
         actions={
           <>
             <KitchenLive renderedAt={board.loadedAtIso} />
-            <ButtonLink href={kitchenHref(base, { wall: true, page: 1 })} title="Full-screen board for the kitchen wall">
-              <Monitor size={16} strokeWidth={2} aria-hidden />
-              Wall
-            </ButtonLink>
-            <ButtonLink href="/v2/orders/new" variant="primary">
-              <Plus size={16} strokeWidth={2.2} aria-hidden />
-              New order
+            <ButtonLink href="/v2/orders/new" variant="primary" className="h-10 w-10 !px-0" aria-label="New order" title="New order">
+              <Plus size={19} strokeWidth={2.4} className="shrink-0" aria-hidden />
             </ButtonLink>
           </>
         }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <PillTabs
-            tabs={KITCHEN_DAYS.map((d) => ({
-              href: kitchenHref(base, { day: d.key, date: null, page: 1 }),
-              label: d.label,
-              count: board.dayCounts[d.key],
-              active: !q.date && q.day === d.key,
-            }))}
-          />
-          <DayPicker value={q.date ?? (q.day === 'yesterday' ? shiftServiceDate(today, -1) : today)} today={today} label="Service day" resetKeys={['page', 'day']} />
-        </div>
-        <nav className="flex flex-wrap gap-1" aria-label="Order status">
-          {[...KITCHEN_STATUS_FILTERS.map((f) => ({ key: f.key, label: f.label })), { key: '', label: 'All' }].map((f) => {
+      <div className="flex flex-wrap items-center gap-2.5">
+        <nav className="-mx-1 flex max-w-full gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible" aria-label="Show orders">
+          {[{ key: '', label: 'All orders' }, ...KITCHEN_STATUS_FILTERS.map((f) => ({ key: f.key, label: STAGE_LABEL[f.key] ?? f.label }))].map((f) => {
             const active = (q.statusKey ?? '') === f.key
             return (
               <Link
@@ -122,8 +117,8 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
                 href={kitchenHref(base, { statusKey: f.key || null, page: 1 })}
                 aria-current={active ? 'page' : undefined}
                 className={cx(
-                  'rounded-full px-3 py-1 text-[12.5px] font-semibold transition-colors',
-                  active ? 'bg-v2-ink text-v2-bg' : 'text-v2-ink-2 hover:bg-v2-surface-2',
+                  'inline-flex h-10 shrink-0 items-center rounded-full border px-4 text-[14px] font-semibold transition-colors',
+                  active ? 'border-v2-ink bg-v2-ink text-v2-bg' : 'border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2',
                 )}
               >
                 {f.label}
@@ -131,6 +126,22 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
             )
           })}
         </nav>
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          <DayPicker value={q.date ?? (q.day === 'yesterday' ? shiftServiceDate(today, -1) : today)} today={today} label="Day" resetKeys={['page', 'day']} />
+          <details className="relative">
+            <summary className="flex h-10 cursor-pointer list-none items-center rounded-full border border-v2-line-strong px-4 text-[14px] font-semibold text-v2-ink-2 hover:bg-v2-surface-2 [&::-webkit-details-marker]:hidden">
+              More
+            </summary>
+            <div className="absolute right-0 top-12 z-20 grid min-w-[15rem] gap-0.5 rounded-v2-md border border-v2-line bg-v2-surface p-1.5 shadow-v2-pop">
+              <Link href={kitchenHref(base, { day: 'upcoming', date: null, page: 1 })} className="rounded-v2-sm px-3 py-2 text-sm font-semibold hover:bg-v2-surface-2">
+                Orders booked for later days{board.dayCounts.upcoming ? ` (${board.dayCounts.upcoming})` : ''}
+              </Link>
+              <Link href={kitchenHref(base, { wall: true, page: 1 })} className="flex items-center gap-2 rounded-v2-sm px-3 py-2 text-sm font-semibold hover:bg-v2-surface-2">
+                <Monitor size={15} aria-hidden /> Big screen for the kitchen wall
+              </Link>
+            </div>
+          </details>
+        </span>
       </div>
 
       {isAdmin ? (
@@ -145,12 +156,12 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
       ) : null}
 
       <KitchenStaleNotice renderedAt={board.loadedAtIso} />
-      <FeedNotice simulated={isSimulatedProvider()} health={board.feedHealth} onBoard={board.runs.map((r) => r.trainNo).filter((t): t is string => !!t)} />
+      <FeedNotice simulated={isSimulatedProvider()} health={board.feedHealth} />
       {pendingReturns > 0 ? (
         <Notice tone="warn">
-          {pendingReturns} bag{pendingReturns === 1 ? '' : 's'} on the way back to the counter.{' '}
+          {pendingReturns} bag{pendingReturns === 1 ? ' is' : 's are'} coming back to the counter.{' '}
           <Link href="/v2/orders?view=returns" className="font-bold underline underline-offset-2">
-            Open returns
+            See them
           </Link>
         </Notice>
       ) : null}
@@ -208,44 +219,22 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
 }
 
 /**
- * Says what the arrival times on this board actually are. A board with no
- * notice is claiming live data; each state below means it is not.
+ * Only speaks up when it changes what the kitchen should do: the whole live
+ * train feed is down, or times are simulated. A few trains without live
+ * status are marked on their own cards ("Timetable time"), not here.
  */
-function FeedNotice({ simulated, health, onBoard }: { simulated: boolean; health: TrainFeedHealth; onBoard: string[] }) {
+function FeedNotice({ simulated, health }: { simulated: boolean; health: TrainFeedHealth }) {
   if (simulated) {
     return (
       <Notice tone="warn">
-        Train times on this screen are <strong>simulated</strong>, not live. Do not dispatch against them.
+        These train times are <strong>practice times</strong>, not real. Do not send riders by them.
       </Notice>
     )
   }
-  if (!health.failing) return null
-  const lastGood = health.lastSuccessAt ? ` Last live reading ${formatIST(health.lastSuccessAt)}.` : ''
-  if (health.failingTrains.length >= health.trainsTried) {
-    return (
-      <Notice tone="bad">
-        <strong>Live train feed is down.</strong> Times are from the timetable.{lastGood}
-      </Notice>
-    )
-  }
-  // Only the trains this screen is showing: a failing train on another
-  // outlet's board, or on another day, is not this kitchen's problem.
-  const trains = health.failingTrains.filter((t) => onBoard.includes(t))
-  if (trains.length === 0) return null
+  if (!health.failing || health.failingTrains.length < health.trainsTried) return null
   return (
-    <Notice tone="warn">
-      <strong>
-        No live status for {trains.length} of {health.trainsTried} trains.
-      </strong>{' '}
-      Their times are from the timetable.{lastGood}
-      {trains.length > 4 ? (
-        <details className="mt-1 text-xs font-normal">
-          <summary className="cursor-pointer underline-offset-2 hover:underline">Which trains</summary>
-          <span className="mt-1 block font-mono">{trains.join(', ')}</span>
-        </details>
-      ) : (
-        <span className="mt-1 block font-mono text-xs font-normal">{trains.join(', ')}</span>
-      )}
+    <Notice tone="bad">
+      <strong>Live train times are not working right now.</strong> The times shown are from the timetable, so trains may be later. Check with the station before sending a rider.
     </Notice>
   )
 }

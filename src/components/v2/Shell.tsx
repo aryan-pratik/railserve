@@ -2,8 +2,7 @@ import type { ReactNode } from 'react'
 import { LogOut } from 'lucide-react'
 import { CommandPalette } from './CommandPalette'
 import { NotificationsBell, type AlertItem } from './NotificationsBell'
-import { ThemeSwitch } from './ThemeSwitch'
-import { THEME_COOKIE, readThemeChoice } from '@/lib/v2/theme'
+import Link from 'next/link'
 import { getSessionUser, redirectToLogin } from '@/lib/session'
 import { logout } from '@/app/actions/session'
 import { ROLE_LABEL } from '@/lib/roles'
@@ -38,8 +37,10 @@ export async function Shell({
   const user = await getSessionUser()
   if (!user) return redirectToLogin()
   const jar = await cookies()
-  const collapsed = jar.get(V2_SIDEBAR_COOKIE)?.value === 'collapsed'
-  const theme = readThemeChoice(jar.get(THEME_COOKIE)?.value)
+  // Store managers start with the narrow icon strip so the kitchen list gets
+  // the width; anyone can open it, and their choice is remembered.
+  const sidebarChoice = jar.get(V2_SIDEBAR_COOKIE)?.value
+  const collapsed = sidebarChoice ? sidebarChoice === 'collapsed' : user.role === 'STORE_MANAGER'
 
   const logoutForm = (
     <form action={logout}>
@@ -81,18 +82,28 @@ export async function Shell({
       <MobileNav sections={nav} footer={<>{tile}{logoutForm}</>} />
       <div className="text-[19px] font-extrabold tracking-[-0.02em] lg:hidden">RailServe</div>
       <CommandPalette nav={nav} />
-      <span className="hidden items-center gap-1.5 text-xs font-semibold text-v2-muted sm:inline-flex">
-        <span className="h-2 w-2 rounded-full bg-v2-brand shadow-[0_0_0_3px_var(--color-v2-brand-soft)]" aria-hidden />
-        Live
-      </span>
-      <div className="ml-auto flex items-center gap-2.5">
-        <ThemeSwitch initial={theme} />
+      <div className="ml-auto flex min-w-0 items-center gap-2">
         <NotificationsBell items={alerts} />
-        <Avatar name={user.name} />
-        <span className="hidden leading-tight sm:block">
-          <b className="block text-sm font-bold">{user.name}</b>
-          <small className="text-xs text-v2-muted">{outletLabel ?? ROLE_LABEL[user.role]}</small>
-        </span>
+        {/* Just your initials; a tap opens a short menu with who you are and the few account things. */}
+        <details className="relative">
+          <summary
+            className={cx('list-none cursor-pointer rounded-full [&::-webkit-details-marker]:hidden', v2Focus)}
+            aria-label={`${user.name}: account menu`}
+            title={user.name}
+          >
+            <Avatar name={user.name} />
+          </summary>
+          <div className="absolute right-0 top-12 z-40 grid w-64 gap-0.5 rounded-v2-md border border-v2-line bg-v2-surface p-1.5 shadow-v2-pop">
+            <div className="px-3 py-2">
+              <b className="block text-[15px] font-bold">{user.name}</b>
+              <small className="text-[13px] text-v2-muted">{outletLabel ?? ROLE_LABEL[user.role]}</small>
+            </div>
+            <Link href={user.role === 'ADMIN' ? '/v2/settings' : '/v2/account'} className={cx('rounded-v2-sm px-3 py-2.5 text-[14.5px] font-semibold hover:bg-v2-surface-2', v2Focus)}>
+              Settings
+            </Link>
+            {logoutForm}
+          </div>
+        </details>
       </div>
     </header>
         }

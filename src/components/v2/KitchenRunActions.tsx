@@ -156,7 +156,7 @@ function HandForm({
   }, [state, onDone])
 
   if (run.riders.length === 0) {
-    return <span className={cx('text-xs font-semibold', dark ? 'text-white/70' : 'text-v2-muted')}>{count} on the shelf, and no active rider at this outlet.</span>
+    return <span className={cx('text-xs font-semibold', dark ? 'text-white/70' : 'text-v2-muted')}>{count} ready, but no rider is working at this outlet. Add one under Riders.</span>
   }
   return (
     <form
@@ -188,7 +188,7 @@ function HandForm({
         options={run.riders.map((r) => ({ value: r.id, label: r.name }))}
       />
       <KitchenSubmit variant="primary" size={size}>
-        On the way{count > 1 ? ` · ${count}` : ''}
+        Give {count > 1 ? `${count} orders ` : ''}to rider
       </KitchenSubmit>
       {missing ? (
         <span role="alert" className={cx('text-xs font-semibold', dark ? 'text-[#ff6b5e]' : 'text-v2-bad')}>
@@ -280,26 +280,26 @@ export function KitchenRunActions({
       ) : null}
 
       {step === 'accept' ? (
-        <StepForm action={acceptRunV2} run={run} ids={ids} size="sm" onDone={onClear} label={`Accept ${toAccept}${which}`} />
+        <StepForm action={acceptRunV2} run={run} ids={ids} size="md" onDone={onClear} label={`Accept ${toAccept}${which} order${toAccept === 1 ? '' : 's'}`} />
       ) : null}
       {step === 'print' ? (
-        <PrintForm run={run} ids={ids} count={toPrint} size="sm" onDone={onClear} label={`Print ${toPrint}${which} KOT${toPrint === 1 ? '' : 's'}`} />
+        <PrintForm run={run} ids={ids} count={toPrint} size="md" onDone={onClear} label={`Print ${toPrint}${which} KOT${toPrint === 1 ? '' : 's'} (kitchen ticket${toPrint === 1 ? '' : 's'})`} />
       ) : null}
       {step === 'ready' ? (
-        <StepForm action={markRunPreparedV2} run={run} ids={ids} size="sm" onDone={onClear} label={`Mark ${toReady}${which} ready`} />
+        <StepForm action={markRunPreparedV2} run={run} ids={ids} size="md" onDone={onClear} label={`Food ready (${toReady}${which})`} />
       ) : null}
-      {step === 'hand' ? <HandForm run={run} ids={ids} count={waiting} size="sm" onDone={onClear} /> : null}
+      {step === 'hand' ? <HandForm run={run} ids={ids} count={waiting} size="md" onDone={onClear} /> : null}
 
       {step === null ? (
-        <span className="text-xs text-v2-muted">
-          {narrowed ? 'Nothing to accept, print, mark ready or hand over in this selection.' : 'Nothing waiting on the kitchen.'}
+        <span className="text-[13.5px] text-v2-muted">
+          {narrowed ? 'Nothing to do for the orders you ticked.' : 'Nothing to do in the kitchen for this train.'}
         </span>
       ) : null}
 
       {/* Further steps behind this one, so the manager can see what follows without three buttons competing. */}
       {step === 'accept' && toPrint + toReady + waiting > 0 ? (
-        <span className="text-xs text-v2-muted">
-          then {[toPrint ? `print ${toPrint}` : null, toReady ? `${toReady} cooking` : null, waiting ? `${waiting} on the shelf` : null].filter(Boolean).join(' · ')}
+        <span className="text-[13px] text-v2-muted">
+          Also: {[toPrint ? `${toPrint} to print` : null, toReady ? `${toReady} cooking` : null, waiting ? `${waiting} ready on the shelf` : null].filter(Boolean).join(', ')}
         </span>
       ) : null}
 
@@ -359,3 +359,4 @@ export function KitchenTicketAction({ run, order }: { run: RunActionContext; ord
       return null
   }
 }
+

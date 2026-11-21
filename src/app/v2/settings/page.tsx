@@ -9,6 +9,10 @@ import { RoutingTab } from './RoutingTab'
 import { StaffTab } from './StaffTab'
 import { IntegrationsTab } from './IntegrationsTab'
 import { RolesTab } from './RolesTab'
+import { cookies } from 'next/headers'
+import { Card } from '@/components/v2/ui'
+import { ThemeSwitch } from '@/components/v2/ThemeSwitch'
+import { THEME_COOKIE, readThemeChoice } from '@/lib/v2/theme'
 import { TrainsTab } from './TrainsTab'
 
 export const metadata = { title: 'Settings · RailServe' }
@@ -63,6 +67,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <RoutingTab ctx={ctx} base={base} />
           ) : tab === 'staff' ? (
             <StaffTab ctx={ctx} base={base} paging={paging} q={one(sp.q)} role={one(sp.role)} />
+          ) : tab === 'screen' ? (
+            <Card title="Screen colours">
+              <ThemeSwitch initial={readThemeChoice((await cookies()).get(THEME_COOKIE)?.value)} />
+            </Card>
           ) : tab === 'roles' ? (
             <RolesTab ctx={ctx} />
           ) : tab === 'integrations' ? (

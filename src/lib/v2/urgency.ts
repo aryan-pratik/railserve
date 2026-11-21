@@ -67,10 +67,10 @@ export function delayLabel(delayMinutes: number | null | undefined): string | nu
 
 /** The band's two lines: ["6h 0m", "AGO"] / ["19 min", "IN"] / ["NOW", ""] / ["—", "NO ETA"]. */
 export function bandLabel(minutes: number | null, arrived = false): [string, string] {
-  if (minutes === null) return ['—', 'no ETA']
+  if (minutes === null) return ['—', 'time unknown']
   const abs = Math.abs(minutes)
   const text = abs < 60 ? `${abs} min` : `${Math.floor(abs / 60)}h ${abs % 60}m`
   if (minutes <= 0 && minutes > -1 && !arrived) return ['now', 'at platform']
   if (minutes < 0 || (arrived && minutes <= 0)) return [text, 'ago']
-  return [text, arrived ? 'arrived' : 'to go']
+  return [text, arrived ? 'arrived' : 'left']
 }

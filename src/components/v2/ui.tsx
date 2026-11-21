@@ -138,7 +138,7 @@ export function Card({
   children: ReactNode
 }) {
   return (
-    <section className={cx('grid min-w-0 content-start gap-3.5 rounded-v2-lg border border-v2-line bg-v2-surface p-[18px]', className)}>
+    <section className={cx('grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3.5 rounded-v2-lg border border-v2-line bg-v2-surface p-[18px]', className)}>
       {title || action ? (
         <header className="flex items-center justify-between gap-3">
           {title ? <h3 className="text-[17px] font-bold tracking-[-0.01em]">{title}</h3> : <span />}

@@ -95,7 +95,10 @@ export function ShellFrame({
 
       <div className="grid min-h-0 min-w-0 gap-3.5 lg:grid-rows-[auto_minmax(0,1fr)]">
         {topbar}
-        <main id="main" className="relative min-h-0 min-w-0 rounded-v2-xl border border-v2-line bg-v2-surface p-4 sm:p-[22px] lg:overflow-y-auto lg:[overscroll-behavior:contain]">
+        {/* The two child selectors let each page's own grid shrink to the
+            panel: a grid track sizes to its widest item unless the items may
+            shrink, which let one long line widen the whole page on a phone. */}
+        <main id="main" className="relative min-h-0 min-w-0 rounded-v2-xl [&>*]:min-w-0 [&>*>*]:min-w-0 border border-v2-line bg-v2-surface p-4 sm:p-[22px] lg:overflow-y-auto lg:[overscroll-behavior:contain]">
           {children}
         </main>
       </div>

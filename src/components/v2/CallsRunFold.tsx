@@ -2,11 +2,11 @@
 
 import type { ReactNode } from 'react'
 import { RunHeader, type RunHeaderProps } from './RunHeader'
-import { RunFoldButton, useRunFold } from './KitchenBits'
+import { useRunFold } from './KitchenBits'
 
 /**
- * One train on the call board: the departure strip with the fold chevron in
- * its actions, and the passenger rows under it. Open by default (or by the
+ * One train on the call board: the departure strip, which opens and closes
+ * the passenger rows under it when tapped. Open by default (or by the
  * page's choice when every passenger is already called); a fold is remembered
  * for the tab, so the board's refresh does not reopen what was put away.
  */
@@ -28,15 +28,7 @@ export function CallsRunFold({
   const rowsId = `calls-run-${runKey}-rows`
   return (
     <section data-run className="grid min-w-0 gap-2" aria-label={`${header.trainLabel} ${header.trainName ?? ''}`}>
-      <RunHeader
-        {...header}
-        actions={
-          <>
-            {chips}
-            <RunFoldButton open={open} onToggle={() => setOpen(!open)} controls={rowsId} />
-          </>
-        }
-      />
+      <RunHeader {...header} fold={{ open, onToggle: () => setOpen(!open), controls: rowsId }} actions={chips} />
       <div id={rowsId} hidden={!open} className="min-w-0">
         {children}
       </div>

@@ -248,3 +248,28 @@ html[data-theme="dark"] {
   --shadow-v2-pop: 0 10px 30px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
+
+/*
+ * react-day-picker sets its own (blue) accent on .rdp-root, so variables set
+ * on a parent never reach it. Brand green for every calendar in the app.
+ * Doubled class: the library's stylesheet loads after this one, so an equal
+ * selector would lose to it.
+ */
+.rdp-root.rdp-root {
+  --rdp-accent-color: var(--color-v2-brand);
+  --rdp-accent-background-color: var(--color-v2-brand-soft);
+  --rdp-range_middle-background-color: var(--color-v2-brand-soft);
+  --rdp-range_start-date-background-color: var(--color-v2-brand);
+  --rdp-range_end-date-background-color: var(--color-v2-brand);
+  --rdp-selected-border: 2px solid var(--color-v2-brand);
+  --rdp-today-color: var(--color-v2-brand);
+}
+.rdp-root.rdp-root .rdp-day_button:focus-visible,
+.rdp-root.rdp-root .rdp-button_previous:focus-visible,
+.rdp-root.rdp-root .rdp-button_next:focus-visible {
+  outline: 2px solid var(--color-v2-brand);
+  outline-offset: 2px;
+}
+.rdp-root.rdp-root .rdp-day_button:focus:not(:focus-visible) {
+  outline: none;
+}
