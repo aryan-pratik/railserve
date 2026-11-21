@@ -13,7 +13,7 @@ import {
 import { insertOrder } from '../src/lib/repo/orderRepo'
 import { adminAddOrderItem, adminEditOrder, adminEditOrderItem } from '../src/lib/repo/adminEditOrder'
 import type { AuthContext } from '../src/lib/authContext'
-import { resetDb } from './fixtures'
+import { resetDb, tenantId } from './fixtures'
 
 /**
  * The menu database decides which KOT an item prints on. Two things must
@@ -21,7 +21,12 @@ import { resetDb } from './fixtures'
  * non-veg never shares a ticket with anything else.
  */
 
-const ADMIN: AuthContext = { userId: new mongoose.Types.ObjectId(), role: 'ADMIN', restaurantIds: [] }
+// A getter: resetDb() makes a fresh tenant per test, so the admin's tenant is
+// read when a call uses it, not when the module loads.
+const ADMIN: AuthContext = {
+  get tenantId() { return tenantId() },
+  userId: new mongoose.Types.ObjectId(), role: 'ADMIN', restaurantIds: [],
+}
 
 const item = (name: string, isPacking = false, extra: { spec?: string; diet?: string } = {}) => ({
   _id: name, name, qty: 1, isPacking, ...extra,
@@ -36,7 +41,7 @@ let seq = 0
 async function order(source: string, names: string[], extra: Record<string, unknown> = {}) {
   seq += 1
   return insertOrder({
-    source, orderType: 'RETAIL', externalOrderId: `MENU-${seq}`, status: 'RECEIVED',
+    tenantId: tenantId(), source, orderType: 'RETAIL', externalOrderId: `MENU-${seq}`, status: 'RECEIVED',
     stationCode: 'CNB', serviceDate: '2026-11-20',
     items: names.map((name) => ({ name, qty: 2 })),
     ...extra,
@@ -255,7 +260,7 @@ describe('menu database', () => {
     })
     await order('OLF', ['ALOO PARATHA'])
 
-    const rows = await MenuItem.find({}).sort({ _id: 1 }).lean()
+    const rows = await MenuItem.find({ tenantId: tenantId() }).sort({ _id: 1 }).lean()
     expect(rows.map((r) => [r._id, r.source, r.key, r.diet, r.reviewed])).toEqual([
       ['OLF|aloo paratha', 'OLF', 'aloo paratha', 'VEG', false],
       ['ZOOP|aloo paratha', 'ZOOP', 'aloo paratha', 'VEG', false],
@@ -267,7 +272,7 @@ describe('menu database', () => {
     await order('ZOOP', ['Seekh Kebab', 'Special Thali'], {
       items: [{ name: 'Seekh Kebab', qty: 1 }, { name: 'Special Thali', qty: 1, notes: 'with chicken curry' }],
     })
-    const rows = await MenuItem.find({}).sort({ _id: 1 }).lean()
+    const rows = await MenuItem.find({ tenantId: tenantId() }).sort({ _id: 1 }).lean()
     expect(rows.map((r) => [r.key, r.diet, r.reviewed])).toEqual([
       ['seekh kebab', null, false],
       // The name alone reads veg; the note it arrived with says otherwise.
@@ -286,30 +291,30 @@ describe('menu database', () => {
       ],
     })
     expect(menuRowsOf(o)).toEqual([])
-    expect(await MenuItem.countDocuments({})).toBe(0)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId() })).toBe(0)
     // And the Menu page does not back-fill it from the orders either.
     expect(await menuOverview(ADMIN)).toEqual([])
-    expect(await MenuItem.countDocuments({})).toBe(0)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('makes one row when the same new dish arrives twice at once', async () => {
     const results = await Promise.all(
-      Array.from({ length: 8 }, () => registerMenuItems([{ source: 'ZOOP', name: 'Aloo Paratha' }, { source: 'ZOOP', name: 'Dal Fry' }])),
+      Array.from({ length: 8 }, () => registerMenuItems(tenantId(), [{ source: 'ZOOP', name: 'Aloo Paratha' }, { source: 'ZOOP', name: 'Dal Fry' }])),
     )
-    expect(await MenuItem.countDocuments({})).toBe(2)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId() })).toBe(2)
     // Each dish was inserted by exactly one of the callers.
     expect(results.reduce((n, r) => n + r, 0)).toBe(2)
   })
 
   it('does not overwrite a tag somebody set when the dish is ordered again', async () => {
     await order('ZOOP', ['Soya Chaap'])
-    const row = await MenuItem.findOne({ key: 'soya chaap' })
+    const row = await MenuItem.findOne({ tenantId: tenantId(), key: 'soya chaap' })
     expect(row!._id).toBe('ZOOP|soya chaap')
     await setMenuItemDiet(ADMIN, row!._id, 'NON_VEG')
     await order('ZOOP', ['soya chaap'])
-    await registerMenuItems([{ source: 'ZOOP', name: 'Soya Chaap' }])
+    await registerMenuItems(tenantId(), [{ source: 'ZOOP', name: 'Soya Chaap' }])
 
-    const after = await MenuItem.find({ key: 'soya chaap' }).lean()
+    const after = await MenuItem.find({ tenantId: tenantId(), key: 'soya chaap' }).lean()
     expect(after).toHaveLength(1)
     expect(after[0].diet).toBe('NON_VEG')
     expect(after[0].reviewed).toBe(true)
@@ -319,29 +324,29 @@ describe('menu database', () => {
     await order('ZOOP', ['Aloo Paratha'])
     await order('ZOOP', ['aloo  paratha.', 'Dal Fry'])
     // An order from before the menu existed: nothing registered it.
-    await MenuItem.deleteMany({ key: 'dal fry' })
+    await MenuItem.deleteMany({ tenantId: tenantId(), key: 'dal fry' })
 
     const rows = await menuOverview(ADMIN)
     const byName = new Map(rows.map((r) => [`${r.source}|${r.name.toLowerCase()}`, r]))
     expect(byName.get('ZOOP|aloo paratha')).toMatchObject({ orderCount: 2, qty: 4, diet: 'VEG', reviewed: false })
     expect(byName.get('ZOOP|dal fry')).toMatchObject({ orderCount: 1, qty: 2 })
-    expect(await MenuItem.countDocuments({ key: 'dal fry' })).toBe(1)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId(), key: 'dal fry' })).toBe(1)
   })
 
   it('confirms suggestions, and a cleared tag reads as untagged', async () => {
     await order('ZOOP', ['Aloo Paratha', 'Egg Roll'])
-    const rows = await MenuItem.find({}).lean()
+    const rows = await MenuItem.find({ tenantId: tenantId() }).lean()
     const items = [{ name: 'Egg Roll' }, { name: 'Aloo Paratha' }]
-    const before = await dietLookupFor([{ source: 'ZOOP', items }])
+    const before = await dietLookupFor(tenantId(), [{ source: 'ZOOP', items }])
     expect(before.get(menuLookupKey('ZOOP', 'Egg Roll'))).toEqual({ diet: 'NON_VEG', reviewed: false })
 
     expect(await confirmMenuItems(ADMIN, rows.map((r) => r._id))).toBe(2)
-    expect(await MenuItem.countDocuments({ reviewed: true })).toBe(2)
-    const confirmed = await dietLookupFor([{ source: 'ZOOP', items }])
+    expect(await MenuItem.countDocuments({ tenantId: tenantId(), reviewed: true })).toBe(2)
+    const confirmed = await dietLookupFor(tenantId(), [{ source: 'ZOOP', items }])
     expect(confirmed.get(menuLookupKey('ZOOP', 'Egg Roll'))).toEqual({ diet: 'NON_VEG', reviewed: true })
 
     await setMenuItemDiet(ADMIN, 'ZOOP|egg roll', null)
-    const lookup = await dietLookupFor([{ source: 'ZOOP', items }])
+    const lookup = await dietLookupFor(tenantId(), [{ source: 'ZOOP', items }])
     expect(lookup.get(menuLookupKey('ZOOP', 'Egg Roll'))).toEqual({ diet: null, reviewed: false })
     expect(lookup.get(menuLookupKey('ZOOP', 'Aloo Paratha'))).toEqual({ diet: 'VEG', reviewed: true })
   })
@@ -353,12 +358,12 @@ describe('menu database', () => {
     await expect(setMenuItemDiet(ADMIN, { $ne: null } as unknown as string, 'NON_VEG')).rejects.toThrow(/Unknown menu item/)
     await expect(setMenuItemDiet(ADMIN, 'ZOOP|aloo paratha', 'MEAT' as Diet)).rejects.toThrow(/Unknown tag/)
     expect(await confirmMenuItems(ADMIN, [{ $ne: null } as unknown as string])).toBe(0)
-    expect((await MenuItem.findById('ZOOP|aloo paratha').lean())!.diet).toBe('VEG')
+    expect((await MenuItem.findOne({ _id: 'ZOOP|aloo paratha', tenantId: tenantId() }).lean())!.diet).toBe('VEG')
   })
 
   it('only an admin may tag', async () => {
     await order('ZOOP', ['Aloo Paratha'])
-    const row = await MenuItem.findOne({})
+    const row = await MenuItem.findOne({ tenantId: tenantId() })
     const manager: AuthContext = { ...ADMIN, role: 'STORE_MANAGER' }
     await expect(setMenuItemDiet(manager, row!._id, 'NON_VEG')).rejects.toThrow(/admin/)
     await expect(menuOverview(manager)).rejects.toThrow(/admin/)
@@ -373,7 +378,7 @@ describe('menu database', () => {
     expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['ZOOP|aloo paratha'])
     expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['ZOOP|aloo paratha'])
     // The order that still carries it keeps its tag for the KOT.
-    const lookup = await dietLookupFor([{ source: 'ZOOP', items: [item('Egg Curry')] }])
+    const lookup = await dietLookupFor(tenantId(), [{ source: 'ZOOP', items: [item('Egg Curry')] }])
     expect(lookup.get('ZOOP|egg curry')).toEqual({ diet: 'NON_VEG', reviewed: true })
   })
 
@@ -386,7 +391,7 @@ describe('menu database', () => {
     await order('ZOOP', ['egg  curry'])
     const rows = await menuOverview(ADMIN)
     expect(rows.map((r) => [r.id, r.diet, r.reviewed, r.orderCount])).toEqual([['ZOOP|egg curry', 'NON_VEG', true, 2]])
-    expect(await MenuItem.countDocuments({})).toBe(1)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 
   it('puts a deleted dish back from the Menu page when a newer order carries it and registering was missed', async () => {
@@ -394,7 +399,7 @@ describe('menu database', () => {
     await removeMenuItem(ADMIN, 'ZOOP|egg curry')
     // An order that reached the database without registering its dishes.
     await Order.collection.insertOne({
-      source: 'ZOOP', status: 'RECEIVED', externalOrderId: 'MENU-RAW', createdAt: new Date(Date.now() + 60_000),
+      tenantId: tenantId(), source: 'ZOOP', status: 'RECEIVED', externalOrderId: 'MENU-RAW', createdAt: new Date(Date.now() + 60_000),
       items: [{ name: 'Egg Curry', qty: 1 }],
     })
     expect((await menuOverview(ADMIN)).map((r) => [r.id, r.orderCount])).toEqual([['ZOOP|egg curry', 2]])
@@ -403,7 +408,7 @@ describe('menu database', () => {
   it('a back-fill from old orders does not put a deleted dish back', async () => {
     await order('ZOOP', ['Egg Curry'])
     await removeMenuItem(ADMIN, 'ZOOP|egg curry')
-    await registerMenuItems([{ source: 'ZOOP', name: 'Egg Curry' }, { source: 'ZOOP', name: 'Dal Fry' }], { restore: false })
+    await registerMenuItems(tenantId(), [{ source: 'ZOOP', name: 'Egg Curry' }, { source: 'ZOOP', name: 'Dal Fry' }], { restore: false })
     expect((await menuOverview(ADMIN)).map((r) => r.id)).toEqual(['ZOOP|dal fry'])
   })
 
@@ -435,17 +440,17 @@ describe('menu database', () => {
   it('adds a dish to the menu the moment it is added to an existing order', async () => {
     const o = await order('ZOOP', ['Aloo Paratha'])
     await adminAddOrderItem(ADMIN, String(o._id), { name: 'Egg Curry', qty: '1' })
-    expect((await MenuItem.findById('ZOOP|egg curry').lean())).toMatchObject({ diet: 'NON_VEG', reviewed: false })
+    expect((await MenuItem.findOne({ _id: 'ZOOP|egg curry', tenantId: tenantId() }).lean())).toMatchObject({ diet: 'NON_VEG', reviewed: false })
     // A packing line added the same way is not a dish.
     await adminAddOrderItem(ADMIN, String(o._id), { name: 'Tissue', qty: '1', isPacking: 'true' })
-    expect(await MenuItem.countDocuments({})).toBe(2)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId() })).toBe(2)
   })
 
   it('adds the new name to the menu when an item is renamed, and keeps the old row', async () => {
     const o = await order('ZOOP', ['Aloo Paratha'])
-    const itemId = String((await Order.findById(o._id).lean())!.items[0]._id)
+    const itemId = String((await Order.findOne({ _id: o._id, tenantId: tenantId() }).lean())!.items[0]._id)
     await adminEditOrderItem(ADMIN, String(o._id), itemId, { name: 'Chicken Roll' })
-    expect((await MenuItem.find({}).sort({ _id: 1 }).lean()).map((r) => [r._id, r.diet])).toEqual([
+    expect((await MenuItem.find({ tenantId: tenantId() }).sort({ _id: 1 }).lean()).map((r) => [r._id, r.diet])).toEqual([
       ['ZOOP|aloo paratha', 'VEG'],
       ['ZOOP|chicken roll', 'NON_VEG'],
     ])
@@ -454,7 +459,7 @@ describe('menu database', () => {
   it('registers the dishes under the new aggregator when an order is moved to it', async () => {
     const o = await order('ZOOP', ['Aloo Paratha'])
     await adminEditOrder(ADMIN, String(o._id), { source: 'OLF' })
-    expect((await MenuItem.find({}).sort({ _id: 1 }).lean()).map((r) => r._id)).toEqual([
+    expect((await MenuItem.find({ tenantId: tenantId() }).sort({ _id: 1 }).lean()).map((r) => r._id)).toEqual([
       'OLF|aloo paratha', 'ZOOP|aloo paratha',
     ])
   })
@@ -463,24 +468,24 @@ describe('menu database', () => {
     const o = await order('MANUAL', [], {
       orderType: 'BULK', pax: 40, items: [{ name: bulkThaliName(40), qty: 40, spec: 'Dal, rice' }],
     })
-    const itemId = String((await Order.findById(o._id).lean())!.items[0]._id)
+    const itemId = String((await Order.findOne({ _id: o._id, tenantId: tenantId() }).lean())!.items[0]._id)
     const changes = await adminEditOrderItem(ADMIN, String(o._id), itemId, { diet: 'NON_VEG' })
     expect(changes).toEqual([{ field: 'diet', label: 'Veg / non-veg', from: null, to: 'NON_VEG' }])
 
-    const saved = (await Order.findById(o._id).lean())!
-    const lookup = await dietLookupFor([saved])
+    const saved = (await Order.findOne({ _id: o._id, tenantId: tenantId() }).lean())!
+    const lookup = await dietLookupFor(tenantId(), [saved])
     expect(tagFor(lookup, saved.source, saved.items[0])).toEqual({ diet: 'NON_VEG', confirmed: true })
-    expect(await MenuItem.countDocuments({})).toBe(0)
+    expect(await MenuItem.countDocuments({ tenantId: tenantId() })).toBe(0)
 
     // Cleared again, it is back to "not said".
     await adminEditOrderItem(ADMIN, String(o._id), itemId, { diet: '' })
-    const cleared = (await Order.findById(o._id).lean())!
+    const cleared = (await Order.findOne({ _id: o._id, tenantId: tenantId() }).lean())!
     expect(tagFor(lookup, cleared.source, cleared.items[0])).toEqual({ diet: null, confirmed: false })
     await expect(adminEditOrderItem(ADMIN, String(o._id), itemId, { diet: 'MEAT' })).rejects.toThrow(/valid/)
   })
 
   it('never fails an edit because the menu could not catch up', async () => {
-    await expect(registerOrderMenu('not-an-id')).resolves.toBeUndefined()
-    await expect(registerOrderMenu(String(new mongoose.Types.ObjectId()))).resolves.toBeUndefined()
+    await expect(registerOrderMenu(tenantId(), 'not-an-id')).resolves.toBeUndefined()
+    await expect(registerOrderMenu(tenantId(), String(new mongoose.Types.ObjectId()))).resolves.toBeUndefined()
   })
 })

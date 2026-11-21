@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { GMAIL_STATE_ID, IngestState } from '@/lib/models'
 import { normaliseSenderEntry } from '@/lib/ingest/senders'
+import { tenantKey } from '@/lib/tenancy/primary'
 
 /**
  * Setup → Aggregators: the mail senders whose email is parsed as orders.
@@ -14,7 +15,7 @@ import { normaliseSenderEntry } from '@/lib/ingest/senders'
 export type SenderState = { error?: string; ok?: string }
 
 export async function addAllowedSender(_prev: SenderState, formData: FormData): Promise<SenderState> {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const raw = String(formData.get('sender') ?? '')
   const entry = normaliseSenderEntry(raw)
   if (!entry) {
@@ -25,7 +26,7 @@ export async function addAllowedSender(_prev: SenderState, formData: FormData): 
   // Upserted: the Gmail state row may not exist yet on a fresh install, and
   // the list should be settable before the first sync ever runs.
   await IngestState.updateOne(
-    { _id: GMAIL_STATE_ID },
+    { _id: await tenantKey(ctx.tenantId, GMAIL_STATE_ID), tenantId: ctx.tenantId },
     { $addToSet: { allowedSenders: entry } },
     { upsert: true },
   )
@@ -34,10 +35,10 @@ export async function addAllowedSender(_prev: SenderState, formData: FormData): 
 }
 
 export async function removeAllowedSender(formData: FormData): Promise<void> {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const entry = normaliseSenderEntry(String(formData.get('sender') ?? ''))
   if (!entry) return
   await connectDb()
-  await IngestState.updateOne({ _id: GMAIL_STATE_ID }, { $pull: { allowedSenders: entry } })
+  await IngestState.updateOne({ _id: await tenantKey(ctx.tenantId, GMAIL_STATE_ID), tenantId: ctx.tenantId }, { $pull: { allowedSenders: entry } })
   revalidatePath('/admin/setup')
 }

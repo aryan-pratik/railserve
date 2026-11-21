@@ -4,6 +4,7 @@ import { findMany, countOrders, distinctStatuses } from '@/lib/repo/orderRepo'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { connectDb } from '@/lib/db'
 import { Restaurant, Station, User } from '@/lib/models'
+import { naturalKey } from '@/lib/tenancy/primary'
 import { timingForOrders, timingFor } from '@/lib/train/service'
 import { groupIntoRuns, sortRunsByUrgency } from '@/lib/runs'
 import { todayIST, formatDateRange, formatTimeIST } from '@/lib/format'
@@ -100,8 +101,8 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   await connectDb()
   // Independent reads, so they go out together rather than one after another.
   const [outlets, stationDocs, dayOrders, todayCount, upcomingCount, ingest, riderDocs, cancelRequests, statusesInUse, pendingReturns] = await Promise.all([
-    Restaurant.find({}).select('name stationCode').sort({ name: 1 }).lean(),
-    Station.find({}).select('name').lean(),
+    Restaurant.find({ tenantId: ctx.tenantId }).select('name stationCode').sort({ name: 1 }).lean(),
+    Station.find({ tenantId: ctx.tenantId }).select('name').lean(),
     findMany(ctx, dayFilter, { sort: { createdAt: 1 }, limit: 500 }),
     // Open orders today: the same number the kitchen and call boards badge as
     // Today, not a count of everything not cancelled, which read as "how many
@@ -112,9 +113,9 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     // board — the orders simply are not there. /admin/inbox says so, but
     // nobody working a lunch rush navigates to the inbox to ask why it is
     // calm. It has to be said here, where the counting happens.
-    checkIngestStaleness(),
+    checkIngestStaleness(new Date(), ctx.tenantId),
     // For handing ready orders to a rider from a train card.
-    User.find({ role: 'DELIVERY_AGENT', active: true }).select('name').sort({ name: 1 }).lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', active: true }).select('name').sort({ name: 1 }).lean(),
     // Independent of every filter on this board, like the ingestion warning.
     listPendingCancelRequests(ctx),
     // Custom statuses an admin has typed in stay selectable once they exist.
@@ -131,11 +132,11 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
     ? dayOrders.filter((o) => tab.statuses!.includes(o.status))
     : dayOrders
 
-  const [timings, diets] = await Promise.all([timingForOrders(visible), orderDietsFor(visible)])
+  const [timings, diets] = await Promise.all([timingForOrders(visible), orderDietsFor(ctx.tenantId, visible)])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
   // Stations we serve are the ones with an outlet; the Station row, where one
   // exists, supplies the display name.
-  const stationName = new Map(stationDocs.map((s) => [s._id, s.name]))
+  const stationName = new Map(stationDocs.map((s) => [naturalKey(String(s._id)), s.name]))
   const stations = [...new Set(outlets.map((o) => o.stationCode))].sort().map((code) => ({
     id: code,
     label: stationName.get(code) ? `${code} · ${stationName.get(code)}` : code,

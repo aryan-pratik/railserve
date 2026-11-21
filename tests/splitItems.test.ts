@@ -3,7 +3,7 @@ import { isCombinedName, splitCombinedItems, splitCombinedName } from '../src/li
 import { OlfParser } from '../src/lib/ingest/parsers/olf'
 import { insertOrder } from '../src/lib/repo/orderRepo'
 import { MenuItem } from '../src/lib/models'
-import { resetDb } from './fixtures'
+import { resetDb, tenantId } from './fixtures'
 
 /**
  * An order line "2x Veg Maharaja Thali, 3x Butter Tawa Roti" is two dishes.
@@ -103,6 +103,7 @@ describe('combined items on a new order', () => {
 
   it('is split when the order is saved, whatever made it, and each dish gets its own menu row', async () => {
     const o = await insertOrder({
+      tenantId: tenantId(),
       source: 'RELFOOD', orderType: 'RETAIL', externalOrderId: 'SPLIT-1', status: 'RECEIVED',
       stationCode: 'CNB', serviceDate: '2026-11-20',
       items: [{ name: 'Special Egg Thali, 1x Non Veg Mini Thali', qty: 2 }, { name: 'Lassi', qty: 1 }],
@@ -110,7 +111,7 @@ describe('combined items on a new order', () => {
     expect(o.items.map((i) => [i.name, i.qty])).toEqual([
       ['Special Egg Thali', 2], ['Non Veg Mini Thali', 1], ['Lassi', 1],
     ])
-    expect((await MenuItem.find({}).sort({ _id: 1 }).lean()).map((r) => r._id)).toEqual([
+    expect((await MenuItem.find({ tenantId: tenantId() }).sort({ _id: 1 }).lean()).map((r) => r._id)).toEqual([
       'RELFOOD|lassi', 'RELFOOD|non veg mini thali', 'RELFOOD|special egg thali',
     ])
   })

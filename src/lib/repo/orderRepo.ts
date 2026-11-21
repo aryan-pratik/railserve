@@ -9,6 +9,7 @@ import { todayIST } from '../format'
 import { TERMINAL_STATUSES } from '../orderStatus'
 import { menuRowsOf, registerMenuItems } from './menuRepo'
 import { splitCombinedItems } from '@/lib/splitItems'
+import { tenantKey } from '../tenancy/primary'
 
 /**
  * THE ONLY PLACE Order.find / findOne / aggregate MAY BE CALLED.
@@ -44,19 +45,24 @@ import { splitCombinedItems } from '@/lib/splitItems'
  *
  * Holding no outlets is a data error, not an admin — returning an impossible
  * filter is the safe reading for all three scoped roles.
+ *
+ * Above all of that sits the tenant: every role, ADMIN included, is confined
+ * to its own company's orders. An admin is "everything" only within a tenant.
  */
 function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
+  const tenantId = ctx.tenantId
   switch (ctx.role) {
     case 'ADMIN':
-      return {}
+      return { tenantId }
     case 'STORE_MANAGER':
     case 'TELECALLER':
       return ctx.restaurantIds.length > 0
-        ? { restaurantId: { $in: ctx.restaurantIds } }
-        : { _id: { $exists: false } }
+        ? { tenantId, restaurantId: { $in: ctx.restaurantIds } }
+        : { tenantId, _id: { $exists: false } }
     case 'DELIVERY_AGENT':
       return ctx.restaurantIds.length > 0
         ? {
+            tenantId,
             restaurantId: { $in: ctx.restaurantIds },
             $or: [
               ...riderRecordClauses(ctx.userId),
@@ -66,7 +72,7 @@ function scopeFilter(ctx: AuthContext): QueryFilter<OrderDoc> {
               { status: 'PREPARED', 'delivery.agentIds.0': { $exists: false } },
             ],
           }
-        : { _id: { $exists: false } }
+        : { tenantId, _id: { $exists: false } }
   }
 }
 
@@ -157,16 +163,23 @@ export function closedRecordOf(
  * teamRepo). An admin is unscoped as everywhere else.
  */
 export function outletScoped(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}): QueryFilter<OrderDoc> {
-  if (ctx.role === 'ADMIN') return filter
-  if (ctx.restaurantIds.length === 0) return { _id: { $exists: false } }
-  return { $and: [{ restaurantId: { $in: ctx.restaurantIds } }, filter] }
+  const tenantId = ctx.tenantId
+  if (ctx.role === 'ADMIN') return { ...filter, tenantId }
+  if (ctx.restaurantIds.length === 0) return { tenantId, _id: { $exists: false } }
+  return { $and: [{ tenantId, restaurantId: { $in: ctx.restaurantIds } }, filter] }
 }
 
-/** Merge the caller's scope with a caller-supplied filter. */
+/**
+ * Merge the caller's scope with a caller-supplied filter.
+ *
+ * The result always names the caller's tenant at its top level (or in an
+ * $and branch), which is what the tenant guard checks for. An admin's filter
+ * gets tenantId set last, so a caller-supplied tenantId cannot widen it.
+ */
 export function scoped(ctx: AuthContext, filter: QueryFilter<OrderDoc> = {}): QueryFilter<OrderDoc> {
   const scope = scopeFilter(ctx)
-  if (Object.keys(scope).length === 0) return filter
   if (Object.keys(filter).length === 0) return scope
+  if (ctx.role === 'ADMIN') return { ...filter, tenantId: ctx.tenantId }
   return { $and: [scope, filter] }
 }
 
@@ -320,7 +333,7 @@ export async function recentCancellations(
     .map((r) => r.alertEvent?.userId)
     .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const actors = actorIds.length
-    ? await User.find({ _id: { $in: actorIds } }).select('name').lean()
+    ? await User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name').lean()
     : []
   const actorName = new Map(actors.map((a) => [String(a._id), a.name]))
 
@@ -742,7 +755,7 @@ export async function listCallNotes(
     .map((n) => n.userId)
     .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const authors = authorIds.length
-    ? await User.find({ _id: { $in: authorIds } }).select('name role').lean()
+    ? await User.find({ _id: { $in: authorIds }, tenantId: ctx.tenantId }).select('name role').lean()
     : []
   const label = new Map(
     authors.map((a) => [String(a._id), `${a.name} · ${ROLE_LABEL[a.role] ?? a.role}`]),
@@ -754,11 +767,14 @@ export async function listCallNotes(
 /**
  * Mints the next human-readable manual order id: MAN-20260827-001.
  * Atomic via $inc, so two admins submitting at once cannot collide.
+ *
+ * One sequence per tenant: each company numbers its own manual orders, and
+ * one tenant's volume is not readable off another's order ids.
  */
-export async function nextManualOrderId(serviceDate: string): Promise<string> {
-  const key = `manualOrder:${serviceDate}`
+export async function nextManualOrderId(tenantId: Types.ObjectId, serviceDate: string): Promise<string> {
+  const key = await tenantKey(tenantId, `manualOrder:${serviceDate}`)
   const doc = await Counter.findOneAndUpdate(
-    { _id: key },
+    { _id: key, tenantId },
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: 'after' },
   )
@@ -766,7 +782,12 @@ export async function nextManualOrderId(serviceDate: string): Promise<string> {
   return `MAN-${serviceDate.replace(/-/g, '')}-${seq}`
 }
 
-/** Order creation. Status is set here once, and only here, at birth. */
+/**
+ * Order creation. Status is set here once, and only here, at birth.
+ *
+ * `doc.tenantId` is required (the schema rejects an order without one); the
+ * caller knows whose order it is, from its ctx or the ingest mailbox.
+ */
 export async function insertOrder(doc: Record<string, unknown>) {
   // "Veg Thali, 2x Plain Roti" arriving as one item is two dishes: see
   // lib/splitItems.ts. Done here so it holds for every way an order is made.
@@ -777,7 +798,7 @@ export async function insertOrder(doc: Record<string, unknown>) {
   // page can show it for tagging before its KOT is printed. Best effort: a
   // menu write must never be the reason an order is lost.
   try {
-    await registerMenuItems(menuRowsOf(order))
+    await registerMenuItems(order.tenantId, menuRowsOf(order))
   } catch (err) {
     console.error('[menu] could not register items for', order.externalOrderId, err)
   }
@@ -945,6 +966,13 @@ export async function dailyCounts(
 // so those queries live here with the rest of the Order access rather than
 // being lint-exempted wherever they are convenient. Every function below is
 // named `system*` so it is obvious in a diff that no tenant filter applies.
+//
+// Tenants: the poller runs once per tenant (trainPolling), so the functions
+// it calls take that tenant and stay inside it. The two keyed by a train run
+// (systemRunBooking, systemRescheduleArrivals) do not: a run is shared by
+// every tenant with an order on it, as the train-status cache that drives
+// them is, so they read and write across tenants with `allTenants`. They
+// touch only the timing fields of orders on that one train.
 // ---------------------------------------------------------------------------
 
 import type { Types } from 'mongoose'
@@ -963,6 +991,7 @@ export type ActiveTrainGroup = {
  * Plan §8: only these are worth polling.
  */
 export async function systemFindActiveTrainGroups(
+  tenantId: Types.ObjectId,
   serviceDate: string,
   statuses: OrderStatus[],
   opts: { bookedBefore?: Date; bookedFrom?: Date } = {},
@@ -973,6 +1002,7 @@ export async function systemFindActiveTrainGroups(
   return Order.aggregate<ActiveTrainGroup>([
     {
       $match: {
+        tenantId,
         serviceDate,
         status: { $in: statuses },
         trainNo: { $ne: null, $exists: true },
@@ -1014,7 +1044,11 @@ export async function systemRunBooking(
   const open = await Order.find(
     { ...onRun(key), status: { $nin: TERMINAL_STATUSES }, scheduledArrival: { $ne: null } },
     'scheduledArrival',
-  ).lean<Pick<OrderDoc, 'scheduledArrival'>[]>()
+  )
+    // Across tenants on purpose: the run's booking is one value for every
+    // tenant with an order on it, as the shared train-status cache keys it.
+    .setOptions({ allTenants: true })
+    .lean<Pick<OrderDoc, 'scheduledArrival'>[]>()
   return runBooking(open.map((o) => o.scheduledArrival), now)
 }
 
@@ -1062,7 +1096,10 @@ export async function systemRescheduleArrivals(
       ...NOT_SET_BY_AN_ADMIN,
     },
     'scheduledArrival bookedArrival serviceDate status',
-  ).lean<Pick<OrderDoc, '_id' | 'scheduledArrival' | 'bookedArrival' | 'serviceDate' | 'status'>[]>()
+  )
+    // Across tenants on purpose: the timetable is the same train for all of them.
+    .setOptions({ allTenants: true })
+    .lean<Pick<OrderDoc, '_id' | 'scheduledArrival' | 'bookedArrival' | 'serviceDate' | 'status'>[]>()
 
   let moved = 0
   for (const o of orders) {
@@ -1094,7 +1131,7 @@ export async function systemRescheduleArrivals(
         $set: { scheduledArrival: to, serviceDate: toServiceDate, bookedArrival: o.bookedArrival ?? from },
         $push: { events: { $each: events } },
       },
-    )
+    ).setOptions({ allTenants: true }) // by _id from the cross-tenant read above
     moved += res.modifiedCount
   }
   return moved
@@ -1105,6 +1142,7 @@ export async function systemRescheduleArrivals(
  * Returns how many orders were newly notified.
  */
 export async function systemRecordLeaveNow(
+  tenantId: Types.ObjectId,
   orderIds: Types.ObjectId[],
   meta: Record<string, unknown>,
   now: Date,
@@ -1112,6 +1150,7 @@ export async function systemRecordLeaveNow(
   const res = await Order.updateMany(
     {
       _id: { $in: orderIds },
+      tenantId,
       status: 'PREPARED',
       // Idempotent: a repeating tick must not append the same alert every minute.
       'events.meta.action': { $ne: 'LEAVE_NOW' },
@@ -1164,7 +1203,7 @@ export async function repointOrdersBetweenOutlets(
   if (String(params.from) === String(params.to)) return 0
 
   const res = await Order.updateMany(
-    { restaurantId: params.from, source: params.source },
+    { tenantId: ctx.tenantId, restaurantId: params.from, source: params.source },
     { $set: { restaurantId: params.to } },
   )
   return res.modifiedCount ?? 0

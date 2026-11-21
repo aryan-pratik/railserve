@@ -1,15 +1,16 @@
 import { notFound } from 'next/navigation'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { findConversation } from '@/lib/repo/whatsappRepo'
 import { ChatShell } from '@/components/v2/chat/ChatShell'
 import { CHAT_BASE, ChatList, listQuery, readListParams } from '@/components/v2/chat/ChatList'
 import { ChatThread } from '@/components/v2/chat/ChatThread'
+import { isWhatsAppSimulatedFor } from '@/lib/whatsapp'
 
 export const metadata = { title: 'WhatsApp · RailServe' }
 
 export default async function V2ChatThreadPage(props: PageProps<'/v2/chat/[id]'>) {
-  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const ctx = await requirePermission('chat.use')
   const [{ id }, sp] = await Promise.all([props.params, props.searchParams])
   await connectDb()
 
@@ -20,6 +21,7 @@ export default async function V2ChatThreadPage(props: PageProps<'/v2/chat/[id]'>
   const q = listQuery(readListParams(sp)).toString()
   return (
     <ChatShell
+      simulated={await isWhatsAppSimulatedFor(ctx.tenantId)}
       threadOpen
       conversationId={id}
       list={<ChatList ctx={ctx} params={sp} activeId={id} />}

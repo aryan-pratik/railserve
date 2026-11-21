@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { findRun } from '@/lib/repo/runRepo'
 import { dietLookupFor } from '@/lib/repo/menuRepo'
 import { runTrainLabel } from '@/lib/runs'
@@ -27,7 +27,7 @@ export const metadata = { title: 'KOT preview · RailServe' }
  * KOTs" is what sends the ACCEPTED ones, with the status change.
  */
 export default async function KitchenKotPage(props: { params: Promise<{ runKey: string }> }) {
-  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const ctx = await requirePermission('kitchen.operate')
   const { runKey: raw } = await props.params
   const runKey = decodeURIComponent(raw)
 
@@ -40,9 +40,9 @@ export default async function KitchenKotPage(props: { params: Promise<{ runKey: 
 
   await connectDb()
   const outletIds = orders.map((o) => o.restaurantId).filter((id) => id != null)
-  const outlets = await Restaurant.find({ _id: { $in: outletIds } }).select('name stationName').lean()
+  const outlets = await Restaurant.find({ _id: { $in: outletIds }, tenantId: ctx.tenantId }).select('name stationName').lean()
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
-  const lookup = await dietLookupFor(orders)
+  const lookup = await dietLookupFor(ctx.tenantId, orders)
 
   return (
     <div className="grid gap-[18px]">

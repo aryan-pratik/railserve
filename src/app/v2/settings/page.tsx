@@ -8,6 +8,7 @@ import { OutletsTab } from './OutletsTab'
 import { RoutingTab } from './RoutingTab'
 import { StaffTab } from './StaffTab'
 import { IntegrationsTab } from './IntegrationsTab'
+import { RolesTab } from './RolesTab'
 import { TrainsTab } from './TrainsTab'
 
 export const metadata = { title: 'Settings · RailServe' }
@@ -29,7 +30,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   // The base rows feed every tab (the rail's counts, the station lists, the
   // outlet pickers), so they load once here.
-  const [base, staffCount] = await Promise.all([loadSetupBase(), countStaff()])
+  const [base, staffCount] = await Promise.all([loadSetupBase(ctx), countStaff(ctx)])
   const kitchens = kitchensOnly(base.outlets, base.listings)
   const paging = readPaging(sp)
 
@@ -53,7 +54,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             the tab's intrinsic width is then zero, so TableFrame scrolls on its own. */}
         <div className="min-h-0 min-w-0 [contain:inline-size] xl:overflow-y-auto xl:[overscroll-behavior:contain] xl:-mr-2 xl:pr-2">
           {tab === 'company' ? (
-            <CompanyTab base={base} kitchens={kitchens} staffCount={staffCount} now={now} />
+            <CompanyTab ctx={ctx} base={base} kitchens={kitchens} staffCount={staffCount} now={now} />
           ) : tab === 'stations' ? (
             <StationsTab base={base} kitchens={kitchens} now={now} />
           ) : tab === 'outlets' ? (
@@ -62,8 +63,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <RoutingTab ctx={ctx} base={base} />
           ) : tab === 'staff' ? (
             <StaffTab ctx={ctx} base={base} paging={paging} q={one(sp.q)} role={one(sp.role)} />
+          ) : tab === 'roles' ? (
+            <RolesTab ctx={ctx} />
           ) : tab === 'integrations' ? (
-            <IntegrationsTab base={base} now={now} />
+            <IntegrationsTab ctx={ctx} base={base} now={now} />
           ) : (
             <TrainsTab base={base} now={now} />
           )}

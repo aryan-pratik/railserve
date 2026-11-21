@@ -28,13 +28,13 @@ export async function ingestPastedEmail(
   _prev: InboxState,
   formData: FormData,
 ): Promise<InboxState> {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const body = String(formData.get('body') ?? '').trim()
   if (!body) return { error: 'Paste an email body first.' }
 
   try {
     // "Show original" pastes are often the raw HTML, which no parser reads.
-    const r = await ingestEmail({ body: toParseableText(body), receivedAt: new Date(), subject: 'Pasted by admin' })
+    const r = await ingestEmail({ tenantId: ctx.tenantId, body: toParseableText(body), receivedAt: new Date(), subject: 'Pasted by admin' })
     revalidatePath('/admin/inbox')
     revalidatePath('/admin/orders')
     revalidatePath('/admin/payments')
@@ -85,10 +85,10 @@ export async function resolveUnparsed(
 
 /** The stored body of one row, fetched when the row is opened rather than with the page. */
 export async function loadInboxBody(id: string): Promise<{ body: string; text: string } | null> {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   if (!mongoose.isValidObjectId(id)) return null
   await connectDb()
-  const row = await UnparsedInbox.findById(id).select('rawPayload').lean()
+  const row = await UnparsedInbox.findOne({ _id: id, tenantId: ctx.tenantId }).select('rawPayload').lean()
   if (!row) return null
   const body = (row.rawPayload as { body?: string } | null)?.body ?? ''
   return { body, text: toParseableText(body) }

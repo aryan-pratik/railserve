@@ -192,6 +192,7 @@ export async function riderDays(
   }>([
     {
       $match: outletScoped(ctx, {
+        tenantId: ctx.tenantId,
         $and: [riderDoneFilter('all'), onClosedRecord(riderIds), closedBetween(range.from, range.to)],
       }),
     },
@@ -254,6 +255,7 @@ export async function ridersNow(
   }>([
     {
       $match: outletScoped(ctx, {
+        tenantId: ctx.tenantId,
         $and: [
           { status: { $in: ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED'] } },
           onRiderRecord(riderIds),
@@ -308,6 +310,7 @@ export async function ridersDayTotal(
   const [row] = await Order.aggregate<typeof zero>([
     {
       $match: outletScoped(ctx, {
+        tenantId: ctx.tenantId,
         $and: [riderDoneFilter('all'), onClosedRecord(riderIds), closedBetween(range.from, range.to)],
       }),
     },

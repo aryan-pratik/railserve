@@ -50,6 +50,7 @@ import { ManualOrderInput } from '../src/lib/validation/order'
 import { istLocalToUtc, shiftServiceDate, todayIST, utcToIstLocal } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
 import type { OrderStatus } from '../src/lib/orderStatus'
+import { scriptTenant } from './scriptTenant'
 
 /* ── tags ─────────────────────────────────────────────────────────────────── */
 
@@ -73,8 +74,11 @@ function hash(s: string): number {
   return Math.abs(h)
 }
 
+/** The primary tenant, set at the start of main(). Every row here belongs to it. */
+let T: mongoose.Types.ObjectId
+
 function ctxOf(u: UserDoc): AuthContext {
-  return { userId: u._id, role: u.role, restaurantIds: u.restaurantIds }
+  return { tenantId: u.tenantId, userId: u._id, role: u.role, restaurantIds: u.restaurantIds }
 }
 
 /* ── reference data ───────────────────────────────────────────────────────── */
@@ -143,7 +147,7 @@ const COACHES = ['B1', 'B2', 'B3', 'A1', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'B4
 type Dish = { name: string; price: number; diet: 'VEG' | 'NON_VEG' }
 
 async function loadMenu(): Promise<{ veg: Dish[]; nonVeg: Dish[] }> {
-  const rows = await MenuItem.find({ removedAt: null, diet: { $ne: null } }).select('name diet').lean()
+  const rows = await MenuItem.find({ tenantId: T,  removedAt: null, diet: { $ne: null } }).select('name diet').lean()
   const seen = new Set<string>()
   const veg: Dish[] = []
   const nonVeg: Dish[] = []
@@ -277,10 +281,11 @@ const PAST_PATTERN: PastSpec[][] = [
 async function main() {
   assertSeedTarget()
   await connectDb()
+  T = await scriptTenant()
 
   /* actors */
   const byPhone = async (phone: string, what: string) => {
-    const u = await User.findOne({ phone, active: true })
+    const u = await User.findOne({ tenantId: T,  phone, active: true })
     if (!u) throw new Error(`Missing ${what} (${phone}). Run npm run seed / seed:rider first.`)
     return u
   }
@@ -301,7 +306,7 @@ async function main() {
   /* outlets */
   const outlets = {} as Record<OutletKey, { _id: mongoose.Types.ObjectId; stationCode: 'CNB' | 'PRYJ' | 'GAYA'; name: string }>
   for (const [key, name] of Object.entries(OUTLET_NAMES) as [OutletKey, string][]) {
-    const r = await Restaurant.findOne({ name, active: true }).lean()
+    const r = await Restaurant.findOne({ tenantId: T,  name, active: true }).lean()
     if (!r) throw new Error(`Outlet "${name}" is missing or inactive on this database.`)
     outlets[key] = { _id: r._id, stationCode: r.stationCode as 'CNB' | 'PRYJ' | 'GAYA', name: r.name }
   }
@@ -312,22 +317,22 @@ async function main() {
   const noteCtx = (key: OutletKey) => (holds(telecaller, key) ? telecallerCtx : adminCtx)
 
   /* ── 1. remove the previous run ───────────────────────────────────────── */
-  const prevOrders = await Order.find({ 'rawPayload.demoV2': true }).select('_id').lean()
+  const prevOrders = await Order.find({ tenantId: T,  'rawPayload.demoV2': true }).select('_id').lean()
   const prevOrderIds = prevOrders.map((o) => o._id)
   const removed = {
-    orders: (await Order.deleteMany({ _id: { $in: prevOrderIds } })).deletedCount,
-    payments: (await Payment.deleteMany({ $or: [{ 'rawPayload.demoV2': true }, { remark: new RegExp(`^\\${PAY_PREFIX}`) }] })).deletedCount,
-    inbox: (await UnparsedInbox.deleteMany({ 'rawPayload.demoV2': true })).deletedCount,
+    orders: (await Order.deleteMany({ tenantId: T,  _id: { $in: prevOrderIds } })).deletedCount,
+    payments: (await Payment.deleteMany({ tenantId: T,  $or: [{ 'rawPayload.demoV2': true }, { remark: new RegExp(`^\\${PAY_PREFIX}`) }] })).deletedCount,
+    inbox: (await UnparsedInbox.deleteMany({ tenantId: T,  'rawPayload.demoV2': true })).deletedCount,
     chats: 0,
     messages: 0,
   }
-  const prevConvs = await WaConversation.find({ phone: new RegExp(`^${WA_PREFIX}`) }).select('_id').lean()
+  const prevConvs = await WaConversation.find({ tenantId: T,  phone: new RegExp(`^${WA_PREFIX}`) }).select('_id').lean()
   const prevConvIds = prevConvs.map((c) => c._id)
-  removed.messages = (await WaMessage.deleteMany({ conversationId: { $in: prevConvIds } })).deletedCount
-  removed.chats = (await WaConversation.deleteMany({ _id: { $in: prevConvIds } })).deletedCount
+  removed.messages = (await WaMessage.deleteMany({ tenantId: T,  conversationId: { $in: prevConvIds } })).deletedCount
+  removed.chats = (await WaConversation.deleteMany({ tenantId: T,  _id: { $in: prevConvIds } })).deletedCount
   // Position rows are ephemeral and only move forward in time; clearing them is
   // what lets the trail below start clean on a re-run the same day.
-  await RiderLocation.deleteMany({ userId: { $in: [riders.ravi._id, riders.sandeep._id, riders.sanjeet._id] } })
+  await RiderLocation.deleteMany({ tenantId: T,  userId: { $in: [riders.ravi._id, riders.sandeep._id, riders.sanjeet._id] } })
   console.log(
     `cleared : ${removed.orders} orders, ${removed.payments} payments, ${removed.inbox} inbox rows, ` +
     `${removed.chats} chats (${removed.messages} messages)`,
@@ -338,7 +343,7 @@ async function main() {
   /* ── 2. orders ────────────────────────────────────────────────────────── */
 
   const tag = (id: mongoose.Types.ObjectId, extra: Record<string, unknown> = {}) =>
-    Order.updateOne({ _id: id }, { $set: { rawPayload: { ...TAG, ...extra } } }, { timestamps: false })
+    Order.updateOne({ tenantId: T,  _id: id }, { $set: { rawPayload: { ...TAG, ...extra } } }, { timestamps: false })
 
   let seq = 0
   async function createRetail(spec: {
@@ -500,12 +505,11 @@ async function main() {
       contactName: e.name, contactPhone: e.phone, notes: null,
       rawPaste: `${e.name}\n${e.pax} pax, train ${e.train}, ${serviceDate}\n${e.spec}\nCall ${e.phone}`,
     })
-    await Order.updateOne({ _id: doc._id }, { $set: { 'rawPayload.demoV2': true } }, { timestamps: false })
+    await Order.updateOne({ tenantId: T,  _id: doc._id }, { $set: { 'rawPayload.demoV2': true } }, { timestamps: false })
     if (e.to) {
       if (e.to === 'QUOTED') {
         // A quote carries a price and an outlet; the enquiry path leaves both blank.
-        await Order.updateOne(
-          { _id: doc._id },
+        await Order.updateOne({ tenantId: T,  _id: doc._id },
           { $set: { amountPaise: e.pax * 16000, paymentMode: 'INVOICE', restaurantId: outlets.AN._id } },
           { timestamps: false },
         )
@@ -550,9 +554,9 @@ async function main() {
       headingDegrees: 70,
       recordedAt: new Date(now.getTime() - (endMinutesAgo + (points - 1 - i) * 0.5) * MIN),
     }))
-  await recordFixes(riders.ravi._id, walk(26.4531, 80.3498, 0.2, 24), now)
-  await recordFixes(riders.sandeep._id, walk(26.4542, 80.3515, 6, 16), now)
-  await recordFixes(riders.sanjeet._id, walk(26.4525, 80.3522, 25, 10), now)
+  await recordFixes(T, riders.ravi._id, walk(26.4531, 80.3498, 0.2, 24), now)
+  await recordFixes(T, riders.sandeep._id, walk(26.4542, 80.3515, 6, 16), now)
+  await recordFixes(T, riders.sanjeet._id, walk(26.4525, 80.3522, 25, 10), now)
 
   /* ── 4. payments ──────────────────────────────────────────────────────── */
   const parser = new SlicePaymentParser()
@@ -576,7 +580,7 @@ async function main() {
       `     Transaction date   ${dd}\n  From    ${p.payer}\n  RRN     ${p.rrn}\n\n  Best,\n Team slice`
     const parsed = parser.parse(body, d)
     if (!parsed.ok) throw new Error(`Demo slice alert did not parse: ${parsed.detail}`)
-    const res = await recordPayment(parsed.payment, { body, subject: 'Money received in your slice account', from: 'slice <no-reply@sliceit.com>', receivedAt: d, demoV2: true }, null, d)
+    const res = await recordPayment(T, parsed.payment, { body, subject: 'Money received in your slice account', from: 'slice <no-reply@sliceit.com>', receivedAt: d, demoV2: true }, null, d)
     if (res.status !== 'CREATED') throw new Error(`Payment ${p.rrn} already existed`)
     paymentIds.push(res.paymentId)
     const remark =
@@ -584,7 +588,7 @@ async function main() {
       : i === 2 && linkable[1] ? `${PAY_PREFIX} advance for ${linkable[1]}`
       : i === 7 ? `${PAY_PREFIX} bulk advance, Annapurna 40 pax`
       : `${PAY_PREFIX} unmatched`
-    await Payment.updateOne({ _id: res.paymentId }, { $set: { remark, remarkById: admin._id, remarkAt: d } })
+    await Payment.updateOne({ tenantId: T,  _id: res.paymentId }, { $set: { remark, remarkById: admin._id, remarkAt: d } })
   }
 
   /* ── 5. unparsed inbox ────────────────────────────────────────────────── */
@@ -629,7 +633,7 @@ async function main() {
   const inboxIds: string[] = []
   for (const row of INBOX) {
     const at = new Date(now.getTime() - row.hoursAgo * HOUR)
-    const doc = await UnparsedInbox.create({
+    const doc = await UnparsedInbox.create({ tenantId: T, 
       source: row.source,
       rawPayload: { body: row.body, subject: row.subject, from: row.from, receivedAt: at, demoV2: true },
       reason: row.reason,
@@ -642,7 +646,7 @@ async function main() {
       resolvedOrderId: row.resolved?.orderId ?? null,
       resolution: row.resolved?.resolution ?? null,
     })
-    await UnparsedInbox.updateOne({ _id: doc._id }, { $set: { createdAt: at, updatedAt: at } }, { timestamps: false })
+    await UnparsedInbox.updateOne({ tenantId: T,  _id: doc._id }, { $set: { createdAt: at, updatedAt: at } }, { timestamps: false })
     inboxIds.push(String(doc._id))
   }
 
@@ -697,7 +701,7 @@ async function main() {
     for (const l of c.lines) {
       const at = new Date(now.getTime() - l.minutesAgo * MIN)
       if (l.dir === 'IN') {
-        const r = await recordInbound({
+        const r = await recordInbound(T, {
           type: 'inbound', phone: c.phone, customerName: c.name, providerMessageId: `demo-v2.${randomUUID()}`,
           kind: l.media ? 'MEDIA' : 'TEXT', text: l.text || null, button: null,
           mediaUrl: l.media?.url ?? null, mediaCaption: l.media?.caption ?? null, mediaType: l.media ? 'image' : null, at,
@@ -707,13 +711,12 @@ async function main() {
         if (!convId) throw new Error('A demo chat must open with an inbound line')
         // No repo path writes a historical outbound line (sendText would ask the
         // simulator, which answers back), so this is written as recordOutbound would.
-        await WaMessage.create({
+        await WaMessage.create({ tenantId: T, 
           conversationId: new mongoose.Types.ObjectId(convId), direction: 'OUT', kind: 'TEXT', text: l.text,
           status: l.status, statusAt: new Date(at.getTime() + 20_000), failReason: l.failReason ?? null,
           providerMessageId: `demo-v2.${randomUUID()}`, sentBy: l.by._id, createdAt: at,
         })
-        await WaConversation.updateOne(
-          { _id: convId },
+        await WaConversation.updateOne({ tenantId: T,  _id: convId },
           { $set: { lastMessageAt: at, lastMessageText: l.text, lastMessageDirection: 'OUT' } },
         )
       }
@@ -725,7 +728,7 @@ async function main() {
 
   /* ── summary ──────────────────────────────────────────────────────────── */
   const all = [...created.map((c) => c.doc._id), bulkToday._id, bulkUpcoming._id, ...enquiries.map((e) => e._id), ...past.map((p) => p.doc._id)]
-  const final = await Order.find({ _id: { $in: all } }).select('externalOrderId status serviceDate delivery.rto cancelRequest').lean()
+  const final = await Order.find({ tenantId: T,  _id: { $in: all } }).select('externalOrderId status serviceDate delivery.rto cancelRequest').lean()
   const byStatus = new Map<string, number>()
   for (const o of final) byStatus.set(o.status, (byStatus.get(o.status) ?? 0) + 1)
 
@@ -759,7 +762,7 @@ async function main() {
  * because nothing in production ever needs it.
  */
 async function backdate(orderId: mongoose.Types.ObjectId, base: Date) {
-  const o = await Order.findById(orderId).lean()
+  const o = await Order.findOne({ _id: orderId, tenantId: T }).lean()
   if (!o) return
   const step = 6 * MIN
   const events = o.events.map((e, i) => ({ ...e, createdAt: new Date(base.getTime() + (i + 1) * step) }))
@@ -778,7 +781,7 @@ async function backdate(orderId: mongoose.Types.ObjectId, base: Date) {
   if (o.delivery?.closedAt) $set['delivery.closedAt'] = last
   if (o.delivery?.rto?.openedAt) $set['delivery.rto.openedAt'] = last
   if (o.delivery?.codSettledAt) $set['delivery.codSettledAt'] = last
-  await Order.updateOne({ _id: orderId }, { $set }, { timestamps: false })
+  await Order.updateOne({ tenantId: T,  _id: orderId }, { $set }, { timestamps: false })
 }
 
 main().catch((err) => {

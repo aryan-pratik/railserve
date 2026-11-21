@@ -1,8 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import mongoose from 'mongoose'
 import { env } from '../env'
-import { connectDb } from '../db'
-import { User } from '../models'
+import { contextOf, loadUser } from '../tenancy/userContext'
 import type { AuthContext } from '../authContext'
 import type { Role } from '../roles'
 
@@ -77,6 +76,7 @@ export function verifyMobileToken(token: string): TokenPayload | null {
  * immediately rather than at token expiry — 30 days is far too long to leave a
  * revoked agent able to mark orders delivered.
  */
+// Shares the web session's loader: same tenant and suspension rules.
 export async function contextFromBearer(request: Request): Promise<AuthContext | null> {
   const header = request.headers.get('authorization')
   if (!header?.startsWith('Bearer ')) return null
@@ -84,17 +84,7 @@ export async function contextFromBearer(request: Request): Promise<AuthContext |
   const payload = verifyMobileToken(header.slice(7).trim())
   if (!payload) return null
 
-  await connectDb()
-  const user = await User.findOne({ _id: payload.sub, active: true })
-    .select('role restaurantIds')
-    .lean()
-  if (!user) return null
-
-  return {
-    userId: new mongoose.Types.ObjectId(payload.sub),
-    role: user.role as Role,
-    restaurantIds: (user.restaurantIds ?? []).map(
-      (id) => new mongoose.Types.ObjectId(String(id)),
-    ),
-  }
+  const user = await loadUser(payload.sub)
+  return user ? contextOf(user) : null
 }
+

@@ -19,10 +19,10 @@ export default async function KotPage(props: PageProps<'/store/orders/[id]/kot'>
 
   await connectDb()
   const outlet = order.restaurantId
-    ? await Restaurant.findById(order.restaurantId).select('name stationName').lean()
+    ? await Restaurant.findOne({ _id: order.restaurantId, tenantId: ctx.tenantId }).select('name stationName').lean()
     : null
 
-  const lookup = await dietLookupFor([order])
+  const lookup = await dietLookupFor(ctx.tenantId, [order])
 
   return (
     <div className="space-y-4">

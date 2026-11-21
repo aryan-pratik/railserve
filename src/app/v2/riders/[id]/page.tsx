@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { QueryFilter } from 'mongoose'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Pencil, Phone } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, RiderLocation, User, type OrderDoc } from '@/lib/models'
 import { countOrders, findMany, onClosedRecord, onRiderRecord } from '@/lib/repo/orderRepo'
@@ -78,13 +78,13 @@ export default async function V2RiderDetailPage(props: {
   params: Promise<{ id: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('riders.manage')
   const { id } = await props.params
   if (!(await canSeeRider(ctx, id))) notFound()
   const isAdmin = ctx.role === 'ADMIN'
 
   await connectDb()
-  const rider = await User.findById(id).select('name phone role active restaurantIds isTeamLead teamLeadId canReceiveCash').lean()
+  const rider = await User.findOne({ _id: id, tenantId: ctx.tenantId }).select('name phone role active restaurantIds isTeamLead teamLeadId canReceiveCash').lean()
   if (!rider || rider.role !== 'DELIVERY_AGENT') notFound()
   const riderId = rider._id
 
@@ -145,12 +145,12 @@ export default async function V2RiderDetailPage(props: {
           limit: tab === 'log' ? pageSize : 1,
         })
       : Promise.resolve(null),
-    RiderLocation.findOne({ userId: riderId }).select('recordedAt').lean(),
-    Restaurant.find({ _id: { $in: rider.restaurantIds ?? [] } }).select('name stationCode').sort({ name: 1 }).lean(),
-    rider.teamLeadId ? User.findById(rider.teamLeadId).select('name').lean() : null,
-    rider.isTeamLead ? User.countDocuments({ role: 'DELIVERY_AGENT', teamLeadId: riderId }) : 0,
+    RiderLocation.findOne({ tenantId: ctx.tenantId, userId: riderId }).select('recordedAt').lean(),
+    Restaurant.find({ _id: { $in: rider.restaurantIds ?? [] }, tenantId: ctx.tenantId }).select('name stationCode').sort({ name: 1 }).lean(),
+    rider.teamLeadId ? User.findOne({ _id: rider.teamLeadId, tenantId: ctx.tenantId }).select('name').lean() : null,
+    rider.isTeamLead ? User.countDocuments({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', teamLeadId: riderId }) : 0,
   ])
-  const receivers = await receiversOf(collections)
+  const receivers = await receiversOf(ctx, collections)
 
   const day = days.get(String(riderId)) ?? NO_RIDER_DAY
   const now = includesNow ? (nows.get(String(riderId)) ?? NO_RIDER_NOW) : NO_RIDER_NOW

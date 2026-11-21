@@ -90,7 +90,7 @@ export async function GET(request: Request) {
 
   await connectDb()
   // The same search the page runs, so the file holds exactly the rows listed.
-  const search = await orderSearchClause(q)
+  const search = await orderSearchClause(ctx, q)
   andClause(filter, search)
 
   const [orders, outlets] = await Promise.all([
@@ -98,10 +98,10 @@ export async function GET(request: Request) {
     // than one day of the board, and a silently truncated CSV is worse than a
     // slow one — this is the file someone reconciles the month against.
     findMany(ctx, filter, { sort: { createdAt: 1 }, limit: isFullRange ? 5000 : 500 }),
-    connectDb().then(() => Restaurant.find({}).select('name stationCode').lean()),
+    connectDb().then(() => Restaurant.find({ tenantId: ctx.tenantId }).select('name stationCode').lean()),
   ])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
-  const riderName = await riderNamesFor(orders)
+  const riderName = await riderNamesFor(ctx, orders)
 
   const header = [
     'Order ID', 'Status', 'Type', 'Aggregator', 'Outlet', 'Station', 'Train no', 'Train name',

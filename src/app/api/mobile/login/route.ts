@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { connectDb } from '@/lib/db'
-import { User } from '@/lib/models'
+import { Tenant, User } from '@/lib/models'
 import { issueMobileToken } from '@/lib/mobile/token'
 
 import { preflight, withCors } from '@/lib/mobile/cors'
@@ -18,7 +18,10 @@ export async function POST(request: Request) {
   }
 
   await connectDb()
-  const user = await User.findOne({ phone: parsed.data.phone, active: true })
+  // Phone numbers are unique across the whole platform, so, as on the web
+  // login (src/auth.ts), this is the one User query that runs before the
+  // tenant is known.
+  const user = await User.findOne({ phone: parsed.data.phone, active: true }).setOptions({ allTenants: true })
 
   // Same message either way — distinguishing "no such user" from "wrong
   // password" tells an attacker which phone numbers are staff.
@@ -27,6 +30,10 @@ export async function POST(request: Request) {
     { status: 401 },
   )
   if (!user) return withCors(request, invalid)
+  // A suspended or archived tenant's riders cannot sign in; the token check
+  // (contextFromBearer) refuses their existing tokens for the same reason.
+  const tenant = await Tenant.findById(user.tenantId).select('status').lean()
+  if (!tenant || tenant.status !== 'ACTIVE') return withCors(request, invalid)
   if (!(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
     return withCors(request, invalid)
   }

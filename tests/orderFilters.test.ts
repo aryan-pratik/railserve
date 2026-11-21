@@ -7,6 +7,15 @@ import {
   readOrderFilters,
 } from '../src/lib/repo/orderFilters'
 import { NO_RIDER } from '../src/lib/repo/riderFilter'
+import type { AuthContext } from '../src/lib/authContext'
+
+// None of these filters search, so the clause never touches the database.
+const ctx: AuthContext = {
+  tenantId: new mongoose.Types.ObjectId(),
+  userId: new mongoose.Types.ObjectId(),
+  role: 'ADMIN',
+  restaurantIds: [],
+}
 
 /**
  * The filter bar shared by All orders and Returns: the same URL has to mean
@@ -65,7 +74,7 @@ describe('order filter bar', () => {
       { status: 'FAILED', train: '12345a', mode: 'range', from: '2026-11-01', to: '2026-11-05', rider: NO_RIDER, type: 'LOCAL' },
       { defaultMode: 'all' },
     )
-    expect(await orderFilterClause(f)).toEqual({
+    expect(await orderFilterClause(ctx, f)).toEqual({
       status: 'FAILED',
       trainNo: '12345A',
       orderType: 'LOCAL',
@@ -76,13 +85,13 @@ describe('order filter bar', () => {
   })
 
   it('adds no date bound on all time, and leaves rating decoys out', async () => {
-    expect(await orderFilterClause(readOrderFilters({}, { defaultMode: 'all' }))).toEqual({
+    expect(await orderFilterClause(ctx, readOrderFilters({}, { defaultMode: 'all' }))).toEqual({
       status: { $ne: 'RATING_ORDER' },
     })
   })
 
   it('lists rating decoys when asked for them by name', async () => {
-    const clause = await orderFilterClause(readOrderFilters({ status: 'RATING_ORDER' }, { defaultMode: 'all' }))
+    const clause = await orderFilterClause(ctx, readOrderFilters({ status: 'RATING_ORDER' }, { defaultMode: 'all' }))
     expect(clause.status).toBe('RATING_ORDER')
   })
 })

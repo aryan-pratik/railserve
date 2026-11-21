@@ -29,8 +29,8 @@ export default async function V2TeamsPage(props: { searchParams: Promise<Record<
 
   await connectDb()
   const [leads, riders] = await Promise.all([
-    User.find({ role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ active: -1, name: 1 }).lean(),
-    User.find({ role: 'DELIVERY_AGENT', isTeamLead: { $ne: true }, active: true }).select('name teamLeadId').sort({ name: 1 }).lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ active: -1, name: 1 }).lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: { $ne: true }, active: true }).select('name teamLeadId').sort({ name: 1 }).lean(),
   ])
   const teams = await Promise.all(leads.map((l) => teamView(ctx, l._id, { day })))
   const leadName = new Map(leads.map((l) => [String(l._id), l.name]))

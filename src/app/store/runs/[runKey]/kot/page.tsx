@@ -32,12 +32,12 @@ export default async function RunKotPage(props: PageProps<'/store/runs/[runKey]/
 
   await connectDb()
   const outletIds = orders.map((o) => o.restaurantId).filter((id) => id != null)
-  const outlets = await Restaurant.find({ _id: { $in: outletIds } })
+  const outlets = await Restaurant.find({ _id: { $in: outletIds }, tenantId: ctx.tenantId })
     .select('name stationName')
     .lean()
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
 
-  const lookup = await dietLookupFor(orders)
+  const lookup = await dietLookupFor(ctx.tenantId, orders)
 
   return (
     <div className="space-y-4">

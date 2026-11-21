@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose'
 import { env } from '../env'
 import { msg91FromEnv } from './msg91'
 import { SimulatedWhatsAppProvider } from './simulator'
@@ -22,13 +23,16 @@ export function getWhatsAppProvider(): WhatsAppProvider {
     cached = new SimulatedWhatsAppProvider({
       // Imported lazily so the provider module stays free of the database;
       // the repository imports the provider type, not the other way round.
+      // The number is env-configured, so its events are the primary tenant's.
       onStatus: async (providerMessageId, status) => {
         const { applyStatus } = await import('../repo/whatsappRepo')
-        await applyStatus({ type: 'status', providerMessageId, providerRequestId: null, status, reason: null, at: new Date() })
+        const { getPrimaryTenantId } = await import('../tenancy/primary')
+        await applyStatus(await getPrimaryTenantId(), { type: 'status', providerMessageId, providerRequestId: null, status, reason: null, at: new Date() })
       },
       onReply: async (to, text, providerMessageId) => {
         const { recordInbound } = await import('../repo/whatsappRepo')
-        await recordInbound({
+        const { getPrimaryTenantId } = await import('../tenancy/primary')
+        await recordInbound(await getPrimaryTenantId(), {
           type: 'inbound',
           phone: to,
           customerName: null,
@@ -46,6 +50,44 @@ export function getWhatsAppProvider(): WhatsAppProvider {
     cached = msg91FromEnv()
   }
   return cached
+}
+
+/**
+ * The provider for one tenant. Only the primary tenant owns the
+ * env-configured MSG91 number; every other company chats through its own
+ * simulator until it connects a number of its own, so a second company's
+ * staff can never message passengers from ours.
+ */
+const perTenant = new Map<string, WhatsAppProvider>()
+
+export async function whatsAppProviderFor(tenantId: Types.ObjectId): Promise<WhatsAppProvider> {
+  const { getPrimaryTenantId } = await import('../tenancy/primary')
+  if ((await getPrimaryTenantId()).equals(tenantId)) return getWhatsAppProvider()
+  const key = String(tenantId)
+  let p = perTenant.get(key)
+  if (!p) {
+    p = new SimulatedWhatsAppProvider({
+      onStatus: async (providerMessageId, status) => {
+        const { applyStatus } = await import('../repo/whatsappRepo')
+        await applyStatus(tenantId, { type: 'status', providerMessageId, providerRequestId: null, status, reason: null, at: new Date() })
+      },
+      onReply: async (to, text, providerMessageId) => {
+        const { recordInbound } = await import('../repo/whatsappRepo')
+        await recordInbound(tenantId, {
+          type: 'inbound', phone: to, customerName: null, providerMessageId, kind: 'TEXT', text,
+          button: null, mediaUrl: null, mediaCaption: null, at: new Date(),
+        })
+      },
+    })
+    perTenant.set(key, p)
+  }
+  return p
+}
+
+/** True when this tenant's chat reaches no real phone. */
+export async function isWhatsAppSimulatedFor(tenantId: Types.ObjectId): Promise<boolean> {
+  const { getPrimaryTenantId } = await import('../tenancy/primary')
+  return !(await getPrimaryTenantId()).equals(tenantId) || isWhatsAppSimulated()
 }
 
 export const OPENER_VARS = ['name', 'order', 'amount', 'station', 'train', 'seat', 'outlet'] as const

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import mongoose from 'mongoose'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { User } from '@/lib/models'
 import {
@@ -58,7 +58,7 @@ export type ToggleState = { error?: string }
  * toggle has no return channel, so the guard lives here, before the call.
  */
 export async function toggleStaffActive(_prev: ToggleState, formData: FormData): Promise<ToggleState> {
-  const ctx = await requireRole('ADMIN')
+  const ctx = await requirePermission('staff.manage')
   const id = String(formData.get('id') ?? '')
   const active = String(formData.get('active') ?? '') === 'true'
   if (!mongoose.isValidObjectId(id)) return { error: 'That staff member no longer exists.' }
@@ -66,10 +66,10 @@ export async function toggleStaffActive(_prev: ToggleState, formData: FormData):
   if (!active) {
     if (ctx.userId.equals(id)) return { error: "You can't deactivate your own account." }
     await connectDb()
-    const target = await User.findById(id).select('role active').lean()
+    const target = await User.findOne({ _id: id, tenantId: ctx.tenantId }).select('role active').lean()
     if (!target) return { error: 'That staff member no longer exists.' }
     if (target.role === 'ADMIN' && target.active !== false) {
-      const admins = await User.countDocuments({ role: 'ADMIN', active: true })
+      const admins = await User.countDocuments({ tenantId: ctx.tenantId, role: 'ADMIN', active: true })
       if (admins <= 1) return { error: 'This is the last active admin. Deactivating them would lock everyone out.' }
     }
   }

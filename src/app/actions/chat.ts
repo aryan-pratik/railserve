@@ -14,7 +14,7 @@ import {
   sendText,
   WA_TEXT_MAX,
 } from '@/lib/repo/whatsappRepo'
-import { getWhatsAppProvider, openerTemplate } from '@/lib/whatsapp'
+import { openerTemplate, whatsAppProviderFor } from '@/lib/whatsapp'
 import { CHAT_BASE_PATHS, type ChatBasePath } from '@/lib/whatsapp/consoles'
 
 export type ChatActionState = {
@@ -58,7 +58,7 @@ export async function sendTextAction(_prev: ChatActionState, formData: FormData)
 
   await connectDb()
   try {
-    await sendText(ctx, conversationId, text, getWhatsAppProvider())
+    await sendText(ctx, conversationId, text, await whatsAppProviderFor(ctx.tenantId))
   } catch (err) {
     // The failed line is already in the thread, marked as such; the form
     // just has to say why so the telecaller knows not to retype it blind.
@@ -78,7 +78,7 @@ export async function sendOpenerAction(_prev: ChatActionState, formData: FormDat
 
   await connectDb()
   try {
-    await sendOpenerTemplate(ctx, conversationId, getWhatsAppProvider(), template)
+    await sendOpenerTemplate(ctx, conversationId, await whatsAppProviderFor(ctx.tenantId), template)
   } catch (err) {
     revalidateChat()
     return { error: err instanceof Error ? err.message : 'Could not send the template.' }

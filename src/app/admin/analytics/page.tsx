@@ -95,7 +95,7 @@ export default async function AnalyticsPage(props: PageProps<'/admin/analytics'>
   const orders = showOrders
     ? await findMany(ctx, match, { sort: { serviceDate: -1, createdAt: -1 }, limit: pageSize, skip: (page - 1) * pageSize })
     : []
-  const riderName = await riderNamesFor(orders)
+  const riderName = await riderNamesFor(ctx, orders)
 
   const outletName = new Map(options.outlets.map((o) => [o.id, `${o.name} · ${o.stationCode}`]))
   const stationName = new Map(options.stations.map((s) => [s.code, s.name]))

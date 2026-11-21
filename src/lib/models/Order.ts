@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 import {
   ORDER_SOURCES,
   ORDER_TYPES,
@@ -177,6 +178,8 @@ const DeliverySchema = new Schema(
 
 const OrderSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     source: { type: String, required: true, enum: ORDER_SOURCES },
     orderType: { type: String, required: true, enum: ORDER_TYPES },
     externalOrderId: { type: String, required: true, trim: true },
@@ -264,6 +267,9 @@ const OrderSchema = new Schema(
 )
 
 export type OrderDoc = InferSchemaType<typeof OrderSchema> & { _id: mongoose.Types.ObjectId }
+
+// Every Order belongs to one tenant; the guard refuses unscoped queries.
+OrderSchema.plugin(tenantScoped)
 
 export const Order: Model<OrderDoc> =
   registerModel<OrderDoc>('Order', OrderSchema)

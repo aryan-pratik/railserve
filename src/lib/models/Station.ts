@@ -1,5 +1,6 @@
 import { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * A station we operate at. One station is one physical kitchen, one thermal
@@ -16,6 +17,8 @@ import { registerModel } from './registerModel'
  */
 const StationSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     _id: { type: String, required: true, uppercase: true, trim: true },
     // Authoritative display name. Outlets carry their own `stationName` and
     // disagree about it; admin/setup/OutletMultiSelect.tsx resolves that
@@ -53,6 +56,9 @@ const StationSchema = new Schema(
 )
 
 export type StationDoc = InferSchemaType<typeof StationSchema>
+
+// Every Station belongs to one tenant; the guard refuses unscoped queries.
+StationSchema.plugin(tenantScoped)
 
 export const Station: Model<StationDoc> =
   registerModel<StationDoc>('Station', StationSchema)

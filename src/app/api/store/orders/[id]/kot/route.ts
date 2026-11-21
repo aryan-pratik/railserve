@@ -23,6 +23,7 @@ export async function POST(req: Request, ctx: RouteContext<'/api/store/orders/[i
     // required on every order. An order whose outlet matching failed used to
     // be unprintable and now is not.
     await enqueueOrderKotPrint({
+      tenantId: auth.tenantId,
       appOrigin: await getAppOrigin(),
       stationCode: order.stationCode,
       restaurantId: order.restaurantId,

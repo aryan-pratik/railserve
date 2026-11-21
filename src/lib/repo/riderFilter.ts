@@ -16,7 +16,7 @@ export type RiderOption = { id: string; name: string; active: boolean }
  * a manager sees the riders attached to the outlets they hold.
  */
 export async function riderOptions(ctx: AuthContext): Promise<RiderOption[]> {
-  const filter: Record<string, unknown> = { role: 'DELIVERY_AGENT' }
+  const filter: Record<string, unknown> = { role: 'DELIVERY_AGENT', tenantId: ctx.tenantId }
   if (ctx.role !== 'ADMIN') filter.restaurantIds = { $in: ctx.restaurantIds }
   const riders = await User.find(filter).select('name active').sort({ active: -1, name: 1 }).lean()
   return riders.map((r) => ({ id: String(r._id), name: r.name, active: r.active !== false }))
@@ -57,13 +57,14 @@ export function andClause(filter: Record<string, unknown>, clause: Record<string
  * rider from another outlet still names them.
  */
 export async function riderNamesFor(
+  ctx: AuthContext,
   orders: { _id: unknown; delivery?: { agentIds?: unknown[] | null; pickedUpBy?: unknown } | null }[],
 ): Promise<Map<string, string>> {
   // Once somebody has picked an order up, they are its rider: the others it
   // was offered to are no longer named beside it.
   const ids = [...new Set(orders.flatMap((o) => riderRecordOf(o)))]
   if (ids.length === 0) return new Map()
-  const users = await User.find({ _id: { $in: ids } }).select('name').lean()
+  const users = await User.find({ _id: { $in: ids }, tenantId: ctx.tenantId }).select('name').lean()
   const name = new Map(users.map((u) => [String(u._id), u.name]))
   return new Map(
     orders.map((o) => [

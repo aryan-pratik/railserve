@@ -48,7 +48,7 @@ export async function createOrderFromPaste(
 
   // Never fuzzy-match an outlet into a live order (§6, §13.11) — routing food
   // to the wrong kitchen is worse than refusing to route it at all.
-  const outlet = await matchOutlet(parsed.outletName, parsed.stationCode, parsed.source)
+  const outlet = await matchOutlet(ctx.tenantId, parsed.outletName, parsed.stationCode, parsed.source)
   if (!outlet.ok) {
     return { ok: false, detail: outlet.detail }
   }
@@ -60,6 +60,7 @@ export async function createOrderFromPaste(
   }
 
   const outcome = await createOrderFromParsed(
+    ctx.tenantId,
     parsed,
     outlet,
     { pastedText: text, pastedAt: new Date(), pastedById: String(ctx.userId) },

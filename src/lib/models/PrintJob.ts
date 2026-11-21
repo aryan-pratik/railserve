@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * One kitchen-printer job, queued for a station's local print agent to pick
@@ -9,6 +10,8 @@ import { registerModel } from './registerModel'
  */
 const PrintJobSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     // THE routing key: a job belongs to a kitchen, not to a brand. One
     // station is one printer is one agent, and a run job legitimately spans
     // every brand trading at that station.
@@ -35,6 +38,9 @@ const PrintJobSchema = new Schema(
 )
 
 export type PrintJobDoc = InferSchemaType<typeof PrintJobSchema> & { _id: mongoose.Types.ObjectId }
+
+// Every PrintJob belongs to one tenant; the guard refuses unscoped queries.
+PrintJobSchema.plugin(tenantScoped)
 
 export const PrintJob: Model<PrintJobDoc> =
   registerModel<PrintJobDoc>('PrintJob', PrintJobSchema)

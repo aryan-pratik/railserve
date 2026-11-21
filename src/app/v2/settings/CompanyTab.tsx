@@ -1,3 +1,7 @@
+import type { AuthContext } from '@/lib/authContext'
+import { can } from '@/lib/access'
+import { loadCompany } from '@/lib/repo/companyRepo'
+import { CompanyForm } from '@/components/v2/CompanyForm'
 import { Card, Chip, Mono } from '@/components/v2/ui'
 import { KeyValue, Notice } from '@/components/v2/Table'
 import { loadIntegrations, type OutletRow, type loadSetupBase } from '@/lib/v2/settings'
@@ -5,12 +9,11 @@ import { loadIntegrations, type OutletRow, type loadSetupBase } from '@/lib/v2/s
 type Base = Awaited<ReturnType<typeof loadSetupBase>>
 
 /**
- * Groundwork for tenancy: the facts about this company in one place, read
- * only. No model behind it yet; the name is a placeholder and the rest is
- * derived from outlets, staff and the environment.
+ * The company's own page: its details (editable with company.manage), its
+ * plan and how much of it is used, what it serves, and what it is connected to.
  */
-export async function CompanyTab({ base, kitchens, staffCount }: { base: Base; kitchens: OutletRow[]; staffCount: number; now: Date }) {
-  const integrations = await loadIntegrations()
+export async function CompanyTab({ ctx, base, kitchens, staffCount }: { ctx: AuthContext; base: Base; kitchens: OutletRow[]; staffCount: number; now: Date }) {
+  const [integrations, company, canEdit] = await Promise.all([loadIntegrations(ctx), loadCompany(ctx), can(ctx, 'company.manage')])
   const activeKitchens = kitchens.filter((k) => k.active)
   const sources = [...new Set(base.listings.filter((l) => l.active && l.source).map((l) => l.source as string))].sort()
 
@@ -23,34 +26,54 @@ export async function CompanyTab({ base, kitchens, staffCount }: { base: Base; k
   return (
     <div className="grid gap-3.5">
       <div className="grid gap-3.5 xl:grid-cols-[1.2fr_1fr]">
-        <Card title="Company" action={<Chip tone="grey">Placeholder</Chip>}>
-          <KeyValue
-            rows={[
-              { label: 'Name', value: <span className="font-semibold">RailServe</span> },
-              {
-                label: 'Stations served',
-                value: (
-                  <span className="flex flex-wrap gap-1.5">
-                    {base.stations.map((s) => (
-                      <Chip key={s.code} tone="grey">
-                        <Mono>{s.code}</Mono>
-                        {s.name ? <span className="font-normal text-v2-muted">{s.name}</span> : null}
-                      </Chip>
-                    ))}
-                    {base.stations.length === 0 ? <span className="text-v2-muted">none yet</span> : null}
-                  </span>
-                ),
-              },
-              {
-                label: 'Outlets',
-                value: `${activeKitchens.length} active kitchen${activeKitchens.length === 1 ? '' : 's'}${kitchens.length > activeKitchens.length ? ` · ${kitchens.length - activeKitchens.length} inactive` : ''}`,
-              },
-              { label: 'Staff', value: `${staffCount} active account${staffCount === 1 ? '' : 's'}` },
-              { label: 'Aggregators', value: sources.length ? sources.join(', ') : 'none recorded yet' },
-              { label: 'Timezone', value: 'Asia/Kolkata (IST)' },
-            ]}
+        <div className="grid gap-3.5">
+          <CompanyForm
+            canEdit={canEdit}
+            values={{
+              name: company.name,
+              displayName: company.settings.displayName,
+              contactPhone: company.settings.contactPhone,
+              contactEmail: company.settings.contactEmail,
+            }}
           />
-        </Card>
+          <Card title="Plan and usage" action={<Chip tone="grey">{company.plan.code}</Chip>}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <UsageMeter label="Active outlets" used={company.usage.outlets} limit={company.plan.maxOutlets} />
+              <UsageMeter label="Active staff accounts" used={company.usage.users} limit={company.plan.maxUsers} />
+              <div className="grid content-start gap-1">
+                <span className="text-[12.5px] font-semibold text-v2-ink-2">Orders this month</span>
+                <span className="font-mono text-2xl font-bold tabular-nums">{company.usage.ordersThisMonth}</span>
+              </div>
+            </div>
+          </Card>
+          <Card title="What you serve">
+            <KeyValue
+              rows={[
+                {
+                  label: 'Stations',
+                  value: (
+                    <span className="flex flex-wrap gap-1.5">
+                      {base.stations.map((s) => (
+                        <Chip key={s.code} tone="grey">
+                          <Mono>{s.code}</Mono>
+                          {s.name ? <span className="font-normal text-v2-muted">{s.name}</span> : null}
+                        </Chip>
+                      ))}
+                      {base.stations.length === 0 ? <span className="text-v2-muted">none yet</span> : null}
+                    </span>
+                  ),
+                },
+                {
+                  label: 'Outlets',
+                  value: `${activeKitchens.length} active kitchen${activeKitchens.length === 1 ? '' : 's'}${kitchens.length > activeKitchens.length ? ` · ${kitchens.length - activeKitchens.length} inactive` : ''}`,
+                },
+                { label: 'Staff', value: `${staffCount} active account${staffCount === 1 ? '' : 's'}` },
+                { label: 'Aggregators', value: sources.length ? sources.join(', ') : 'none recorded yet' },
+                { label: 'Timezone', value: 'Asia/Kolkata (IST)' },
+              ]}
+            />
+          </Card>
+        </div>
 
         <Card title="Connected to">
           <KeyValue
@@ -95,6 +118,23 @@ export async function CompanyTab({ base, kitchens, staffCount }: { base: Base; k
       <Notice>
         Company name, logo, KOT header, default walk-to-platform minutes and the inbound mail address become editable per company in the next phase (multi-tenant). Today they are read from the environment of this installation.
       </Notice>
+    </div>
+  )
+}
+
+function UsageMeter({ label, used, limit }: { label: string; used: number; limit: number }) {
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
+  const tone = pct >= 100 ? 'bg-v2-bad' : pct >= 80 ? 'bg-v2-warn' : 'bg-v2-brand'
+  return (
+    <div className="grid content-start gap-1.5">
+      <span className="text-[12.5px] font-semibold text-v2-ink-2">{label}</span>
+      <span className="font-mono text-2xl font-bold tabular-nums">
+        {used}
+        <span className="text-sm font-semibold text-v2-muted"> / {limit}</span>
+      </span>
+      <span className="h-1.5 overflow-hidden rounded-full bg-v2-surface-2" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used}>
+        <span className={`block h-full rounded-full ${tone}`} style={{ width: `${pct}%` }} />
+      </span>
     </div>
   )
 }

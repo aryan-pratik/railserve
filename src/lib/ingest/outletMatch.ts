@@ -1,5 +1,7 @@
+import type { Types } from 'mongoose'
 import { Listing, Restaurant, Station } from '../models'
 import type { OrderSource } from '../orderEnums'
+import { tenantKey } from '../tenancy/primary'
 
 /**
  * Resolves the outlet name in an aggregator's mail to one of our kitchens.
@@ -54,6 +56,8 @@ function normalise(s: string): string {
 }
 
 export async function matchOutlet(
+  /** The tenant whose outlets, storefronts and stations the name is matched against. */
+  tenantId: Types.ObjectId,
   outletName: string,
   stationCode: string | null,
   /**
@@ -67,7 +71,7 @@ export async function matchOutlet(
 
   // --- 1. one of our own outlets, named directly ---------------------------
   // Active only: an order routed to a closed kitchen is a lost order.
-  const outlets = await Restaurant.find({ active: true })
+  const outlets = await Restaurant.find({ tenantId, active: true })
     .select('name aliases stationCode')
     .lean()
 
@@ -122,7 +126,7 @@ export async function matchOutlet(
   }
 
   // --- 2. a mapped aggregator storefront -----------------------------------
-  const listings = await Listing.find({ active: true })
+  const listings = await Listing.find({ tenantId, active: true })
     .select('name aliases stationCode restaurantId')
     .lean()
 
@@ -178,7 +182,7 @@ export async function matchOutlet(
     }
   }
 
-  const station = await Station.findById(normalise(fallbackStation))
+  const station = await Station.findOne({ _id: await tenantKey(tenantId, normalise(fallbackStation)), tenantId })
     .select('defaultRestaurantId')
     .lean()
   const fallback = station?.defaultRestaurantId
@@ -209,7 +213,7 @@ export async function matchOutlet(
   if (!listing) {
     const code = normalise(fallbackStation)
     const seen = await Listing.findOneAndUpdate(
-      { name: listingName, stationCode: code },
+      { tenantId, name: listingName, stationCode: code },
       { $setOnInsert: { name: listingName, stationCode: code, source, restaurantId: null, active: true } },
       { upsert: true, returnDocument: 'after', projection: { _id: 1 } },
     ).lean()

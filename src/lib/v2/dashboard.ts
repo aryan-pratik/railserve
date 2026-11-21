@@ -23,7 +23,7 @@ export const loadToday = cache(async (ctx: AuthContext) => {
   await connectDb()
   const [board, outlets] = await Promise.all([
     loadRunBoard(ctx, 'today', { allowFetch: false, statuses: [...ORDER_STATUSES] }),
-    Restaurant.find({}).select('name walkToPlatformMinutes stationCode').lean(),
+    Restaurant.find({ tenantId: ctx.tenantId }).select('name walkToPlatformMinutes stationCode').lean(),
   ])
   const outletById = new Map(
     outlets.map((o) => [String(o._id), { name: o.name, walk: o.walkToPlatformMinutes ?? 10, stationCode: o.stationCode }]),
@@ -36,7 +36,7 @@ export const loadDay = cache(async (ctx: AuthContext, date: string) => {
   await connectDb()
   const [board, outlets] = await Promise.all([
     loadRunBoard(ctx, 'date', { date, allowFetch: false }),
-    Restaurant.find({}).select('name walkToPlatformMinutes stationCode').lean(),
+    Restaurant.find({ tenantId: ctx.tenantId }).select('name walkToPlatformMinutes stationCode').lean(),
   ])
   const outletById = new Map(
     outlets.map((o) => [String(o._id), { name: o.name, walk: o.walkToPlatformMinutes ?? 10, stationCode: o.stationCode }]),

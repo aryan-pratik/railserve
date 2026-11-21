@@ -1,9 +1,12 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 import { ROLES } from '../roles'
 
 const UserSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     name: { type: String, required: true, trim: true },
     // Phone is the login identifier — there is no email field anywhere in the plan.
     phone: { type: String, required: true, trim: true },
@@ -39,6 +42,9 @@ const UserSchema = new Schema(
 )
 
 export type UserDoc = InferSchemaType<typeof UserSchema> & { _id: mongoose.Types.ObjectId }
+
+// Every User belongs to one tenant; the guard refuses unscoped queries.
+UserSchema.plugin(tenantScoped)
 
 export const User: Model<UserDoc> =
   registerModel<UserDoc>('User', UserSchema)

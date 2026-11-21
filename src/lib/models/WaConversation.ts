@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * One WhatsApp thread with one passenger, keyed by their number.
@@ -20,6 +21,8 @@ import { registerModel } from './registerModel'
  */
 const WaConversationSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     // Digits only, with the country code: 919876543210. The provider's own
     // shape, and what a webhook hands back, so a lookup is one equality.
     phone: { type: String, required: true, trim: true },
@@ -46,6 +49,9 @@ const WaConversationSchema = new Schema(
 export type WaConversationDoc = InferSchemaType<typeof WaConversationSchema> & {
   _id: mongoose.Types.ObjectId
 }
+
+// Every WaConversation belongs to one tenant; the guard refuses unscoped queries.
+WaConversationSchema.plugin(tenantScoped)
 
 export const WaConversation: Model<WaConversationDoc> =
   registerModel<WaConversationDoc>('WaConversation', WaConversationSchema)

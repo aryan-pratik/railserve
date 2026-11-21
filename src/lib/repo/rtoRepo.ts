@@ -30,7 +30,7 @@ function cleanNote(raw: string | null | undefined): string | null {
 export async function mayCollectReturns(ctx: AuthContext): Promise<boolean> {
   if (ctx.role === 'ADMIN') return true
   if (ctx.role !== 'STORE_MANAGER') return false
-  const me = await User.findById(ctx.userId).select('role canCollectReturns').lean()
+  const me = await User.findOne({ _id: ctx.userId, tenantId: ctx.tenantId }).select('role canCollectReturns').lean()
   return Boolean(me && canCollectReturns(me))
 }
 
@@ -107,7 +107,7 @@ export async function markReturnedToOrigin(params: {
     throw new ConflictError('Someone else just took this order back. Reload to see it.')
   }
 
-  return (await Order.findOne({ _id }).lean<OrderDoc>())!
+  return (await Order.findOne({ _id, tenantId: ctx.tenantId }).lean<OrderDoc>())!
 }
 
 export type ReturnView = {
@@ -121,9 +121,13 @@ export type ReturnView = {
   riders: string[]
 }
 
-/** One order's return as whoever reads it sees it, or null when there is none. */
+/**
+ * One order's return as whoever reads it sees it, or null when there is none.
+ * The riders named are the order's own tenant's staff, so its tenantId scopes
+ * the lookup.
+ */
 export async function viewReturn(
-  order: Pick<OrderDoc, 'delivery'>,
+  order: Pick<OrderDoc, 'delivery' | 'tenantId'>,
 ): Promise<ReturnView | null> {
   const rto = order.delivery?.rto
   if (!rto) return null
@@ -132,7 +136,7 @@ export async function viewReturn(
   const ids = [...riderIds, rto.returnedBy].filter(
     (v): v is mongoose.Types.ObjectId => Boolean(v),
   )
-  const users = ids.length > 0 ? await User.find({ _id: { $in: ids } }).select('name role').lean() : []
+  const users = ids.length > 0 ? await User.find({ _id: { $in: ids }, tenantId: order.tenantId }).select('name role').lean() : []
   const name = new Map(users.map((u) => [String(u._id), u.name]))
   const label = new Map(
     users.map((u) => [String(u._id), `${u.name} · ${ROLE_LABEL[u.role] ?? u.role}`]),
@@ -201,8 +205,8 @@ export async function listReturns(
     .filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const outletIds = orders.map((o) => o.restaurantId).filter((v): v is mongoose.Types.ObjectId => Boolean(v))
   const [users, outlets] = await Promise.all([
-    userIds.length > 0 ? User.find({ _id: { $in: userIds } }).select('name').lean() : [],
-    outletIds.length > 0 ? Restaurant.find({ _id: { $in: outletIds } }).select('name').lean() : [],
+    userIds.length > 0 ? User.find({ _id: { $in: userIds }, tenantId: ctx.tenantId }).select('name').lean() : [],
+    outletIds.length > 0 ? Restaurant.find({ _id: { $in: outletIds }, tenantId: ctx.tenantId }).select('name').lean() : [],
   ])
   const userName = new Map(users.map((u) => [String(u._id), u.name]))
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))

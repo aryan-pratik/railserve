@@ -12,7 +12,7 @@ import { POST as postMutations } from '../src/app/api/mobile/mutations/route'
 import { maskPhone, RIDER_CORRECTION_WINDOW_MS } from '../src/lib/riderRecords'
 import { todayIST } from '../src/lib/format'
 import { opsDayOf } from '../src/lib/opsDay'
-import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb } from './fixtures'
+import { assignRider, ctxFor, makeOrder, makeRestaurant, makeUser, resetDb, tenantId } from './fixtures'
 
 type Id = mongoose.Types.ObjectId
 
@@ -121,7 +121,7 @@ describe('rider self-service: pickup, correction, cash', () => {
     expect(await findById(riderB, String(open._id))).not.toBeNull()
 
     const given = await ready()
-    await Order.updateOne({ _id: given._id }, { 'delivery.agentIds': [riderAId], 'delivery.assignedAt': new Date() })
+    await Order.updateOne({ tenantId: tenantId(), _id: given._id }, { 'delivery.agentIds': [riderAId], 'delivery.assignedAt': new Date() })
     await transitionOrder({ ctx: riderA, orderId: String(given._id), to: 'DISPATCHED' })
     await transitionOrder({ ctx: riderA, orderId: String(given._id), to: 'PREPARED' })
     expect(await findById(riderB, String(given._id))).toBeNull()
@@ -212,13 +212,13 @@ describe('rider self-service: pickup, correction, cash', () => {
   // --- cash ------------------------------------------------------------------
 
   it('the wallet counts delivered COD the rider holds, once per order, and not prepaid', async () => {
-    await Order.updateMany({}, { $set: { 'delivery.codSettledAt': new Date(0) } })
+    await Order.updateMany({ tenantId: tenantId() }, { $set: { 'delivery.codSettledAt': new Date(0) } })
     await delivered(riderB, { amountPaise: 30000 })
     await delivered(riderB, { amountPaise: 20000, paymentMode: 'PREPAID' })
 
     // A bulk order carried by two riders: the cash is the one who delivered it.
     const bulk = await ready({ amountPaise: 50000 })
-    await Order.updateOne({ _id: bulk._id }, { 'delivery.agentIds': [riderAId, riderBId] })
+    await Order.updateOne({ tenantId: tenantId(), _id: bulk._id }, { 'delivery.agentIds': [riderAId, riderBId] })
     await transitionOrder({ ctx: riderB, orderId: String(bulk._id), to: 'DISPATCHED' })
     await transitionOrder({ ctx: riderB, orderId: String(bulk._id), to: 'DELIVERED', apply: { amountCollectedPaise: 50000 } })
 
@@ -295,10 +295,10 @@ describe('rider self-service: pickup, correction, cash', () => {
     const old = await delivered(riderA, { contactPhone: '9123456789', externalOrderId: 'OLD-1' })
     const ancient = await delivered(riderA, { contactPhone: '9000011111', externalOrderId: 'ANCIENT-1' })
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000)
-    await Order.updateOne({ _id: old }, { 'delivery.closedAt': hoursAgo(31) })
+    await Order.updateOne({ tenantId: tenantId(), _id: old }, { 'delivery.closedAt': hoursAgo(31) })
     // The 3am reporting day it closed in, which before 3 am is the day before.
     const day = opsDayOf(hoursAgo(24 * 5))
-    await Order.updateOne({ _id: ancient }, { 'delivery.closedAt': hoursAgo(24 * 5), serviceDate: day })
+    await Order.updateOne({ tenantId: tenantId(), _id: ancient }, { 'delivery.closedAt': hoursAgo(24 * 5), serviceDate: day })
 
     const get = async (qs = '?v=2') => (await getHistory(new Request(`http://localhost/api/mobile/history${qs}`, {
       headers: { authorization: `Bearer ${tokenA}` },

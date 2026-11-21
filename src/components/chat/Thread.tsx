@@ -61,7 +61,7 @@ export async function Thread({
     linkedOrder(ctx, c),
     isAdmin ? listAssignableChatUsers(ctx) : Promise.resolve([]),
   ])
-  const labels = await labelsFor([c], messages.map((m) => m.sentBy))
+  const labels = await labelsFor(ctx, [c], messages.map((m) => m.sentBy))
   const name = displayName(c)
   const me = String(ctx.userId)
   const assignee = c.assignedTo ? (String(c.assignedTo) === me ? 'You' : (labels.userName.get(String(c.assignedTo)) ?? 'Someone')) : null

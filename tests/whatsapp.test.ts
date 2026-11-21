@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import mongoose from 'mongoose'
 import { disconnectDb } from '../src/lib/db'
-import { WaConversation, WaMessage } from '../src/lib/models'
+import { User, WaConversation, WaMessage } from '../src/lib/models'
 import {
   applyStatus,
   assignConversation,
@@ -27,7 +27,7 @@ import { Msg91Provider, extractBody } from '../src/lib/whatsapp/msg91'
 import { renderTemplateBody } from '../src/lib/whatsapp/template'
 import { SimulatedWhatsAppProvider } from '../src/lib/whatsapp/simulator'
 import { WhatsAppSendError, type SendResult, type TemplateSend, type WhatsAppProvider } from '../src/lib/whatsapp/provider'
-import { ctxFor, makeOrder, makeRestaurant, makeStation, makeUser, resetDb } from './fixtures'
+import { ctxFor, makeOrder, makeRestaurant, makeStation, makeUser, resetDb, tenantId } from './fixtures'
 
 /* ── pure ─────────────────────────────────────────────────────────────────── */
 
@@ -346,7 +346,7 @@ describe('whatsapp chat', () => {
       const id2 = await openConversationForOrder(telecaller, String(o2._id))
       expect(id2).toBe(id)
       expect(String((await findConversation(telecaller, id))!.orderId)).toBe(String(o2._id))
-      expect(await WaConversation.countDocuments({ phone: `91${p}` })).toBe(1)
+      expect(await WaConversation.countDocuments({ tenantId: tenantId(), phone: `91${p}` })).toBe(1)
     })
 
     it("is a 404 for another outlet's order", async () => {
@@ -359,7 +359,7 @@ describe('whatsapp chat', () => {
       const p = phone()
       const theirs = await makeOrder({ restaurantId: annapurna, stationCode: 'PRYJ', contactPhone: p })
       const id = await openConversationForOrder(otherTelecaller, String(theirs._id))
-      await recordInbound(inbound(`91${p}`, 'hello annapurna'))
+      await recordInbound(tenantId(), inbound(`91${p}`, 'hello annapurna'))
       // They also order at Ganga. Ganga's telecaller may not pull the thread over.
       const mine = await makeOrder({ restaurantId: ganga, contactPhone: p })
       await expect(openConversationForOrder(telecaller, String(mine._id))).rejects.toBeInstanceOf(ForbiddenError)
@@ -375,14 +375,14 @@ describe('whatsapp chat', () => {
 
       // A stranger's unclaimed thread is claimed by the first outlet that opens an order for it.
       const q = phone()
-      const stray = await recordInbound(inbound(`91${q}`, 'anyone there?'))
+      const stray = await recordInbound(tenantId(), inbound(`91${q}`, 'anyone there?'))
       const o = await makeOrder({ restaurantId: ganga, contactPhone: q })
       expect(await openConversationForOrder(telecaller, String(o._id))).toBe(stray.conversationId)
       expect(String((await findConversation(telecaller, stray.conversationId))!.restaurantId)).toBe(String(ganga))
     })
 
     it('puts a freshly opened thread at the top of the rail, not under week-old ones', async () => {
-      const old = await recordInbound(inbound(`91${phone()}`, 'old', undefined, new Date('2026-01-01T00:00:00Z')))
+      const old = await recordInbound(tenantId(), inbound(`91${phone()}`, 'old', undefined, new Date('2026-01-01T00:00:00Z')))
       const o = await makeOrder({ restaurantId: ganga, contactPhone: phone() })
       const fresh = await openConversationForOrder(telecaller, String(o._id))
       const typed = await openConversationForPhone(telecaller, phone())
@@ -430,7 +430,7 @@ describe('whatsapp chat', () => {
       await expect(openConversationForPhone(telecaller, p)).rejects.toBeInstanceOf(ForbiddenError)
       // The same telecaller asking again gets the same thread back.
       const again = await openConversationForPhone(otherTelecaller, p)
-      expect(await WaConversation.countDocuments({ phone: `91${p}` })).toBe(1)
+      expect(await WaConversation.countDocuments({ tenantId: tenantId(), phone: `91${p}` })).toBe(1)
       expect(again).toBeTypeOf('string')
     })
 
@@ -444,7 +444,7 @@ describe('whatsapp chat', () => {
       const mine = await openConversationForPhone(telecaller, phone())
       const theirs = await openConversationForPhone(otherTelecaller, phone())
       // A stranger wrote in with no order anywhere: unclaimed.
-      const stray = await recordInbound(inbound(`91${phone()}`, 'Hello?'))
+      const stray = await recordInbound(tenantId(), inbound(`91${phone()}`, 'Hello?'))
 
       expect(await findConversation(telecaller, mine)).not.toBeNull()
       expect(await findConversation(telecaller, theirs)).toBeNull()
@@ -489,7 +489,7 @@ describe('whatsapp chat', () => {
       const p = phone()
       const o = await makeOrder({ restaurantId: ganga, contactPhone: p, contactName: 'Priya' })
       const at = new Date('2026-11-01T06:00:00Z')
-      const r = await recordInbound({ ...inbound(`91${p}`, 'Where is my order?', 'wamid.in.A', at), customerName: 'Priya S' })
+      const r = await recordInbound(tenantId(), { ...inbound(`91${p}`, 'Where is my order?', 'wamid.in.A', at), customerName: 'Priya S' })
       expect(r.duplicate).toBe(false)
       const c = await findConversation(telecaller, r.conversationId)
       expect(c).toMatchObject({ customerName: 'Priya S', unreadCount: 1, lastMessageText: 'Where is my order?', lastMessageDirection: 'IN' })
@@ -504,16 +504,16 @@ describe('whatsapp chat', () => {
 
     it('is idempotent on the provider message id', async () => {
       const p = `91${phone()}`
-      const first = await recordInbound(inbound(p, 'one', 'wamid.in.DUP'))
-      const second = await recordInbound(inbound(p, 'one', 'wamid.in.DUP'))
+      const first = await recordInbound(tenantId(), inbound(p, 'one', 'wamid.in.DUP'))
+      const second = await recordInbound(tenantId(), inbound(p, 'one', 'wamid.in.DUP'))
       expect(second).toEqual({ conversationId: first.conversationId, messageId: null, duplicate: true })
-      expect(await WaMessage.countDocuments({ conversationId: first.conversationId })).toBe(1)
+      expect(await WaMessage.countDocuments({ tenantId: tenantId(), conversationId: first.conversationId })).toBe(1)
       expect((await findConversation(admin, first.conversationId))!.unreadCount).toBe(1)
     })
 
     it('a media message keeps its link and caption', async () => {
       const p = `91${phone()}`
-      const r = await recordInbound({ ...inbound(p, null as unknown as string), kind: 'MEDIA', text: null, mediaUrl: 'https://x/y.jpg', mediaCaption: 'seat photo' })
+      const r = await recordInbound(tenantId(), { ...inbound(p, null as unknown as string), kind: 'MEDIA', text: null, mediaUrl: 'https://x/y.jpg', mediaCaption: 'seat photo' })
       const c = await findConversation(admin, r.conversationId)
       expect(c!.lastMessageText).toBe('seat photo')
       const [m] = await listMessages(admin, r.conversationId)
@@ -563,7 +563,7 @@ describe('whatsapp chat', () => {
       const p = phone()
       // An order with no outlet resolved yet links the thread but claims it for nobody.
       await makeOrder({ restaurantId: null, contactPhone: p, externalOrderId: 'FT-NOBODYS-1' })
-      const r = await recordInbound(inbound(`91${p}`, 'hi'))
+      const r = await recordInbound(tenantId(), inbound(`91${p}`, 'hi'))
       const c = await findConversation(telecaller, r.conversationId)
       expect(c!.restaurantId).toBeNull()
       expect(c!.orderId).not.toBeNull()
@@ -574,7 +574,7 @@ describe('whatsapp chat', () => {
     it('does not steal a thread a colleague already holds when replying', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'hi'))
       await assignConversation(admin, r.conversationId, String(otherTelecaller.userId))
       await sendText(admin, r.conversationId, 'From the admin', fake)
       expect(String((await findConversation(admin, r.conversationId))!.assignedTo)).toBe(String(otherTelecaller.userId))
@@ -583,7 +583,7 @@ describe('whatsapp chat', () => {
     it('sends inside the window, records the line as SENT and claims the thread', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi'))
       const msgId = await sendText(telecaller, r.conversationId, '  Your food reaches the seat in 10 minutes.  ', fake)
       expect(fake.texts).toEqual([{ to: p, text: 'Your food reaches the seat in 10 minutes.' }])
 
@@ -606,7 +606,7 @@ describe('whatsapp chat', () => {
     it('refuses free text once 24 hours have passed', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi', undefined, new Date(Date.now() - SESSION_WINDOW_MS - 1000)))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi', undefined, new Date(Date.now() - SESSION_WINDOW_MS - 1000)))
       await expect(sendText(telecaller, r.conversationId, 'Too late', fake)).rejects.toThrow(/24 hours/)
     })
 
@@ -614,7 +614,7 @@ describe('whatsapp chat', () => {
       const fake = new FakeProvider()
       fake.fail = 'MSG91 refused the message: Invalid integrated number'
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi'))
       await expect(sendText(telecaller, r.conversationId, 'Hello', fake)).rejects.toThrow(/Invalid integrated number/)
       const msgs = await listMessages(telecaller, r.conversationId)
       expect(msgs[1]).toMatchObject({ direction: 'OUT', status: 'FAILED', failReason: fake.fail })
@@ -623,7 +623,7 @@ describe('whatsapp chat', () => {
     it('refuses an empty message and an out-of-scope thread', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi'))
       await expect(sendText(telecaller, r.conversationId, '   ', fake)).rejects.toBeInstanceOf(ConflictError)
       const theirs = await openConversationForPhone(otherTelecaller, phone())
       await expect(sendText(telecaller, theirs, 'Hello', fake)).rejects.toBeInstanceOf(NotFoundError)
@@ -639,7 +639,7 @@ describe('whatsapp chat', () => {
       const id = await openConversationForPhone(otherTelecaller, raw)
       const base = new Date('2026-11-01T00:00:00Z').getTime()
       for (let i = 0; i < 7; i++) {
-        await recordInbound(inbound(p, `m${i}`, `wamid.page.${i}`, new Date(base + i * 60_000)))
+        await recordInbound(tenantId(), inbound(p, `m${i}`, `wamid.page.${i}`, new Date(base + i * 60_000)))
       }
 
       const first = await listMessagesPage(admin, id, { limit: 3 })
@@ -667,45 +667,45 @@ describe('whatsapp chat', () => {
     it('move forward only, by wamid or request id, and FAILED wins', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi'))
       await sendText(telecaller, r.conversationId, 'One', fake)
       const [, out] = await listMessages(telecaller, r.conversationId)
       const at = new Date()
 
-      expect(await applyStatus({ type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'READ', reason: null, at })).toBe(true)
+      expect(await applyStatus(tenantId(), { type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'READ', reason: null, at })).toBe(true)
       // A late "delivered" after "read" changes nothing.
-      expect(await applyStatus({ type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'DELIVERED', reason: null, at })).toBe(false)
+      expect(await applyStatus(tenantId(), { type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'DELIVERED', reason: null, at })).toBe(false)
       expect((await listMessages(telecaller, r.conversationId))[1].status).toBe('READ')
 
       // By request id alone, as MSG91 reports before the wamid is known.
-      expect(await applyStatus({ type: 'status', providerMessageId: null, providerRequestId: out.providerRequestId!, status: 'FAILED', reason: 'blocked', at })).toBe(true)
+      expect(await applyStatus(tenantId(), { type: 'status', providerMessageId: null, providerRequestId: out.providerRequestId!, status: 'FAILED', reason: 'blocked', at })).toBe(true)
       expect((await listMessages(telecaller, r.conversationId))[1]).toMatchObject({ status: 'FAILED', failReason: 'blocked' })
 
-      expect(await applyStatus({ type: 'status', providerMessageId: 'wamid.nobody', providerRequestId: null, status: 'READ', reason: null, at })).toBe(false)
+      expect(await applyStatus(tenantId(), { type: 'status', providerMessageId: 'wamid.nobody', providerRequestId: null, status: 'READ', reason: null, at })).toBe(false)
     })
 
     it('never resurrect a FAILED message with a late delivery or read report', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi'))
       await sendText(telecaller, r.conversationId, 'One', fake)
       const [, out] = await listMessages(telecaller, r.conversationId)
       const at = new Date()
-      await applyStatus({ type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'FAILED', reason: 'blocked', at })
-      expect(await applyStatus({ type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'DELIVERED', reason: null, at })).toBe(false)
-      expect(await applyStatus({ type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'READ', reason: null, at })).toBe(false)
+      await applyStatus(tenantId(), { type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'FAILED', reason: 'blocked', at })
+      expect(await applyStatus(tenantId(), { type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'DELIVERED', reason: null, at })).toBe(false)
+      expect(await applyStatus(tenantId(), { type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'READ', reason: null, at })).toBe(false)
       expect((await listMessages(telecaller, r.conversationId))[1]).toMatchObject({ status: 'FAILED', failReason: 'blocked' })
     })
 
     it('bump the thread version so the live feed notices', async () => {
       const fake = new FakeProvider()
       const p = `91${phone()}`
-      const r = await recordInbound(inbound(p, 'Hi'))
+      const r = await recordInbound(tenantId(), inbound(p, 'Hi'))
       await sendText(telecaller, r.conversationId, 'One', fake)
       const before = await chatVersion(telecaller, r.conversationId)
       await new Promise((res) => setTimeout(res, 5))
       const [, out] = await listMessages(telecaller, r.conversationId)
-      await applyStatus({ type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'DELIVERED', reason: null, at: new Date() })
+      await applyStatus(tenantId(), { type: 'status', providerMessageId: out.providerMessageId!, providerRequestId: null, status: 'DELIVERED', reason: null, at: new Date() })
       const after = await chatVersion(telecaller, r.conversationId)
       expect(after.threadAt).not.toBe(before.threadAt)
     })
@@ -713,9 +713,9 @@ describe('whatsapp chat', () => {
 
   describe('reading, unread and assignment', () => {
     it('counts unread across scope and clears on markRead', async () => {
-      await WaConversation.updateMany({}, { $set: { unreadCount: 0 } })
-      const a = await recordInbound(inbound(`91${phone()}`, 'a'))
-      await recordInbound(inbound(a.conversationId && `91${phone()}`, 'b'))
+      await WaConversation.updateMany({ tenantId: tenantId() }, { $set: { unreadCount: 0 } })
+      const a = await recordInbound(tenantId(), inbound(`91${phone()}`, 'a'))
+      await recordInbound(tenantId(), inbound(a.conversationId && `91${phone()}`, 'b'))
       const mineBefore = await countUnread(telecaller)
       expect(mineBefore).toBe(2)
       await markRead(telecaller, a.conversationId)
@@ -768,13 +768,13 @@ describe('whatsapp chat', () => {
 
       await expect(assignConversation(admin, id, 'bob')).rejects.toBeInstanceOf(NotFoundError)
       const retired = await makeUser('TELECALLER', '9200000098', ganga)
-      await retired.updateOne({ active: false })
+      await User.updateOne({ _id: retired._id, tenantId: tenantId() }, { active: false })
       await expect(assignConversation(admin, id, String(retired._id))).rejects.toBeInstanceOf(NotFoundError)
     })
 
     it('filters the list by unread, mine and a search', async () => {
       const p = phone()
-      const r = await recordInbound({ ...inbound(`91${p}`, 'find me'), customerName: 'Zubin Searchable' })
+      const r = await recordInbound(tenantId(), { ...inbound(`91${p}`, 'find me'), customerName: 'Zubin Searchable' })
       await assignConversation(telecaller, r.conversationId, String(telecaller.userId))
 
       const unread = await listConversations(telecaller, { filter: 'unread', limit: 100 })

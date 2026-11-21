@@ -1,4 +1,4 @@
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { opsDayCaption, opsDayOf } from '@/lib/opsDay'
 import { PING_INTERVAL_SECONDS } from '@/lib/riderLocation'
 import { formatServiceDate } from '@/lib/format'
@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic'
  * at their outlets and that outlets' work; an admin sees everyone.
  */
 export default async function V2RidersPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('riders.manage')
   const sp = await props.searchParams
   const today = opsDayOf()
   const day = readOpsDay(sp.date, today)

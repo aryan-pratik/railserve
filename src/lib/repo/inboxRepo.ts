@@ -51,18 +51,18 @@ function validIds(ids: string[]): mongoose.Types.ObjectId[] {
 }
 
 /** The Mongo filter a target names, narrowed to `resolved`. */
-function targetQuery(target: InboxTarget, resolved: boolean): Record<string, unknown> {
-  if ('ids' in target) return { _id: { $in: validIds(target.ids) }, resolved }
+function targetQuery(ctx: AuthContext, target: InboxTarget, resolved: boolean): Record<string, unknown> {
+  if ('ids' in target) return { _id: { $in: validIds(target.ids) }, resolved, tenantId: ctx.tenantId }
   // The tab is part of the filter the screen showed; the action decides which
   // tab it can act on, not the form.
-  return inboxQuery({ ...target.filter, resolved })
+  return { ...inboxQuery({ ...target.filter, resolved }), tenantId: ctx.tenantId }
 }
 
 /** Dismiss rows that are not orders at all: newsletters, bounces, OTPs. */
 export async function dismissInboxRows(ctx: AuthContext, target: InboxTarget): Promise<BulkResult> {
   assertAdmin(ctx)
   await connectDb()
-  const query = targetQuery(target, false)
+  const query = targetQuery(ctx, target, false)
   if ('ids' in target && (query._id as { $in: unknown[] }).$in.length === 0) return { count: 0, bulkActionId: null }
 
   // Counted first so every row in the batch carries the batch's size. A row
@@ -102,9 +102,9 @@ export async function reopenInboxRows(
   const base =
     'bulkActionId' in target
       ? { bulkActionId: target.bulkActionId, resolved: true }
-      : targetQuery(target, true)
+      : targetQuery(ctx, target, true)
   const res = await UnparsedInbox.updateMany(
-    { $and: [base, { resolution: 'DISMISSED' }] },
+    { tenantId: ctx.tenantId, $and: [base, { resolution: 'DISMISSED' }] },
     {
       $set: {
         resolved: false,
@@ -130,7 +130,7 @@ export async function reopenInboxRows(
 export async function reingestInboxRows(ctx: AuthContext, target: InboxTarget): Promise<BulkReingestResult> {
   assertAdmin(ctx)
   await connectDb()
-  const query = targetQuery(target, false)
+  const query = targetQuery(ctx, target, false)
   const total = await UnparsedInbox.countDocuments(query)
   // Oldest first: the order that has been waiting longest is the most urgent.
   const rows = await UnparsedInbox.find(query)
@@ -153,7 +153,7 @@ export async function reingestInboxRows(ctx: AuthContext, target: InboxTarget): 
     }
   }
   if (bulkActionId && resolved > 0) {
-    await UnparsedInbox.updateMany({ bulkActionId }, { $set: { bulkActionCount: resolved } })
+    await UnparsedInbox.updateMany({ bulkActionId, tenantId: ctx.tenantId }, { $set: { bulkActionCount: resolved } })
   }
   return {
     resolved,
@@ -180,7 +180,7 @@ export async function reingestInboxRow(
   assertAdmin(ctx)
   await connectDb()
   if (!mongoose.isValidObjectId(id)) return { error: 'That inbox row no longer exists.' }
-  const row = await UnparsedInbox.findById(id)
+  const row = await UnparsedInbox.findOne({ _id: id, tenantId: ctx.tenantId })
   if (!row) return { error: 'That inbox row no longer exists.' }
   if (!correctedBody.trim()) return { error: 'The corrected email body cannot be empty.' }
 
@@ -202,6 +202,7 @@ export async function reingestInboxRow(
     const parsed = paymentParser.parse(text, receivedAt)
     if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
     const recorded = await recordPayment(
+      ctx.tenantId,
       parsed.payment,
       { body: correctedBody, resolvedFromInbox: id, receivedAt },
       null,
@@ -209,7 +210,7 @@ export async function reingestInboxRow(
     )
     // resolvedOrderId stays null: a payment is not an order, and pointing that
     // field at one would break every link that reads it as an order id.
-    await UnparsedInbox.updateOne({ _id: id }, { $set: { ...closed, resolution: 'PAYMENT' } })
+    await UnparsedInbox.updateOne({ _id: id, tenantId: ctx.tenantId }, { $set: { ...closed, resolution: 'PAYMENT' } })
     return {
       ok:
         recorded.status === 'CREATED'
@@ -224,12 +225,13 @@ export async function reingestInboxRow(
   const parsed = parser.parse(text, receivedAt)
   if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
 
-  const outlet = await matchOutlet(parsed.order.outletName, parsed.order.stationCode, parsed.order.source)
+  const outlet = await matchOutlet(ctx.tenantId, parsed.order.outletName, parsed.order.stationCode, parsed.order.source)
   if (!outlet.ok) {
     return { error: `Outlet still unresolved: ${outlet.detail}. Add it, or add an alias, under Outlets.` }
   }
 
   const created = await createOrderFromParsed(
+    ctx.tenantId,
     parsed.order,
     outlet,
     { body: correctedBody, resolvedFromInbox: id, receivedAt },
@@ -245,7 +247,7 @@ export async function reingestInboxRow(
       : (await findMany(ctx, { externalOrderId: created.externalOrderId }, { limit: 1 }))[0]?._id ?? null
 
   await UnparsedInbox.updateOne(
-    { _id: id },
+    { _id: id, tenantId: ctx.tenantId },
     { $set: { ...closed, resolution: 'ORDER', resolvedOrderId: orderId } },
   )
 

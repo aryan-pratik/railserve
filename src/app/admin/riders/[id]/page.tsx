@@ -93,7 +93,7 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
   await connectDb()
   // Inactive riders open too: history is exactly where someone asks what a
   // rider who has since left carried.
-  const rider = await User.findById(id)
+  const rider = await User.findOne({ _id: id, tenantId: ctx.tenantId })
     .select('name phone role active restaurantIds isTeamLead teamLeadId canReceiveCash')
     .lean()
   if (!rider || rider.role !== 'DELIVERY_AGENT') notFound()
@@ -168,12 +168,12 @@ export default async function RiderDetailPage(props: PageProps<'/admin/riders/[i
       skip: tab === 'log' ? skip : 0,
       limit: tab === 'log' ? pageSize : 1,
     }),
-    RiderLocation.findOne({ userId: riderId }).select('recordedAt').lean(),
-    Restaurant.find({ _id: { $in: rider.restaurantIds ?? [] } }).select('name stationCode').sort({ name: 1 }).lean(),
-    rider.teamLeadId ? User.findById(rider.teamLeadId).select('name').lean() : null,
-    rider.isTeamLead ? User.countDocuments({ role: 'DELIVERY_AGENT', teamLeadId: riderId }) : 0,
+    RiderLocation.findOne({ tenantId: ctx.tenantId, userId: riderId }).select('recordedAt').lean(),
+    Restaurant.find({ _id: { $in: rider.restaurantIds ?? [] }, tenantId: ctx.tenantId }).select('name stationCode').sort({ name: 1 }).lean(),
+    rider.teamLeadId ? User.findOne({ _id: rider.teamLeadId, tenantId: ctx.tenantId }).select('name').lean() : null,
+    rider.isTeamLead ? User.countDocuments({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', teamLeadId: riderId }) : 0,
   ])
-  const receivers = await receiversOf(collections)
+  const receivers = await receiversOf(ctx, collections)
 
   const day = days.get(String(riderId)) ?? NO_RIDER_DAY
   const now = includesNow ? (nows.get(String(riderId)) ?? NO_RIDER_NOW) : NO_RIDER_NOW

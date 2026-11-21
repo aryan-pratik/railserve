@@ -1,4 +1,4 @@
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { loadRiderRoster, readOpsDay } from '@/lib/v2/riders'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
  * `loadRiderRoster`, which is what lets a store manager read it.
  */
 export async function GET(request: Request) {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER')
+  const ctx = await requirePermission('riders.manage')
   const serviceDate = readOpsDay(new URL(request.url).searchParams.get('date') ?? undefined)
   const roster = await loadRiderRoster(ctx, { serviceDate })
   // A cached rider position is a wrong rider position.

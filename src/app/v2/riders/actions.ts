@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireRole } from '@/lib/session'
+import { requireRole, requirePermission } from '@/lib/session'
 import { settleRiderCash } from '@/lib/repo/riderCashRepo'
 import { setTeam } from '@/lib/repo/teamRepo'
 import { saveUser, toggleUserActive, type UserState } from '@/app/admin/setup/staffActions'
@@ -23,7 +23,7 @@ function revalidateRiders() {
 
 /** Take a rider's cash: exactly the orders the dialog listed. */
 export async function collectRiderCashV2(_prev: FormState, formData: FormData): Promise<FormState> {
-  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const ctx = await requirePermission('riders.collectCash')
   const riderId = String(formData.get('riderId') ?? '')
   const orderIds = String(formData.get('orderIds') ?? '').split(',').filter(Boolean)
   // Whole rupees typed by the receiver; blank means everything due.
@@ -46,7 +46,7 @@ export async function collectRiderCashV2(_prev: FormState, formData: FormData): 
 
 /** Add or edit a rider. The role is pinned here, whatever the form posted. */
 export async function saveRiderV2(_prev: UserState, formData: FormData): Promise<UserState> {
-  await requireRole('STORE_MANAGER', 'ADMIN')
+  await requirePermission('riders.manage')
   formData.set('role', 'DELIVERY_AGENT')
   const result = await saveUser(_prev, formData)
   if (result.ok) revalidateRiders()
@@ -54,7 +54,7 @@ export async function saveRiderV2(_prev: UserState, formData: FormData): Promise
 }
 
 export async function toggleRiderActiveV2(formData: FormData): Promise<void> {
-  await requireRole('STORE_MANAGER', 'ADMIN')
+  await requirePermission('riders.manage')
   await toggleUserActive(formData)
   revalidateRiders()
 }

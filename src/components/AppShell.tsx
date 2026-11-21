@@ -25,7 +25,7 @@ export async function AppShell({
   let outlets: string[] = []
   if (user.restaurantIds?.length) {
     await connectDb()
-    const rs = await Restaurant.find({ _id: { $in: user.restaurantIds } })
+    const rs = await Restaurant.find({ _id: { $in: user.restaurantIds }, tenantId: user.tenantId })
       .select('name')
       .sort({ name: 1 })
       .lean()

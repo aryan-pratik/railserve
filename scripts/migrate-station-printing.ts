@@ -26,6 +26,8 @@
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Restaurant, PrintJob, Station } from '../src/lib/models'
 import { normaliseStationCode } from '../src/lib/stations'
+import { tenantKey } from '../src/lib/tenancy/primary'
+import { Types } from 'mongoose'
 
 export type StationMigrationReport = {
   stationsCreated: string[]
@@ -60,11 +62,20 @@ export async function migrateStationPrinting(): Promise<StationMigrationReport> 
     warnings: [],
   }
 
-  const outlets = await Restaurant.find({}).select('_id name stationCode stationName printAgentToken active').lean()
-  const codes = [...new Set(outlets.map((o) => normaliseStationCode(o.stationCode ?? '')).filter(Boolean))]
+  // A platform migration: it walks every company, and stations are made per
+  // company (each one's own default kitchen and printer token).
+  const outlets = await Restaurant.find({})
+    .setOptions({ allTenants: true })
+    .select('_id tenantId name stationCode stationName printAgentToken active')
+    .lean()
+  const groups = [
+    ...new Set(outlets.map((o) => `${String(o.tenantId)}|${normaliseStationCode(o.stationCode ?? '')}`).filter((g) => !g.endsWith('|'))),
+  ]
 
-  for (const code of codes) {
-    const atStation = outlets.filter((o) => normaliseStationCode(o.stationCode ?? '') === code)
+  for (const group of groups) {
+    const [tenantHex, code] = group.split('|')
+    const tenantId = new Types.ObjectId(tenantHex)
+    const atStation = outlets.filter((o) => String(o.tenantId) === tenantHex && normaliseStationCode(o.stationCode ?? '') === code)
     const names = atStation.map((o) => o.stationName).filter((n): n is string => Boolean(n))
     // Active outlets only. A retired outlet keeps its old token in the row
     // (nothing clears it on deactivation), and counting those made this
@@ -89,10 +100,12 @@ export async function migrateStationPrinting(): Promise<StationMigrationReport> 
       )
     }
 
-    const existing = await Station.findById(code)
+    const stationId = await tenantKey(tenantId, code)
+    const existing = await Station.findOne({ _id: stationId, tenantId })
     if (!existing) {
       await Station.create({
-        _id: code,
+        _id: stationId,
+        tenantId,
         name: commonest(names),
         printAgentToken: withTokens.length === 1 ? withTokens[0].printAgentToken : null,
         active: true,
@@ -109,6 +122,7 @@ export async function migrateStationPrinting(): Promise<StationMigrationReport> 
 
   // Backfill jobs queued under the old shape so nothing in flight is stranded.
   const codeByOutlet = new Map(outlets.map((o) => [String(o._id), normaliseStationCode(o.stationCode ?? '')]))
+  const tenantByOutlet = new Map(outlets.map((o) => [String(o._id), o.tenantId]))
   const legacy = await PrintJob.collection.find({ stationCode: { $exists: false } }).toArray()
 
   for (const job of legacy) {
@@ -117,7 +131,9 @@ export async function migrateStationPrinting(): Promise<StationMigrationReport> 
       report.orphanJobs++
       continue
     }
-    await PrintJob.collection.updateOne({ _id: job._id }, { $set: { stationCode: code } })
+    // Raw collection access on purpose (these rows predate the schema); the
+    // filter is by _id and the job keeps its outlet's tenant.
+    await PrintJob.collection.updateOne({ _id: job._id }, { $set: { stationCode: code, tenantId: job.tenantId ?? tenantByOutlet.get(String(job.restaurantId)) } })
     report.jobsBackfilled++
   }
 
@@ -136,7 +152,7 @@ async function main() {
 
   for (const w of report.warnings) console.warn(`\n⚠  ${w}`)
 
-  const noToken = await Station.countDocuments({ printAgentToken: null, active: true })
+  const noToken = await Station.countDocuments({ printAgentToken: null, active: true }).setOptions({ allTenants: true })
   if (noToken > 0) {
     console.warn(
       `\n⚠  ${noToken} active station(s) have no agent token. Orders there will queue and never print.\n` +

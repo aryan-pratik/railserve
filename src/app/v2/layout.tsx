@@ -1,4 +1,4 @@
-import { requireAuth } from '@/lib/session'
+import { getSessionUser, requireAuth } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { MenuItem, Restaurant, UnparsedInbox } from '@/lib/models'
 import { countUnread } from '@/lib/repo/whatsappRepo'
@@ -7,7 +7,8 @@ import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
 import type { AlertItem } from '@/components/v2/NotificationsBell'
 import { countLive } from '@/lib/board'
 import { Shell } from '@/components/v2/Shell'
-import { navFor } from '@/lib/v2/nav'
+import { filterNav, navFor } from '@/lib/v2/nav'
+import { permissionsOf } from '@/lib/access'
 
 /**
  * The v2 shell for every signed-in role. Pages enforce their own role; this
@@ -22,9 +23,9 @@ export default async function V2Layout({ children }: { children: React.ReactNode
     countLive(ctx),
     ctx.role === 'STORE_MANAGER' ? Promise.resolve(0) : countUnread(ctx),
     countPendingReturns(ctx),
-    isAdmin ? UnparsedInbox.countDocuments({ resolved: false }) : Promise.resolve(0),
-    isAdmin ? MenuItem.countDocuments({ removedAt: null, $or: [{ diet: null }, { reviewed: false }] }) : Promise.resolve(0),
-    ctx.restaurantIds.length ? Restaurant.find({ _id: { $in: ctx.restaurantIds } }).select('name').sort({ name: 1 }).lean() : Promise.resolve([]),
+    isAdmin ? UnparsedInbox.countDocuments({ tenantId: ctx.tenantId, resolved: false }) : Promise.resolve(0),
+    isAdmin ? MenuItem.countDocuments({ tenantId: ctx.tenantId, removedAt: null, $or: [{ diet: null }, { reviewed: false }] }) : Promise.resolve(0),
+    ctx.restaurantIds.length ? Restaurant.find({ _id: { $in: ctx.restaurantIds }, tenantId: ctx.tenantId }).select('name').sort({ name: 1 }).lean() : Promise.resolve([]),
     // Only the roles that can answer a cancel request are told about it.
     ctx.role === 'STORE_MANAGER' ? Promise.resolve([]) : listPendingCancelRequests(ctx, { limit: 8 }),
   ])
@@ -41,8 +42,10 @@ export default async function V2Layout({ children }: { children: React.ReactNode
     ...(unparsed ? [{ id: 'inbox', title: `${unparsed} email${unparsed === 1 ? '' : 's'} did not become orders`, sub: 'Review them in the Inbox', href: '/v2/inbox', tone: 'info' as const }] : []),
   ]
 
+  const user = await getSessionUser()
+  const company = user?.tenantName ?? ''
   const outletLabel = isAdmin
-    ? 'All outlets · admin'
+    ? `${company || 'All outlets'} · admin`
     : outlets.length === 0
       ? undefined
       : outlets.length === 1
@@ -50,7 +53,15 @@ export default async function V2Layout({ children }: { children: React.ReactNode
         : `${outlets.length} outlets`
 
   return (
-    <Shell nav={navFor(ctx.role, { live, unread, returns, unparsed, menuToCheck })} outletLabel={outletLabel} alerts={alerts}>
+    <Shell
+      nav={[
+        ...filterNav(navFor(ctx.role, { live, unread, returns, unparsed, menuToCheck }), await permissionsOf(ctx)),
+        // Our own super admins also see the platform console.
+        ...(user?.platformAdmin ? [{ label: 'Platform', items: [{ href: '/platform', label: 'Companies', icon: 'platform' as const }] }] : []),
+      ]}
+      outletLabel={outletLabel}
+      alerts={alerts}
+    >
       {children}
     </Shell>
   )

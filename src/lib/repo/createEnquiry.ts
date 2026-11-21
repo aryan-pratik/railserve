@@ -32,9 +32,10 @@ export async function createEnquiry(
     throw new ForbiddenError('Only an admin may create enquiries')
   }
 
-  const externalOrderId = await nextManualOrderId(input.serviceDate)
+  const externalOrderId = await nextManualOrderId(ctx.tenantId, input.serviceDate)
 
   return insertOrder({
+    tenantId: ctx.tenantId,
     source: 'MANUAL',
     orderType: 'BULK',
     externalOrderId: externalOrderId.replace('MAN-', 'ENQ-'),

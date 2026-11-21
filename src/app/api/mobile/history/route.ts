@@ -114,7 +114,7 @@ export async function GET(request: Request) {
   ])
   // Receivers of the handovers listed AND of every order row: an older day's
   // orders were often received by someone absent from the latest handovers.
-  const receivers = await receiversOf([
+  const receivers = await receiversOf(ctx, [
     ...collections,
     ...orders.map((o) => ({ receivedById: o.delivery?.codSettledBy ? String(o.delivery.codSettledBy) : null })),
   ])
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
   let outletName = new Map<string, string>()
   if (returnOutletIds.length > 0) {
     await connectDb()
-    const outlets = await Restaurant.find({ _id: { $in: returnOutletIds } }).select('name stationCode').lean()
+    const outlets = await Restaurant.find({ _id: { $in: returnOutletIds }, tenantId: ctx.tenantId }).select('name stationCode').lean()
     outletName = new Map(outlets.map((r) => [String(r._id), `${r.name} · ${r.stationCode}`]))
   }
 

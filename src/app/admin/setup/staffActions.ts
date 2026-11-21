@@ -70,7 +70,7 @@ async function storeManagerGuard(
     return 'You may only assign outlets you hold yourself.'
   }
   if (target.id) {
-    const existing = await User.findById(target.id).select('role restaurantIds').lean()
+    const existing = await User.findOne({ _id: target.id, tenantId: ctx.tenantId }).select('role restaurantIds').lean()
     if (
       !existing ||
       existing.role !== 'DELIVERY_AGENT' ||
@@ -101,11 +101,13 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
   const guardError = await storeManagerGuard(ctx, { id, role: rest.role, restaurantIds })
   if (guardError) return { error: guardError }
 
-  // Phone is uniquely indexed and is the login identifier.
+  // Phone is uniquely indexed and is the login identifier — across the whole
+  // platform, not per tenant — so the clash check has to look across tenants
+  // too, or a number taken elsewhere surfaces as a duplicate-key error.
   const clash = await User.findOne({
     phone: rest.phone,
     ...(id ? { _id: { $ne: id } } : {}),
-  }).select('_id').lean()
+  }).setOptions({ allTenants: true }).select('_id').lean()
   if (clash) return { error: 'That phone number already belongs to another user.' }
 
   const doc: Record<string, unknown> = {
@@ -128,7 +130,7 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
     // A team is one level deep: a leader reports to nobody.
     let reportsTo: mongoose.Types.ObjectId | null = null
     if (rider && !lead && teamLeadId && mongoose.isValidObjectId(teamLeadId) && teamLeadId !== id) {
-      const found = await User.findOne({ _id: teamLeadId, role: 'DELIVERY_AGENT', isTeamLead: true })
+      const found = await User.findOne({ _id: teamLeadId, tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: true })
         .select('_id')
         .lean()
       if (!found) return { error: 'That team leader no longer exists. Pick another.' }
@@ -138,14 +140,14 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
     doc.canReceiveCash =
       rest.role === 'STORE_MANAGER' || lead ? canReceiveCash === 'true' : null
     // Someone who stops being a team leader leaves their riders without one.
-    if (id && !lead) await User.updateMany({ teamLeadId: id }, { $set: { teamLeadId: null } })
+    if (id && !lead) await User.updateMany({ tenantId: ctx.tenantId, teamLeadId: id }, { $set: { teamLeadId: null } })
   }
   if (password) doc.passwordHash = await bcrypt.hash(password, 10)
 
   if (id) {
-    await User.updateOne({ _id: id }, { $set: doc })
+    await User.updateOne({ _id: id, tenantId: ctx.tenantId }, { $set: doc })
   } else {
-    await User.create({ ...doc, active: true })
+    await User.create({ ...doc, tenantId: ctx.tenantId, active: true })
   }
 
   revalidatePath('/admin/setup')
@@ -169,7 +171,7 @@ export async function toggleUserActive(formData: FormData): Promise<void> {
   await connectDb()
 
   if (ctx.role === 'STORE_MANAGER') {
-    const target = await User.findById(id).select('role restaurantIds').lean()
+    const target = await User.findOne({ _id: id, tenantId: ctx.tenantId }).select('role restaurantIds').lean()
     const myOutlets = new Set(ctx.restaurantIds.map(String))
     if (
       !target ||
@@ -180,7 +182,7 @@ export async function toggleUserActive(formData: FormData): Promise<void> {
     }
   }
 
-  await User.updateOne({ _id: id }, { $set: { active } })
+  await User.updateOne({ _id: id, tenantId: ctx.tenantId }, { $set: { active } })
   revalidatePath('/admin/setup')
   revalidatePath('/store/staff')
 }
@@ -207,18 +209,18 @@ export async function deleteUser(_prev: DeleteState, formData: FormData): Promis
   if (ctx.userId.equals(id)) return { error: "You can't delete your own account." }
 
   await connectDb()
-  const target = await User.findById(id).select('role active restaurantIds').lean()
+  const target = await User.findOne({ _id: id, tenantId: ctx.tenantId }).select('role active restaurantIds').lean()
   if (!target) return { error: 'That staff member no longer exists.' }
 
   if (target.role === 'ADMIN' && target.active) {
-    const admins = await User.countDocuments({ role: 'ADMIN', active: true })
+    const admins = await User.countDocuments({ tenantId: ctx.tenantId, role: 'ADMIN', active: true })
     if (admins <= 1) return { error: 'This is the last active admin. Deleting them would lock everyone out.' }
   }
 
   const [orders, remarks, resolved] = await Promise.all([
     countOrdersRecordingUser(ctx, id),
-    Payment.countDocuments({ remarkById: id }),
-    UnparsedInbox.countDocuments({ resolvedById: id }),
+    Payment.countDocuments({ tenantId: ctx.tenantId, remarkById: id }),
+    UnparsedInbox.countDocuments({ tenantId: ctx.tenantId, resolvedById: id }),
   ])
   const reasons = [
     orders ? `${orders} order${orders === 1 ? '' : 's'}` : null,
@@ -232,8 +234,8 @@ export async function deleteUser(_prev: DeleteState, formData: FormData): Promis
   }
 
   // A deleted team leader leaves no team behind them.
-  await User.updateMany({ teamLeadId: id }, { $set: { teamLeadId: null } })
-  await User.deleteOne({ _id: id })
+  await User.updateMany({ tenantId: ctx.tenantId, teamLeadId: id }, { $set: { teamLeadId: null } })
+  await User.deleteOne({ _id: id, tenantId: ctx.tenantId })
   revalidatePath('/admin/setup')
   revalidatePath('/store/staff')
   return {}

@@ -17,6 +17,7 @@ import {
   type OrderDiet,
 } from '@/lib/diet'
 import { suggestDiet } from '@/lib/dietSuggest'
+import { naturalKey, tenantKey } from '@/lib/tenancy/primary'
 
 /**
  * The menu database: every dish each aggregator has sent us, and whether it is
@@ -45,9 +46,14 @@ function onlyDuplicates(err: unknown): boolean {
  * is put back on it, tag as it was, because it is being ordered again.
  *
  * Safe to call from many requests at once: the row's _id is the (aggregator,
- * dish) pair, so the second writer of the same dish is simply a no-op.
+ * dish) pair (under the tenant's key), so the second writer of the same dish
+ * is simply a no-op.
  */
-export async function registerMenuItems(rows: MenuCandidate[], opts: { restore?: boolean } = {}): Promise<number> {
+export async function registerMenuItems(
+  tenantId: mongoose.Types.ObjectId,
+  rows: MenuCandidate[],
+  opts: { restore?: boolean } = {},
+): Promise<number> {
   // `restore: false` is for back-filling from orders already taken: those
   // say nothing about a dish being ordered again, so a deleted one stays so.
   const restore = opts.restore !== false
@@ -63,11 +69,14 @@ export async function registerMenuItems(rows: MenuCandidate[], opts: { restore?:
   if (seen.size === 0) return 0
 
   await connectDb()
+  const keyed = await Promise.all([...seen.entries()].map(async ([id, r]) => [await tenantKey(tenantId, id), r] as const))
   try {
+    // bulkWrite runs no query middleware, so the tenant guard never sees
+    // these: the filter names the tenant itself, and the upsert copies it on.
     const res = await MenuItem.bulkWrite(
-      [...seen.entries()].map(([id, r]) => ({
+      keyed.map(([id, r]) => ({
         updateOne: {
-          filter: { _id: id },
+          filter: { _id: id, tenantId },
           update: {
             $setOnInsert: { source: r.source, key: r.key, name: r.name, diet: suggestDiet(r.name, r.hint), reviewed: false },
             ...(restore ? { $set: { removedAt: null } } : {}),
@@ -103,12 +112,12 @@ export function menuRowsOf(order: OrderItems): MenuCandidate[] {
  * saved. Never throws: the menu catching up must not fail an edit that has
  * already happened, and the Menu page back-fills anything missed.
  */
-export async function registerOrderMenu(orderId: string): Promise<void> {
+export async function registerOrderMenu(tenantId: mongoose.Types.ObjectId, orderId: string): Promise<void> {
   try {
     if (!mongoose.isValidObjectId(orderId)) return
     await connectDb()
-    const order = await Order.findById(orderId).select('source items.name items.isPacking items.spec items.notes').lean()
-    if (order) await registerMenuItems(menuRowsOf(order))
+    const order = await Order.findOne({ _id: orderId, tenantId }).select('source items.name items.isPacking items.spec items.notes').lean()
+    if (order) await registerMenuItems(tenantId, menuRowsOf(order))
   } catch (err) {
     console.error('[menu] could not register the dishes on order', orderId, err)
   }
@@ -116,9 +125,10 @@ export async function registerOrderMenu(orderId: string): Promise<void> {
 
 /**
  * The tags for every dish on these orders, in one query. Keyed by
- * menuLookupKey, which is what tagFor / splitKotParts read.
+ * menuLookupKey (the natural key, without the tenant prefix), which is what
+ * tagFor / splitKotParts read.
  */
-export async function dietLookupFor(orders: OrderItems[]): Promise<DietLookup> {
+export async function dietLookupFor(tenantId: mongoose.Types.ObjectId, orders: OrderItems[]): Promise<DietLookup> {
   const ids = new Set<string>()
   for (const o of orders) {
     for (const i of o.items ?? []) {
@@ -130,16 +140,18 @@ export async function dietLookupFor(orders: OrderItems[]): Promise<DietLookup> {
   if (ids.size === 0) return lookup
 
   await connectDb()
-  const rows = await MenuItem.find({ _id: { $in: [...ids] } }).select('diet reviewed').lean()
-  for (const r of rows) lookup.set(r._id, { diet: isDiet(r.diet) ? r.diet : null, reviewed: Boolean(r.reviewed) })
+  const keys = await Promise.all([...ids].map((id) => tenantKey(tenantId, id)))
+  const rows = await MenuItem.find({ _id: { $in: keys }, tenantId }).select('diet reviewed').lean()
+  for (const r of rows) lookup.set(naturalKey(r._id), { diet: isDiet(r.diet) ? r.diet : null, reviewed: Boolean(r.reviewed) })
   return lookup
 }
 
 /** Each order's one-mark summary, keyed by order id, for the boards. */
 export async function orderDietsFor(
+  tenantId: mongoose.Types.ObjectId,
   orders: { _id: unknown; source?: string | null; items: ItemLike[] }[],
 ): Promise<Map<string, OrderDiet>> {
-  const lookup = await dietLookupFor(orders)
+  const lookup = await dietLookupFor(tenantId, orders)
   return new Map(orders.map((o) => [String(o._id), orderDiet(lookup, o)]))
 }
 
@@ -176,7 +188,7 @@ export async function menuOverview(ctx: AuthContext): Promise<MenuRow[]> {
     qty: number
     last: Date | null
   }>([
-    { $match: { status: { $ne: 'RATING_ORDER' } } },
+    { $match: { tenantId: ctx.tenantId, status: { $ne: 'RATING_ORDER' } } },
     { $project: { source: 1, items: 1, createdAt: 1 } },
     { $unwind: '$items' },
     {
@@ -227,7 +239,12 @@ export async function menuOverview(ctx: AuthContext): Promise<MenuRow[]> {
 
   // Deleted dishes are read too: they count as known, so the orders that
   // still carry one do not add it straight back. They are left off below.
-  const allItems = () => MenuItem.find({}).select('source name diet reviewed removedAt').lean()
+  // Keyed by the natural (source|dish) id, the one the browser sends back.
+  const allItems = async () =>
+    (await MenuItem.find({ tenantId: ctx.tenantId }).select('source name diet reviewed removedAt').lean()).map((i) => ({
+      ...i,
+      _id: naturalKey(i._id),
+    }))
   let items = await allItems()
   const known = new Set(items.map((i) => i._id))
   // A deleted dish on an order newer than its deletion should have been put
@@ -241,7 +258,7 @@ export async function menuOverview(ctx: AuthContext): Promise<MenuRow[]> {
     })
     .map(([, c]) => c)
   if (missing.length > 0) {
-    await registerMenuItems(missing.map((m) => ({ source: m.source, name: m.name })))
+    await registerMenuItems(ctx.tenantId, missing.map((m) => ({ source: m.source, name: m.name })))
     items = await allItems()
   }
 
@@ -275,7 +292,7 @@ export async function setMenuItemDiet(ctx: AuthContext, id: string, diet: Diet |
   if (diet !== null && !isDiet(diet)) throw new Error('Unknown tag')
   await connectDb()
   const res = await MenuItem.updateOne(
-    { _id: id },
+    { _id: await tenantKey(ctx.tenantId, id), tenantId: ctx.tenantId },
     {
       $set: {
         diet,
@@ -295,7 +312,12 @@ export async function confirmMenuItems(ctx: AuthContext, ids: string[]): Promise
   if (valid.length === 0) return 0
   await connectDb()
   const res = await MenuItem.updateMany(
-    { _id: { $in: valid }, diet: { $in: ['VEG', 'NON_VEG'] }, reviewed: false },
+    {
+      _id: { $in: await Promise.all(valid.map((id) => tenantKey(ctx.tenantId, id))) },
+      tenantId: ctx.tenantId,
+      diet: { $in: ['VEG', 'NON_VEG'] },
+      reviewed: false,
+    },
     { $set: { reviewed: true, reviewedBy: ctx.userId, reviewedAt: new Date() } },
   )
   return res.modifiedCount
@@ -313,7 +335,10 @@ export async function removeMenuItem(ctx: AuthContext, id: string): Promise<void
   if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin may delete menu items.')
   if (!isMenuId(id)) throw new Error('Unknown menu item')
   await connectDb()
-  const res = await MenuItem.updateOne({ _id: id }, { $set: { removedAt: new Date() } })
+  const res = await MenuItem.updateOne(
+    { _id: await tenantKey(ctx.tenantId, id), tenantId: ctx.tenantId },
+    { $set: { removedAt: new Date() } },
+  )
   if (res.matchedCount === 0) throw new Error('Unknown menu item')
 }
 
@@ -327,7 +352,7 @@ export async function restoreMenuItem(ctx: AuthContext, id: string, name: string
   if (!isMenuId(id) || !isDiet(diet)) return false
   await connectDb()
   const res = await MenuItem.updateOne(
-    { _id: id, removedAt: { $ne: null } },
+    { _id: await tenantKey(ctx.tenantId, id), tenantId: ctx.tenantId, removedAt: { $ne: null } },
     { $set: { removedAt: null, name, diet, reviewed: true, reviewedBy: ctx.userId, reviewedAt: new Date() } },
   )
   return res.modifiedCount === 1

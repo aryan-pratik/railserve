@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Download, LayoutList, Plus, TrainFront } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { findRunsWhere } from '@/lib/repo/runRepo'
@@ -45,7 +45,7 @@ type OrderDoc = Awaited<ReturnType<typeof findMany>>[number]
  * an admin gets every outlet, a manager or telecaller only theirs.
  */
 export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER', 'TELECALLER')
+  const ctx = await requirePermission('orders.view')
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
 
@@ -75,7 +75,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   const [options, filterClause] = await Promise.all([
     orderFilterOptions(ctx, filters.stations),
     // Today and Upcoming are dates already: their clause is built without the chips.
-    orderFilterClause(datesApply ? filters : { ...filters, mode: 'all' }),
+    orderFilterClause(ctx, datesApply ? filters : { ...filters, mode: 'all' }),
   ])
   const where: Clause = {
     $and: [
@@ -374,7 +374,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   const columns = { outlet: showOutlet, amount: !isTelecaller, called: isTelecaller, date: view !== 'today' }
 
   const toRows = async (orders: OrderDoc[], timingOf: (o: OrderDoc) => { etaIso: string | null; arrived: boolean }): Promise<OrdersRow[]> => {
-    const [riderName, diets] = await Promise.all([riderNamesFor(orders), orderDietsFor(orders)])
+    const [riderName, diets] = await Promise.all([riderNamesFor(ctx, orders), orderDietsFor(ctx.tenantId, orders)])
     return orders.map((o) => {
       const t = timingOf(o)
       const note = callNoteSummary(o.callLog ?? [])

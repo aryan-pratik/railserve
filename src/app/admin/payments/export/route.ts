@@ -21,7 +21,7 @@ function csvCell(value: unknown): string {
  * Admin only, like the balance column it carries.
  */
 export async function GET(request: Request) {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const url = new URL(request.url)
 
   // Matches the screen's default, so a bare link exports what it shows.
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
   // Reconciliation is the whole point of this file, so it gets far more
   // headroom than a screen does — a silently truncated CSV is worse than a
   // slow one.
-  const payments = await findPayments(query, 10_000)
+  const payments = await findPayments(ctx, query, 10_000)
 
   const header = [
     'Transaction date', 'Received at', 'From', 'Amount (INR)', 'RRN',

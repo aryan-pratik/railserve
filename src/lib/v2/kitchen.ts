@@ -7,6 +7,7 @@ import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { callNoteRow, foodItemLabels } from '@/lib/orderView'
 import { connectDb } from '@/lib/db'
 import { Restaurant, Station, User } from '@/lib/models'
+import { naturalKey } from '@/lib/tenancy/primary'
 import { computeDispatchAt } from '@/lib/train/policy'
 import { env } from '@/lib/env'
 import { runTrainLabel } from '@/lib/runs'
@@ -90,6 +91,7 @@ export async function loadKitchenBoard(ctx: AuthContext, q: KitchenQuery, now = 
     countOrders(ctx, { $and: [yesterdayBoardFilter(now, statuses), scope] }),
     countOrders(ctx, { serviceDate: { $gt: today }, ...picked, ...scope }),
     User.find({
+      tenantId: ctx.tenantId,
       role: 'DELIVERY_AGENT',
       active: true,
       ...(isAdmin ? {} : { restaurantIds: { $in: ctx.restaurantIds } }),
@@ -97,11 +99,11 @@ export async function loadKitchenBoard(ctx: AuthContext, q: KitchenQuery, now = 
       .select('name')
       .sort({ name: 1 })
       .lean(),
-    Restaurant.find(isAdmin ? {} : { _id: { $in: ctx.restaurantIds } })
+    Restaurant.find(isAdmin ? { tenantId: ctx.tenantId } : { tenantId: ctx.tenantId, _id: { $in: ctx.restaurantIds } })
       .select('name stationCode walkToPlatformMinutes')
       .sort({ name: 1 })
       .lean(),
-    isAdmin ? Station.find({}).select('name').lean() : Promise.resolve([]),
+    isAdmin ? Station.find({ tenantId: ctx.tenantId }).select('name').lean() : Promise.resolve([]),
   ])
 
   const outlets: KitchenOutlet[] = outletDocs.map((o) => ({
@@ -111,7 +113,7 @@ export async function loadKitchenBoard(ctx: AuthContext, q: KitchenQuery, now = 
     walk: o.walkToPlatformMinutes ?? 10,
   }))
   const outletById = new Map(outlets.map((o) => [o.id, o]))
-  const stationName = new Map(stationDocs.map((s) => [String(s._id), s.name]))
+  const stationName = new Map(stationDocs.map((s) => [naturalKey(String(s._id)), s.name]))
   const stations = [...new Set(outlets.map((o) => o.stationCode))].sort().map((code) => ({
     code,
     label: stationName.get(code) ? `${code} · ${stationName.get(code)}` : code,
@@ -131,7 +133,7 @@ export async function loadKitchenBoard(ctx: AuthContext, q: KitchenQuery, now = 
     }))
     .filter((r) => r.orders.length > 0)
 
-  const diets = await orderDietsFor(runs.flatMap((r) => r.orders))
+  const diets = await orderDietsFor(ctx.tenantId, runs.flatMap((r) => r.orders))
 
   const shaped: KitchenRun[] = runs.map(({ run, orders }) => {
     const t = board.timingOf(run)

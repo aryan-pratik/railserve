@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose'
 /**
  * Feeds every real BrotherByte and Yatribhojan order sample gathered while
  * fixing their parsers straight through the actual ingestEmail() pipeline
@@ -21,6 +22,7 @@
 import { connectDb, disconnectDb } from '../src/lib/db'
 import { Order } from '../src/lib/models'
 import { ingestEmail } from '../src/lib/ingest'
+import { scriptTenant } from './scriptTenant'
 
 // Verbatim BrotherByte order-confirmation emails, as received.
 const BROTHERBYTE_SAMPLES = [
@@ -246,25 +248,26 @@ TEAM YATRIBHOJAN`,
   },
 ]
 
-async function ingestIfMissing(s: { label: string; externalOrderId: string; body: string }) {
-  const exists = await Order.exists({ externalOrderId: s.externalOrderId })
+async function ingestIfMissing(T: Types.ObjectId, s: { label: string; externalOrderId: string; body: string }) {
+  const exists = await Order.exists({ tenantId: T, externalOrderId: s.externalOrderId })
   if (exists) {
     console.log(`  SKIPPED    ${s.label} (already in db)`)
     return
   }
-  const outcome = await ingestEmail({ body: s.body, receivedAt: new Date() })
+  const outcome = await ingestEmail({ tenantId: T, body: s.body, receivedAt: new Date() })
   console.log(`  ${outcome.status.padEnd(10)} ${s.label}`)
   if (outcome.status === 'UNPARSED') console.log(`             ${outcome.reason}: ${outcome.detail}`)
 }
 
 async function main() {
   await connectDb()
+  const T = await scriptTenant()
 
   console.log('BrotherByte samples')
-  for (const s of BROTHERBYTE_SAMPLES) await ingestIfMissing(s)
+  for (const s of BROTHERBYTE_SAMPLES) await ingestIfMissing(T, s)
 
   console.log('\nYatribhojan samples')
-  for (const s of YATRIBHOJAN_SAMPLES) await ingestIfMissing(s)
+  for (const s of YATRIBHOJAN_SAMPLES) await ingestIfMissing(T, s)
 
   await disconnectDb()
 }

@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose'
 import { connectDb } from '../db'
 import { UnparsedInbox } from '../models'
 import { insertOrder } from '../repo/orderRepo'
@@ -41,6 +42,11 @@ export const PARSERS: OrderParser[] = [
 ]
 
 export type IngestSource = {
+  /**
+   * The tenant the mail is for. The Gmail sync passes the primary tenant's
+   * (it owns the env-configured mailbox); a paste passes the admin's own.
+   */
+  tenantId: Types.ObjectId
   body: string
   receivedAt: Date
   gmailMessageId?: string | null
@@ -109,7 +115,7 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   const parser = PARSERS.find((p) => p.matches(input.body))
 
   if (!parser) {
-    return recordUnparsed({
+    return recordUnparsed(input.tenantId, {
       source: 'UNKNOWN',
       rawPayload,
       reason: 'PARSE_FAILED',
@@ -121,7 +127,7 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   const result = parser.parse(input.body, input.receivedAt)
 
   if (!result.ok) {
-    return recordUnparsed({
+    return recordUnparsed(input.tenantId, {
       source: parser.source,
       rawPayload,
       reason: result.reason,
@@ -135,9 +141,9 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   const parsed = result.order
 
   // Never fuzzy-match an outlet into a live order (§6, §13.11).
-  const outlet = await matchOutlet(parsed.outletName, parsed.stationCode, parsed.source)
+  const outlet = await matchOutlet(input.tenantId, parsed.outletName, parsed.stationCode, parsed.source)
   if (!outlet.ok) {
-    return recordUnparsed({
+    return recordUnparsed(input.tenantId, {
       source: parser.source,
       rawPayload,
       reason: 'UNKNOWN_OUTLET',
@@ -148,7 +154,7 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
     })
   }
 
-  return createOrderFromParsed(parsed, outlet, rawPayload, input.gmailMessageId ?? null)
+  return createOrderFromParsed(input.tenantId, parsed, outlet, rawPayload, input.gmailMessageId ?? null)
 }
 
 /**
@@ -169,7 +175,7 @@ async function tryIngestPayment(
   const result = parser.parse(input.body, input.receivedAt)
 
   if (!result.ok) {
-    return recordUnparsed({
+    return recordUnparsed(input.tenantId, {
       source: parser.provider,
       rawPayload,
       reason: result.reason,
@@ -180,6 +186,7 @@ async function tryIngestPayment(
   }
 
   const recorded = await recordPayment(
+    input.tenantId,
     result.payment,
     rawPayload,
     input.gmailMessageId ?? null,
@@ -202,6 +209,7 @@ async function tryIngestPayment(
  * present, since matchOutlet refuses the match outright when they disagree.
  */
 export async function createOrderFromParsed(
+  tenantId: Types.ObjectId,
   parsed: ParsedOrder,
   outlet: { restaurantId: string; stationCode: string },
   rawPayload: unknown,
@@ -211,6 +219,7 @@ export async function createOrderFromParsed(
 
   try {
     const doc = await insertOrder({
+      tenantId,
       source: parsed.source,
       orderType: 'RETAIL',
       externalOrderId: parsed.externalOrderId,
@@ -288,7 +297,7 @@ export function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000
 }
 
-async function recordUnparsed(input: {
+async function recordUnparsed(tenantId: Types.ObjectId, input: {
   source: string
   rawPayload: unknown
   reason: 'UNKNOWN_OUTLET' | 'MISSING_FIELD' | 'PARSE_FAILED'
@@ -300,6 +309,7 @@ async function recordUnparsed(input: {
   // Re-processing the same message must not pile up duplicate inbox rows.
   if (input.gmailMessageId) {
     const existing = await UnparsedInbox.findOne({
+      tenantId,
       gmailMessageId: input.gmailMessageId,
       resolved: false,
     })
@@ -316,6 +326,7 @@ async function recordUnparsed(input: {
   }
 
   const doc = await UnparsedInbox.create({
+    tenantId,
     source: input.source,
     rawPayload: input.rawPayload,
     reason: input.reason,

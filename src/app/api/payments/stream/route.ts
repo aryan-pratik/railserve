@@ -27,7 +27,7 @@ const TICK_MS = 3_000
  * belongs to — so the fingerprint is global and identical for every viewer.
  */
 export async function GET() {
-  await requireRole('ADMIN', 'STORE_MANAGER', 'TELECALLER')
+  const ctx = await requireRole('ADMIN', 'STORE_MANAGER', 'TELECALLER')
 
   const encoder = new TextEncoder()
   let closed = false
@@ -40,13 +40,13 @@ export async function GET() {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
       }
 
-      let previous = await paymentsSignature()
+      let previous = await paymentsSignature(ctx)
       send('snapshot', { at: new Date().toISOString() })
 
       const timer = setInterval(async () => {
         if (closed) return
         try {
-          const next = await paymentsSignature()
+          const next = await paymentsSignature(ctx)
           if (next !== previous) {
             send('change', { at: new Date().toISOString() })
             previous = next

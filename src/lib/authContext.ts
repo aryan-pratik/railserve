@@ -10,6 +10,8 @@ import type { Role } from './roles'
  * not by outlet) and for DELIVERY_AGENT (scoped by assignment).
  */
 export type AuthContext = {
+  /** The tenant (customer company) every read and write is confined to. */
+  tenantId: Types.ObjectId
   userId: Types.ObjectId
   role: Role
   restaurantIds: Types.ObjectId[]

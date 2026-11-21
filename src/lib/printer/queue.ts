@@ -7,6 +7,7 @@ import { renderKotScreenshots, type KotRender } from '@/lib/printer/screenshot'
 import { printImagesDirect } from '@/lib/printer/directPrint'
 import { parseRunKey } from '@/lib/runs'
 import { normaliseStationCode } from '@/lib/stations'
+import { naturalKey, tenantKey } from '@/lib/tenancy/primary'
 import type mongoose from 'mongoose'
 import type { PrintJobDoc } from '@/lib/models/PrintJob'
 
@@ -36,10 +37,10 @@ export const PRINT_JOB_MAX_AGE_MS = 30 * 60 * 1000
  * for the afternoon) comes out all at once the moment something starts
  * taking jobs again: hundreds of tickets for trains long gone.
  */
-export async function expireStalePrintJobs(stationCodes: string[]): Promise<Date> {
+export async function expireStalePrintJobs(tenantId: mongoose.Types.ObjectId, stationCodes: string[]): Promise<Date> {
   const cutoff = new Date(Date.now() - PRINT_JOB_MAX_AGE_MS)
   await PrintJob.updateMany(
-    { stationCode: { $in: stationCodes }, status: 'pending', createdAt: { $lt: cutoff } },
+    { tenantId, stationCode: { $in: stationCodes }, status: 'pending', createdAt: { $lt: cutoff } },
     { $set: { status: 'failed', error: 'expired: not printed within 30 min' } },
   )
   return cutoff
@@ -64,9 +65,10 @@ export const PRINT_JOB_CLAIM_LEASE_MS = 3 * 60 * 1000
  * never print, and nothing says so. Re-sending risks a second copy when only
  * the ack was lost; a missing KOT is food nobody cooks, which is worse.
  */
-export async function reclaimAbandonedPrintJobs(stationCode: string): Promise<void> {
+export async function reclaimAbandonedPrintJobs(tenantId: mongoose.Types.ObjectId, stationCode: string): Promise<void> {
   await PrintJob.updateMany(
     {
+      tenantId,
       stationCode,
       status: 'claimed',
       claimedAt: { $lt: new Date(Date.now() - PRINT_JOB_CLAIM_LEASE_MS) },
@@ -95,16 +97,27 @@ function printWaiters(): Map<string, Set<() => void>> {
   return (globalForWake.__railservePrintWaiters ??= new Map())
 }
 
-export function notifyPrintAgents(stationCode: string): void {
-  for (const wake of printWaiters().get(stationCode) ?? []) wake()
+/** Waiters are per tenant and station: two tenants can each have a station CNB. */
+function waiterKey(tenantId: mongoose.Types.ObjectId | string, stationCode: string): string {
+  return `${String(tenantId)}:${stationCode}`
 }
 
-/** Resolves when `stationCode` gets a new job, after `ms`, or when `signal` aborts — whichever is first. */
-export function waitForPrintJob(stationCode: string, ms: number, signal?: AbortSignal): Promise<void> {
+export function notifyPrintAgents(tenantId: mongoose.Types.ObjectId | string, stationCode: string): void {
+  for (const wake of printWaiters().get(waiterKey(tenantId, stationCode)) ?? []) wake()
+}
+
+/** Resolves when the tenant's `stationCode` gets a new job, after `ms`, or when `signal` aborts — whichever is first. */
+export function waitForPrintJob(
+  tenantId: mongoose.Types.ObjectId | string,
+  stationCode: string,
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const key = waiterKey(tenantId, stationCode)
   return new Promise((resolve) => {
     const waiters = printWaiters()
-    const set = waiters.get(stationCode) ?? new Set()
-    waiters.set(stationCode, set)
+    const set = waiters.get(key) ?? new Set()
+    waiters.set(key, set)
 
     let finished = false
     const finish = () => {
@@ -113,7 +126,7 @@ export function waitForPrintJob(stationCode: string, ms: number, signal?: AbortS
       clearTimeout(timer)
       signal?.removeEventListener('abort', finish)
       set.delete(finish)
-      if (set.size === 0 && waiters.get(stationCode) === set) waiters.delete(stationCode)
+      if (set.size === 0 && waiters.get(key) === set) waiters.delete(key)
       resolve()
     }
     const timer = setTimeout(finish, ms)
@@ -133,17 +146,20 @@ export function waitForPrintJob(stationCode: string, ms: number, signal?: AbortS
  * Returns false only when a delivery was attempted and failed.
  */
 async function tryDirectDeliver(job: PrintJobDoc): Promise<boolean> {
-  const station = await Station.findById(job.stationCode).select('directPrinterHost directPrinterPort')
+  const { tenantId } = job
+  const station = await Station.findOne({ _id: await tenantKey(tenantId, job.stationCode), tenantId }).select(
+    'directPrinterHost directPrinterPort',
+  )
   if (!station?.directPrinterHost) return true
 
   try {
     await printImagesDirect(job.images, station.directPrinterHost, station.directPrinterPort ?? 9100)
-    await PrintJob.updateOne({ _id: job._id }, { $set: { status: 'done', doneAt: new Date() } })
-    await Station.updateOne({ _id: station._id }, { $set: { agentLastPrintedAt: new Date() } })
+    await PrintJob.updateOne({ _id: job._id, tenantId }, { $set: { status: 'done', doneAt: new Date() } })
+    await Station.updateOne({ _id: station._id, tenantId }, { $set: { agentLastPrintedAt: new Date() } })
     return true
   } catch (err) {
     await PrintJob.updateOne(
-      { _id: job._id },
+      { _id: job._id, tenantId },
       { $set: { error: err instanceof Error ? err.message : String(err) } },
     )
     return false
@@ -214,6 +230,7 @@ export function checkRunRender(orderIds: string[], renders: KotRender[]): void {
  * the tickets in print order.
  */
 async function enqueueTickets(params: {
+  tenantId: mongoose.Types.ObjectId
   stationCode: string
   restaurantId: mongoose.Types.ObjectId | string | null
   refType: 'order' | 'run'
@@ -237,7 +254,7 @@ async function enqueueTickets(params: {
   }
   // Once, after the last ticket, so a waiting agent claims the whole train
   // in one go rather than waking on ticket one.
-  notifyPrintAgents(stationCode)
+  notifyPrintAgents(ref.tenantId, stationCode)
   // Stop at the first failure: the printer is down, the rest would only wait
   // out the same timeout one by one, and printing past a gap would put the
   // train's tickets out of order. The retry cron sends them all, oldest first.
@@ -247,21 +264,25 @@ async function enqueueTickets(params: {
 }
 
 export async function enqueueOrderKotPrint(params: {
+  /** The tenant the order belongs to: carried to the render page and onto the job. */
+  tenantId: mongoose.Types.ObjectId
   appOrigin: string
   stationCode: string
   /** Provenance only — a job is routed by station. Null when outlet matching failed. */
   restaurantId?: mongoose.Types.ObjectId | string | null
   orderId: string
 }) {
-  const { appOrigin, stationCode, restaurantId = null, orderId } = params
+  const { tenantId, appOrigin, stationCode, restaurantId = null, orderId } = params
 
-  const pagePath = `/internal/print/order/${orderId}`
+  // The render page has no session; `t` tells it whose order to read.
+  const url = new URL(`/internal/print/order/${orderId}`, appOrigin)
+  url.searchParams.set('t', String(tenantId))
   const startedAt = Date.now()
-  const renders = await renderKotScreenshots(new URL(pagePath, appOrigin).toString())
+  const renders = await renderKotScreenshots(url.toString())
   const images = renders.map((r) => r.image)
   const renderedAt = Date.now()
 
-  await enqueueTickets({ stationCode, restaurantId, refType: 'order', refId: orderId, images })
+  await enqueueTickets({ tenantId, stationCode, restaurantId, refType: 'order', refId: orderId, images })
   logEnqueueTiming(`order ${orderId}`, images.length, startedAt, renderedAt)
 }
 
@@ -290,17 +311,20 @@ function logEnqueueTiming(what: string, tickets: number, startedAt: number, rend
  * also what keeps a train's not-yet-accepted orders off the printer.
  */
 export async function enqueueRunKotPrint(params: {
+  /** The tenant the run's orders belong to: carried to the render page and onto the jobs. */
+  tenantId: mongoose.Types.ObjectId
   appOrigin: string
   runKey: string
   orderIds: string[]
 }) {
-  const { appOrigin, runKey, orderIds } = params
+  const { tenantId, appOrigin, runKey, orderIds } = params
 
   const identity = parseRunKey(runKey)
   if (!identity) throw new Error(`Malformed run key: ${runKey}`)
   if (orderIds.length === 0) throw new Error(`Run ${runKey} has no printable orders`)
 
   const url = new URL(`/internal/print/run/${encodeURIComponent(runKey)}`, appOrigin)
+  url.searchParams.set('t', String(tenantId))
   url.searchParams.set('orders', orderIds.join(','))
   const startedAt = Date.now()
   const renders = await renderKotScreenshots(url.toString())
@@ -312,6 +336,7 @@ export async function enqueueRunKotPrint(params: {
   const images = renders.map((r) => r.image)
 
   await enqueueTickets({
+    tenantId,
     stationCode: identity.stationCode,
     // A run spans brands; the run key is the provenance.
     restaurantId: null,
@@ -326,18 +351,22 @@ export async function enqueueRunKotPrint(params: {
  * Retries pending jobs for stations configured for direct printing —
  * everything else (stations still on the poll/agent path) is left alone,
  * since a normal agent will pick those up on its own next poll.
+ *
+ * One tenant per call; the cron runs it for each active tenant.
  */
-export async function retryDirectPrintJobs(): Promise<{ attempted: number; delivered: number }> {
+export async function retryDirectPrintJobs(tenantId: mongoose.Types.ObjectId): Promise<{ attempted: number; delivered: number }> {
   await connectDb()
 
-  const directStations = await Station.find({ directPrinterHost: { $ne: null } }).select('_id')
-  const stationCodes = directStations.map((s) => s._id)
+  const directStations = await Station.find({ tenantId, directPrinterHost: { $ne: null } }).select('_id')
+  // Jobs carry the natural station code, not the tenant-keyed _id.
+  const stationCodes = directStations.map((s) => naturalKey(s._id))
   if (stationCodes.length === 0) return { attempted: 0, delivered: 0 }
 
-  const cutoff = await expireStalePrintJobs(stationCodes)
+  const cutoff = await expireStalePrintJobs(tenantId, stationCodes)
 
   // Oldest first, so a train's tickets still come out in order on retry.
   const jobs = await PrintJob.find({
+    tenantId,
     status: 'pending',
     stationCode: { $in: stationCodes },
     createdAt: { $gte: cutoff },
@@ -351,6 +380,7 @@ export async function retryDirectPrintJobs(): Promise<{ attempted: number; deliv
   }
 
   const delivered = await PrintJob.countDocuments({
+    tenantId,
     _id: { $in: jobs.map((j) => j._id) },
     status: 'done',
   })

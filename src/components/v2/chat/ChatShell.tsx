@@ -5,8 +5,8 @@ import { cx } from '@/components/v2/ui'
 import { ChatLive } from './ChatLive'
 
 /** The line under the title: says plainly when nothing is reaching a real phone. */
-export function chatNote() {
-  return isWhatsAppSimulated()
+export function chatNote(simulated: boolean = isWhatsAppSimulated()) {
+  return simulated
     ? 'Simulated: nothing reaches a real phone. A pretend passenger answers every message.'
     : 'Replies from passengers on the business WhatsApp number, as they arrive.'
 }
@@ -23,7 +23,10 @@ export function ChatShell({
   thread,
   threadOpen,
   conversationId,
+  simulated,
 }: {
+  /** Whether this company's chat reaches real phones (isWhatsAppSimulatedFor). */
+  simulated: boolean
   list: ReactNode
   thread: ReactNode
   /** True on a thread page: on a phone the list hides behind it. */
@@ -32,7 +35,7 @@ export function ChatShell({
 }) {
   return (
     <div className="grid gap-[18px]">
-      <PageHeader title="WhatsApp" note={<span className="hidden sm:inline">{chatNote()}</span>} actions={<ChatLive conversationId={conversationId} />} />
+      <PageHeader title="WhatsApp" note={<span className="hidden sm:inline">{chatNote(simulated)}</span>} actions={<ChatLive conversationId={conversationId} />} />
       <div
         className={cx(
           // minmax(0, 1fr) everywhere: a grid column defaults to min-content

@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * Payloads that could not become an order. Plan §3 and §6.
@@ -9,6 +10,8 @@ import { registerModel } from './registerModel'
  */
 const UnparsedInboxSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     source: { type: String, required: true },
     rawPayload: { type: Schema.Types.Mixed, required: true },
     reason: {
@@ -48,6 +51,9 @@ const UnparsedInboxSchema = new Schema(
 export type UnparsedInboxDoc = InferSchemaType<typeof UnparsedInboxSchema> & {
   _id: mongoose.Types.ObjectId
 }
+
+// Every UnparsedInbox belongs to one tenant; the guard refuses unscoped queries.
+UnparsedInboxSchema.plugin(tenantScoped)
 
 export const UnparsedInbox: Model<UnparsedInboxDoc> =
   registerModel<UnparsedInboxDoc>('UnparsedInbox', UnparsedInboxSchema)

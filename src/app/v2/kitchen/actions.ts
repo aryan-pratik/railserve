@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { requirePermission } from '@/lib/session'
 import {
   acceptRun,
   forceRefreshOrderTrain,
@@ -19,18 +20,24 @@ import {
 export type KitchenActionState = StoreActionState
 
 export async function acceptRunV2(prev: KitchenActionState, formData: FormData): Promise<KitchenActionState> {
+  // The company may have taken the kitchen away from this role (Roles & access).
+  await requirePermission('kitchen.operate')
   const result = await acceptRun(prev, formData)
   revalidatePath('/v2/kitchen')
   return result
 }
 
 export async function markRunPreparedV2(prev: KitchenActionState, formData: FormData): Promise<KitchenActionState> {
+  // The company may have taken the kitchen away from this role (Roles & access).
+  await requirePermission('kitchen.operate')
   const result = await markRunPrepared(prev, formData)
   revalidatePath('/v2/kitchen')
   return result
 }
 
 export async function handRunToRiderV2(prev: KitchenActionState, formData: FormData): Promise<KitchenActionState> {
+  // The company may have taken the kitchen away from this role (Roles & access).
+  await requirePermission('kitchen.operate')
   const result = await handRunToRiderAction(prev, formData)
   revalidatePath('/v2/kitchen')
   return result
@@ -41,6 +48,8 @@ export async function handRunToRiderV2(prev: KitchenActionState, formData: FormD
  * reports so the footer can say "sent to the printer" and clear the ticks.
  */
 export async function generateRunKotV2(_prev: KitchenActionState, formData: FormData): Promise<KitchenActionState> {
+  // The company may have taken the kitchen away from this role (Roles & access).
+  await requirePermission('kitchen.operate')
   try {
     await generateRunKot(formData)
   } catch (err) {
@@ -57,6 +66,8 @@ export async function generateRunKotV2(_prev: KitchenActionState, formData: Form
  * order on the run, since the cache row is shared by every order riding it.
  */
 export async function checkTrainV2(prev: KitchenActionState, formData: FormData): Promise<KitchenActionState> {
+  // The company may have taken the kitchen away from this role (Roles & access).
+  await requirePermission('kitchen.operate')
   const result = await forceRefreshOrderTrain(prev, formData)
   revalidatePath('/v2/kitchen')
   return result

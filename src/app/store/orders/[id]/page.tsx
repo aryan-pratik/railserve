@@ -41,9 +41,9 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
     (v): v is NonNullable<typeof v> => Boolean(v),
   )
   const [actors, cancelRequest, riders, rto, canCollect] = await Promise.all([
-    User.find({ _id: { $in: actorIds } }).select('name role').lean(),
+    User.find({ _id: { $in: actorIds }, tenantId: ctx.tenantId }).select('name role').lean(),
     viewCancelRequest(order),
-    listAssignableRiders(order.restaurantId),
+    listAssignableRiders(ctx, order.restaurantId),
     viewReturn(order),
     mayCollectReturns(ctx),
   ])
@@ -65,7 +65,7 @@ export default async function StoreOrderDetail(props: PageProps<'/store/orders/[
       <BackLink href={backQuery ? `/store?${backQuery}` : '/store'}>Back to the board</BackLink>
 
       <OrderCard
-        order={toCardData(order, await dietLookupFor([order]))}
+        order={toCardData(order, await dietLookupFor(ctx.tenantId, [order]))}
         href={`/store/orders/${id}`}
         showServiceDate
         actions={

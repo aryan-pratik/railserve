@@ -5,7 +5,7 @@ import { ingestEmail } from '../src/lib/ingest'
 import { findPayments, latestBalance, paymentTotals, setPaymentRemark } from '../src/lib/repo/paymentRepo'
 import { ForbiddenError, type AuthContext } from '../src/lib/authContext'
 import mongoose from 'mongoose'
-import { resetDb } from './fixtures'
+import { resetDb, tenantId } from './fixtures'
 import * as fx from './fixtures/slice'
 
 const RECEIVED = new Date('2026-09-06T13:38:00Z')
@@ -16,9 +16,11 @@ const alert = (body: string, gmailMessageId?: string) => ({
   gmailMessageId,
   subject: 'Money received',
   from: 'no-reply@slice.bank.in',
+  tenantId: tenantId(),
 })
 
 const ctx = (role: AuthContext['role']): AuthContext => ({
+  tenantId: tenantId(),
   userId: new mongoose.Types.ObjectId(),
   role,
   restaurantIds: [],
@@ -42,7 +44,7 @@ describe('payment ingestion', () => {
     const r = await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
     expect(r.status).toBe('PAYMENT')
 
-    const payment = await Payment.findOne({ rrn: '661533935455' }).lean()
+    const payment = await Payment.findOne({ tenantId: tenantId(), rrn: '661533935455' }).lean()
     expect(payment).not.toBeNull()
     expect(payment!.payerName).toBe('AMITKUMAR TIWARI')
     expect(payment!.amountPaise).toBe(23000)
@@ -53,7 +55,7 @@ describe('payment ingestion', () => {
     expect((payment!.rawPayload as { body: string }).body).toContain('slice')
 
     // The whole point: this must not be sitting in "needs attention".
-    expect(await UnparsedInbox.countDocuments({})).toBe(0)
+    expect(await UnparsedInbox.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 
   it('treats a replayed alert as an idempotent no-op', async () => {
@@ -61,7 +63,7 @@ describe('payment ingestion', () => {
     const second = await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
 
     expect(second.status).toBe('PAYMENT_DUPLICATE')
-    expect(await Payment.countDocuments({})).toBe(1)
+    expect(await Payment.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 
   it('dedupes on the RRN even with no unique index to enforce it', async () => {
@@ -69,13 +71,15 @@ describe('payment ingestion', () => {
     // database where `npm run indexes` was never run has no unique index at
     // all — and a replayed credit alert would silently double the day's
     // takings. The upsert has to carry idempotence on its own.
-    await Payment.collection.dropIndex('rrn_unique')
+    // Both forms: the legacy global key and its per-tenant replacement.
+    await Payment.collection.dropIndex('rrn_unique').catch(() => {})
+    await Payment.collection.dropIndex('tenant_rrn_unique').catch(() => {})
 
     await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
     const second = await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
 
     expect(second.status).toBe('PAYMENT_DUPLICATE')
-    expect(await Payment.countDocuments({})).toBe(1)
+    expect(await Payment.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 
   it('never lets a replay overwrite a remark written since', async () => {
@@ -85,24 +89,24 @@ describe('payment ingestion', () => {
     await setPaymentRemark(ctx('STORE_MANAGER'), first.paymentId, 'order 1000584805')
     await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
 
-    expect((await Payment.findById(first.paymentId).lean())!.remark).toBe('order 1000584805')
+    expect((await Payment.findOne({ _id: first.paymentId, tenantId: tenantId() }).lean())!.remark).toBe('order 1000584805')
   })
 
   it('dedupes on the RRN even when the same alert is pasted by hand', async () => {
     await ingestEmail(alert(fx.SAMPLE, 'gmail-pay-1'))
     // No gmailMessageId at all — the paste path. The RRN is what stops it.
-    const pasted = await ingestEmail({ body: fx.SAMPLE, receivedAt: RECEIVED })
+    const pasted = await ingestEmail({ tenantId: tenantId(), body: fx.SAMPLE, receivedAt: RECEIVED })
 
     expect(pasted.status).toBe('PAYMENT_DUPLICATE')
-    expect(await Payment.countDocuments({})).toBe(1)
+    expect(await Payment.countDocuments({ tenantId: tenantId() })).toBe(1)
   })
 
   it('files an unreadable credit alert in the inbox, where a template change belongs', async () => {
     const r = await ingestEmail(alert(fx.SAMPLE_NO_RRN, 'gmail-pay-broken'))
 
     expect(r.status).toBe('UNPARSED')
-    expect(await Payment.countDocuments({})).toBe(0)
-    const row = await UnparsedInbox.findOne({ resolved: false }).lean()
+    expect(await Payment.countDocuments({ tenantId: tenantId() })).toBe(0)
+    const row = await UnparsedInbox.findOne({ tenantId: tenantId(), resolved: false }).lean()
     expect(row!.source).toBe('SLICE')
     expect(row!.reason).toBe('MISSING_FIELD')
   })
@@ -111,7 +115,7 @@ describe('payment ingestion', () => {
     const r = await ingestEmail(alert(fx.SAMPLE_DEBIT, 'gmail-debit'))
 
     expect(r.status).toBe('UNPARSED')
-    expect(await Payment.countDocuments({})).toBe(0)
+    expect(await Payment.countDocuments({ tenantId: tenantId() })).toBe(0)
   })
 })
 
@@ -128,26 +132,26 @@ describe('payment repository', () => {
   })
 
   it('filters by transaction-date range', async () => {
-    const all = await findPayments({})
+    const all = await findPayments(ctx('ADMIN'), {})
     expect(all).toHaveLength(3)
 
     // SAMPLE_SPACED is dated 31-Dec-25; the other two are 6 Sep 2026.
-    const sept = await findPayments({ from: '2026-09-01', to: '2026-09-30' })
+    const sept = await findPayments(ctx('ADMIN'), { from: '2026-09-01', to: '2026-09-30' })
     expect(sept.map((p) => p.rrn).sort()).toEqual(['661533935455', '661599112233'])
   })
 
   it('searches by payer name, RRN and remark', async () => {
-    expect(await findPayments({ q: 'rajesh' })).toHaveLength(1)
-    expect(await findPayments({ q: '661533935455' })).toHaveLength(1)
+    expect(await findPayments(ctx('ADMIN'), { q: 'rajesh' })).toHaveLength(1)
+    expect(await findPayments(ctx('ADMIN'), { q: '661533935455' })).toHaveLength(1)
     // A parenthesis in the query must match nothing, not throw.
-    expect(await findPayments({ q: 'kumar(' })).toHaveLength(0)
+    expect(await findPayments(ctx('ADMIN'), { q: 'kumar(' })).toHaveLength(0)
   })
 
   it('totals only what the filter selected', async () => {
-    const all = await paymentTotals({})
+    const all = await paymentTotals(ctx('ADMIN'), {})
     expect(all).toEqual({ count: 3, totalPaise: 23000 + 124050 + 50000 })
 
-    const sept = await paymentTotals({ from: '2026-09-01', to: '2026-09-30' })
+    const sept = await paymentTotals(ctx('ADMIN'), { from: '2026-09-01', to: '2026-09-30' })
     expect(sept).toEqual({ count: 2, totalPaise: 23000 + 50000 })
   })
 
@@ -163,17 +167,17 @@ describe('payment repository', () => {
   })
 
   it('lets both an admin and a store manager write a remark', async () => {
-    const [payment] = await findPayments({ q: '661533935455' })
+    const [payment] = await findPayments(ctx('ADMIN'), { q: '661533935455' })
 
     await setPaymentRemark(ctx('STORE_MANAGER'), String(payment._id), 'order 1000584805')
-    expect((await Payment.findById(payment._id).lean())!.remark).toBe('order 1000584805')
+    expect((await Payment.findOne({ _id: payment._id, tenantId: tenantId() }).lean())!.remark).toBe('order 1000584805')
 
     await setPaymentRemark(ctx('ADMIN'), String(payment._id), null)
-    expect((await Payment.findById(payment._id).lean())!.remark).toBeNull()
+    expect((await Payment.findOne({ _id: payment._id, tenantId: tenantId() }).lean())!.remark).toBeNull()
   })
 
   it('refuses a remark from a delivery agent', async () => {
-    const [payment] = await findPayments({ q: '661533935455' })
+    const [payment] = await findPayments(ctx('ADMIN'), { q: '661533935455' })
     await expect(
       setPaymentRemark(ctx('DELIVERY_AGENT'), String(payment._id), 'nope'),
     ).rejects.toBeInstanceOf(ForbiddenError)

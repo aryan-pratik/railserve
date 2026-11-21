@@ -148,7 +148,7 @@ export async function generateKot(formData: FormData) {
     // (the same enqueue, on demand) is the fallback.
     try {
       assertPrintAgentConfigured()
-      await enqueueOrderKotPrint({
+      await enqueueOrderKotPrint({ tenantId: ctx.tenantId,
         appOrigin: await getAppOrigin(),
         stationCode: order.stationCode,
         restaurantId: order.restaurantId,
@@ -255,7 +255,7 @@ export async function generateRunKot(formData: FormData) {
   if (orderIds.length > 0) {
     try {
       assertPrintAgentConfigured()
-      await enqueueRunKotPrint({ appOrigin: await getAppOrigin(), runKey, orderIds })
+      await enqueueRunKotPrint({ tenantId: ctx.tenantId, appOrigin: await getAppOrigin(), runKey, orderIds })
     } catch (err) {
       console.error(`[generateRunKot] auto-print enqueue failed for run ${runKey}:`, err)
     }

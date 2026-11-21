@@ -53,9 +53,9 @@ export type TeamView = {
 const NO_DUE: PendingCash = { paise: 0, orders: 0, orderIds: [] }
 
 /** The ids a team leader may read: their own, and their riders'. Empty for anyone who leads nobody. */
-export async function teamRiderIds(leadId: mongoose.Types.ObjectId): Promise<mongoose.Types.ObjectId[]> {
+export async function teamRiderIds(ctx: AuthContext, leadId: mongoose.Types.ObjectId): Promise<mongoose.Types.ObjectId[]> {
   await connectDb()
-  const members = await User.find({ role: 'DELIVERY_AGENT', teamLeadId: leadId }).select('_id').lean()
+  const members = await User.find({ role: 'DELIVERY_AGENT', teamLeadId: leadId, tenantId: ctx.tenantId }).select('_id').lean()
   return members.map((m) => m._id)
 }
 
@@ -77,12 +77,12 @@ export async function teamView(
     throw new ForbiddenError('Only the team leader or an admin may read a team')
   }
   await connectDb()
-  const lead = await User.findOne({ _id: leadId, role: 'DELIVERY_AGENT', isTeamLead: true })
+  const lead = await User.findOne({ _id: leadId, role: 'DELIVERY_AGENT', isTeamLead: true, tenantId: ctx.tenantId })
     .select('name phone active isTeamLead canReceiveCash role')
     .lean()
   if (!lead) throw new ForbiddenError('You are not a team leader')
 
-  const riders = await User.find({ role: 'DELIVERY_AGENT', teamLeadId: leadId })
+  const riders = await User.find({ role: 'DELIVERY_AGENT', teamLeadId: leadId, tenantId: ctx.tenantId })
     .select('name phone active')
     .sort({ active: -1, name: 1 })
     .lean()
@@ -99,7 +99,7 @@ export async function teamView(
     collectionHistory(ctx, ids, { latestPerRider: true }),
     collectionHistory(ctx, ids, { limit: 60 }),
   ])
-  const receivers = await receiversOf([...collections, ...recent])
+  const receivers = await receiversOf(ctx, [...collections, ...recent])
   const nameOf = new Map(people.map((p) => [String(p._id), p.name]))
 
   return {
@@ -176,17 +176,17 @@ export async function setTeam(params: {
 
   if (leadId !== null) {
     if (!mongoose.isValidObjectId(leadId)) throw new ConflictError('Choose a team leader')
-    const lead = await User.findOne({ _id: leadId, role: 'DELIVERY_AGENT', isTeamLead: true, active: true })
+    const lead = await User.findOne({ _id: leadId, role: 'DELIVERY_AGENT', isTeamLead: true, active: true, tenantId: ctx.tenantId })
       .select('_id')
       .lean()
     if (!lead) throw new ConflictError('That person is not an active rider team leader')
     if (riderIds.includes(leadId)) throw new ConflictError('A team leader cannot be on their own team')
-    const leaders = await User.countDocuments({ _id: { $in: riderIds }, isTeamLead: true })
+    const leaders = await User.countDocuments({ _id: { $in: riderIds }, isTeamLead: true, tenantId: ctx.tenantId })
     if (leaders > 0) throw new ConflictError('A team leader cannot be placed under another team leader')
   }
 
   const res = await User.updateMany(
-    { _id: { $in: riderIds }, role: 'DELIVERY_AGENT' },
+    { _id: { $in: riderIds }, role: 'DELIVERY_AGENT', tenantId: ctx.tenantId },
     { $set: { teamLeadId: leadId ? new mongoose.Types.ObjectId(leadId) : null } },
   )
   return { moved: res.modifiedCount }

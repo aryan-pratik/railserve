@@ -25,7 +25,7 @@ export async function saveRestaurant(
   _prev: RestaurantState,
   formData: FormData,
 ): Promise<RestaurantState> {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
 
   const parsed = RestaurantInput.safeParse(Object.fromEntries(formData))
   if (!parsed.success) {
@@ -45,9 +45,9 @@ export async function saveRestaurant(
   }
 
   if (id) {
-    await Restaurant.updateOne({ _id: id }, { $set: doc })
+    await Restaurant.updateOne({ _id: id, tenantId: ctx.tenantId }, { $set: doc })
   } else {
-    await Restaurant.create({ ...doc, active: true })
+    await Restaurant.create({ ...doc, tenantId: ctx.tenantId, active: true })
   }
 
   revalidatePath('/admin/setup')
@@ -59,12 +59,12 @@ export async function saveRestaurant(
  * invisible to every dashboard, with no error raised anywhere.
  */
 export async function toggleRestaurantActive(formData: FormData) {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const id = String(formData.get('id') ?? '')
   const active = String(formData.get('active') ?? '') === 'true'
 
   await connectDb()
-  await Restaurant.updateOne({ _id: id }, { $set: { active } })
+  await Restaurant.updateOne({ _id: id, tenantId: ctx.tenantId }, { $set: { active } })
   revalidatePath('/admin/setup')
 }
 
@@ -87,8 +87,8 @@ export async function deleteRestaurant(_prev: DeleteState, formData: FormData): 
   await connectDb()
   const [orders, printJobs, staff] = await Promise.all([
     countOrdersForOutlet(ctx, id),
-    PrintJob.countDocuments({ restaurantId: id }),
-    User.countDocuments({ restaurantIds: id }),
+    PrintJob.countDocuments({ tenantId: ctx.tenantId, restaurantId: id }),
+    User.countDocuments({ tenantId: ctx.tenantId, restaurantIds: id }),
   ])
 
   const reasons = [
@@ -102,7 +102,7 @@ export async function deleteRestaurant(_prev: DeleteState, formData: FormData): 
     }
   }
 
-  await Restaurant.deleteOne({ _id: id })
+  await Restaurant.deleteOne({ _id: id, tenantId: ctx.tenantId })
   revalidatePath('/admin/setup')
   return {}
 }

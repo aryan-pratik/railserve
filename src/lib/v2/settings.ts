@@ -10,6 +10,7 @@ import { isSimulatedProvider } from '@/lib/train'
 import { trainFeedHealth } from '@/lib/train/service'
 import { ROLES, type Role } from '@/lib/roles'
 import type { AuthContext } from '@/lib/authContext'
+import { getPrimaryTenantId, naturalKey, tenantKey } from '@/lib/tenancy/primary'
 
 /*
  * Reads behind /v2/settings. Everything here is plain data for the server
@@ -55,12 +56,13 @@ export type StationRow = {
 
 export type Feed = { name: string; source: string | null; viaDefault: boolean }
 
-export async function loadSetupBase() {
+export async function loadSetupBase(ctx: AuthContext) {
   await connectDb()
+  const tenantId = ctx.tenantId
   const [outletDocs, listingDocs, stationDocs] = await Promise.all([
-    Restaurant.find({}).sort({ active: -1, name: 1 }).lean(),
-    Listing.find({}).sort({ stationCode: 1, name: 1 }).lean(),
-    Station.find({}).lean(),
+    Restaurant.find({ tenantId }).sort({ active: -1, name: 1 }).lean(),
+    Listing.find({ tenantId }).sort({ stationCode: 1, name: 1 }).lean(),
+    Station.find({ tenantId }).lean(),
   ])
 
   const outlets: OutletRow[] = outletDocs.map((o) => ({
@@ -90,8 +92,10 @@ export async function loadSetupBase() {
   // station shows up here before anyone has configured it.
   const byCode = new Map<string, StationRow>()
   for (const s of stationDocs) {
-    byCode.set(s._id.toUpperCase(), {
-      code: s._id.toUpperCase(),
+    // The station code, without the tenant prefix a non-primary tenant's _id carries.
+    const code = naturalKey(s._id).toUpperCase()
+    byCode.set(code, {
+      code,
       name: s.name ?? null,
       configured: true,
       active: s.active !== false,
@@ -193,9 +197,9 @@ export function isRole(v: string | undefined): v is Role {
   return Boolean(v) && (ROLES as readonly string[]).includes(v as string)
 }
 
-export async function loadStaff(filter: StaffFilter, paging: { skip: number; limit: number }) {
+export async function loadStaff(ctx: AuthContext, filter: StaffFilter, paging: { skip: number; limit: number }) {
   await connectDb()
-  const where: Record<string, unknown> = {}
+  const where: Record<string, unknown> = { tenantId: ctx.tenantId }
   if (isRole(filter.role)) where.role = filter.role
   const q = filter.q?.trim()
   if (q) {
@@ -205,7 +209,7 @@ export async function loadStaff(filter: StaffFilter, paging: { skip: number; lim
   const [docs, total, leads] = await Promise.all([
     User.find(where).sort({ active: -1, role: 1, name: 1 }).skip(paging.skip).limit(paging.limit).lean(),
     User.countDocuments(where),
-    User.find({ role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ name: 1 }).lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ name: 1 }).lean(),
   ])
   const rows: StaffRow[] = docs.map((u) => ({
     id: String(u._id),
@@ -226,14 +230,16 @@ export async function loadStaff(filter: StaffFilter, paging: { skip: number; lim
   }
 }
 
-export async function countStaff(): Promise<number> {
+export async function countStaff(ctx: AuthContext): Promise<number> {
   await connectDb()
-  return User.countDocuments({ active: true })
+  return User.countDocuments({ tenantId: ctx.tenantId, active: true })
 }
 
-export async function loadAllowedSenders(): Promise<string[]> {
+export async function loadAllowedSenders(ctx: AuthContext): Promise<string[]> {
   await connectDb()
-  const state = await IngestState.findOne({ _id: GMAIL_STATE_ID }).select('allowedSenders').lean()
+  const state = await IngestState.findOne({ _id: await tenantKey(ctx.tenantId, GMAIL_STATE_ID), tenantId: ctx.tenantId })
+    .select('allowedSenders')
+    .lean()
   return [...(state?.allowedSenders ?? [])].sort()
 }
 
@@ -263,14 +269,20 @@ export type IntegrationStatus = {
   storage: { configured: boolean; bucket: string | null }
 }
 
-export async function loadIntegrations(now = new Date()): Promise<IntegrationStatus> {
+export async function loadIntegrations(ctx: AuthContext, now = new Date()): Promise<IntegrationStatus> {
   await connectDb()
+  // The caller's own mailbox state. Only the primary tenant has one today (the
+  // Gmail mailbox is configured by env); any other tenant reads none.
   const [state, staleness, feed] = await Promise.all([
-    IngestState.findOne({ _id: GMAIL_STATE_ID }).lean(),
-    checkIngestStaleness(now),
+    IngestState.findOne({ _id: await tenantKey(ctx.tenantId, GMAIL_STATE_ID), tenantId: ctx.tenantId }).lean(),
+    checkIngestStaleness(now, ctx.tenantId),
     trainFeedHealth(),
   ])
-  const gmailOn = isGmailConfigured()
+  // The env-configured mailbox and WhatsApp number belong to the primary
+  // tenant; any other company has neither connected yet.
+  const primary = (await getPrimaryTenantId()).equals(ctx.tenantId)
+  const gmailOn = primary && isGmailConfigured()
+  const waSimulated = !primary || isWhatsAppSimulated()
   return {
     gmail: {
       configured: gmailOn,
@@ -283,9 +295,9 @@ export async function loadIntegrations(now = new Date()): Promise<IntegrationSta
       staleMessage: staleness.message,
     },
     whatsapp: {
-      provider: isWhatsAppSimulated() ? 'simulator' : 'msg91',
-      simulated: isWhatsAppSimulated(),
-      numberMasked: env.MSG91_WHATSAPP_NUMBER ? maskDigits(env.MSG91_WHATSAPP_NUMBER) : null,
+      provider: waSimulated ? 'simulator' : 'msg91',
+      simulated: waSimulated,
+      numberMasked: primary && env.MSG91_WHATSAPP_NUMBER ? maskDigits(env.MSG91_WHATSAPP_NUMBER) : null,
       openerTemplate: env.MSG91_OPENER_TEMPLATE || null,
     },
     train: {

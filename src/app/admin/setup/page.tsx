@@ -3,7 +3,7 @@ import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { GMAIL_STATE_ID, IngestState, Listing, Restaurant, Station, User } from '@/lib/models'
 import { countOrders } from '@/lib/repo/orderRepo'
-import { getAuthContext } from '@/lib/session'
+import { naturalKey, tenantKey } from '@/lib/tenancy/primary'
 import {
   Card, CardHeader, Dash, PageHeader, Pagination, Tabs, PAGE_SIZE_OPTIONS, thClass, focusRing,
 } from '@/components/ui'
@@ -87,7 +87,7 @@ function roleCell(
 }
 
 export default async function SetupPage(props: PageProps<'/admin/setup'>) {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
   const tab = one(sp.tab)
@@ -105,30 +105,29 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
   await connectDb()
   const [outlets, users, userCount, editingUser, leads] = await Promise.all([
     // Unpaginated: also feeds the outlet-name lookup and the staff form's outlet picker.
-    Restaurant.find({}).sort({ active: -1, name: 1 }).lean(),
+    Restaurant.find({ tenantId: ctx.tenantId }).sort({ active: -1, name: 1 }).lean(),
     staff
-      ? User.find({}).sort({ active: -1, role: 1, name: 1 }).skip((page - 1) * pageSize).limit(pageSize).lean()
+      ? User.find({ tenantId: ctx.tenantId }).sort({ active: -1, role: 1, name: 1 }).skip((page - 1) * pageSize).limit(pageSize).lean()
       : [],
-    staff ? User.countDocuments({}) : 0,
+    staff ? User.countDocuments({ tenantId: ctx.tenantId }) : 0,
     // Fetched separately so an edit target still resolves even off the current page.
-    editId && staff ? User.findById(editId).lean() : undefined,
+    editId && staff ? User.findOne({ _id: editId, tenantId: ctx.tenantId }).lean() : undefined,
     // Every team leader, for the "Team leader" picker and the team shown on a rider's row.
-    staff ? User.find({ role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ name: 1 }).lean() : [],
+    staff ? User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ name: 1 }).lean() : [],
   ])
   const leadName = new Map(leads.map((l) => [String(l._id), l.name]))
 
   // Aggregator storefronts, the orders behind each, and each station's
   // fallback kitchen. Only fetched for the tab that shows them.
-  const ctx = await getAuthContext()
   // Loaded for both tabs: Aggregators edits them, and Outlets needs them to
   // know which rows are storefronts and what feeds each kitchen.
-  const listings = staff ? [] : await Listing.find({}).sort({ stationCode: 1, name: 1 }).lean()
-  const stations = staff ? [] : await Station.find({}).lean()
+  const listings = staff ? [] : await Listing.find({ tenantId: ctx.tenantId }).sort({ stationCode: 1, name: 1 }).lean()
+  const stations = staff ? [] : await Station.find({ tenantId: ctx.tenantId }).lean()
   const allowedSenders = aggregators
-    ? ((await IngestState.findOne({ _id: GMAIL_STATE_ID }).select('allowedSenders').lean())?.allowedSenders ?? [])
+    ? ((await IngestState.findOne({ _id: await tenantKey(ctx.tenantId, GMAIL_STATE_ID), tenantId: ctx.tenantId }).select('allowedSenders').lean())?.allowedSenders ?? [])
     : []
   const listingOrderCounts = new Map<string, number>()
-  if (aggregators && ctx) {
+  if (aggregators) {
     for (const l of listings) {
       // What this storefront actually brought in: its aggregator's orders at
       // the outlet it points to. Approximate by design — the order itself
@@ -142,7 +141,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     }
   }
   const defaultByStation = new Map(
-    stations.map((st) => [String(st._id), st.defaultRestaurantId ? String(st.defaultRestaurantId) : null]),
+    stations.map((st) => [naturalKey(String(st._id)), st.defaultRestaurantId ? String(st.defaultRestaurantId) : null]),
   )
 
   const outletById = new Map(outlets.map((o) => [String(o._id), o]))
@@ -172,7 +171,7 @@ export default async function SetupPage(props: PageProps<'/admin/setup'>) {
     if (!l.active) continue
     const target = l.restaurantId
       ? String(l.restaurantId)
-      : (stations.find((st) => String(st._id) === l.stationCode)?.defaultRestaurantId ?? null)
+      : (stations.find((st) => naturalKey(String(st._id)) === l.stationCode)?.defaultRestaurantId ?? null)
     if (!target) continue
     const key = String(target)
     const list = feedsByOutlet.get(key) ?? []

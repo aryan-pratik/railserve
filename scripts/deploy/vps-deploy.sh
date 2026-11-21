@@ -31,8 +31,10 @@ swap() {
   $COMPOSE up -d --no-build app
 }
 
+# Up to 3 minutes: a new image may run a boot-time migration before it
+# answers (src/instrumentation.ts), e.g. stamping tenantId on ~12k print jobs.
 healthy() {
-  for _ in $(seq 1 45); do
+  for _ in $(seq 1 90); do
     code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/login || true)"
     [ "$code" = "200" ] && return 0
     sleep 2

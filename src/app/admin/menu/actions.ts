@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { MenuItem } from '@/lib/models'
+import { tenantKey } from '@/lib/tenancy/primary'
 import { confirmMenuItems, removeMenuItem, restoreMenuItem, setMenuItemDiet } from '@/lib/repo/menuRepo'
 import { isDiet, isMenuDish, menuKey, menuLookupKey } from '@/lib/diet'
 import { ORDER_SOURCES, type OrderSource } from '@/lib/orderEnums'
@@ -94,19 +95,21 @@ export async function addMenuItem(_prev: MenuState, formData: FormData): Promise
   if (!isMenuDish({ name })) return { error: 'A bulk thali is tagged on its order, not here.' }
 
   await connectDb()
+  const id = await tenantKey(ctx.tenantId, menuLookupKey(source, name))
   try {
     // The _id is the (aggregator, dish) pair, so a dish that is already
     // there is refused by the database itself, not by a check that another
     // request could slip past.
     await MenuItem.create({
-      _id: menuLookupKey(source, name),
+      _id: id,
+      tenantId: ctx.tenantId,
       source: source as OrderSource, key, name, diet, reviewed: true, reviewedBy: ctx.userId, reviewedAt: new Date(),
     })
   } catch (err) {
     if ((err as { code?: number }).code !== 11000) throw err
     // The row is there. If it is one that was deleted, adding it again puts
     // it back with the tag picked now.
-    if (!(await restoreMenuItem(ctx, menuLookupKey(source, name), name, diet))) {
+    if (!(await restoreMenuItem(ctx, id, name, diet))) {
       return { error: 'That item is already on this aggregator\'s menu.' }
     }
   }

@@ -3,6 +3,7 @@ import { connectDb } from '@/lib/db'
 import { PrintJob, Station } from '@/lib/models'
 import { expireStalePrintJobs, reclaimAbandonedPrintJobs, waitForPrintJob } from '@/lib/printer/queue'
 import type { PrintJobDoc } from '@/lib/models/PrintJob'
+import { naturalKey } from '@/lib/tenancy/primary'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,20 +42,27 @@ export async function GET(req: Request) {
   const max = clamp(Math.floor(Number(params.get('max'))), 1, MAX_JOBS)
 
   await connectDb()
-  const station = await Station.findOne({ printAgentToken: token, active: true }).select('_id')
+  // The token is what identifies the tenant (it is unique across the
+  // platform), so this one lookup runs across tenants; everything after it is
+  // confined to the station's own tenant.
+  const station = await Station.findOne({ printAgentToken: token, active: true })
+    .setOptions({ allTenants: true })
+    .select('_id tenantId')
   if (!station) return NextResponse.json({ ok: false, error: 'Invalid agent token' }, { status: 401 })
-  const stationCode = String(station._id)
+  const tenantId = station.tenantId
+  // Jobs carry the natural station code, not the tenant-keyed _id.
+  const stationCode = naturalKey(String(station._id))
 
   // The agent calls this every few seconds forever, so liveness is free to
   // collect here and is the only thing that can tell an idle kitchen apart
   // from a dead agent.
-  await Station.updateOne({ _id: station._id }, { $set: { agentLastSeenAt: new Date() } })
+  await Station.updateOne({ _id: station._id, tenantId }, { $set: { agentLastSeenAt: new Date() } })
 
   // Before the expiry, so a ticket lost to a dead connection is still printed
   // if the kitchen is still waiting for it, and retired with the rest if not.
-  await reclaimAbandonedPrintJobs(stationCode)
+  await reclaimAbandonedPrintJobs(tenantId, stationCode)
   // An agent that starts after a gap must not print the backlog it missed.
-  const cutoff = await expireStalePrintJobs([stationCode])
+  const cutoff = await expireStalePrintJobs(tenantId, [stationCode])
 
   const claim = async (): Promise<PrintJobDoc[]> => {
     const jobs: PrintJobDoc[] = []
@@ -63,7 +71,7 @@ export async function GET(req: Request) {
       // receive the job, and a claimed job nobody prints is a lost ticket.
       if (req.signal.aborted) break
       const job = await PrintJob.findOneAndUpdate(
-        { stationCode, status: 'pending', createdAt: { $gte: cutoff } },
+        { tenantId, stationCode, status: 'pending', createdAt: { $gte: cutoff } },
         { $set: { status: 'claimed', claimedAt: new Date() } },
         // _id breaks a same-millisecond tie: a train's tickets are queued back
         // to back as one job each, and must still print in order.
@@ -78,7 +86,7 @@ export async function GET(req: Request) {
   const deadline = Date.now() + waitMs
   let jobs = await claim()
   while (jobs.length === 0 && !req.signal.aborted && Date.now() < deadline) {
-    await waitForPrintJob(stationCode, Math.min(RECHECK_MS, deadline - Date.now()), req.signal)
+    await waitForPrintJob(tenantId, stationCode, Math.min(RECHECK_MS, deadline - Date.now()), req.signal)
     jobs = await claim()
   }
 

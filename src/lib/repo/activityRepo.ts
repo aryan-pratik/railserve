@@ -152,8 +152,8 @@ function kindMatch(kind: ActivityKind): Record<string, unknown> | null {
 /** Order ids, roles and panels, as plain ids for a $match. */
 type Roster = Map<string, { name: string; role: string }>
 
-async function roster(): Promise<Roster> {
-  const users = await User.find().select('name role').lean()
+async function roster(ctx: AuthContext): Promise<Roster> {
+  const users = await User.find({ tenantId: ctx.tenantId }).select('name role').lean()
   return new Map(users.map((u) => [String(u._id), { name: u.name, role: u.role }]))
 }
 
@@ -193,7 +193,7 @@ export async function activityFeed(ctx: AuthContext, q: ActivityQuery): Promise<
     q.actorId && mongoose.isValidObjectId(q.actorId) ? new mongoose.Types.ObjectId(q.actorId) : null
 
   await connectDb()
-  const people = await roster()
+  const people = await roster(ctx)
 
   // ── Which orders to open. Indexed: events.createdAt, events.userId and
   // delivery.agentIds all are (scripts/indexes.ts).

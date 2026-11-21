@@ -1,5 +1,6 @@
 import { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * Singleton row tracking Gmail ingestion health.
@@ -11,6 +12,8 @@ import { registerModel } from './registerModel'
  */
 const IngestStateSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     _id: { type: String, required: true },
     historyId: { type: String, default: null },
     watchExpiresAt: { type: Date, default: null },
@@ -26,6 +29,9 @@ const IngestStateSchema = new Schema(
 )
 
 export type IngestStateDoc = InferSchemaType<typeof IngestStateSchema> & { _id: string }
+
+// Every IngestState belongs to one tenant; the guard refuses unscoped queries.
+IngestStateSchema.plugin(tenantScoped)
 
 export const IngestState: Model<IngestStateDoc> =
   registerModel<IngestStateDoc>('IngestState', IngestStateSchema)

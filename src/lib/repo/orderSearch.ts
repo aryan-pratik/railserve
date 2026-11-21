@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import type { AuthContext } from '@/lib/authContext'
 import { Restaurant, User } from '@/lib/models'
 import { ORDER_SOURCES, sourceLabel } from '@/lib/orderEnums'
 
@@ -77,7 +78,7 @@ function seatParts(term: string): { coach: string; berth: string } | null {
 }
 
 /** Everything one search word can match on an order, as `$or` alternatives. */
-async function termAlternatives(term: string): Promise<Record<string, unknown>[]> {
+async function termAlternatives(ctx: AuthContext, term: string): Promise<Record<string, unknown>[]> {
   const rx = { $regex: escapeRegExp(term), $options: 'i' }
   const or: Record<string, unknown>[] = ORDER_SEARCH_FIELDS.map((f) => ({ [f]: rx }))
 
@@ -104,8 +105,11 @@ async function termAlternatives(term: string): Promise<Record<string, unknown>[]
   if (sources.length) or.push({ source: { $in: sources } })
 
   const [outlets, riders] = await Promise.all([
-    Restaurant.find({ name: rx }).select('_id').lean(),
-    User.find({ role: 'DELIVERY_AGENT', name: rx }).select('_id').lean(),
+    // The caller's own tenant only: a name typed here must not turn up
+    // another company's outlet or rider ids, even inside a clause the order
+    // scope would then filter out.
+    Restaurant.find({ tenantId: ctx.tenantId, name: rx }).select('_id').lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', name: rx }).select('_id').lean(),
   ])
   if (outlets.length) or.push({ restaurantId: { $in: outlets.map((o) => o._id) } })
   if (riders.length) or.push({ 'delivery.agentIds': { $in: riders.map((r) => r._id) } })
@@ -125,10 +129,10 @@ async function termAlternatives(term: string): Promise<Record<string, unknown>[]
  * Those are looked up first and turned into `$in` lists, so the result is
  * still one plain filter the caller can count and page exactly as it lists.
  */
-export async function orderSearchClause(raw: string): Promise<Record<string, unknown> | null> {
+export async function orderSearchClause(ctx: AuthContext, raw: string): Promise<Record<string, unknown> | null> {
   const terms = searchTerms(raw)
   if (terms.length === 0) return null
-  const clauses = await Promise.all(terms.map(async (t) => ({ $or: await termAlternatives(t) })))
+  const clauses = await Promise.all(terms.map(async (t) => ({ $or: await termAlternatives(ctx, t) })))
   return clauses.length === 1 ? clauses[0] : { $and: clauses }
 }
 

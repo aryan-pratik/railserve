@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * One point on a rider's recent path. Stripped to the two numbers and a time:
@@ -38,6 +39,8 @@ const TrailPointSchema = new Schema(
  */
 const RiderLocationSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
 
     // The most recent accepted fix. Denormalised out of `trail` rather than
@@ -66,6 +69,9 @@ const RiderLocationSchema = new Schema(
 export type RiderLocationDoc = InferSchemaType<typeof RiderLocationSchema> & {
   _id: mongoose.Types.ObjectId
 }
+
+// Every RiderLocation belongs to one tenant; the guard refuses unscoped queries.
+RiderLocationSchema.plugin(tenantScoped)
 
 export const RiderLocation: Model<RiderLocationDoc> =
   registerModel<RiderLocationDoc>('RiderLocation', RiderLocationSchema)

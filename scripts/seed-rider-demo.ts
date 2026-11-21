@@ -29,6 +29,7 @@ import { assignAgents, transitionOrder } from '../src/lib/repo/transitionOrder'
 import { ManualOrderInput } from '../src/lib/validation/order'
 import { todayIST, utcToIstLocal } from '../src/lib/format'
 import type { AuthContext } from '../src/lib/authContext'
+import { scriptTenant } from './scriptTenant'
 
 const PASSWORD = 'rider@123'
 
@@ -38,10 +39,11 @@ const inMinutes = (n: number) => utcToIstLocal(new Date(Date.now() + n * 60_000)
 async function main() {
   assertSeedTarget()
   await connectDb()
+  const T = await scriptTenant()
   const today = todayIST()
 
   const outlet = (await Restaurant.findOneAndUpdate(
-    { name: 'HOTEL GANGA GALAXY' },
+    { tenantId: T, name: 'HOTEL GANGA GALAXY' },
     {
       $set: {
         name: 'HOTEL GANGA GALAXY',
@@ -63,24 +65,24 @@ async function main() {
   ]
   for (const u of staff) {
     await User.findOneAndUpdate(
-      { phone: u.phone },
+      { tenantId: T, phone: u.phone },
       { $set: { ...u, passwordHash, restaurantIds: [outlet._id] }, $setOnInsert: { active: true } },
       { upsert: true, returnDocument: 'after' },
     )
     console.log(`user   : ${u.phone}  ${u.role.padEnd(15)} ${u.name}`)
   }
 
-  const admin = await User.findOne({ role: 'ADMIN', active: true })
+  const admin = await User.findOne({ tenantId: T, role: 'ADMIN', active: true })
   if (!admin) throw new Error('No admin found — create one first (npm run reset:admin -- --yes)')
-  const adminCtx: AuthContext = { userId: admin._id, role: 'ADMIN', restaurantIds: [] }
+  const adminCtx: AuthContext = { tenantId: T, userId: admin._id, role: 'ADMIN', restaurantIds: [] }
 
-  const manager = (await User.findOne({ phone: '9000000002' }))!
-  const rider = (await User.findOne({ phone: '9000000004' }))!
+  const manager = (await User.findOne({ tenantId: T, phone: '9000000002' }))!
+  const rider = (await User.findOne({ tenantId: T, phone: '9000000004' }))!
   const managerCtx: AuthContext = {
-    userId: manager._id, role: 'STORE_MANAGER', restaurantIds: [outlet._id],
+    tenantId: T, userId: manager._id, role: 'STORE_MANAGER', restaurantIds: [outlet._id],
   }
   const riderCtx: AuthContext = {
-    userId: rider._id, role: 'DELIVERY_AGENT', restaurantIds: [outlet._id],
+    tenantId: T, userId: rider._id, role: 'DELIVERY_AGENT', restaurantIds: [outlet._id],
   }
 
   // Several trains so grouping is visible and the board is worth scrolling.
@@ -143,7 +145,7 @@ async function main() {
 
   // Clear this outlet's board for today so the seed is repeatable. Scoped to
   // the demo outlet and the current service date — it cannot touch real data.
-  const removed = await Order.deleteMany({ restaurantId: outlet._id, serviceDate: today })
+  const removed = await Order.deleteMany({ tenantId: T, restaurantId: outlet._id, serviceDate: today })
   if (removed.deletedCount) console.log(`cleared: ${removed.deletedCount} previous demo order(s)`)
 
   const created: { id: string; order: (typeof orders)[number] }[] = []

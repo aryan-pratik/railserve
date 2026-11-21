@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 export const WA_DIRECTIONS = ['IN', 'OUT'] as const
 export type WaDirection = (typeof WA_DIRECTIONS)[number]
@@ -27,6 +28,8 @@ export type WaStatus = (typeof WA_STATUSES)[number]
  */
 const WaMessageSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     conversationId: { type: Schema.Types.ObjectId, ref: 'WaConversation', required: true },
     direction: { type: String, required: true, enum: WA_DIRECTIONS },
     kind: { type: String, required: true, enum: WA_KINDS, default: 'TEXT' },
@@ -58,6 +61,9 @@ const WaMessageSchema = new Schema(
 )
 
 export type WaMessageDoc = InferSchemaType<typeof WaMessageSchema> & { _id: mongoose.Types.ObjectId }
+
+// Every WaMessage belongs to one tenant; the guard refuses unscoped queries.
+WaMessageSchema.plugin(tenantScoped)
 
 export const WaMessage: Model<WaMessageDoc> =
   registerModel<WaMessageDoc>('WaMessage', WaMessageSchema)

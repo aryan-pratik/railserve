@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, ArrowUpRight, Phone } from 'lucide-react'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { loadOrderWorkspace, type OrderWorkspace } from '@/lib/v2/orderWorkspace'
 import { allowedNextStatuses, canFlagRatingOrder, canRequestCancellation, isTerminal, missingQuoteFields, type OrderStatus } from '@/lib/orderStatus'
 import { formatIST, formatRupees, formatServiceDate, formatTimeIST, paiseToRupees, utcToIstLocal } from '@/lib/format'
@@ -43,7 +43,7 @@ export async function generateMetadata(props: PageProps<'/v2/orders/[id]'>) {
  * and every button posts to the action that role already had in v1.
  */
 export default async function V2OrderWorkspace(props: PageProps<'/v2/orders/[id]'>) {
-  const ctx = await requireRole('ADMIN', 'STORE_MANAGER', 'TELECALLER')
+  const ctx = await requirePermission('orders.view')
   const role = ctx.role as Role
   const { id } = await props.params
   const sp = await props.searchParams

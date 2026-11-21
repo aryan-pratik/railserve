@@ -30,7 +30,7 @@ export async function createManualOrder(ctx: AuthContext, input: ManualOrderInpu
   // Plan §2: validate restaurantId exists in the service layer. Mongo will not
   // do it for us, and an order pointing at nothing is invisible to every
   // dashboard — it simply never appears, with no error anywhere.
-  const restaurant = await Restaurant.findOne({ _id: input.restaurantId, active: true })
+  const restaurant = await Restaurant.findOne({ _id: input.restaurantId, tenantId: ctx.tenantId, active: true })
     .select('_id stationCode')
     .lean()
   if (!restaurant) {
@@ -76,9 +76,10 @@ export async function createManualOrder(ctx: AuthContext, input: ManualOrderInpu
         notes: i.notes || null,
       }))
 
-  const externalOrderId = await nextManualOrderId(input.serviceDate)
+  const externalOrderId = await nextManualOrderId(ctx.tenantId, input.serviceDate)
 
   const doc = await insertOrder({
+    tenantId: ctx.tenantId,
     source: 'MANUAL',
     orderType: input.orderType,
     externalOrderId,

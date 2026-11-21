@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { z } from 'zod'
 import { connectDb } from '@/lib/db'
 import { PrintJob, Station } from '@/lib/models'
+import { naturalKey } from '@/lib/tenancy/primary'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,8 +24,13 @@ export async function POST(req: Request) {
   }
 
   await connectDb()
-  const station = await Station.findOne({ printAgentToken: token, active: true }).select('_id')
+  // The token identifies the tenant (it is unique across the platform), so
+  // this lookup runs across tenants; the writes below use the station's own.
+  const station = await Station.findOne({ printAgentToken: token, active: true })
+    .setOptions({ allTenants: true })
+    .select('_id tenantId')
   if (!station) return NextResponse.json({ ok: false, error: 'Invalid agent token' }, { status: 401 })
+  const tenantId = station.tenantId
 
   const { jobId, status, error } = parsed.data
   // A malformed jobId would make Mongoose throw a CastError, which surfaces
@@ -34,7 +40,8 @@ export async function POST(req: Request) {
   }
 
   const res = await PrintJob.updateOne(
-    { _id: jobId, stationCode: station._id, status: 'claimed' },
+    // Jobs carry the natural station code, not the tenant-keyed _id.
+    { _id: jobId, tenantId, stationCode: naturalKey(String(station._id)), status: 'claimed' },
     { $set: { status, doneAt: new Date(), error: error ?? null } },
   )
 
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
   }
 
   if (status === 'done') {
-    await Station.updateOne({ _id: station._id }, { $set: { agentLastPrintedAt: new Date() } })
+    await Station.updateOne({ _id: station._id, tenantId }, { $set: { agentLastPrintedAt: new Date() } })
   }
   return NextResponse.json({ ok: true })
 }

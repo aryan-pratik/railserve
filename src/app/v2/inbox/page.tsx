@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { requireRole } from '@/lib/session'
+import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
@@ -14,7 +14,7 @@ import { InboxPasteCard } from '@/components/v2/InboxPasteCard'
 export const metadata = { title: 'Inbox · RailServe' }
 
 export default async function V2InboxPage(props: PageProps<'/v2/inbox'>) {
-  await requireRole('ADMIN')
+  const ctx = await requirePermission('inbox.review')
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? null
   const str = (k: string) => (one(sp[k]) ?? '').trim()
@@ -31,10 +31,10 @@ export default async function V2InboxPage(props: PageProps<'/v2/inbox'>) {
 
   await connectDb()
   const [data, ingest] = await Promise.all([
-    loadInboxPage(filter, { skip, pageSize }),
+    loadInboxPage(ctx, filter, { skip, pageSize }),
     // A lapsed Gmail watch stops ingestion outright and raises no error
     // anywhere; this page is where ingestion health belongs.
-    checkIngestStaleness(),
+    checkIngestStaleness(new Date(), ctx.tenantId),
   ])
 
   // The queue's "all matching" query reads from/to as readInboxFilter does;

@@ -9,10 +9,10 @@ import { createOrderAction, pasteOrderAction } from '@/app/actions/orders'
 export const metadata = { title: 'New order · RailServe' }
 
 export default async function AdminNewOrderPage() {
-  await requireRole('ADMIN')
+  const ctx = await requireRole('ADMIN')
 
   await connectDb()
-  const outlets = await Restaurant.find({ active: true })
+  const outlets = await Restaurant.find({ tenantId: ctx.tenantId, active: true })
     .select('name stationCode')
     .sort({ name: 1 })
     .lean()

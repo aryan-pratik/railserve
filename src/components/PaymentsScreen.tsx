@@ -48,8 +48,8 @@ export async function PaymentsScreen({
   const [payments, totals, balance] = await Promise.all([
     // Paged, not capped at 500. The totals below count the whole range and
     // double as the pager's total, so paging costs no extra query.
-    findPayments(query, pageSize, skip),
-    paymentTotals(query),
+    findPayments(ctx, query, pageSize, skip),
+    paymentTotals(ctx, query),
     // Never even fetched for a store manager: the repository refuses the call.
     privileged ? latestBalance(ctx) : Promise.resolve(null),
   ])

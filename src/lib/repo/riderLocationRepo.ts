@@ -47,6 +47,7 @@ import { EXCLUDED_STATUS } from '../analytics'
  * Returns what was actually stored, so the route can say so honestly.
  */
 export async function recordFixes(
+  tenantId: mongoose.Types.ObjectId,
   userId: mongoose.Types.ObjectId,
   fixes: LocationFix[],
   now: Date = new Date(),
@@ -64,7 +65,7 @@ export async function recordFixes(
   // rider has never reported; the second advances it only on a strictly newer
   // stamp, which Mongo evaluates atomically against the stored value.
   await RiderLocation.updateOne(
-    { userId },
+    { userId, tenantId },
     {
       $setOnInsert: {
         userId,
@@ -82,7 +83,7 @@ export async function recordFixes(
   )
 
   await RiderLocation.updateOne(
-    { userId, recordedAt: { $lt: newest.recordedAt } },
+    { userId, tenantId, recordedAt: { $lt: newest.recordedAt } },
     {
       $set: {
         lat: newest.lat,
@@ -313,7 +314,7 @@ export async function riderBoard(
 
   await connectDb()
   const [active, booked, day] = await Promise.all([
-    User.find({ role: 'DELIVERY_AGENT', active: true })
+    User.find({ role: 'DELIVERY_AGENT', active: true, tenantId: ctx.tenantId })
       .select('name phone isTeamLead teamLeadId')
       .sort({ name: 1 })
       .lean(),
@@ -327,7 +328,7 @@ export async function riderBoard(
   const listed = new Set(active.map((r) => String(r._id)))
   const missing = [...booked.keys()].filter((id) => !listed.has(id) && mongoose.isValidObjectId(id))
   const inactive = missing.length
-    ? await User.find({ _id: { $in: missing }, role: 'DELIVERY_AGENT' })
+    ? await User.find({ _id: { $in: missing }, role: 'DELIVERY_AGENT', tenantId: ctx.tenantId })
         .select('name phone isTeamLead teamLeadId')
         .lean()
     : []
@@ -344,7 +345,7 @@ export async function riderBoard(
   const range = opsDayRange(serviceDate) ?? opsDayRange(opsDayOf(now))!
   const isToday = serviceDate === opsDayOf(now)
   const [locations, days, nows, dues, earlierDues, total] = await Promise.all([
-    RiderLocation.find({ userId: { $in: ids } }).lean(),
+    RiderLocation.find({ userId: { $in: ids }, tenantId: ctx.tenantId }).lean(),
     riderDays(ctx, ids, range),
     // What is in a rider's hands is a fact about now, not about a past day.
     isToday ? ridersNow(ctx, ids, range.from) : Promise.resolve(new Map<string, RiderNow>()),
@@ -456,7 +457,7 @@ const NO_DAY: DayTotals = {
  * date, rating decoys aside.
  */
 function dayMatch(ctx: AuthContext, serviceDate: string) {
-  return scoped(ctx, { serviceDate, status: { $ne: EXCLUDED_STATUS } })
+  return scoped(ctx, { tenantId: ctx.tenantId, serviceDate, status: { $ne: EXCLUDED_STATUS } })
 }
 
 const IS_COD = { $eq: ['$paymentMode', 'COD'] }
@@ -498,7 +499,7 @@ async function bookedTotals(ctx: AuthContext, serviceDate: string): Promise<DayT
  */
 async function bookedByRider(ctx: AuthContext, serviceDate: string): Promise<Map<string, number>> {
   const rows = await Order.aggregate<{ _id: mongoose.Types.ObjectId; orders: number }>([
-    { $match: { $and: [dayMatch(ctx, serviceDate), { 'delivery.agentIds.0': { $exists: true } }] } },
+    { $match: { tenantId: ctx.tenantId, $and: [dayMatch(ctx, serviceDate), { 'delivery.agentIds.0': { $exists: true } }] } },
     { $unwind: '$delivery.agentIds' },
     { $group: { _id: '$delivery.agentIds', orders: { $sum: 1 } } },
   ])

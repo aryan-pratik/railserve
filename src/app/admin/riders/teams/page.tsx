@@ -28,8 +28,8 @@ export default async function TeamsPage(props: PageProps<'/admin/riders/teams'>)
 
   await connectDb()
   const [leads, riders] = await Promise.all([
-    User.find({ role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ active: -1, name: 1 }).lean(),
-    User.find({ role: 'DELIVERY_AGENT', isTeamLead: { $ne: true }, active: true })
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: true }).select('name active').sort({ active: -1, name: 1 }).lean(),
+    User.find({ tenantId: ctx.tenantId, role: 'DELIVERY_AGENT', isTeamLead: { $ne: true }, active: true })
       .select('name teamLeadId')
       .sort({ name: 1 })
       .lean(),

@@ -1,5 +1,6 @@
 import { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * Sequence source for human-readable manual order IDs (MAN-20260827-001).
@@ -11,6 +12,8 @@ import { registerModel } from './registerModel'
  */
 const CounterSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     _id: { type: String, required: true },
     seq: { type: Number, required: true, default: 0 },
   },
@@ -18,6 +21,9 @@ const CounterSchema = new Schema(
 )
 
 export type CounterDoc = InferSchemaType<typeof CounterSchema>
+
+// Every Counter belongs to one tenant; the guard refuses unscoped queries.
+CounterSchema.plugin(tenantScoped)
 
 export const Counter: Model<CounterDoc> =
   registerModel<CounterDoc>('Counter', CounterSchema)

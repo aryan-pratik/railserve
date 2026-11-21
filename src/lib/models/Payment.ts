@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose'
 import { registerModel } from './registerModel'
+import { tenantScoped } from '../tenancy/plugin'
 
 /**
  * A money-in alert from the bank, turned into a row.
@@ -17,6 +18,8 @@ import { registerModel } from './registerModel'
  */
 const PaymentSchema = new Schema(
   {
+    // The tenant this document belongs to (src/lib/tenancy).
+    tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     /** Which bank/app sent the alert. One value today; the parser registry takes more. */
     provider: { type: String, required: true, trim: true, default: 'SLICE' },
 
@@ -71,6 +74,9 @@ const PaymentSchema = new Schema(
 export type PaymentDoc = InferSchemaType<typeof PaymentSchema> & {
   _id: mongoose.Types.ObjectId
 }
+
+// Every Payment belongs to one tenant; the guard refuses unscoped queries.
+PaymentSchema.plugin(tenantScoped)
 
 export const Payment: Model<PaymentDoc> =
   registerModel<PaymentDoc>('Payment', PaymentSchema)

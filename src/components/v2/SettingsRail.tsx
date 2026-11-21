@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Building2, MapPin, Store, Route, Users, Plug, TrainFront, type LucideIcon } from 'lucide-react'
+import { Building2, MapPin, Store, Route, Users, ShieldCheck, Plug, TrainFront, type LucideIcon } from 'lucide-react'
 import { Card, cx, v2Focus } from './ui'
 import { SettingsRailScroll } from './SettingsRailScroll'
 
@@ -9,11 +9,12 @@ import { SettingsRailScroll } from './SettingsRailScroll'
  */
 
 export const SETTINGS_TABS = [
-  { key: 'company', label: 'Company', icon: Building2, note: 'Who you are and what arrives here.' },
+  { key: 'company', label: 'Company', icon: Building2, note: 'Your company details, plan and what you are connected to.' },
   { key: 'stations', label: 'Stations', icon: MapPin, note: 'Each station you serve: its default kitchen and its printer.' },
   { key: 'outlets', label: 'Outlets', icon: Store, note: 'Your own kitchens, one per station per brand.' },
   { key: 'routing', label: 'Routing', icon: Route, note: 'Which mail is read, and which kitchen cooks for each storefront name an aggregator uses.' },
   { key: 'staff', label: 'Staff', icon: Users, note: 'Everyone who signs in: managers, riders, telecallers and admins.' },
+  { key: 'roles', label: 'Roles & access', icon: ShieldCheck, note: 'What store managers and telecallers are allowed to do.' },
   { key: 'integrations', label: 'Integrations', icon: Plug, note: 'The services this installation talks to, and whether each is healthy.' },
   { key: 'trains', label: 'Trains', icon: TrainFront, note: 'Live arrival, delay and platform for any train at any station.' },
 ] as const

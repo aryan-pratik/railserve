@@ -27,9 +27,10 @@ export type DeliveredSpan = { from?: Date; to?: Date }
  * fall back to the first rider on the order, so a bulk handover to three
  * riders still counts its cash once.
  */
-function pendingFilter(riderIds: mongoose.Types.ObjectId[], span: DeliveredSpan = {}) {
+function pendingFilter(tenantId: mongoose.Types.ObjectId, riderIds: mongoose.Types.ObjectId[], span: DeliveredSpan = {}) {
   const from = span.from && span.from > COD_WALLET_FROM ? span.from : COD_WALLET_FROM
   return {
+    tenantId,
     status: 'DELIVERED' as const,
     paymentMode: 'COD' as const,
     'delivery.codSettledAt': null,
@@ -71,7 +72,7 @@ export async function pendingCashByRider(
   const out = new Map<string, PendingCash>()
   if (ids.length === 0) return out
 
-  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids, span)))
+  const orders = await Order.find(outletScoped(ctx, pendingFilter(ctx.tenantId, ids, span)))
     .select('amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.collectedBy delivery.agentIds')
     .lean()
 
@@ -111,7 +112,7 @@ export async function pendingCashOrders(
 ): Promise<PendingCashOrder[]> {
   const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
   if (ids.length === 0) return []
-  const orders = await Order.find(outletScoped(ctx, pendingFilter(ids)))
+  const orders = await Order.find(outletScoped(ctx, pendingFilter(ctx.tenantId, ids)))
     .select('externalOrderId trainNo contactName amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
     .sort({ 'delivery.deliveredAt': 1 })
     .lean()
@@ -137,6 +138,7 @@ export async function lastSettlementFor(
   riderId: mongoose.Types.ObjectId,
 ): Promise<{ at: string; paise: number; orders: number } | null> {
   const holder = {
+    tenantId: ctx.tenantId,
     $or: [
       { 'delivery.collectedBy': riderId },
       { 'delivery.collectedBy': null, 'delivery.agentIds.0': riderId },
@@ -193,7 +195,7 @@ export async function settleRiderCash(params: {
 
   // Who may receive cash is an admin's decision per person (lib/collections),
   // so it is read off the user as they are now, not off the session's role.
-  const receiver = await User.findById(ctx.userId).select('role isTeamLead canReceiveCash active').lean()
+  const receiver = await User.findOne({ _id: ctx.userId, tenantId: ctx.tenantId }).select('role isTeamLead canReceiveCash active').lean()
   if (!receiver || receiver.active === false || !canReceiveCash({ ...receiver, role: ctx.role })) {
     throw new ForbiddenError('You have not been authorised to receive cash from riders. Ask an admin.')
   }
@@ -202,7 +204,7 @@ export async function settleRiderCash(params: {
   }
   if (ctx.role === 'DELIVERY_AGENT') {
     // A team leader receives from their own team and nobody else.
-    const member = await User.findOne({ _id: riderId, teamLeadId: ctx.userId }).select('_id').lean()
+    const member = await User.findOne({ _id: riderId, teamLeadId: ctx.userId, tenantId: ctx.tenantId }).select('_id').lean()
     if (!member) throw new ForbiddenError('That rider is not on your team')
   }
   const orderIds = [...new Set(params.orderIds)].filter((id) => mongoose.isValidObjectId(id))
@@ -212,7 +214,7 @@ export async function settleRiderCash(params: {
   const settlementId = new mongoose.Types.ObjectId().toString()
   const filter = outletScoped(ctx, {
     _id: { $in: orderIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    ...pendingFilter([rider]),
+    ...pendingFilter(ctx.tenantId, [rider]),
   })
 
   const session = await mongoose.startSession()
@@ -247,7 +249,7 @@ export async function settleRiderCash(params: {
         })
         if (carry >= due) {
           await Order.updateOne(
-            { _id: o._id, 'delivery.codSettledAt': null },
+            { _id: o._id, tenantId: ctx.tenantId, 'delivery.codSettledAt': null },
             {
               $set: { 'delivery.codSettledAt': now, 'delivery.codSettledBy': ctx.userId, 'delivery.codSettlementId': settlementId },
               $push: { events: event('COD_SETTLED', due) },
@@ -258,7 +260,7 @@ export async function settleRiderCash(params: {
           settled += 1
         } else {
           await Order.updateOne(
-            { _id: o._id, 'delivery.codSettledAt': null },
+            { _id: o._id, tenantId: ctx.tenantId, 'delivery.codSettledAt': null },
             { $inc: { 'delivery.codPartPaidPaise': carry }, $push: { events: event('COD_PART_PAID', carry) } },
             { session },
           )
@@ -316,6 +318,7 @@ export async function collectionHistory(
   }>([
     {
       $match: outletScoped(ctx, {
+        tenantId: ctx.tenantId,
         'delivery.codSettledAt': Object.keys(at).length ? at : { $ne: null },
         $or: [
           { 'delivery.collectedBy': { $in: ids } },
@@ -361,10 +364,11 @@ export async function collectionHistory(
 
 /** Names and standing of the people who received these collections. */
 export async function receiversOf(
+  ctx: AuthContext,
   collections: { receivedById: string | null }[],
 ): Promise<Map<string, { name: string; label: string }>> {
   const ids = [...new Set(collections.map((c) => c.receivedById).filter((x): x is string => Boolean(x)))]
   if (ids.length === 0) return new Map()
-  const users = await User.find({ _id: { $in: ids } }).select('name role isTeamLead').lean()
+  const users = await User.find({ _id: { $in: ids }, tenantId: ctx.tenantId }).select('name role isTeamLead').lean()
   return new Map(users.map((u) => [String(u._id), { name: u.name, label: receiverLabel(u) }]))
 }

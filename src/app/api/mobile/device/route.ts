@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return withCors(request, NextResponse.json({ error: 'pushToken required' }, { status: 400 }))
 
   await connectDb()
-  await User.updateOne({ _id: ctx.userId }, { $set: { fcmToken: parsed.data.pushToken } })
+  await User.updateOne({ _id: ctx.userId, tenantId: ctx.tenantId }, { $set: { fcmToken: parsed.data.pushToken } })
 
   return withCors(request, NextResponse.json({ ok: true }))
 }

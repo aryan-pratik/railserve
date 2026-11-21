@@ -43,7 +43,7 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
     listReturns(ctx, { status: 'PENDING', limit: 2, skip: 0 }),
     countPendingReturns(ctx),
     riderBoard(ctx, { now }),
-    checkIngestStaleness(now),
+    checkIngestStaleness(now, ctx.tenantId),
   ])
 
   const orders = board.runs.flatMap((r) => r.orders)
