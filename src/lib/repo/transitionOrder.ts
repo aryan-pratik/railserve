@@ -6,7 +6,13 @@ import {
   isTransitionAllowed,
   missingQuoteFields,
   TRANSITIONS,
+  canFlagRatingOrder,
+  canRecordRefund,
+  REFUND_PAYERS,
+  REFUND_REASONS,
   type OrderStatus,
+  type RefundPayer,
+  type RefundReason,
 } from '../orderStatus'
 import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '../authContext'
 import { scoped } from './orderRepo'
@@ -277,8 +283,11 @@ function deliveredFields(
   const fields: Record<string, unknown> = { 'delivery.collectedBy': holder }
   // The rider charged with the cash is the rider whose delivery it is. An
   // order closed without a pickup would otherwise sit on the record of
-  // everyone it was offered to.
-  if (holder && !current.delivery?.pickedUpBy) fields['delivery.pickedUpBy'] = holder
+  // everyone it was offered to; and when the office names a different rider
+  // as the one who delivered, the delivery (and its "cash collected") must be
+  // theirs too, or the cash would show as collected on one rider and due on
+  // another.
+  if (holder && String(holder) !== String(current.delivery?.pickedUpBy ?? '')) fields['delivery.pickedUpBy'] = holder
   if (amountCollectedPaise === undefined && current.delivery?.amountCollectedPaise == null) {
     fields['delivery.amountCollectedPaise'] =
       current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
@@ -319,6 +328,11 @@ export async function adminOverrideStatus(params: {
 
   if (ctx.role !== 'ADMIN') {
     throw new ForbiddenError('Only an admin may set a custom order status')
+  }
+  // Only the fixed statuses: a typed-in status is how the list once grew to
+  // fifteen. Refunds and rating orders have their own actions now.
+  if (!(ORDER_STATUSES as readonly string[]).includes(to)) {
+    throw new ConflictError('Pick one of the order statuses.')
   }
   if (!mongoose.isValidObjectId(orderId)) {
     throw new NotFoundError('Order not found')
@@ -448,79 +462,96 @@ export async function adminOverrideStatus(params: {
 }
 
 /**
- * A telecaller flagging an order as a decoy run purely to prompt an app-store
- * rating. Like `adminOverrideStatus` this bypasses TRANSITIONS — RATING_ORDER
- * is not a pipeline step reachable from a fixed set of source statuses, see
- * `canFlagRatingOrder` in orderStatus.ts — as well as the rider-naming check
- * and the quote guard. Unlike `adminOverrideStatus` the target is fixed and
- * the role is fixed, so there is no free-text risk to police. The audit event
- * is tagged `via: 'telecaller-rating-flag'`.
- *
- * Only an admin can move an order back out of RATING_ORDER if one is flagged
- * by mistake, via the existing free-text `adminOverrideStatus` tool.
+ * Tags (or untags) an order as a rating order: a decoy run purely to prompt
+ * an app-store rating. A tag, not a status: the order keeps whatever really
+ * happened to it, and analytics leave tagged orders out of every figure.
+ * Telecallers and admins; an event records who tagged it and when.
  */
 export async function flagRatingOrder(params: {
   ctx: AuthContext
   orderId: string
+  on?: boolean
   meta?: Record<string, unknown>
 }): Promise<OrderDoc> {
-  const { ctx, orderId, meta = {} } = params
-  const to = 'RATING_ORDER'
-
-  if (ctx.role !== 'TELECALLER') {
-    throw new ForbiddenError('Only a telecaller may flag a rating order')
-  }
-  if (!mongoose.isValidObjectId(orderId)) {
-    throw new NotFoundError('Order not found')
-  }
+  const { ctx, orderId, on = true, meta = {} } = params
+  if (!canFlagRatingOrder(ctx.role)) throw new ForbiddenError('Only the call desk or an admin may tag a rating order')
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
   const _id = new mongoose.Types.ObjectId(orderId)
-
-  const session = await mongoose.startSession()
-  try {
-    let updated: OrderDoc | null = null
-
-    await session.withTransaction(async () => {
-      const current = await Order.findOne(scoped(ctx, { _id }), null, { session }).lean<OrderDoc>()
-      if (!current) throw new NotFoundError('Order not found')
-
-      const from = current.status
-
-      if (from === to) {
-        throw new ConflictError(
-          `Order is already ${to}. Someone else may have just done this: reload.`,
-        )
-      }
-
-      const res = await Order.updateOne(
-        scoped(ctx, { _id, status: from }),
-        {
-          $set: { status: to },
-          $push: {
-            events: {
-              fromStatus: from,
-              toStatus: to,
-              userId: ctx.userId,
-              meta: { ...meta, via: 'telecaller-rating-flag' },
-              createdAt: new Date(),
-            },
-          },
-        },
-        { session },
-      )
-
-      if (res.matchedCount === 0) {
-        throw new ConflictError(
-          `Order changed underneath you: it is no longer ${from}. Reload and retry.`,
-        )
-      }
-
-      updated = await Order.findOne({ _id, tenantId: ctx.tenantId }, null, { session }).lean<OrderDoc>()
-    })
-
-    return updated!
-  } finally {
-    await session.endSession()
+  const current = await Order.findOne(scoped(ctx, { _id })).select('status ratingOrder').lean<OrderDoc>()
+  if (!current) throw new NotFoundError('Order not found')
+  if (Boolean(current.ratingOrder) === on) {
+    throw new ConflictError(on ? 'Already tagged as a rating order.' : 'This is not tagged as a rating order.')
   }
+  await Order.updateOne(scoped(ctx, { _id }), {
+    $set: { ratingOrder: on },
+    $push: {
+      events: {
+        fromStatus: current.status,
+        toStatus: current.status,
+        userId: ctx.userId,
+        meta: { ...meta, via: on ? 'rating-flag' : 'rating-unflag' },
+        createdAt: new Date(),
+      },
+    },
+  })
+  return (await Order.findOne({ _id, tenantId: ctx.tenantId }).lean<OrderDoc>())!
+}
+
+/**
+ * Records money paid back to the passenger. Not a status: the order stays
+ * delivered, not delivered or cancelled, and gains `refund`. One refund per
+ * order; recording again replaces it (a correction), and the event log keeps
+ * every version. Telecallers and admins.
+ */
+export async function recordRefund(params: {
+  ctx: AuthContext
+  orderId: string
+  amountPaise: number
+  reason: RefundReason
+  payer: RefundPayer | null
+  note?: string | null
+}): Promise<OrderDoc> {
+  const { ctx, orderId, amountPaise, reason, payer, note = null } = params
+  if (!canRecordRefund(ctx.role)) throw new ForbiddenError('Only the call desk or an admin may record a refund')
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
+  if (!Number.isInteger(amountPaise) || amountPaise <= 0) throw new ConflictError('Enter the amount paid back.')
+  if (!(reason in REFUND_REASONS)) throw new ConflictError('Pick why the money was paid back.')
+  if (payer !== null && !(payer in REFUND_PAYERS)) throw new ConflictError('Pick who paid it back.')
+  const _id = new mongoose.Types.ObjectId(orderId)
+  const current = await Order.findOne(scoped(ctx, { _id })).select('status amountPaise').lean<OrderDoc>()
+  if (!current) throw new NotFoundError('Order not found')
+  if (current.amountPaise !== null && current.amountPaise !== undefined && amountPaise > current.amountPaise) {
+    throw new ConflictError('A refund cannot be more than the order total.')
+  }
+  const refund = { amountPaise, reason, payer, note: note?.trim().slice(0, 300) || null, at: new Date(), byId: ctx.userId }
+  await Order.updateOne(scoped(ctx, { _id }), {
+    $set: { refund },
+    $push: {
+      events: {
+        fromStatus: current.status,
+        toStatus: current.status,
+        userId: ctx.userId,
+        meta: { via: 'refund', amountPaise, reason, payer, ...(refund.note ? { note: refund.note } : {}) },
+        createdAt: new Date(),
+      },
+    },
+  })
+  return (await Order.findOne({ _id, tenantId: ctx.tenantId }).lean<OrderDoc>())!
+}
+
+/** Takes back a refund recorded by mistake. */
+export async function clearRefund(params: { ctx: AuthContext; orderId: string }): Promise<void> {
+  const { ctx, orderId } = params
+  if (!canRecordRefund(ctx.role)) throw new ForbiddenError('Only the call desk or an admin may change a refund')
+  if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found')
+  const _id = new mongoose.Types.ObjectId(orderId)
+  const current = await Order.findOne(scoped(ctx, { _id })).select('status refund').lean<OrderDoc>()
+  if (!current) throw new NotFoundError('Order not found')
+  if (!current.refund) throw new ConflictError('There is no refund on this order.')
+  await Order.updateOne(scoped(ctx, { _id }), {
+    $set: { refund: null },
+    $push: { events: { fromStatus: current.status, toStatus: current.status, userId: ctx.userId, meta: { via: 'refund-removed' }, createdAt: new Date() } },
+  })
 }
 
 /**

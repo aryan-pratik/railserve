@@ -65,9 +65,7 @@ describe('return to origin', () => {
   it('is opened only by leaving DISPATCHED for a non-delivery', () => {
     expect(opensReturn('DISPATCHED', 'CANCELLED')).toBe(true)
     expect(opensReturn('DISPATCHED', 'FAILED')).toBe(true)
-    expect(opensReturn('DISPATCHED', 'MISSED_DELIVERY')).toBe(true)
     expect(opensReturn('DISPATCHED', 'DELIVERED')).toBe(false)
-    expect(opensReturn('DISPATCHED', 'MISDELIVERY')).toBe(false)
     expect(opensReturn('DISPATCHED', 'PREPARED')).toBe(false)
     expect(opensReturn('PREPARED', 'CANCELLED')).toBe(false)
   })

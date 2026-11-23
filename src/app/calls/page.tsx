@@ -33,7 +33,7 @@ export const metadata = { title: 'Call list · RailServe' }
  * apart from an order that was simply deleted. It still drops off the
  * kitchen/live *board*, which is a working queue for food to actually cook.
  */
-const CALL_LIST_STATUSES = [...LIVE_STATUSES, 'RATING_ORDER']
+const CALL_LIST_STATUSES = [...LIVE_STATUSES]
 
 /** Escapes regex metacharacters so a typed order id is matched literally. */
 function escapeRegExp(value: string): string {

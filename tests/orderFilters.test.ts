@@ -76,6 +76,7 @@ describe('order filter bar', () => {
     )
     expect(await orderFilterClause(ctx, f)).toEqual({
       status: 'FAILED',
+      ratingOrder: { $ne: true },
       trainNo: '12345A',
       orderType: 'LOCAL',
       serviceDate: { $gte: '2026-11-01', $lte: '2026-11-05' },
@@ -86,12 +87,13 @@ describe('order filter bar', () => {
 
   it('adds no date bound on all time, and leaves rating decoys out', async () => {
     expect(await orderFilterClause(ctx, readOrderFilters({}, { defaultMode: 'all' }))).toEqual({
-      status: { $ne: 'RATING_ORDER' },
+      ratingOrder: { $ne: true },
     })
   })
 
   it('lists rating decoys when asked for them by name', async () => {
     const clause = await orderFilterClause(ctx, readOrderFilters({ status: 'RATING_ORDER' }, { defaultMode: 'all' }))
-    expect(clause.status).toBe('RATING_ORDER')
+    expect(clause.ratingOrder).toBe(true)
+    expect(clause.status).toBeUndefined()
   })
 })

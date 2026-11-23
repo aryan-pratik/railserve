@@ -271,11 +271,11 @@ describe('the admin board', () => {
     await makeOrder({ ...base, status: 'PREPARED', amountPaise: 10000, delivery: { agentIds: [sharing] } })
     await makeOrder({ ...base, status: 'DISPATCHED', amountPaise: 20000, delivery: { agentIds: [sharing] } })
     await makeOrder({ ...base, status: 'CANCELLED', amountPaise: 30000, delivery: { agentIds: [sharing] } })
-    await makeOrder({ ...base, status: 'MISSED_DELIVERY', amountPaise: 40000, delivery: { agentIds: [silent] } })
+    await makeOrder({ ...base, status: 'FAILED', amountPaise: 40000, delivery: { agentIds: [silent] } })
     // Nobody on it yet.
     await makeOrder({ ...base, status: 'KOT_PRINTED', amountPaise: 27000, paymentMode: 'PREPAID', delivery: { agentIds: [] } })
     // A rating decoy is not business, here or on any other screen.
-    await makeOrder({ ...base, status: 'RATING_ORDER', amountPaise: 99900, delivery: { agentIds: [sharing] } })
+    await makeOrder({ ...base, status: 'CANCELLED', ratingOrder: true, amountPaise: 99900, delivery: { agentIds: [sharing] } })
 
     const { day: totals, riders } = await riderBoard(admin, { serviceDate: day })
     expect(totals).toEqual({

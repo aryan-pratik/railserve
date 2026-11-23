@@ -12,7 +12,7 @@ export type MenuTag = (typeof MENU_TAGS)[number]
 
 export const MENU_TAG_LABEL: Record<MenuTag, string> = {
   all: 'All',
-  check: 'To check',
+  check: 'Needs a check',
   untagged: 'Not tagged',
   VEG: 'Veg',
   NON_VEG: 'Non-veg',

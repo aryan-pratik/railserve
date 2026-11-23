@@ -24,6 +24,10 @@ const IngestStateSchema = new Schema(
     // orders. Empty means every sender, as before the list existed. Edited
     // under Setup → Aggregators; see lib/ingest/senders.ts.
     allowedSenders: { type: [String], default: [] },
+    // On: an order is created only when its email layout AND its sender both
+    // match a mail source (models/MailSource.ts). Off by default, so turning
+    // it on is a choice made after the senders are listed.
+    enforceSenders: { type: Boolean, default: false },
   },
   { timestamps: true, strict: true, strictQuery: true, versionKey: false },
 )

@@ -12,13 +12,63 @@ export const ORDER_STATUSES = [
   'FAILED',
   'CANCELLED',
   'LOST',
-  'MISDELIVERY',
-  'MISSED_DELIVERY',
-  'REFUNDED',
-  'RATING_ORDER',
 ] as const
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
+
+/**
+ * Statuses that existed before the 2026-11 clean-up, kept only so old event
+ * logs still read in plain words. No order is in one of these any more: see
+ * lib/repo/statusCleanup.ts, which converted them at boot.
+ *
+ *   MISDELIVERY, MISSED_DELIVERY  -> FAILED, with the matching failure reason
+ *   REFUNDED                      -> its real status, plus order.refund
+ *   RATING_ORDER                  -> its real status, plus order.ratingOrder
+ */
+export const RETIRED_STATUSES = ['MISDELIVERY', 'MISSED_DELIVERY', 'MISSED_DELEVERY', 'REFUNDED', 'REFUND', 'RATING_ORDER'] as const
+
+/**
+ * Why an order did not reach the passenger (FAILED), or why a group booking
+ * was not booked (LOST). Stored as the code in delivery.failureReason; older
+ * rows and the rider app may hold free text, which is shown as written.
+ */
+export const FAILURE_REASONS = {
+  MISSED_TRAIN: 'Missed the train',
+  WRONG_PASSENGER: 'Given to the wrong passenger',
+  PASSENGER_NOT_FOUND: 'Passenger not found',
+  PASSENGER_REFUSED: 'Passenger refused it',
+  TRAIN_LATE_OR_CANCELLED: 'Train late or cancelled',
+  OTHER: 'Other',
+} as const
+export type FailureReason = keyof typeof FAILURE_REASONS
+
+export const NOT_BOOKED_REASONS = {
+  TOO_EXPENSIVE: 'Price too high',
+  CHANGED_PLANS: 'Changed their plans',
+  NO_REPLY: 'Stopped replying',
+  BOOKED_ELSEWHERE: 'Booked somewhere else',
+  OTHER: 'Other',
+} as const
+export type NotBookedReason = keyof typeof NOT_BOOKED_REASONS
+
+/** A stored reason, in words: a known code, or free text as it was typed. */
+export function reasonLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  return (FAILURE_REASONS as Record<string, string>)[raw] ?? (NOT_BOOKED_REASONS as Record<string, string>)[raw] ?? raw
+}
+
+/** Refunds: why, and who pays the passenger back. */
+export const REFUND_REASONS = {
+  NOT_DELIVERED: 'Not delivered',
+  LATE: 'Late',
+  WRONG_OR_MISSING_ITEM: 'Wrong or missing item',
+  QUALITY: 'Food quality',
+  CANCELLED: 'Cancelled',
+  OTHER: 'Other',
+} as const
+export type RefundReason = keyof typeof REFUND_REASONS
+export const REFUND_PAYERS = { AGGREGATOR: 'The aggregator (taken off our payout)', US: 'We paid it back' } as const
+export type RefundPayer = keyof typeof REFUND_PAYERS
 
 /**
  * The transition allow-list. Plan §4.
@@ -30,67 +80,48 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
  *
  * Retail enters at RECEIVED; bulk enters at ENQUIRY and merges at RECEIVED.
  *
- * A TELECALLER appears on three kinds of edge. `-> CANCELLED`, from every
- * state of the shared pipeline — they ring the passenger, the passenger
- * cancels, and the cancellation has to reach the kitchen (or the rider)
- * rather than via a WhatsApp message somebody has to notice. `-> DELIVERED` /
- * `-> FAILED` ("not delivered"), from PREPARED and DISPATCHED — the passenger
- * tells them how the delivery went, and that is recorded whether or not the
- * rider tapped anything. And `-> MISDELIVERY` / `-> MISSED_DELIVERY`
- * / `-> REFUNDED`, from every non-terminal state — these are support-call
- * outcomes a telecaller records from whatever a passenger tells them on the
- * phone, not a pipeline step reached from one particular place, so unlike
- * CANCELLED they are open from the bulk head (ENQUIRY, QUOTED) too.
+ * A TELECALLER appears on two kinds of edge. `-> CANCELLED`, from every
+ * state of the shared pipeline: they ring the passenger, the passenger
+ * cancels, and the cancellation has to reach the kitchen (or the rider).
+ * And `-> DELIVERED` / `-> FAILED` ("not delivered", with a reason): the
+ * passenger tells them how it went, recorded whether or not the rider tapped
+ * anything. FAILED is open from the kitchen stages too, for food that missed
+ * its train before it left the counter.
  *
- * ADMIN deliberately does NOT hold the support-outcome edges: the admin order screen
- * offers only Accept-the-next-step and Cancel, same as before this feature
- * existed. An admin who genuinely needs to set one of these three can still
- * reach it through the free-text override — it is a telecaller's call
- * to make from the phone, not a button on the admin's normal order view.
- *
- * RATING_ORDER (decoy orders run purely to prompt an app-store rating) is
- * deliberately absent from this table — see the comment on
- * `canFlagRatingOrder` below.
+ * Refunds and rating orders are not statuses: a refund is recorded on the
+ * order (order.refund) whatever its status, and a rating order is a tag
+ * (order.ratingOrder). See RETIRED_STATUSES above.
  */
 export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readonly Role[]>>> = {
   // --- bulk-only head of the pipeline ---
   ENQUIRY: {
     QUOTED: ['ADMIN'],
     LOST: ['ADMIN'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
   },
   QUOTED: {
     // Guarded additionally by the completeness check below.
     RECEIVED: ['ADMIN'],
     LOST: ['ADMIN'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
   },
 
   // --- shared pipeline ---
   RECEIVED: {
     ACCEPTED: ['ADMIN', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
+    // The train left before the food did: not delivered, "missed the train".
+    FAILED: ['TELECALLER'],
   },
   ACCEPTED: {
     KOT_PRINTED: ['ADMIN', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
+    // The train left before the food did: not delivered, "missed the train".
+    FAILED: ['TELECALLER'],
   },
   KOT_PRINTED: {
     PREPARED: ['ADMIN', 'STORE_MANAGER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
+    // The train left before the food did: not delivered, "missed the train".
+    FAILED: ['TELECALLER'],
   },
   PREPARED: {
     // A store manager can hand food over on the rider's behalf: the rider is
@@ -106,9 +137,6 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     DELIVERED: ['TELECALLER'],
     FAILED: ['TELECALLER'],
     CANCELLED: ['ADMIN', 'TELECALLER'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
   },
   DISPATCHED: {
     // The rider records these from the platform; a telecaller records them
@@ -126,9 +154,6 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
     // — releasing a claim is theirs to make — and the event log records both
     // the take and the return, so a returned order is never silently un-taken.
     PREPARED: ['DELIVERY_AGENT'],
-    MISDELIVERY: ['TELECALLER'],
-    MISSED_DELIVERY: ['TELECALLER'],
-    REFUNDED: ['TELECALLER'],
   },
 
   // --- terminal ---
@@ -136,10 +161,6 @@ export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, readon
   FAILED: {},
   CANCELLED: {},
   LOST: {},
-  MISDELIVERY: {},
-  MISSED_DELIVERY: {},
-  REFUNDED: {},
-  RATING_ORDER: {},
 }
 
 export const TERMINAL_STATUSES: readonly OrderStatus[] = [
@@ -147,10 +168,6 @@ export const TERMINAL_STATUSES: readonly OrderStatus[] = [
   'FAILED',
   'CANCELLED',
   'LOST',
-  'MISDELIVERY',
-  'MISSED_DELIVERY',
-  'REFUNDED',
-  'RATING_ORDER',
 ]
 
 export function isTerminal(status: OrderStatus): boolean {
@@ -158,18 +175,16 @@ export function isTerminal(status: OrderStatus): boolean {
 }
 
 /**
- * RATING_ORDER flags a decoy order run purely to prompt an app-store rating —
- * it isn't a pipeline step reached from one particular status, it's a
- * reclassification a telecaller can apply to an order in *any* state,
- * including terminal ones (a DELIVERED or CANCELLED order can equally turn
- * out to have been a decoy). That doesn't fit `TRANSITIONS[from][to]`'s
- * per-source-edge shape, so — like the admin-only free-text override in
- * transitionOrder.ts — it deliberately lives outside this table. UI code
- * must ask this function rather than `allowedNextStatuses`, which will never
- * report RATING_ORDER as reachable from anywhere.
+ * Who may tag an order as a rating order: a decoy run purely to prompt an
+ * app-store rating. A tag, not a status, so the order keeps its real status.
  */
 export function canFlagRatingOrder(role: Role): boolean {
-  return role === 'TELECALLER'
+  return role === 'TELECALLER' || role === 'ADMIN'
+}
+
+/** Who may record (or take back) a refund on an order. */
+export function canRecordRefund(role: Role): boolean {
+  return role === 'TELECALLER' || role === 'ADMIN'
 }
 
 export function allowedNextStatuses(from: OrderStatus, role: Role): OrderStatus[] {

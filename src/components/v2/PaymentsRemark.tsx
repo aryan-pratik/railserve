@@ -1,9 +1,10 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState } from 'react'
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { updatePaymentRemark, type PaymentActionState } from '@/app/v2/payments/actions'
 import { Button, cx, v2Focus } from './ui'
+import { FloatingPanel } from './Floating'
 
 const INITIAL: PaymentActionState = {}
 
@@ -41,6 +42,8 @@ export function PaymentsRemark({ paymentId, remark, canEdit }: { paymentId: stri
 function RemarkPopover({ paymentId, initial, onClose }: { paymentId: string; initial: string | null; onClose: () => void }) {
   const [state, formAction, pending] = useActionState(updatePaymentRemark, INITIAL)
   const root = useRef<HTMLDivElement>(null)
+  const marker = useRef<HTMLSpanElement>(null)
+  const getAnchor = useCallback(() => marker.current?.parentElement ?? null, [])
 
   // Closing unmounts this, so an identity change in onClose is harmless.
   useEffect(() => {
@@ -63,39 +66,42 @@ function RemarkPopover({ paymentId, initial, onClose }: { paymentId: string; ini
   }, [onClose])
 
   return (
-    <div
-      ref={root}
-      role="dialog"
-      aria-label="Edit remark"
-      className="absolute left-0 top-full z-30 mt-1.5 w-[min(22rem,calc(100vw-2rem))] rounded-v2-lg border border-v2-line bg-v2-surface p-3 shadow-v2-pop"
-    >
-      <form action={formAction} className="grid gap-2">
-        <input type="hidden" name="paymentId" value={paymentId} />
-        <input
-          name="remark"
-          defaultValue={initial ?? ''}
-          autoFocus
-          maxLength={200}
-          placeholder="e.g. order 1000584805"
-          aria-label="Remark"
-          autoComplete="off"
-          className={cx('h-10 w-full rounded-full border border-v2-line bg-v2-surface px-3.5 text-sm text-v2-ink placeholder:text-v2-faint', v2Focus)}
-        />
-        <p className="text-xs text-v2-muted">Put the order id in the remark to link this payment to it.</p>
-        <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" size="sm" disabled={pending}>
-            {pending ? 'Saving…' : 'Save'}
-          </Button>
-          <Button size="sm" onClick={onClose}>
-            Cancel
-          </Button>
+    <>
+      <span ref={marker} hidden />
+      <FloatingPanel getAnchor={getAnchor} label="Edit remark">
+        <div
+          ref={root}
+          className="w-[min(22rem,calc(100vw-2rem))] rounded-v2-lg border border-v2-line bg-v2-surface p-3 shadow-v2-pop"
+        >
+          <form action={formAction} className="grid gap-2">
+            <input type="hidden" name="paymentId" value={paymentId} />
+            <input
+              name="remark"
+              defaultValue={initial ?? ''}
+              autoFocus
+              maxLength={200}
+              placeholder="e.g. order 1000584805"
+              aria-label="Remark"
+              autoComplete="off"
+              className={cx('h-10 w-full rounded-full border border-v2-line bg-v2-surface px-3.5 text-sm text-v2-ink placeholder:text-v2-faint', v2Focus)}
+            />
+            <p className="text-xs text-v2-muted">Put the order id in the remark to link this payment to it.</p>
+            <div className="flex items-center gap-2">
+              <Button type="submit" variant="primary" size="sm" disabled={pending}>
+                {pending ? 'Saving…' : 'Save'}
+              </Button>
+              <Button size="sm" onClick={onClose}>
+                Cancel
+              </Button>
+            </div>
+            {state.error ? (
+              <span role="alert" className="text-xs font-semibold text-v2-bad">
+                {state.error}
+              </span>
+            ) : null}
+          </form>
         </div>
-        {state.error ? (
-          <span role="alert" className="text-xs font-semibold text-v2-bad">
-            {state.error}
-          </span>
-        ) : null}
-      </form>
-    </div>
+      </FloatingPanel>
+    </>
   )
 }

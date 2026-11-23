@@ -14,9 +14,9 @@ import { opsDayOf, opsDayRange } from '../opsDay'
 import {
   NO_RIDER_DAY, NO_RIDER_NOW, riderDays, ridersDayTotal, ridersNow, type RiderDay, type RiderNow,
 } from './riderLedgerRepo'
-import { pendingCashByRider, type PendingCash } from './riderCashRepo'
+import { pendingCashByRider, ridersHoldingCash, type PendingCash } from './riderCashRepo'
 import { scoped } from './orderRepo'
-import { EXCLUDED_STATUS } from '../analytics'
+import { NOT_DECOY } from '../analytics'
 
 /**
  * Reads and writes of where riders are.
@@ -313,20 +313,22 @@ export async function riderBoard(
   const serviceDate = opts.serviceDate ?? opsDayOf(now)
 
   await connectDb()
-  const [active, booked, day] = await Promise.all([
+  const [active, booked, day, holding] = await Promise.all([
     User.find({ role: 'DELIVERY_AGENT', active: true, tenantId: ctx.tenantId })
       .select('name phone isTeamLead teamLeadId')
       .sort({ name: 1 })
       .lean(),
     bookedByRider(ctx, serviceDate),
     bookedTotals(ctx, serviceDate),
+    ridersHoldingCash(ctx),
   ])
 
-  // A rider switched off since still carried what they carried: listed on the
-  // days they worked, so their orders are not counted in the totals but
-  // missing from every row.
+  // A rider switched off since still carried what they carried, and may
+  // still hold cash: listed on the days they worked and for as long as they
+  // owe, so their orders and money are never in the totals but missing from
+  // every row.
   const listed = new Set(active.map((r) => String(r._id)))
-  const missing = [...booked.keys()].filter((id) => !listed.has(id) && mongoose.isValidObjectId(id))
+  const missing = [...new Set([...booked.keys(), ...holding])].filter((id) => !listed.has(id) && mongoose.isValidObjectId(id))
   const inactive = missing.length
     ? await User.find({ _id: { $in: missing }, role: 'DELIVERY_AGENT', tenantId: ctx.tenantId })
         .select('name phone isTeamLead teamLeadId')
@@ -457,7 +459,7 @@ const NO_DAY: DayTotals = {
  * date, rating decoys aside.
  */
 function dayMatch(ctx: AuthContext, serviceDate: string) {
-  return scoped(ctx, { tenantId: ctx.tenantId, serviceDate, status: { $ne: EXCLUDED_STATUS } })
+  return scoped(ctx, { tenantId: ctx.tenantId, serviceDate, ...NOT_DECOY })
 }
 
 const IS_COD = { $eq: ['$paymentMode', 'COD'] }

@@ -100,7 +100,7 @@ export type ActivityFeed = {
 
 /** Statuses an order passes through once a rider has it, or ends in. */
 const DELIVERY_PHASE = [
-  'DISPATCHED', 'DELIVERED', 'FAILED', 'CANCELLED', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED',
+  'DISPATCHED', 'DELIVERED', 'FAILED', 'CANCELLED',
 ]
 
 /**

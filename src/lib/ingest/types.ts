@@ -31,7 +31,7 @@ export type ParsedOrder = {
 }
 
 /** Why a payload could not become an order. Plan §3 unparsedinbox reasons. */
-export type ParseFailureReason = 'PARSE_FAILED' | 'MISSING_FIELD' | 'UNKNOWN_OUTLET'
+export type ParseFailureReason = 'PARSE_FAILED' | 'MISSING_FIELD' | 'UNKNOWN_OUTLET' | 'SENDER_NOT_TRUSTED'
 
 export type ParseResult =
   | { ok: true; order: ParsedOrder }

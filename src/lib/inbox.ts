@@ -9,13 +9,14 @@
 
 import { istDaysToRange } from './activity'
 
-export const INBOX_REASONS = ['PARSE_FAILED', 'UNKNOWN_OUTLET', 'MISSING_FIELD'] as const
+export const INBOX_REASONS = ['PARSE_FAILED', 'UNKNOWN_OUTLET', 'MISSING_FIELD', 'SENDER_NOT_TRUSTED'] as const
 export type InboxReason = (typeof INBOX_REASONS)[number]
 
 export const REASON_LABEL: Record<InboxReason, string> = {
   PARSE_FAILED: 'Could not parse',
   UNKNOWN_OUTLET: 'Outlet not recognised',
   MISSING_FIELD: 'Field missing',
+  SENDER_NOT_TRUSTED: 'Sender not on the list',
 }
 
 export const INBOX_RESOLUTIONS = ['ORDER', 'PAYMENT', 'DISMISSED'] as const

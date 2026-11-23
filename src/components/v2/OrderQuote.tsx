@@ -5,6 +5,7 @@ import { Button, cx } from './ui'
 import { ConfirmActionButton, Field, FormNote, checkboxV2, inputV2, type FormState } from './OrderForms'
 import { Select } from './Select'
 import { PACKING_CHOICES } from '@/lib/validation/order'
+import { NOT_BOOKED_REASONS } from '@/lib/orderStatus'
 import { confirmEnquiryV2, markLostV2, quoteEnquiryV2 } from '@/app/v2/orders/[id]/actions'
 
 const initial: FormState = {}
@@ -112,20 +113,34 @@ export function MarkLostButton({ orderId, externalOrderId }: { orderId: string; 
     <ConfirmActionButton
       action={markLostV2}
       fields={{ orderId }}
-      label="Mark lost"
+      label="Not booked"
       variant="danger"
       size="sm"
-      title="Mark this enquiry lost?"
+      title="They did not book: why?"
       description={
         <>
-          <span className="font-mono font-semibold text-v2-ink">{externalOrderId}</span> closes as lost and leaves the enquiries list.
+          <span className="font-mono font-semibold text-v2-ink">{externalOrderId}</span> moves to Not booked. It never reaches a kitchen.
         </>
       }
-      submitLabel="Mark lost"
+      submitLabel="Not booked"
+      extra={
+        <fieldset className="grid gap-1.5">
+          <legend className="mb-1 text-xs font-semibold text-v2-ink-2">Reason</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(NOT_BOOKED_REASONS).map(([code, label]) => (
+              <label key={code} className="cursor-pointer">
+                <input type="radio" name="reasonCode" value={code} required className="peer sr-only" />
+                <span className="inline-flex h-9 items-center rounded-full border border-v2-line-strong px-3 text-[13.5px] font-semibold text-v2-ink-2 peer-checked:border-v2-ink peer-checked:bg-v2-ink peer-checked:text-v2-bg peer-focus-visible:ring-2 peer-focus-visible:ring-v2-brand">
+                  {label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      }
       reason
       reasonOptional
-      reasonLabel="Why (optional)"
-      quickReasons={['Customer went elsewhere', 'No reply after the quote', 'Price too high', 'Date or train changed']}
+      reasonLabel="Details (optional)"
     />
   )
 }

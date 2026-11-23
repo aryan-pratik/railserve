@@ -21,7 +21,7 @@ export async function RoutingTab({ ctx, base }: { ctx: AuthContext; base: Base }
 
   return (
     <div className="grid gap-3.5">
-      <Card title="Order mail senders" action={<Chip tone={senders.length ? 'ok' : 'warn'}>{senders.length ? `${senders.length} listed` : 'All senders'}</Chip>}>
+      <Card title="Older sender list" action={<Chip tone={senders.length ? 'ok' : 'warn'}>{senders.length ? `${senders.length} listed` : 'All senders'}</Chip>}>
         <SenderAllowlist senders={senders} />
       </Card>
 

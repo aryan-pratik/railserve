@@ -6,21 +6,19 @@ import { UnparsedInbox } from '@/lib/models'
 import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
 import { countPendingReturns } from '@/lib/repo/rtoRepo'
 import { riderBoard } from '@/lib/repo/riderLocationRepo'
-import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { LIVE_STATUSES } from '@/lib/repo/runRepo'
 import { runTrainLabel } from '@/lib/runs'
 import { formatRupees, formatServiceDate, formatTimeIST, todayIST } from '@/lib/format'
 import { loadDay, loadToday } from '@/lib/v2/dashboard'
 import { DayPicker } from '@/components/v2/DayPicker'
 import { ButtonLink, Card, Chip, cx } from '@/components/v2/ui'
-import { Notice } from '@/components/v2/Table'
 import { CountdownBand } from '@/components/v2/Countdown'
 
 export const metadata = { title: 'Today · RailServe' }
 
 const LIVE = new Set<string>(LIVE_STATUSES)
 /** Orders that did not go ahead: they earn nothing. */
-const LOST = new Set(['CANCELLED', 'FAILED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED', 'ENQUIRY', 'QUOTED'])
+const LOST = new Set(['CANCELLED', 'FAILED', 'LOST', 'ENQUIRY', 'QUOTED'])
 
 /**
  * The owner's home: in a few seconds, is today going fine, how much has it
@@ -40,12 +38,11 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
   const day = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && rawDate !== today ? rawDate : today
   const isToday = day === today
 
-  const [{ board }, cancelRequests, returnsPending, riders, ingest, emailsToCheck] = await Promise.all([
+  const [{ board }, cancelRequests, returnsPending, riders, emailsToCheck] = await Promise.all([
     isToday ? loadToday(ctx) : loadDay(ctx, day),
     listPendingCancelRequests(ctx, { limit: 5 }),
     countPendingReturns(ctx),
     riderBoard(ctx, { now }),
-    checkIngestStaleness(now, ctx.tenantId),
     UnparsedInbox.countDocuments({ tenantId: ctx.tenantId, resolved: false }),
   ])
 
@@ -113,15 +110,6 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
             </ButtonLink>
         </div>
       </div>
-
-      {ingest.stale ? (
-        <Notice tone="bad">
-          <strong>Orders from email have stopped coming in.</strong> New orders may be missing.{' '}
-          <Link href="/v2/inbox" className="font-bold underline underline-offset-2">
-            Check emails
-          </Link>
-        </Notice>
-      ) : null}
 
       {/* What needs the owner, first. When nothing does, one calm line. */}
       {waiting > 0 ? (

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { LogOut } from 'lucide-react'
 import { CommandPalette } from './CommandPalette'
 import { NotificationsBell, type AlertItem } from './NotificationsBell'
+import { StatusIcon, type StatusIssue } from './StatusIcon'
 import Link from 'next/link'
 import { getSessionUser, redirectToLogin } from '@/lib/session'
 import { logout } from '@/app/actions/session'
@@ -12,6 +13,7 @@ import { ShellFrame } from './ShellFrame'
 import { V2_SIDEBAR_COOKIE } from '@/lib/v2/sidebar'
 import { cookies } from 'next/headers'
 import { MobileNav } from './MobileNav'
+import { MenuButton } from './Floating'
 
 /**
  * The v2 app frame: a white rounded workspace on the grey canvas, sidebar on
@@ -25,6 +27,7 @@ export async function Shell({
   tile,
   outletLabel,
   alerts = [],
+  issues = [],
   children,
 }: {
   nav: V2NavSection[]
@@ -32,6 +35,8 @@ export async function Shell({
   outletLabel?: string
   /** What the bell lists: things waiting on this person. */
   alerts?: AlertItem[]
+  /** What the warning icon lists: problems with the system itself. */
+  issues?: StatusIssue[]
   children: ReactNode
 }) {
   const user = await getSessionUser()
@@ -83,27 +88,24 @@ export async function Shell({
       <div className="text-[19px] font-extrabold tracking-[-0.02em] lg:hidden">RailServe</div>
       <CommandPalette nav={nav} />
       <div className="ml-auto flex min-w-0 items-center gap-2">
+        <StatusIcon issues={issues} />
         <NotificationsBell items={alerts} />
         {/* Just your initials; a tap opens a short menu with who you are and the few account things. */}
-        <details className="relative">
-          <summary
-            className={cx('list-none cursor-pointer rounded-full [&::-webkit-details-marker]:hidden', v2Focus)}
-            aria-label={`${user.name}: account menu`}
-            title={user.name}
-          >
-            <Avatar name={user.name} />
-          </summary>
-          <div className="absolute right-0 top-12 z-40 grid w-64 gap-0.5 rounded-v2-md border border-v2-line bg-v2-surface p-1.5 shadow-v2-pop">
-            <div className="px-3 py-2">
-              <b className="block text-[15px] font-bold">{user.name}</b>
-              <small className="text-[13px] text-v2-muted">{outletLabel ?? ROLE_LABEL[user.role]}</small>
-            </div>
-            <Link href={user.role === 'ADMIN' ? '/v2/settings' : '/v2/account'} className={cx('rounded-v2-sm px-3 py-2.5 text-[14.5px] font-semibold hover:bg-v2-surface-2', v2Focus)}>
-              Settings
-            </Link>
-            {logoutForm}
+        <MenuButton
+          label={<Avatar name={user.name} />}
+          ariaLabel={`${user.name}: account menu`}
+          buttonClassName="rounded-full"
+          panelClassName="w-64"
+        >
+          <div className="px-3 py-2">
+            <b className="block text-[15px] font-bold">{user.name}</b>
+            <small className="text-[13px] text-v2-muted">{outletLabel ?? ROLE_LABEL[user.role]}</small>
           </div>
-        </details>
+          <Link href={user.role === 'ADMIN' ? '/v2/settings' : '/v2/account'} className={cx('rounded-v2-sm px-3 py-2.5 text-[14.5px] font-semibold hover:bg-v2-surface-2', v2Focus)}>
+            Settings
+          </Link>
+          {logoutForm}
+        </MenuButton>
       </div>
     </header>
         }

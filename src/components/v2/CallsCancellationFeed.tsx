@@ -10,10 +10,7 @@ import { Card, Chip, Mono, cx, v2Focus } from './ui'
 
 const HEADLINE: Record<string, string> = {
   CANCELLED: 'Cancelled',
-  MISDELIVERY: 'Misdelivery',
-  MISSED_DELIVERY: 'Missed delivery',
-  REFUNDED: 'Refunded',
-  RATING_ORDER: 'Rating order',
+  FAILED: 'Not delivered',
 }
 
 /** Dismissals survive a reload; a card that comes back after "Got it" is noise. */

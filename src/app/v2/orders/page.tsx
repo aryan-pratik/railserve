@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { Download, LayoutList, Plus, TrainFront } from 'lucide-react'
+import { redirect } from 'next/navigation'
+import { Download, LayoutList, Plus, Search, TrainFront } from 'lucide-react'
 import { trackingNoteFor } from '@/lib/v2/kitchenView'
 import { foodItemLabels } from '@/lib/orderView'
 import { DateFilter } from '@/components/v2/DateFilter'
@@ -7,7 +8,9 @@ import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { findRunsWhere } from '@/lib/repo/runRepo'
-import { countPendingReturns, listReturns, mayCollectReturns } from '@/lib/repo/rtoRepo'
+import { countPendingReturns, listReturns, mayCollectReturns, returnFilterClause, returnRiders, type ReturnFilters } from '@/lib/repo/rtoRepo'
+import { ReturnAge, ReturnsMarkAll } from '@/components/v2/ReturnsMarkAll'
+import { Select } from '@/components/v2/Select'
 import { riderNamesFor } from '@/lib/repo/riderFilter'
 import { orderDietsFor } from '@/lib/repo/menuRepo'
 import { hasOrderFilters, orderFilterClause, orderFilterOptions, orderFilterParams, readOrderFilters } from '@/lib/repo/orderFilters'
@@ -16,6 +19,7 @@ import { runKeyFor, runTrainLabel, sortRunsByUrgency } from '@/lib/runs'
 import { callNoteSummary } from '@/lib/orderView'
 import { PAYMENT_MODES, sourceLabel } from '@/lib/orderEnums'
 import { rtoReasonLabel } from '@/lib/rto'
+import { ORDER_STATUSES, reasonLabel } from '@/lib/orderStatus'
 import { resolveDateRange } from '@/lib/dateFilter'
 import { formatDateRange, formatIST, formatRupees, formatServiceDate, formatShortDate, formatTimeIST, todayIST } from '@/lib/format'
 import {
@@ -33,8 +37,9 @@ import {
 import { ButtonLink, Chip, Mono, cx, statusChip } from '@/components/v2/ui'
 import { EmptyState, PageHeader, Pagination, PillTabs, Sub, Table, TableFrame, Td, Th, readPaging, rowClass } from '@/components/v2/Table'
 import { OrdersFilterBar } from '@/components/v2/OrdersFilterBar'
-import { OrdersList, type OrdersGroup, type OrdersRow } from '@/components/v2/OrdersList'
 import { OrdersMarkReturned } from '@/components/v2/OrdersMarkReturned'
+import { ordersFieldClass } from '@/lib/v2/ordersShared'
+import { OrdersList, type OrdersGroup, type OrdersRow } from '@/components/v2/OrdersList'
 
 export const metadata = { title: 'Orders · RailServe' }
 
@@ -60,6 +65,10 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
 
   const views = viewsFor(role)
   const requested = readView(sp.view)
+  // A store manager works from Kitchen, which already shows their orders by
+  // train, by day and by stage. The list itself is not theirs, however the
+  // address is typed; only "Bags coming back" (view=returns) lives here.
+  if (role === 'STORE_MANAGER' && requested !== 'returns') redirect('/v2/kitchen')
   // The date row above the search decides the day now, so "Today" is the
   // all-orders view on today's date, and "Coming days" (upcoming) gives way
   // as soon as a date is picked. Returns and group bookings have their own
@@ -69,7 +78,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   if (view === 'upcoming' && one(sp.mode)) view = 'all'
   const grouped = one(sp.group) === '1'
   const sort = readSort(sp.sort, view)
-  const payment = (PAYMENT_MODES as readonly string[]).includes(one(sp.payment)) ? one(sp.payment) : ''
+  // How it was paid, or REFUNDED for orders with money paid back.
+  const payment = (PAYMENT_MODES as readonly string[]).includes(one(sp.payment)) || one(sp.payment) === 'REFUNDED' ? one(sp.payment) : ''
   const collected = one(sp.rto) === 'collected'
   // The call desk's "Not called / Called" chips from the v1 live board: the
   // Called column reads the call log, so this clause reads the same field.
@@ -88,11 +98,15 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   // "Today" on the date row keeps the board's own rule: today's orders plus
   // last night's still-open ones on a train that is yet to come.
   const todayMode = view === 'all' && filters.mode === 'today'
+  // Group bookings: open ones by default, or one stage.
+  const stageParam = one(sp.stage)
+  const stage = stageParam === 'ENQUIRY' || stageParam === 'QUOTED' || stageParam === 'LOST' ? stageParam : ''
   const where: Clause = {
     $and: [
       viewClause(todayMode ? 'today' : view, now),
+      ...(view === 'enquiries' ? [{ status: stage ? stage : { $in: ['ENQUIRY', 'QUOTED'] } }] : []),
       filterClause,
-      ...(payment ? [{ paymentMode: payment }] : []),
+      ...(payment === 'REFUNDED' ? [{ refund: { $ne: null } }] : payment ? [{ paymentMode: payment }] : []),
       ...(called ? [{ 'callLog.0': { $exists: called === 'yes' } }] : []),
     ],
   }
@@ -208,7 +222,29 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
 
   /* ── Returns ──────────────────────────────────────────────────────────── */
   if (view === 'returns') {
-    const { rows, total } = await listReturns(ctx, { status: collected ? 'RETURNED' : 'PENDING', limit: pageSize, skip, where })
+    // Its own filters: who is carrying the bag, which outlet, why it is
+    // coming back, and a search. Bags still out ignore dates on purpose: a
+    // bag is out until it is on the counter, whatever day it left.
+    const why = one(sp.why) === 'CANCELLED' || one(sp.why) === 'FAILED' ? (one(sp.why) as 'CANCELLED' | 'FAILED') : null
+    const rf: ReturnFilters = { riderId: one(sp.rider) || null, outletId: one(sp.outlet) || null, reason: why, q: one(sp.q) || null }
+    const rtoStatus = collected ? 'RETURNED' : 'PENDING'
+    const [rclause, riders] = await Promise.all([returnFilterClause(ctx, rf), returnRiders(ctx, rtoStatus)])
+    const { rows, total } = await listReturns(ctx, { status: rtoStatus, limit: pageSize, skip, where: rclause })
+    const anyFilter = Boolean(rf.riderId || rf.outletId || rf.reason || rf.q)
+    const rHref = (over: { rto?: string; page?: number; pageSize?: number; clear?: boolean } = {}) => {
+      const u = new URLSearchParams({ view: 'returns' })
+      const rto = over.rto ?? (collected ? 'collected' : '')
+      if (rto) u.set('rto', rto)
+      if (!over.clear) {
+        if (rf.riderId) u.set('rider', rf.riderId)
+        if (rf.outletId) u.set('outlet', rf.outletId)
+        if (rf.reason) u.set('why', rf.reason)
+        if (rf.q) u.set('q', rf.q)
+      }
+      if (over.page && over.page > 1) u.set('page', String(over.page))
+      if (over.pageSize && over.pageSize !== 20) u.set('pageSize', String(over.pageSize))
+      return `/v2/orders?${u.toString()}`
+    }
     return (
       <div className="grid gap-[18px]">
         {header(
@@ -216,25 +252,80 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
             ? 'Bags coming back from a rider. Mark one returned once it is on the counter.'
             : `Bags coming back from a rider. ${role === 'STORE_MANAGER' ? 'An admin can allow you to mark returns on your staff record.' : 'The outlet marks them returned.'}`,
         )}
-        {tabs}
-        {filterBar}
         <PillTabs
           tabs={[
-            { href: qs({ rto: '' }), label: 'To collect', count: returnsPending, active: !collected },
-            { href: qs({ rto: 'collected' }), label: 'Collected', active: collected },
+            { href: rHref({ rto: '' }), label: 'To collect', count: returnsPending, active: !collected, tone: 'bad' },
+            { href: rHref({ rto: 'collected' }), label: 'Collected', active: collected },
           ]}
         />
+        <form action="/v2/orders" className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="view" value="returns" />
+          {collected ? <input type="hidden" name="rto" value="collected" /> : null}
+          <Select
+            name="rider"
+            defaultValue={rf.riderId ?? ''}
+            submitOnChange
+            aria-label="Rider"
+            className="w-full sm:w-56"
+            options={[
+              { value: '', label: 'All riders' },
+              ...riders.map((r) => ({ value: r.id, label: `${r.name} · ${r.count} bag${r.count === 1 ? '' : 's'}` })),
+            ]}
+          />
+          {showOutlet ? (
+            <Select
+              name="outlet"
+              defaultValue={rf.outletId ?? ''}
+              submitOnChange
+              aria-label="Outlet"
+              className="w-full sm:w-56"
+              options={[{ value: '', label: 'All outlets' }, ...options.outlets.map((o) => ({ value: o.id, label: `${o.name} · ${o.stationCode}` }))]}
+            />
+          ) : null}
+          <Select
+            name="why"
+            defaultValue={rf.reason ?? ''}
+            submitOnChange
+            aria-label="Why it is coming back"
+            className="w-full sm:w-52"
+            options={[
+              { value: '', label: 'Any reason' },
+              { value: 'FAILED', label: 'Not delivered' },
+              { value: 'CANCELLED', label: 'Cancelled on the way' },
+            ]}
+          />
+          <label className="relative block min-w-0 flex-1 basis-56">
+            <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-v2-faint" aria-hidden />
+            <input
+              name="q"
+              type="search"
+              defaultValue={rf.q ?? ''}
+              placeholder="Order no., passenger, train or seat"
+              autoComplete="off"
+              aria-label="Search returns"
+              className={cx(ordersFieldClass, 'h-10 pl-10 text-[14.5px]')}
+            />
+          </label>
+          {anyFilter ? (
+            <ButtonLink href={rHref({ clear: true })} variant="ghost" className="h-10">
+              Clear
+            </ButtonLink>
+          ) : null}
+        </form>
+        {!collected && canCollect && rf.riderId && rows.length > 1 ? (
+          <ReturnsMarkAll ids={rows.map((r) => r.id)} rider={riders.find((r) => r.id === rf.riderId)?.name ?? 'this rider'} />
+        ) : null}
         {rows.length === 0 ? (
           <EmptyState
-            title={filtered ? 'Nothing matches these filters' : collected ? 'Nothing collected yet' : 'Nothing to collect'}
+            title={anyFilter ? 'Nothing matches these filters' : collected ? 'Nothing collected yet' : 'Nothing to collect'}
             note={
-              filtered
+              anyFilter
                 ? 'Try clearing them, or widen the dates.'
                 : collected
                   ? 'Returns marked as back at the counter are listed here.'
                   : 'When a rider cannot deliver an order, or it is cancelled on the way, it shows here until the outlet takes the bag back.'
             }
-            action={filtered ? <ButtonLink href={`/v2/orders?view=returns`}>Clear filters</ButtonLink> : null}
+            action={anyFilter ? <ButtonLink href={rHref({ clear: true })}>Clear filters</ButtonLink> : null}
           />
         ) : (
           <TableFrame>
@@ -268,7 +359,10 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                         <Sub>
                           {[r.trainNo, r.rawSeat, r.contactName, `${r.itemCount} item${r.itemCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
                         </Sub>
-                        <Sub className="text-v2-ink-2">{rtoReasonLabel(r.reason)}{r.note ? ` · “${r.note}”` : ''}</Sub>
+                        <Sub className="text-v2-ink-2">
+                          {[rtoReasonLabel(r.reason), r.failureReason !== rtoReasonLabel(r.reason) ? r.failureReason : null].filter(Boolean).join(': ')}
+                          {r.note ? ` · “${r.note}”` : ''}
+                        </Sub>
                       </Td>
                       <Td className="align-top">
                         {r.riders.length ? r.riders.join(', ') : <span className="text-v2-faint">—</span>}
@@ -276,6 +370,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                       </Td>
                       <Td className="align-top">
                         <Mono className="text-xs text-v2-muted">{formatIST(collected ? r.returnedAt : r.openedAt)}</Mono>
+                        {!collected ? <ReturnAge openedAt={r.openedAt} nowMs={serverNowMs} /> : null}
                       </Td>
                       {!isTelecaller ? (
                         <Td align="right" className="align-top">
@@ -303,7 +398,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                 })}
               </tbody>
             </Table>
-            <Pagination page={page} pageSize={pageSize} total={total} buildHref={pageHref} className="border-t border-v2-line" />
+            <Pagination page={page} pageSize={pageSize} total={total} buildHref={(t) => rHref(t)} className="border-t border-v2-line" />
           </TableFrame>
         )}
       </div>
@@ -318,7 +413,15 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
     ])
     return (
       <div className="grid gap-[18px]">
-        {header(`${total} enquir${total === 1 ? 'y' : 'ies'} · not yet orders; they reach a kitchen once quoted and confirmed`)}
+        {header(`${total} group booking${total === 1 ? '' : 's'} · they reach a kitchen once quoted and confirmed`)}
+        <PillTabs
+          tabs={[
+            { href: '/v2/orders?view=enquiries', label: 'Open', active: stage === '' },
+            { href: '/v2/orders?view=enquiries&stage=ENQUIRY', label: 'Asking', active: stage === 'ENQUIRY' },
+            { href: '/v2/orders?view=enquiries&stage=QUOTED', label: 'Quoted', active: stage === 'QUOTED' },
+            { href: '/v2/orders?view=enquiries&stage=LOST', label: 'Not booked', active: stage === 'LOST' },
+          ]}
+        />
         {tabs}
         {filterBar}
         {rows.length === 0 ? (
@@ -368,6 +471,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                       </Td>
                       <Td>
                         <Chip tone={chip.tone}>{chip.label}</Chip>
+                        {lost && o.delivery?.failureReason ? <Sub>{reasonLabel(o.delivery.failureReason)}</Sub> : null}
                       </Td>
                     </tr>
                   )
@@ -382,7 +486,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   }
 
   /* ── Orders: Today, Upcoming, Cancelled, All ──────────────────────────── */
-  const columns = { outlet: showOutlet, amount: !isTelecaller, called: isTelecaller, date: !todayMode }
+  // A store manager works by seat and dish, not by order number.
+  const columns = { outlet: showOutlet, amount: !isTelecaller, called: isTelecaller, date: !todayMode, orderNo: role !== 'STORE_MANAGER' }
 
   const toRows = async (orders: OrderDoc[], timingOf: (o: OrderDoc) => { etaIso: string | null; arrived: boolean }): Promise<OrdersRow[]> => {
     const [riderName, diets] = await Promise.all([riderNamesFor(ctx, orders), orderDietsFor(ctx.tenantId, orders)])
@@ -415,6 +520,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
         bookedLabel: o.scheduledArrival ? formatTimeIST(o.scheduledArrival) : null,
         amountPaise: isTelecaller ? null : (o.amountPaise ?? null),
         paymentMode: o.paymentMode ?? null,
+        refundPaise: o.refund?.amountPaise ?? null,
+        ratingOrder: o.ratingOrder === true,
         rider: riderName.get(String(o._id)) || null,
         pax: o.pax ?? null,
         itemNames: foodItemLabels(o.items),
@@ -525,7 +632,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
           columns={columns}
           canBulk={canBulk}
           canOverride={isAdmin}
-          statusOptions={options.statuses}
+          // Only the fixed list: the server refuses a typed-in status now.
+          statusOptions={options.statuses.filter((st) => (ORDER_STATUSES as readonly string[]).includes(st))}
           riders={activeRiders}
           footer={<Pagination page={page} pageSize={pageSize} total={total} buildHref={pageHref} className="border-t border-v2-line" />}
         />

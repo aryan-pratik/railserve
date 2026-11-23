@@ -57,6 +57,14 @@ export async function POST(request: Request) {
         continue
       }
       if (ev.type === 'inbound') {
+        // A photo or file with no link cannot be shown. Logged so the exact
+        // shape MSG91 sends shows up in the server log (docs/WHATSAPP.md).
+        if (ev.kind === 'MEDIA' && !ev.mediaUrl) {
+          // Passenger number, name and contacts are left out of the log.
+          const { customerNumber: _n, customer_number: _n2, customerName: _c, contacts: _k, ...shape } = (raw ?? {}) as Record<string, unknown>
+          void [_n, _n2, _c, _k]
+          console.warn('[whatsapp-webhook] media without a link', JSON.stringify(shape).slice(0, 1500))
+        }
         const out = await recordInbound(tenantId, ev)
         if (out.duplicate) summary.duplicates += 1
         else summary.inbound += 1

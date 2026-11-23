@@ -112,6 +112,7 @@ export function OrdersFilterBar({
             { value: '', label: 'All' },
             { value: 'COD', label: 'Cash' },
             { value: 'PREPAID', label: 'Paid online' },
+            { value: 'REFUNDED', label: 'Refunded' },
           ]}
         />
         {options.stations.length > 1 && options.stations.length <= 8 ? (

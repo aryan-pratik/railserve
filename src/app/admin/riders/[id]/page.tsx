@@ -37,7 +37,7 @@ export const metadata = { title: 'Rider · RailServe' }
  * last three are what the rider finished inside those dates. Together they
  * are the same record the rider's own app shows, read from the same ledger.
  */
-const NOT_DELIVERED = ['FAILED', 'MISSED_DELIVERY', 'MISDELIVERY']
+const NOT_DELIVERED = ['FAILED']
 const WAITING = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']
 const BUCKETS = {
   waiting: 'Waiting for pickup',

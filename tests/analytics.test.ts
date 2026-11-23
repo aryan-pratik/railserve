@@ -14,13 +14,11 @@ describe('outcomeOf', () => {
     expect(outcomeOf('KOT_PRINTED')).toBe('progress')
     expect(outcomeOf('DISPATCHED')).toBe('progress')
     expect(outcomeOf('FAILED')).toBe('undelivered')
-    expect(outcomeOf('MISSED_DELIVERY')).toBe('undelivered')
     expect(outcomeOf('CANCELLED')).toBe('cancelled')
     expect(outcomeOf('LOST')).toBe('cancelled')
   })
 
-  it('counts refunds and custom statuses as other rather than dropping them', () => {
-    expect(outcomeOf('REFUNDED')).toBe('other')
+  it('counts older custom statuses as other rather than dropping them', () => {
     expect(outcomeOf('ON HOLD AT COUNTER')).toBe('other')
   })
 })
@@ -37,7 +35,7 @@ describe('readAnalyticsFilters', () => {
   it('drops values it does not recognise', () => {
     const f = readAnalyticsFilters({
       outlet: 'not-an-id', source: 'NOPE', payment: 'BARTER', rider: 'someone', type: 'X', mode: 'all', by: 'nope',
-      status: 'RATING_ORDER', station: ['cnb', 'bad code!'],
+      status: 'X'.repeat(61), station: ['cnb', 'bad code!'],
     })
     expect(f).toMatchObject({ outlet: '', source: '', payment: '', rider: '', type: '', mode: 'month', status: '', by: 'outlet' })
     expect(f.stations).toEqual(['CNB'])
@@ -82,7 +80,7 @@ describe('tallies', () => {
     row('A', 'CANCELLED', 1, 5_000),
     row('B', 'DELIVERED', 2, 20_000),
     row('B', 'ACCEPTED', 9, 90_000),
-    row(null, 'REFUNDED', 1, 1_000),
+    row(null, 'ON_HOLD', 1, 1_000),
   ]
 
   it('groups by key, busiest first, and only counts delivered value as earned', () => {

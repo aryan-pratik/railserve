@@ -4,6 +4,7 @@ import { GMAIL_STATE_ID, IngestState } from '../../models'
 import { env } from '../../env'
 import { ingestEmail, type IngestOutcome } from '../index'
 import { extractBody, gmailClient, headerValue, isGmailConfigured } from './client'
+import { gmailAuthHeader } from '../mailAuth'
 import { getPrimaryTenantId, tenantKey } from '../../tenancy/primary'
 
 /**
@@ -190,6 +191,7 @@ export async function syncGmailHistory(): Promise<SyncSummary> {
         subject: headerValue(headers, 'Subject'),
         from: headerValue(headers, 'From'),
         allowedSenders: state.allowedSenders ?? [],
+        mailbox: { enforceSenders: state.enforceSenders === true, authResults: gmailAuthHeader(headers) },
       })
       summary.processed += 1
       if (outcome.status === 'CREATED') summary.created += 1

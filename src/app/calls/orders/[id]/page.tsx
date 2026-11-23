@@ -22,7 +22,7 @@ import { CancelOrderButton } from '../../CancelOrderButton'
 import { OutcomeActionButton } from '../../OutcomeActionButton'
 import { RatingOrderButton } from '../../RatingOrderButton'
 import { DeliveredButton } from '../../DeliveredButton'
-import { markMisdelivery, markMissedDelivery, markNotDelivered, markRefunded } from '../../actions'
+import { markNotDelivered, markRefunded } from '../../actions'
 import { viewCancelRequest } from '@/lib/repo/cancelRequestRepo'
 import { CancelRequestCard } from '@/components/CancelRequest'
 import { viewReturn } from '@/lib/repo/rtoRepo'
@@ -80,17 +80,11 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
   const canCancel = nextStatuses.includes('CANCELLED')
   const canDeliver = nextStatuses.includes('DELIVERED')
   const canFail = nextStatuses.includes('FAILED')
-  const canMisdeliver = nextStatuses.includes('MISDELIVERY')
-  const canMissDeliver = nextStatuses.includes('MISSED_DELIVERY')
-  const canRefund = nextStatuses.includes('REFUNDED')
-  // RATING_ORDER sits outside TRANSITIONS on purpose — see canFlagRatingOrder
-  // in orderStatus.ts — so it is offered independent of the other four: an
-  // order can be both e.g. CANCELLED and later flagged as a decoy. It is
-  // only hidden once an order is already RATING_ORDER, since flagging it
-  // twice is a no-op transitionOrder would just reject.
-  const canFlagRating = canFlagRatingOrder('TELECALLER') && order.status !== 'RATING_ORDER'
-  const noOutcomeAvailable =
-    !canCancel && !canDeliver && !canFail && !canMisdeliver && !canMissDeliver && !canRefund && !canFlagRating
+  // Refunds and the rating-order tag are not statuses: they sit on the order
+  // whatever its status, so they are offered on any order not yet carrying one.
+  const canRefund = !order.refund
+  const canFlagRating = canFlagRatingOrder('TELECALLER') && !order.ratingOrder
+  const noOutcomeAvailable = !canCancel && !canDeliver && !canFail && !canRefund && !canFlagRating
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -116,53 +110,26 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
                     description="The food did not reach the passenger. This closes the order as not delivered, with your reason, for the outlet and admin."
                     quickReasons={[
                       'Passenger not reachable at the seat',
-                      'Train left before the rider got there',
+                      'Train left before the food reached it',
+                      'Given to the wrong passenger',
                       'Passenger refused the food',
                     ]}
                   />
                 ) : null}
               </div>
             ) : null}
-            {canCancel || canMisdeliver || canMissDeliver || canRefund ? (
+            {canCancel || canRefund ? (
               <div className="flex flex-wrap items-center gap-2">
                 {canCancel ? (
                   <CancelOrderButton orderId={id} externalOrderId={order.externalOrderId} />
-                ) : null}
-                {canMisdeliver ? (
-                  <OutcomeActionButton
-                    orderId={id}
-                    action={markMisdelivery}
-                    buttonLabel="Misdelivery"
-                    modalTitle="Mark as misdelivered?"
-                    description="The food reached the wrong seat or passenger. This is recorded against the order for the outlet and admin."
-                    quickReasons={[
-                      'Delivered to the wrong seat',
-                      'Delivered to the wrong passenger',
-                      'Wrong order handed to this passenger',
-                    ]}
-                  />
-                ) : null}
-                {canMissDeliver ? (
-                  <OutcomeActionButton
-                    orderId={id}
-                    action={markMissedDelivery}
-                    buttonLabel="Missed delivery"
-                    modalTitle="Mark as a missed delivery?"
-                    description="The rider could not reach the passenger or seat in time. This is recorded against the order for the outlet and admin."
-                    quickReasons={[
-                      'Passenger not at seat, unreachable',
-                      'Train left before delivery',
-                      'Rider could not locate the seat',
-                    ]}
-                  />
                 ) : null}
                 {canRefund ? (
                   <OutcomeActionButton
                     orderId={id}
                     action={markRefunded}
                     buttonLabel="Refunded"
-                    modalTitle="Mark as refunded?"
-                    description="The passenger is being refunded for this order. This is recorded against the order for the outlet and admin."
+                    modalTitle="Record a full refund?"
+                    description="The whole order amount was paid back to the passenger. The order keeps its status; the refund is recorded on it for the outlet and admin."
                     quickReasons={[
                       'Passenger requested a refund on the call',
                       'Order was refunded after a complaint',
@@ -176,13 +143,17 @@ export default async function CallOrderDetail(props: PageProps<'/calls/orders/[i
                 <RatingOrderButton orderId={id} />
               </div>
             ) : null}
+            {order.refund ? (
+              <p className="text-sm font-semibold text-red-700">
+                Refunded ₹{(order.refund.amountPaise / 100).toLocaleString('en-IN')}
+              </p>
+            ) : null}
+            {order.ratingOrder ? <p className="text-sm text-muted">Tagged as a rating order.</p> : null}
             {noOutcomeAvailable ? (
               <span className="text-sm text-muted">
                 {order.status === 'CANCELLED'
                   ? 'Already cancelled.'
-                  : order.status === 'RATING_ORDER'
-                    ? 'Already marked as a rating order.'
-                    : 'This order can no longer be updated from here.'}
+                  : 'This order can no longer be updated from here.'}
               </span>
             ) : null}
           </div>

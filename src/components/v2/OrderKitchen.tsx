@@ -154,7 +154,7 @@ export function KitchenActions({
   return (
     <div className="grid gap-3">
       {status === 'PREPARED' ? <Chip tone="ok">On the shelf, waiting for the rider</Chip> : null}
-      {status === 'DISPATCHED' ? <Chip tone="out">Out for delivery</Chip> : null}
+      {status === 'DISPATCHED' ? <Chip tone="out">With rider</Chip> : null}
       {steps.length > 0 ? <div className="flex flex-wrap items-center gap-2">{steps}</div> : null}
       {steps.length === 0 && wentWrong.length === 0 ? <p className="text-sm text-v2-muted">Nothing further for the kitchen on this order.</p> : null}
       {wentWrong.length > 0 ? (

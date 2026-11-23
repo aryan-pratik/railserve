@@ -221,15 +221,28 @@ function Media({ m, onOpen, out }: { m: MessageView; onOpen: (id: string) => voi
   const caption = m.mediaCaption ?? m.text
   const [thumbFailed, setThumbFailed] = useState(false)
   if (!m.mediaUrl) {
+    // WhatsApp sent the file without a link we can open (see docs/WHATSAPP.md).
+    // Say what it is and where to see it, rather than a dead "Attachment".
     return (
-      <div>
-        <span className="italic opacity-70">Attachment</span>
+      <div className="grid gap-0.5">
+        <span className="font-semibold">{MISSING_LABEL[mediaWord(m.mediaType)]}</span>
+        <span className="text-[12px] opacity-75">Can&apos;t be shown here. Open WhatsApp on the business phone to see it.</span>
         {caption ? <p className="mt-0.5 whitespace-pre-wrap">{caption}</p> : null}
       </div>
     )
   }
   const kind = previewKind(m.mediaType, m.mediaUrl, m.mediaCaption)
   const thumb = kind === 'image' && !thumbFailed
+  if (kind === 'image' && thumbFailed) {
+    // The provider's links expire; an old photo can no longer be fetched.
+    return (
+      <div className="grid gap-0.5">
+        <span className="font-semibold">📷 Photo from the passenger</span>
+        <span className="text-[12px] opacity-75">The link to this photo no longer works. Open WhatsApp on the business phone to see it.</span>
+        {caption ? <p className="mt-0.5 whitespace-pre-wrap">{caption}</p> : null}
+      </div>
+    )
+  }
   return (
     <div>
       <button
@@ -247,6 +260,34 @@ function Media({ m, onOpen, out }: { m: MessageView; onOpen: (id: string) => voi
       {caption ? <p className="mt-0.5 whitespace-pre-wrap">{caption}</p> : null}
     </div>
   )
+}
+
+/** The kind of file, from WhatsApp's word for it. */
+function mediaWord(t: string | null | undefined): 'photo' | 'video' | 'voice' | 'document' | 'sticker' | 'file' {
+  switch (t) {
+    case 'image':
+      return 'photo'
+    case 'video':
+      return 'video'
+    case 'audio':
+    case 'voice':
+      return 'voice'
+    case 'document':
+      return 'document'
+    case 'sticker':
+      return 'sticker'
+    default:
+      return 'file'
+  }
+}
+
+const MISSING_LABEL: Record<ReturnType<typeof mediaWord>, string> = {
+  photo: '📷 Photo from the passenger',
+  video: '🎬 Video from the passenger',
+  voice: '🎤 Voice note from the passenger',
+  document: '📄 Document from the passenger',
+  sticker: 'Sticker',
+  file: '📎 File from the passenger',
 }
 
 const ATTACHMENT_LABEL: Record<PreviewKind, string> = {

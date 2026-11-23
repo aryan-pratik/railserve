@@ -33,6 +33,7 @@ export const REASON_SHORT: Record<InboxReason, string> = {
   PARSE_FAILED: 'No parser',
   UNKNOWN_OUTLET: 'Unknown outlet',
   MISSING_FIELD: 'Field missing',
+  SENDER_NOT_TRUSTED: 'Unknown sender',
 }
 
 export function resolutionLabel(row: Pick<InboxRow, 'resolution'>): string {

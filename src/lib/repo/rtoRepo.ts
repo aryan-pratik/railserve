@@ -4,6 +4,8 @@ import { ConflictError, ForbiddenError, NotFoundError, type AuthContext } from '
 import { ROLE_LABEL } from '../roles'
 import { canCollectReturns, RTO_NOTE_MAX, type RtoStatus } from '../rto'
 import { riderRecordOf, scoped } from './orderRepo'
+import { orderSearchClause } from './orderSearch'
+import { reasonLabel } from '../orderStatus'
 
 /**
  * Return to origin: the bag that went out with a rider and is coming back.
@@ -170,6 +172,78 @@ export type ReturnRow = {
   returnedAt: string | null
   returnedBy: string | null
   note: string | null
+  /** Why it was not delivered, in words, when the order says. */
+  failureReason: string | null
+  /** The riders who carried it, as ids: the board groups by these. */
+  riderIds: string[]
+}
+
+/** What the Bags coming back screen can narrow by. */
+export type ReturnFilters = {
+  riderId?: string | null
+  outletId?: string | null
+  /** CANCELLED (cancelled on the way) or FAILED (not delivered). */
+  reason?: 'CANCELLED' | 'FAILED' | null
+  q?: string | null
+}
+
+/**
+ * The Mongo conditions for the filters, inside the caller's scope. A rider
+ * is the one who took the bag (pickedUpBy), or, on orders from before that
+ * was recorded, anyone it was assigned to.
+ */
+export async function returnFilterClause(ctx: AuthContext, f: ReturnFilters): Promise<Record<string, unknown>> {
+  const and: Record<string, unknown>[] = []
+  if (f.riderId && mongoose.isValidObjectId(f.riderId)) {
+    const rid = new mongoose.Types.ObjectId(f.riderId)
+    and.push({ $or: [{ 'delivery.pickedUpBy': rid }, { 'delivery.pickedUpBy': null, 'delivery.agentIds': rid }] })
+  }
+  if (f.outletId && mongoose.isValidObjectId(f.outletId)) and.push({ restaurantId: new mongoose.Types.ObjectId(f.outletId) })
+  if (f.reason === 'CANCELLED') and.push({ 'delivery.rto.reason': 'CANCELLED' })
+  // Not delivered, including returns opened as "missed delivery" before the status clean-up.
+  if (f.reason === 'FAILED') and.push({ 'delivery.rto.reason': { $in: ['FAILED', 'MISSED_DELIVERY'] } })
+  const search = f.q ? await orderSearchClause(ctx, f.q) : null
+  if (search) and.push(search)
+  return and.length ? { $and: and } : {}
+}
+
+/**
+ * The riders with returns in this state, and how many each: the rider
+ * dropdown, so the counter can pull up one rider's bags when they walk in.
+ */
+export async function returnRiders(ctx: AuthContext, status: RtoStatus): Promise<{ id: string; name: string; count: number }[]> {
+  const orders = await Order.find(scoped(ctx, { 'delivery.rto.status': status }))
+    .select('delivery.agentIds delivery.pickedUpBy')
+    .sort({ 'delivery.rto.openedAt': -1 })
+    .limit(3000)
+    .lean()
+  const counts = new Map<string, number>()
+  for (const o of orders) for (const id of riderRecordOf(o)) counts.set(String(id), (counts.get(String(id)) ?? 0) + 1)
+  if (counts.size === 0) return []
+  const users = await User.find({ _id: { $in: [...counts.keys()] }, tenantId: ctx.tenantId }).select('name').lean()
+  return users
+    .map((u) => ({ id: String(u._id), name: u.name, count: counts.get(String(u._id)) ?? 0 }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
+/**
+ * Several bags back at once: a rider walks in with everything they could
+ * not deliver. Each goes through the same rules as one at a time; the ones
+ * that fail are reported, the rest are marked.
+ */
+export async function markManyReturned(ctx: AuthContext, orderIds: string[], note: string | null): Promise<{ marked: number; errors: string[] }> {
+  await assertMayCollectReturns(ctx)
+  let marked = 0
+  const errors: string[] = []
+  for (const orderId of orderIds.slice(0, 100)) {
+    try {
+      await markReturnedToOrigin({ ctx, orderId, note })
+      marked++
+    } catch (err) {
+      if (errors.length < 3) errors.push(err instanceof Error ? err.message : 'Could not record one return.')
+    }
+  }
+  return { marked, errors }
 }
 
 /**
@@ -192,7 +266,7 @@ export async function listReturns(
     opts.status === 'PENDING' ? { 'delivery.rto.openedAt': 1 } : { 'delivery.rto.returnedAt': -1 }
   const [orders, total] = await Promise.all([
     Order.find(filter)
-      .select('externalOrderId status trainNo contactName rawSeat restaurantId items amountPaise paymentMode delivery.agentIds delivery.pickedUpBy delivery.rto')
+      .select('externalOrderId status trainNo contactName rawSeat restaurantId items amountPaise paymentMode delivery.agentIds delivery.pickedUpBy delivery.rto delivery.failureReason')
       .sort(sort)
       .skip(opts.skip)
       .limit(opts.limit)
@@ -229,6 +303,8 @@ export async function listReturns(
       returnedAt: rto.returnedAt ? rto.returnedAt.toISOString() : null,
       returnedBy: rto.returnedBy ? (userName.get(String(rto.returnedBy)) ?? 'Unknown user') : null,
       note: rto.note ?? null,
+      failureReason: reasonLabel(o.delivery?.failureReason),
+      riderIds: riderRecordOf(o).map(String),
     }
   })
   return { rows, total }

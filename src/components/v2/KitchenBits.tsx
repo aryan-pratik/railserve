@@ -6,6 +6,7 @@ import { Check, ChevronDown, Copy, Loader2, MessageSquareText, RefreshCw } from 
 import type { OrderDiet } from '@/lib/diet'
 import { Button, VegMark, cx, v2Focus } from './ui'
 import { checkTrainV2, type KitchenActionState } from '@/app/v2/kitchen/actions'
+import { copyText } from '@/lib/copyText'
 
 /*
  * Small client pieces the kitchen board shares between the desk card, the
@@ -96,32 +97,36 @@ export function KitchenConfirm({
 }
 
 /** Copies `text` and flashes a tick so the person has proof it worked. */
-export function KitchenCopyButton({ text, label, className }: { text: string; label: string; className?: string }) {
-  const [copied, setCopied] = useState(false)
+export function KitchenCopyButton({ text, label, className, row = false }: { text: string; label: string; className?: string; row?: boolean }) {
+  const [result, setResult] = useState<'copied' | 'failed' | null>(null)
   async function copy(e: React.MouseEvent) {
     e.stopPropagation()
     e.preventDefault()
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard blocked; nothing useful to recover into.
-    }
+    setResult((await copyText(text)) ? 'copied' : 'failed')
+    setTimeout(() => setResult(null), 1800)
   }
+  const word = result === 'copied' ? 'Copied' : result === 'failed' ? "Couldn't copy" : null
   return (
     <button
       type="button"
       onClick={copy}
       aria-label={label}
-      title={copied ? 'Copied' : label}
+      title={word ?? label}
       className={cx(
-        'grid h-8 w-8 place-items-center rounded-full text-v2-muted transition-colors hover:bg-v2-surface-2 hover:text-v2-ink',
+        row
+          ? 'flex w-full items-center gap-2.5 rounded-v2-sm px-3 py-2 text-left text-sm font-semibold text-v2-ink hover:bg-v2-surface-2'
+          : cx(
+              'inline-flex h-8 items-center justify-center gap-1.5 rounded-full transition-colors',
+              word ? cx('px-2.5', result === 'copied' ? 'bg-v2-brand-soft text-v2-brand' : 'bg-v2-bad-bg text-v2-bad') : 'w-8 text-v2-muted hover:bg-v2-surface-2 hover:text-v2-ink',
+            ),
         v2Focus,
         className,
       )}
     >
-      {copied ? <Check size={15} className="text-v2-brand" aria-hidden /> : <Copy size={15} aria-hidden />}
+      {result === 'copied' ? <Check size={15} aria-hidden /> : <Copy size={15} aria-hidden />}
+      {row ? <span>{word ?? label}</span> : word ? <span className="text-[12px] font-semibold">{word}</span> : null}
+      {/* Said out loud too, for a screen reader. */}
+      <span role="status" className="sr-only">{word ?? ''}</span>
     </button>
   )
 }
@@ -169,10 +174,10 @@ export function KitchenNoteHint({ count, hint }: { count: number; hint: string |
  * order riding it, so any order id on the run will do. Round, like the copy
  * button next to it; the outcome shows as a title and a short note.
  */
-export function KitchenCheckNowButton({ orderId, className }: { orderId: string; className?: string }) {
+export function KitchenCheckNowButton({ orderId, className, row = false }: { orderId: string; className?: string; row?: boolean }) {
   const [state, action, pending] = useActionState(checkTrainV2, {})
   return (
-    <form action={action} className="inline-flex items-center gap-1.5">
+    <form action={action} className={row ? 'grid gap-1' : 'inline-flex items-center gap-1.5'}>
       <input type="hidden" name="orderId" value={orderId} />
       <button
         type="submit"
@@ -181,15 +186,18 @@ export function KitchenCheckNowButton({ orderId, className }: { orderId: string;
         aria-label="Check this train now"
         title={state.error ?? 'Ask the railway now instead of waiting for the next check'}
         className={cx(
-          'grid h-8 w-8 place-items-center rounded-full text-v2-muted transition-colors hover:bg-v2-surface-2 hover:text-v2-ink disabled:opacity-60',
+          row
+            ? 'flex w-full items-center gap-2.5 rounded-v2-sm px-3 py-2 text-left text-sm font-semibold text-v2-ink hover:bg-v2-surface-2 disabled:opacity-60'
+            : 'grid h-8 w-8 place-items-center rounded-full text-v2-muted transition-colors hover:bg-v2-surface-2 hover:text-v2-ink disabled:opacity-60',
           v2Focus,
           className,
         )}
       >
         <RefreshCw size={15} className={pending ? 'animate-spin' : undefined} aria-hidden />
+        {row ? <span>{pending ? 'Checking…' : 'Check live train time now'}</span> : null}
       </button>
       {state.error ? (
-        <span role="alert" className="max-w-[12rem] truncate text-[11px] font-semibold text-v2-bad" title={state.error}>
+        <span role="alert" className={row ? 'px-3 text-[12px] font-semibold text-v2-bad' : 'max-w-[12rem] truncate text-[11px] font-semibold text-v2-bad'} title={state.error}>
           {state.error}
         </span>
       ) : null}

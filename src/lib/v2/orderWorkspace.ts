@@ -18,6 +18,7 @@ import { runKeyFor } from '@/lib/runs'
 import { env } from '@/lib/env'
 import type { CallNoteView } from '@/lib/callNotes'
 import { rtoReasonLabel } from '@/lib/rto'
+import { REFUND_PAYERS, REFUND_REASONS, reasonLabel } from '@/lib/orderStatus'
 
 /*
  * Everything the order workspace page reads, in one call, already in the
@@ -53,7 +54,13 @@ export type JourneyEntry = {
   toStatus: string | null
 }
 
+export type RefundView = { amountPaise: number; reason: string; payer: string | null; note: string | null; at: string; by: string | null } | null
+
 export type OrderWorkspace = {
+  /** Money paid back to the passenger; the order keeps its status. */
+  refund: RefundView
+  /** A decoy placed only to get an app-store rating. */
+  ratingOrder: boolean
   id: string
   externalOrderId: string
   status: string
@@ -221,6 +228,17 @@ export async function loadOrderWorkspace(ctx: AuthContext, id: string): Promise<
     contactName: order.contactName ?? null,
     contactPhone: order.contactPhone ?? null,
     amountPaise: order.amountPaise ?? null,
+    refund: order.refund
+      ? {
+          amountPaise: order.refund.amountPaise,
+          reason: order.refund.reason,
+          payer: order.refund.payer ?? null,
+          note: order.refund.note ?? null,
+          at: new Date(order.refund.at).toISOString(),
+          by: order.refund.byId ? (names.get(String(order.refund.byId)) ?? null) : null,
+        }
+      : null,
+    ratingOrder: order.ratingOrder === true,
     paymentMode: order.paymentMode ?? null,
     notes: order.notes ?? null,
     remark: order.remark ?? null,
@@ -256,7 +274,7 @@ export async function loadOrderWorkspace(ctx: AuthContext, id: string): Promise<
       proofType: d?.proofType ?? null,
       proofValue: d?.proofValue ?? null,
       amountCollectedPaise: d?.amountCollectedPaise ?? null,
-      failureReason: d?.failureReason ?? null,
+      failureReason: reasonLabel(d?.failureReason),
       codSettledAtIso: d?.codSettledAt?.toISOString() ?? null,
       codSettledBy: d?.codSettledBy ? (names.get(String(d.codSettledBy)) ?? 'Unknown user') : null,
       collectedBy: d?.collectedBy ? (names.get(String(d.collectedBy)) ?? 'Unknown user') : null,
@@ -320,6 +338,9 @@ export function journeyEntry(e: RawEvent, names: Map<string, string>, source: st
   }
 
   const via = str(e.meta.via)
+  if (via === 'status-cleanup') {
+    return { at, actor: who, reason, toStatus: e.toStatus, title: `Moved to the simpler status list: now ${statusWord(e.toStatus)}`, detail: `Was "${statusWord(e.fromStatus)}", a status that no longer exists` }
+  }
   const detail = via === 'admin-override' ? 'Set directly by an admin, outside the usual steps' : null
   let title: string
   switch (e.toStatus) {
@@ -351,7 +372,7 @@ export function journeyEntry(e: RawEvent, names: Map<string, string>, source: st
       title = `${who} cancelled the order`
       break
     case 'LOST':
-      title = `${who} marked the enquiry lost`
+      title = `${who} marked the group booking not booked`
       break
     case 'MISDELIVERY':
       title = `${who} recorded a misdelivery`
@@ -375,6 +396,19 @@ export function journeyEntry(e: RawEvent, names: Map<string, string>, source: st
 function sideAction(meta: Record<string, unknown>, who: string, names: Map<string, string>): { title: string; detail: string | null } {
   const list = (ids: unknown) =>
     Array.isArray(ids) && ids.length > 0 ? ids.map((id) => names.get(String(id)) ?? 'Unknown rider').join(', ') : 'nobody'
+  switch (meta.via) {
+    case 'refund':
+      return {
+        title: `${who} recorded a refund of ${formatMoney(typeof meta.amountPaise === 'number' ? meta.amountPaise : null)}`,
+        detail: [(REFUND_REASONS as Record<string, string>)[String(meta.reason)], meta.payer ? (REFUND_PAYERS as Record<string, string>)[String(meta.payer)] : null, str(meta.note)].filter(Boolean).join(' · ') || null,
+      }
+    case 'refund-removed':
+      return { title: `${who} removed the refund`, detail: null }
+    case 'rating-flag':
+      return { title: `${who} tagged this as a rating order`, detail: str(meta.note) }
+    case 'rating-unflag':
+      return { title: `${who} removed the rating-order tag`, detail: null }
+  }
   switch (meta.action) {
     case 'FIELD_EDITED': {
       const def = orderField(String(meta.field))
@@ -435,4 +469,14 @@ function sideAction(meta: Record<string, unknown>, who: string, names: Map<strin
         detail: null,
       }
   }
+}
+
+/** A status in plain words, retired ones included, for history lines. */
+function statusWord(status: string | null | undefined): string {
+  const words: Record<string, string> = {
+    RECEIVED: 'new', ACCEPTED: 'accepted', KOT_PRINTED: 'cooking', PREPARED: 'ready', DISPATCHED: 'with rider', DELIVERED: 'delivered',
+    FAILED: 'not delivered', CANCELLED: 'cancelled', LOST: 'not booked', ENQUIRY: 'enquiry', QUOTED: 'quoted',
+    MISDELIVERY: 'misdelivery', MISSED_DELIVERY: 'missed delivery', MISSED_DELEVERY: 'missed delivery', REFUNDED: 'refunded', REFUND: 'refunded', RATING_ORDER: 'rating order',
+  }
+  return status ? (words[status] ?? status.replace(/_/g, ' ').toLowerCase()) : 'unknown'
 }

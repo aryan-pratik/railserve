@@ -27,22 +27,23 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 }
 
 /**
- * Which statuses make up each outcome. `other` is open-ended: REFUNDED, plus
- * any custom status an admin has typed in, so a new one is counted somewhere
+ * Which statuses make up each outcome. `other` is open-ended: any older
+ * custom status an admin has typed in, so a new one is counted somewhere
  * the day it appears rather than vanishing from the totals.
  */
 export const OUTCOME_STATUSES: Record<Exclude<Outcome, 'other'>, readonly string[]> = {
   delivered: ['DELIVERED'],
   progress: ['ENQUIRY', 'QUOTED', 'RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED'],
-  undelivered: ['FAILED', 'MISSED_DELIVERY', 'MISDELIVERY'],
+  undelivered: ['FAILED'],
   cancelled: ['CANCELLED', 'LOST'],
 }
 
 /**
- * Decoys run to prompt an app-store rating. Not business, so they are left
- * out of every figure on the screen, not merely out of "delivered".
+ * Decoys run to prompt an app-store rating (order.ratingOrder). Not business,
+ * so they are left out of every figure on the screen, not merely out of
+ * "delivered". A Mongo clause, to spread into a query or push into an $and.
  */
-export const EXCLUDED_STATUS = 'RATING_ORDER'
+export const NOT_DECOY = { ratingOrder: { $ne: true } } as const
 
 /*
  * What counts, on every screen that counts orders.
@@ -171,7 +172,7 @@ export function readAnalyticsFilters(sp: Params): AnalyticsFilters {
     payment: payment === NO_PAYMENT || (PAYMENT_MODES as readonly string[]).includes(payment) ? payment : '',
     rider: rider === NO_RIDER || /^[a-f0-9]{24}$/i.test(rider) ? rider : '',
     type: (ORDER_TYPES as readonly string[]).includes(type) ? type : '',
-    status: status && status !== EXCLUDED_STATUS && status.length <= 60 ? status : '',
+    status: status && status.length <= 60 ? status : '',
     by: 'outlet',
     bySet,
   }

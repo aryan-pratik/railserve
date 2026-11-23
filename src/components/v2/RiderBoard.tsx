@@ -33,6 +33,7 @@ import { EmptyState, Notice, Pagination, Sub, Table, Td, Th, readPaging, rowClas
 import { RiderDialog, riderInputClass } from './RiderDialog'
 import { RiderCashDialog } from './RiderCashDialog'
 import { RiderFormDialog } from './RiderFormDialog'
+import { MenuButton } from './Floating'
 
 // Leaflet touches `window` on import, so the map is never part of the server render.
 const RiderMap = dynamic(() => import('./RiderMap').then((m) => m.RiderMap), {
@@ -265,7 +266,7 @@ export function RiderBoard({
       {carriedParts.length ? (
         <p className="-mt-2 text-[12.5px] text-v2-muted">
           <span className="font-semibold text-v2-ink-2">Carried over:</span> {carriedParts.join(' · ')}.{' '}
-          <Link href="/v2/orders?view=all&status=DISPATCHED" className="font-semibold text-v2-brand underline-offset-2 hover:underline">
+          <Link href={isAdmin ? '/v2/orders?view=all&status=DISPATCHED' : '/v2/kitchen?status=platform'} className="font-semibold text-v2-brand underline-offset-2 hover:underline">
             See open orders
           </Link>
         </p>
@@ -587,23 +588,6 @@ function RosterRow({
   const status = boardStatusOf(rider)
   const placed = rider.position !== null && rider.presence !== 'NEVER'
   const due = rider.dueOrders.reduce((a, o) => a + o.paise, 0)
-  const menu = useRef<HTMLDetailsElement | null>(null)
-
-  // Native <details> for the menu; light dismiss is the one thing it lacks.
-  useEffect(() => {
-    const el = menu.current
-    if (!el) return
-    const close = (e: Event) => {
-      if (!el.open) return
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !el.contains(e.target as Node)) el.open = false
-    }
-    document.addEventListener('pointerdown', close)
-    document.addEventListener('keydown', close)
-    return () => {
-      document.removeEventListener('pointerdown', close)
-      document.removeEventListener('keydown', close)
-    }
-  }, [])
 
   return (
     <tr
@@ -711,29 +695,27 @@ function RosterRow({
           >
             <Phone size={15} strokeWidth={2} aria-hidden />
           </a>
-          <details ref={menu} className="relative">
-            <summary
-              aria-label={`More actions for ${rider.name}`}
-              className={cx('grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-v2-line text-v2-ink-2 hover:bg-v2-surface-2 [&::-webkit-details-marker]:hidden', v2Focus)}
+          <MenuButton
+            label={<MoreHorizontal size={15} strokeWidth={2} aria-hidden />}
+            ariaLabel={`More actions for ${rider.name}`}
+            buttonClassName="grid h-8 w-8 place-items-center rounded-full border border-v2-line text-v2-ink-2 hover:bg-v2-surface-2"
+            panelClassName="w-44 p-1 text-left text-sm"
+          >
+            <Link href={href} className={cx('rounded-v2-sm px-2.5 py-1.5 hover:bg-v2-surface-2', v2Focus)}>
+              Orders and log
+            </Link>
+            <button type="button" data-menu-close onClick={() => onEdit(rider)} className={cx('rounded-v2-sm px-2.5 py-1.5 text-left hover:bg-v2-surface-2', v2Focus)}>
+              Edit rider
+            </button>
+            <button
+              type="button"
+              data-menu-close
+              onClick={() => onToggle(rider)}
+              className={cx('rounded-v2-sm px-2.5 py-1.5 text-left hover:bg-v2-surface-2', rider.active ? 'text-v2-bad' : 'text-v2-brand', v2Focus)}
             >
-              <MoreHorizontal size={15} strokeWidth={2} aria-hidden />
-            </summary>
-            <div className="absolute right-0 top-full z-20 mt-1 grid w-44 gap-0.5 rounded-v2-md border border-v2-line bg-v2-surface p-1 text-left text-sm shadow-v2-pop">
-              <Link href={href} className={cx('rounded-v2-sm px-2.5 py-1.5 hover:bg-v2-surface-2', v2Focus)}>
-                Orders and log
-              </Link>
-              <button type="button" onClick={() => onEdit(rider)} className={cx('rounded-v2-sm px-2.5 py-1.5 text-left hover:bg-v2-surface-2', v2Focus)}>
-                Edit rider
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggle(rider)}
-                className={cx('rounded-v2-sm px-2.5 py-1.5 text-left hover:bg-v2-surface-2', rider.active ? 'text-v2-bad' : 'text-v2-brand', v2Focus)}
-              >
-                {rider.active ? 'Deactivate' : 'Activate'}
-              </button>
-            </div>
-          </details>
+              {rider.active ? 'Deactivate' : 'Activate'}
+            </button>
+          </MenuButton>
         </span>
       </Td>
     </tr>

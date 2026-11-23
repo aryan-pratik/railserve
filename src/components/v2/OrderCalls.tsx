@@ -16,11 +16,12 @@ import {
   editCallNoteV2,
   flagRatingOrderV2,
   markDeliveredV2,
-  markMisdeliveryV2,
-  markMissedDeliveryV2,
   markNotDeliveredV2,
-  markRefundedV2,
+  recordRefundV2,
+  clearRefundV2,
 } from '@/app/v2/orders/[id]/actions'
+import { FAILURE_REASONS, REFUND_PAYERS, REFUND_REASONS } from '@/lib/orderStatus'
+import type { RefundView } from '@/lib/v2/orderWorkspace'
 
 const initial: FormState = {}
 
@@ -28,138 +29,166 @@ export type OutcomeFlags = {
   cancel: boolean
   deliver: boolean
   fail: boolean
-  misdeliver: boolean
-  missDeliver: boolean
-  refund: boolean
-  rating: boolean
+}
+
+/** One choice per line, big enough to tap: the reasons in a dialog. */
+function ReasonChoices({ name, options, legend, value, required = true }: { name: string; options: Record<string, string>; legend: string; value?: string | null; required?: boolean }) {
+  return (
+    <fieldset className="grid gap-1.5">
+      <legend className="mb-1 text-xs font-semibold text-v2-ink-2">{legend}</legend>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(options).map(([code, label]) => (
+          <label key={code} className="cursor-pointer">
+            <input type="radio" name={name} value={code} required={required} defaultChecked={value === code} className="peer sr-only" />
+            <span className="inline-flex h-9 items-center rounded-full border border-v2-line-strong px-3 text-[13.5px] font-semibold text-v2-ink-2 peer-checked:border-v2-ink peer-checked:bg-v2-ink peer-checked:text-v2-bg peer-focus-visible:ring-2 peer-focus-visible:ring-v2-brand">
+              {label}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
 }
 
 /**
- * What the passenger said, as one button each. Delivered confirms; every
- * other outcome needs a reason on record, with the usual ones one tap away.
+ * What the passenger said, as one button each. Delivered confirms; not
+ * delivered and cancel need a reason on record.
  */
 export function OutcomeButtons({ orderId, externalOrderId, status, can }: { orderId: string; externalOrderId: string; status: string; can: OutcomeFlags }) {
   const fields = { orderId }
-  const none = !can.cancel && !can.deliver && !can.fail && !can.misdeliver && !can.missDeliver && !can.refund && !can.rating
-  if (none) {
-    return (
-      <p className="text-sm text-v2-muted">
-        {status === 'CANCELLED' ? 'Already cancelled.' : status === 'RATING_ORDER' ? 'Already marked as a rating order.' : 'This order can no longer be updated from here.'}
-      </p>
-    )
+  if (!can.cancel && !can.deliver && !can.fail) {
+    return <p className="text-sm text-v2-muted">{status === 'CANCELLED' ? 'Already cancelled.' : 'This order can no longer be updated from here.'}</p>
   }
   return (
+    <div className="flex flex-wrap items-center gap-2">
+      {can.deliver ? (
+        <ConfirmActionButton
+          action={markDeliveredV2}
+          fields={fields}
+          label="Delivered"
+          variant="primary"
+          title="Mark as delivered?"
+          description="The passenger has the food. This closes the order for the kitchen and the rider."
+          submitLabel="Mark delivered"
+          cancelLabel="Not yet"
+        />
+      ) : null}
+      {can.fail ? (
+        <ConfirmActionButton
+          action={markNotDeliveredV2}
+          fields={fields}
+          label="Not delivered"
+          title="Not delivered: what happened?"
+          description="The food did not reach the passenger. The outlet and admin see the reason."
+          submitLabel="Not delivered"
+          submitVariant="danger"
+          extra={<ReasonChoices name="reasonCode" options={FAILURE_REASONS} legend="Reason" />}
+          reason
+          reasonOptional
+          reasonLabel="Details (needed for Other)"
+        />
+      ) : null}
+      {can.cancel ? (
+        <ConfirmActionButton
+          action={cancelOrderV2}
+          fields={fields}
+          label="Cancel"
+          variant="danger"
+          title="Cancel this order?"
+          description={
+            <>
+              <span className="font-mono font-semibold text-v2-ink">{externalOrderId}</span> stops here: the kitchen is told immediately, and no rider can pick
+              it up. An admin would have to reopen it.
+            </>
+          }
+          submitLabel="Cancel the order"
+          reason
+          reasonHint="The kitchen and the admin both see this."
+          quickReasons={['Passenger cancelled on the call', 'Passenger not reachable, order abandoned', 'Duplicate order: same passenger booked twice', 'Train cancelled or diverted']}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Money paid back, and the rating-order tag. Neither changes the status:
+ * the order stays delivered, not delivered or cancelled.
+ */
+export function RefundAndTag({ orderId, totalPaise, refund, ratingOrder }: { orderId: string; totalPaise: number | null; refund: RefundView; ratingOrder: boolean }) {
+  const fields = { orderId }
+  const rupees = (p: number) => `₹${(p / 100).toLocaleString('en-IN')}`
+  return (
     <div className="grid gap-3">
-      {can.deliver || can.fail ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {can.deliver ? (
-            <ConfirmActionButton
-              action={markDeliveredV2}
-              fields={fields}
-              label="Delivered"
-              variant="primary"
-              title="Mark as delivered?"
-              description="The passenger has the food. This closes the order for the kitchen and the rider."
-              submitLabel="Mark delivered"
-              cancelLabel="Not yet"
-            />
-          ) : null}
-          {can.fail ? (
-            <ConfirmActionButton
-              action={markNotDeliveredV2}
-              fields={fields}
-              label="Not delivered"
-              title="Mark as not delivered?"
-              description="The food did not reach the passenger. This closes the order as not delivered, with your reason, for the outlet and admin."
-              submitLabel="Not delivered"
-              submitVariant="danger"
-              reason
-              reasonHint="The outlet and admin both see this."
-              quickReasons={['Passenger not reachable at the seat', 'Train left before the rider got there', 'Passenger refused the food']}
-            />
-          ) : null}
+      {refund ? (
+        <div className="grid gap-1 rounded-v2-md bg-v2-bad-bg px-3 py-2.5 text-sm text-v2-bad">
+          <b className="text-[15px]">Refunded {rupees(refund.amountPaise)}{totalPaise && refund.amountPaise < totalPaise ? ` of ${rupees(totalPaise)}` : ''}</b>
+          <span>
+            {(REFUND_REASONS as Record<string, string>)[refund.reason] ?? refund.reason}
+            {refund.payer ? ` · ${(REFUND_PAYERS as Record<string, string>)[refund.payer] ?? refund.payer}` : ''}
+          </span>
+          {refund.note ? <span className="text-v2-ink-2">&ldquo;{refund.note}&rdquo;</span> : null}
+          <span className="text-xs opacity-80">{refund.by ? `${refund.by} · ` : ''}{formatIST(refund.at)}</span>
         </div>
       ) : null}
-      {can.cancel || can.misdeliver || can.missDeliver || can.refund ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {can.cancel ? (
-            <ConfirmActionButton
-              action={cancelOrderV2}
-              fields={fields}
-              label="Cancel"
-              variant="danger"
-              title="Cancel this order?"
-              description={
-                <>
-                  <span className="font-mono font-semibold text-v2-ink">{externalOrderId}</span> stops here: the kitchen is told immediately, and no rider can pick
-                  it up. An admin would have to reopen it.
-                </>
-              }
-              submitLabel="Cancel the order"
-              reason
-              reasonHint="The kitchen and the admin both see this."
-              quickReasons={['Passenger cancelled on the call', 'Passenger not reachable, order abandoned', 'Duplicate order: same passenger booked twice', 'Train cancelled or diverted']}
-            />
-          ) : null}
-          {can.misdeliver ? (
-            <ConfirmActionButton
-              action={markMisdeliveryV2}
-              fields={fields}
-              label="Misdelivery"
-              title="Mark as misdelivered?"
-              description="The food reached the wrong seat or passenger. This is recorded against the order for the outlet and admin."
-              submitLabel="Record misdelivery"
-              submitVariant="primary"
-              reason
-              reasonHint="The outlet and admin both see this."
-              quickReasons={['Delivered to the wrong seat', 'Delivered to the wrong passenger', 'Wrong order handed to this passenger']}
-            />
-          ) : null}
-          {can.missDeliver ? (
-            <ConfirmActionButton
-              action={markMissedDeliveryV2}
-              fields={fields}
-              label="Missed delivery"
-              title="Mark as a missed delivery?"
-              description="The rider could not reach the passenger or seat in time. This is recorded against the order for the outlet and admin."
-              submitLabel="Record missed delivery"
-              submitVariant="primary"
-              reason
-              reasonHint="The outlet and admin both see this."
-              quickReasons={['Passenger not at seat, unreachable', 'Train left before delivery', 'Rider could not locate the seat']}
-            />
-          ) : null}
-          {can.refund ? (
-            <ConfirmActionButton
-              action={markRefundedV2}
-              fields={fields}
-              label="Refunded"
-              title="Mark as refunded?"
-              description="The passenger is being refunded for this order. This is recorded against the order for the outlet and admin."
-              submitLabel="Record refund"
-              submitVariant="primary"
-              reason
-              reasonHint="The outlet and admin both see this."
-              quickReasons={['Passenger requested a refund on the call', 'Order was refunded after a complaint']}
-            />
-          ) : null}
-        </div>
-      ) : null}
-      {can.rating ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-v2-line pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <ConfirmActionButton
+          action={recordRefundV2}
+          fields={fields}
+          label={refund ? 'Change refund' : 'Record refund'}
+          title={refund ? 'Change the refund' : 'Record a refund'}
+          description="Money paid back to the passenger. The order keeps its status."
+          submitLabel="Save refund"
+          submitVariant="primary"
+          extra={
+            <div className="grid gap-3">
+              <label className="grid gap-1.5 text-xs font-semibold text-v2-ink-2">
+                Amount paid back (₹)
+                <input
+                  name="amount"
+                  inputMode="decimal"
+                  required
+                  defaultValue={refund ? refund.amountPaise / 100 : totalPaise ? totalPaise / 100 : ''}
+                  className={cx(inputV2, 'font-mono')}
+                />
+              </label>
+              <ReasonChoices name="reasonCode" options={REFUND_REASONS} legend="Why" value={refund?.reason} />
+              <ReasonChoices name="payer" options={REFUND_PAYERS} legend="Who paid it back" value={refund?.payer} required={false} />
+              <label className="grid gap-1.5 text-xs font-semibold text-v2-ink-2">
+                Note (optional)
+                <input name="note" maxLength={300} defaultValue={refund?.note ?? ''} className={inputV2} />
+              </label>
+            </div>
+          }
+        />
+        {refund ? (
           <ConfirmActionButton
-            action={flagRatingOrderV2}
+            action={clearRefundV2}
             fields={fields}
-            label="Rating order"
-            size="sm"
-            title="Mark as a rating order?"
-            description="This flags the order as a decoy run for app-store ratings, not a real order. It drops off the live board and out of revenue totals. Only an admin can undo this."
-            submitLabel="Mark as rating order"
-            submitVariant="primary"
-            cancelLabel="Keep it as is"
+            label="Remove refund"
+            variant="ghost"
+            title="Remove this refund?"
+            description="Only if it was recorded by mistake. The history keeps a note of it."
+            submitLabel="Remove refund"
+            submitVariant="danger"
           />
-        </div>
-      ) : null}
+        ) : null}
+        <ConfirmActionButton
+          action={flagRatingOrderV2}
+          fields={{ orderId, on: ratingOrder ? '0' : '1' }}
+          label={ratingOrder ? 'Not a rating order' : 'Rating order'}
+          variant="ghost"
+          title={ratingOrder ? 'Remove the rating-order tag?' : 'Tag as a rating order?'}
+          description={
+            ratingOrder
+              ? 'It counts as a real order again in totals and reports.'
+              : 'A decoy placed only to get an app-store rating. It keeps its status but is left out of totals and reports.'
+          }
+          submitLabel={ratingOrder ? 'Remove tag' : 'Tag it'}
+          submitVariant="primary"
+          cancelLabel="Keep it as is"
+        />
+      </div>
     </div>
   )
 }

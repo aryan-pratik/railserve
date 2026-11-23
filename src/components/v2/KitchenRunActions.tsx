@@ -11,6 +11,7 @@ import { Select } from './Select'
 import { Button, cx, v2Focus } from './ui'
 import { ActionNote, KitchenConfirm, KitchenSubmit } from './KitchenBits'
 import { KitchenReprintButton } from './KitchenReprintButton'
+import { MenuButton } from './Floating'
 
 const initial: KitchenActionState = {}
 
@@ -304,24 +305,19 @@ export function KitchenRunActions({
       ) : null}
 
       {previewable > 0 ? (
-        <details className="group relative ml-auto">
-          <summary
-            className={cx(
-              'grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2 [&::-webkit-details-marker]:hidden',
-              v2Focus,
-            )}
-            aria-label="More actions"
-            title="KOT preview and reprint"
+        <span className="ml-auto">
+          <MenuButton
+            label={<MoreHorizontal size={16} aria-hidden />}
+            ariaLabel="KOT preview and reprint"
+            buttonClassName="grid h-8 w-8 place-items-center rounded-full border border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2"
+            panelClassName="min-w-[13rem] gap-1"
           >
-            <MoreHorizontal size={16} aria-hidden />
-          </summary>
-          <div className="absolute right-0 top-10 z-20 grid min-w-[13rem] gap-1 rounded-v2-md border border-v2-line bg-v2-surface p-1.5 shadow-v2-pop">
             <Link href={run.kotHref} className={cx('rounded-v2-sm px-3 py-2 text-sm font-semibold hover:bg-v2-surface-2', v2Focus)}>
               Preview {previewable} KOT{previewable === 1 ? '' : 's'}
             </Link>
             {printed > 0 ? <KitchenReprintButton runKey={run.runKey} count={printed} menu /> : null}
-          </div>
-        </details>
+          </MenuButton>
+        </span>
       ) : null}
     </div>
   )

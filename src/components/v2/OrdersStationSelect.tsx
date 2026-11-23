@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cx } from './ui'
+import { FloatingPanel, insideFloating } from './Floating'
 import { ordersFieldClass } from '@/lib/v2/ordersShared'
 
 /**
@@ -22,11 +23,12 @@ export function OrdersStationSelect({
   const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultSelected))
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const getAnchor = useCallback(() => rootRef.current, [])
 
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      if (!rootRef.current?.contains(e.target as Node) && !insideFloating(e.target)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -59,44 +61,46 @@ export function OrdersStationSelect({
         <ChevronDown size={14} className="shrink-0 text-v2-faint" aria-hidden />
       </button>
       {open ? (
-        <div
-          role="listbox"
-          aria-multiselectable
-          className="absolute left-0 top-full z-50 mt-1.5 max-h-72 w-full min-w-[14rem] overflow-y-auto rounded-v2-md border border-v2-line bg-v2-surface p-1 shadow-v2-pop"
-        >
-          {options.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-v2-faint">No stations yet.</p>
-          ) : (
-            options.map((o) => (
-              <label key={o.code} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-v2-surface-2">
-                <input
-                  type="checkbox"
-                  checked={selected.has(o.code)}
-                  onChange={(e) =>
-                    setSelected((prev) => {
-                      const next = new Set(prev)
-                      if (e.target.checked) next.add(o.code)
-                      else next.delete(o.code)
-                      return next
-                    })
-                  }
-                  className="size-4 shrink-0 accent-v2-brand"
-                />
-                <span className="font-mono text-xs font-semibold">{o.code}</span>
-                {o.name ? <span className="truncate text-v2-muted">{o.name}</span> : null}
-              </label>
-            ))
-          )}
-          {picked.length ? (
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="mt-1 w-full rounded-lg border-t border-v2-line px-2 py-1.5 text-left text-xs font-semibold text-v2-muted hover:bg-v2-surface-2 hover:text-v2-ink"
-            >
-              Clear selection
-            </button>
-          ) : null}
-        </div>
+        <FloatingPanel getAnchor={getAnchor} matchWidth gap={6} role="presentation">
+          <div
+            role="listbox"
+            aria-multiselectable
+            className="max-h-72 min-w-[14rem] overflow-y-auto rounded-v2-md border border-v2-line bg-v2-surface p-1 shadow-v2-pop"
+          >
+            {options.length === 0 ? (
+              <p className="px-2 py-2 text-sm text-v2-faint">No stations yet.</p>
+            ) : (
+              options.map((o) => (
+                <label key={o.code} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-v2-surface-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(o.code)}
+                    onChange={(e) =>
+                      setSelected((prev) => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(o.code)
+                        else next.delete(o.code)
+                        return next
+                      })
+                    }
+                    className="size-4 shrink-0 accent-v2-brand"
+                  />
+                  <span className="font-mono text-xs font-semibold">{o.code}</span>
+                  {o.name ? <span className="truncate text-v2-muted">{o.name}</span> : null}
+                </label>
+              ))
+            )}
+            {picked.length ? (
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="mt-1 w-full rounded-lg border-t border-v2-line px-2 py-1.5 text-left text-xs font-semibold text-v2-muted hover:bg-v2-surface-2 hover:text-v2-ink"
+              >
+                Clear selection
+              </button>
+            ) : null}
+          </div>
+        </FloatingPanel>
       ) : null}
     </div>
   )

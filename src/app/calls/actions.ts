@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/session'
-import { transitionOrder, flagRatingOrder as flagRatingOrderRepo } from '@/lib/repo/transitionOrder'
-import type { OrderStatus } from '@/lib/orderStatus'
+import { transitionOrder, flagRatingOrder as flagRatingOrderRepo, recordRefund, clearRefund } from '@/lib/repo/transitionOrder'
+import { findById } from '@/lib/repo/orderRepo'
+import { FAILURE_REASONS, REFUND_PAYERS, REFUND_REASONS, reasonLabel, type RefundPayer, type RefundReason } from '@/lib/orderStatus'
 
 export type CallActionState = { error?: string; ok?: string }
 
@@ -75,64 +76,71 @@ export async function cancelOrder(
 }
 
 /**
- * The three other support-call outcomes a telecaller records from whatever a
- * passenger says on the phone: the food went to the wrong seat/person
- * (misdelivery), it never arrived at all (missed delivery), or the passenger
- * is owed their money back (refunded). Unlike cancellation these are open
- * from any non-terminal status — see the TRANSITIONS comment in
- * orderStatus.ts — because they are told to the telecaller after the fact,
- * not chosen from a fixed pipeline step.
- *
- * One function per status rather than one parameterized action: each keeps
- * its own copy and its own reason requirement, and a caller cannot typo a
- * `to` value past the type checker the way a single generic action's
- * FormData string could.
+ * The old one-tap support outcomes, kept so a screen still posting to them
+ * keeps working. Each is now what it always meant: misdelivery and missed
+ * delivery are "not delivered" with that reason, and refunded is a refund of
+ * the whole order on top of its real status.
  */
-async function markOutcome(
-  to: OrderStatus,
-  cannotMessage: string,
-  formData: FormData,
-): Promise<CallActionState> {
-  const ctx = await requireRole('TELECALLER')
-  const orderId = String(formData.get('orderId') ?? '')
-  const reason = String(formData.get('reason') ?? '').trim()
+export async function markMisdelivery(_prev: CallActionState, formData: FormData): Promise<CallActionState> {
+  formData.set('reasonCode', 'WRONG_PASSENGER')
+  return markNotDelivered(_prev, formData)
+}
 
-  if (reason.length < 3) {
-    return { error: 'Say briefly what happened: this is what the outlet and admin will see.' }
+export async function markMissedDelivery(_prev: CallActionState, formData: FormData): Promise<CallActionState> {
+  formData.set('reasonCode', 'MISSED_TRAIN')
+  return markNotDelivered(_prev, formData)
+}
+
+export async function markRefunded(_prev: CallActionState, formData: FormData): Promise<CallActionState> {
+  formData.set('reasonCode', 'OTHER')
+  formData.set('note', String(formData.get('reason') ?? ''))
+  formData.set('full', '1')
+  return recordRefundAction(_prev, formData)
+}
+
+/**
+ * Money paid back to the passenger: amount (rupees; "full" means the whole
+ * order), why, and who paid it. The order keeps its status.
+ */
+export async function recordRefundAction(_prev: CallActionState, formData: FormData): Promise<CallActionState> {
+  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  const reason = String(formData.get('reasonCode') ?? '') as RefundReason
+  const payerRaw = String(formData.get('payer') ?? '')
+  const payer = payerRaw in REFUND_PAYERS ? (payerRaw as RefundPayer) : null
+  const note = String(formData.get('note') ?? '').trim() || null
+  let amountPaise: number
+  if (formData.get('full') === '1') {
+    const order = await findById(ctx, orderId).catch(() => null)
+    amountPaise = order?.amountPaise ?? 0
+  } else {
+    const rupees = Number(String(formData.get('amount') ?? '').replace(/[,₹\s]/g, ''))
+    amountPaise = Math.round(rupees * 100)
   }
-  if (reason.length > 500) {
-    return { error: 'Keep the reason under 500 characters.' }
-  }
+  if (!(reason in REFUND_REASONS)) return { error: 'Pick why the money was paid back.' }
+  if (!Number.isFinite(amountPaise) || amountPaise <= 0) return { error: 'Enter the amount paid back, like 236.' }
 
   try {
-    await transitionOrder({ ctx, orderId, to, meta: { via: 'telecaller-call', reason } })
+    await recordRefund({ ctx, orderId, amountPaise, reason, payer, note })
   } catch (err) {
-    return { error: err instanceof Error ? err.message : cannotMessage }
+    return { error: err instanceof Error ? err.message : 'Could not record the refund.' }
   }
-
   revalidateOrder(orderId)
-  return { ok: 'Order updated.' }
+  revalidatePath(`/v2/orders/${orderId}`)
+  return { ok: `Refund of ₹${(amountPaise / 100).toLocaleString('en-IN')} recorded.` }
 }
 
-export async function markMisdelivery(
-  _prev: CallActionState,
-  formData: FormData,
-): Promise<CallActionState> {
-  return markOutcome('MISDELIVERY', 'Could not mark the order as misdelivered.', formData)
-}
-
-export async function markMissedDelivery(
-  _prev: CallActionState,
-  formData: FormData,
-): Promise<CallActionState> {
-  return markOutcome('MISSED_DELIVERY', 'Could not mark the delivery as missed.', formData)
-}
-
-export async function markRefunded(
-  _prev: CallActionState,
-  formData: FormData,
-): Promise<CallActionState> {
-  return markOutcome('REFUNDED', 'Could not mark the order as refunded.', formData)
+export async function clearRefundAction(_prev: CallActionState, formData: FormData): Promise<CallActionState> {
+  const ctx = await requireRole('TELECALLER', 'ADMIN')
+  const orderId = String(formData.get('orderId') ?? '')
+  try {
+    await clearRefund({ ctx, orderId })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not remove the refund.' }
+  }
+  revalidateOrder(orderId)
+  revalidatePath(`/v2/orders/${orderId}`)
+  return { ok: 'Refund removed.' }
 }
 
 /**
@@ -171,22 +179,27 @@ export async function markNotDelivered(
 ): Promise<CallActionState> {
   const ctx = await requireRole('TELECALLER')
   const orderId = String(formData.get('orderId') ?? '')
-  const reason = String(formData.get('reason') ?? '').trim()
+  const code = String(formData.get('reasonCode') ?? '')
+  const text = String(formData.get('reason') ?? '').trim()
+  const known = code in FAILURE_REASONS && code !== 'OTHER'
 
-  if (reason.length < 3) {
-    return { error: 'Say briefly what happened: this is what the outlet and admin will see.' }
+  // A picked reason is enough; "Other" (or an old screen with only a text
+  // box) needs a few words, since that is all anyone will know later.
+  if (!known && text.length < 3) {
+    return { error: 'Pick a reason, or say briefly what happened: the outlet and admin will see this.' }
   }
-  if (reason.length > 500) {
+  if (text.length > 500) {
     return { error: 'Keep the reason under 500 characters.' }
   }
+  const failureReason = known ? code : text
 
   try {
     await transitionOrder({
       ctx,
       orderId,
       to: 'FAILED',
-      meta: { via: 'telecaller-call', reason },
-      apply: { failureReason: reason },
+      meta: { via: 'telecaller-call', reason: known ? reasonLabel(code) : text, ...(known && text ? { note: text } : {}) },
+      apply: { failureReason },
     })
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Could not mark the order not delivered.' }
@@ -208,14 +221,16 @@ export async function flagRatingOrder(
   _prev: CallActionState,
   formData: FormData,
 ): Promise<CallActionState> {
-  const ctx = await requireRole('TELECALLER')
+  const ctx = await requireRole('TELECALLER', 'ADMIN')
   const orderId = String(formData.get('orderId') ?? '')
   const note = String(formData.get('note') ?? '').trim()
+  const on = formData.get('on') !== '0'
 
   try {
     await flagRatingOrderRepo({
       ctx,
       orderId,
+      on,
       meta: note ? { note } : {},
     })
   } catch (err) {
@@ -223,5 +238,6 @@ export async function flagRatingOrder(
   }
 
   revalidateOrder(orderId)
-  return { ok: 'Marked as a rating order.' }
+  revalidatePath(`/v2/orders/${orderId}`)
+  return { ok: on ? 'Tagged as a rating order.' : 'Rating order tag removed.' }
 }

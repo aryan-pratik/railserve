@@ -188,7 +188,7 @@ export async function menuOverview(ctx: AuthContext): Promise<MenuRow[]> {
     qty: number
     last: Date | null
   }>([
-    { $match: { tenantId: ctx.tenantId, status: { $ne: 'RATING_ORDER' } } },
+    { $match: { tenantId: ctx.tenantId, ratingOrder: { $ne: true } } },
     { $project: { source: 1, items: 1, createdAt: 1 } },
     { $unwind: '$items' },
     {

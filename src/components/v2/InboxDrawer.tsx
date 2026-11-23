@@ -1,9 +1,11 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useActionState, useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { loadInboxBody, resolveUnparsed, type InboxState } from '@/app/v2/inbox/actions'
+import { trustSenderFromInbox, type MailActionState } from '@/app/v2/settings/mailActions'
 import { REASON_LABEL } from '@/lib/inbox'
 import { resolutionLabel, type InboxRow } from '@/lib/v2/inboxShared'
 import { KeyValue, Notice } from './Table'
@@ -209,15 +211,26 @@ function InboxDetail({ row, busy, onAction }: { row: InboxRow; busy: boolean; on
             </>
           ) : (
             <>
-              <Button size="sm" variant="primary" disabled={!loaded} onClick={() => setCorrecting(true)}>
-                Correct and re-ingest
-              </Button>
-              <Button size="sm" disabled={busy} onClick={() => onAction('reingest')}>
-                Re-ingest as is
-              </Button>
+              {/* A held email is trusted or dismissed, never pushed through as is. */}
+              {row.reason !== 'SENDER_NOT_TRUSTED' ? (
+                <>
+                  <Button size="sm" variant="primary" disabled={!loaded} onClick={() => setCorrecting(true)}>
+                    Correct and re-ingest
+                  </Button>
+                  <Button size="sm" disabled={busy} onClick={() => onAction('reingest')}>
+                    Re-ingest as is
+                  </Button>
+                </>
+              ) : null}
               <Button size="sm" variant="danger" disabled={busy} onClick={() => onAction('dismiss')}>
                 Dismiss
               </Button>
+              {row.reason === 'SENDER_NOT_TRUSTED' && row.senderAddress ? <TrustSender row={row} /> : null}
+              {row.reason === 'PARSE_FAILED' || row.reason === 'MISSING_FIELD' ? (
+                <Link href={`/v2/settings/mail/new?from=${row.id}`} className={cx('ml-auto rounded text-xs font-semibold text-v2-brand hover:underline', v2Focus)}>
+                  Teach RailServe this email layout
+                </Link>
+              ) : null}
               {row.reason === 'UNKNOWN_OUTLET' ? (
                 <Link href="/v2/settings?tab=routing" className={cx('ml-auto rounded text-xs font-semibold text-v2-brand hover:underline', v2Focus)}>
                   Add the outlet or an alias in Settings
@@ -228,5 +241,41 @@ function InboxDetail({ row, busy, onAction }: { row: InboxRow; busy: boolean; on
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * For an email held back because its sender is not listed: list the sender
+ * for the aggregator it looks like, then read the email again. Only for a
+ * sender the admin recognises; a stranger's lookalike should be dismissed.
+ */
+function TrustSender({ row }: { row: InboxRow }) {
+  const router = useRouter()
+  const [pending, start] = useTransition()
+  const [note, setNote] = useState<MailActionState>({})
+  return (
+    <span className="grid w-full gap-1.5 rounded-v2-md bg-v2-surface-2 p-3">
+      <span className="text-[13px] text-v2-muted">
+        If you know <Mono>{row.senderAddress}</Mono> really sends your {row.sourceLabel} orders, trust it: this email and every later one from it will become orders. If you don’t know it, dismiss this email.
+      </span>
+      <span className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              const r = await trustSenderFromInbox(row.id)
+              setNote(r)
+              router.refresh()
+            })
+          }
+        >
+          {pending ? 'Trusting…' : `Trust ${row.senderAddress} for ${row.sourceLabel}`}
+        </Button>
+        {note.error ? <span role="alert" className="text-[13px] font-semibold text-v2-bad">{note.error}</span> : null}
+        {note.ok ? <span role="status" className="text-[13px] font-medium text-v2-ok">{note.ok}</span> : null}
+      </span>
+    </span>
   )
 }

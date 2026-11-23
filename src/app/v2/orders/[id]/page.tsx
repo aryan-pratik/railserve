@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, ArrowUpRight, Phone } from 'lucide-react'
 import { requirePermission } from '@/lib/session'
 import { loadOrderWorkspace, type OrderWorkspace } from '@/lib/v2/orderWorkspace'
-import { allowedNextStatuses, canFlagRatingOrder, canRequestCancellation, isTerminal, missingQuoteFields, type OrderStatus } from '@/lib/orderStatus'
+import { allowedNextStatuses, canRecordRefund, canRequestCancellation, isTerminal, missingQuoteFields, type OrderStatus } from '@/lib/orderStatus'
 import { formatIST, formatRupees, formatServiceDate, formatTimeIST, paiseToRupees, utcToIstLocal } from '@/lib/format'
 import { rtoReasonLabel } from '@/lib/rto'
 import { normalisePhone } from '@/lib/whatsapp/phone'
@@ -16,7 +16,7 @@ import { Countdown } from '@/components/v2/Countdown'
 import { OrderTimeline } from '@/components/v2/OrderTimeline'
 import { KitchenActions, KotNoteForm, OrderItems, RemarkForm } from '@/components/v2/OrderKitchen'
 import { HandToRider, MarkReturnedButton, RefreshTrainButton, RidersChecklist } from '@/components/v2/OrderDelivery'
-import { CallLog, DecideCancelRequest, OpenChatButton, OutcomeButtons } from '@/components/v2/OrderCalls'
+import { CallLog, DecideCancelRequest, OpenChatButton, OutcomeButtons, RefundAndTag } from '@/components/v2/OrderCalls'
 import { DeleteOrderButton, EditOrderDetails, PaymentModeForm, StatusOverride } from '@/components/v2/OrderAdmin'
 import { ConfirmEnquiryForm, MarkLostButton, QuoteForm } from '@/components/v2/OrderQuote'
 
@@ -78,9 +78,9 @@ export default async function V2OrderWorkspace(props: PageProps<'/v2/orders/[id]
 
   return (
     <div className="grid gap-[18px]">
-      <Link href="/v2/orders" className="inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold text-v2-muted hover:text-v2-ink">
+      <Link href={role === 'STORE_MANAGER' ? '/v2/kitchen' : '/v2/orders'} className="inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold text-v2-muted hover:text-v2-ink">
         <ArrowLeft size={14} aria-hidden />
-        Orders
+        {role === 'STORE_MANAGER' ? 'Kitchen' : 'Orders'}
       </Link>
 
       {/* Header */}
@@ -421,10 +421,6 @@ function CallsTab({ o, role, canChat }: { o: OrderWorkspace; role: Role; canChat
     cancel: next.includes('CANCELLED'),
     deliver: next.includes('DELIVERED'),
     fail: next.includes('FAILED'),
-    misdeliver: next.includes('MISDELIVERY'),
-    missDeliver: next.includes('MISSED_DELIVERY'),
-    refund: next.includes('REFUNDED'),
-    rating: role === 'TELECALLER' && canFlagRatingOrder('TELECALLER') && status !== 'RATING_ORDER',
   }
   const canWrite = role === 'ADMIN' || role === 'TELECALLER'
   return (
@@ -457,10 +453,16 @@ function CallsTab({ o, role, canChat }: { o: OrderWorkspace; role: Role; canChat
           <OutcomeButtons orderId={o.id} externalOrderId={o.externalOrderId} status={o.status} can={can} />
         ) : (
           <p className="text-sm text-v2-muted">
-            Delivered, not delivered, misdelivery, missed delivery, refund and rating-order are recorded by the call desk from the passenger&apos;s own words. An admin cancels from the Kitchen tab or sets a status directly under History.
+            Delivered and not delivered are recorded by the call desk from the passenger&apos;s own words. An admin cancels from the Kitchen tab or sets a status directly under History.
           </p>
         )}
       </Card>
+
+      {canRecordRefund(role) ? (
+        <Card title="Refund">
+          <RefundAndTag orderId={o.id} totalPaise={o.amountPaise} refund={o.refund} ratingOrder={o.ratingOrder} />
+        </Card>
+      ) : null}
 
       {o.cancelRequest ? (
         <Card title={o.cancelRequest.status === 'PENDING' ? 'Cancellation requested' : o.cancelRequest.status === 'APPROVED' ? 'Cancellation request accepted' : 'Cancellation request refused'}>

@@ -28,16 +28,33 @@ export type DeliveredSpan = { from?: Date; to?: Date }
  * riders still counts its cash once.
  */
 function pendingFilter(tenantId: mongoose.Types.ObjectId, riderIds: mongoose.Types.ObjectId[], span: DeliveredSpan = {}) {
-  const from = span.from && span.from > COD_WALLET_FROM ? span.from : COD_WALLET_FROM
+  // A day is placed by when the order first closed, the same day the rider's
+  // record and the board count it on. A delivery corrected the next morning
+  // keeps its first close, so its cash and its debt stay on one day. Orders
+  // from before closedAt existed fall back to their delivery time.
+  const dayRange: Record<string, Date> = {}
+  if (span.from) dayRange.$gte = span.from
+  if (span.to) dayRange.$lt = span.to
+  const byDay = Object.keys(dayRange).length
+    ? [{ $or: [{ 'delivery.closedAt': dayRange }, { 'delivery.closedAt': null, 'delivery.deliveredAt': dayRange }] }]
+    : []
   return {
     tenantId,
     status: 'DELIVERED' as const,
     paymentMode: 'COD' as const,
     'delivery.codSettledAt': null,
-    'delivery.deliveredAt': span.to ? { $gte: from, $lt: span.to } : { $gte: from },
-    $or: [
-      { 'delivery.collectedBy': { $in: riderIds } },
-      { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: riderIds } },
+    // Cash from before the wallet started was settled by hand.
+    'delivery.deliveredAt': { $gte: COD_WALLET_FROM },
+    // Rating-order decoys are left out of money everywhere, here included.
+    ratingOrder: { $ne: true },
+    $and: [
+      {
+        $or: [
+          { 'delivery.collectedBy': { $in: riderIds } },
+          { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: riderIds } },
+        ],
+      },
+      ...byDay,
     ],
   }
 }
@@ -85,6 +102,28 @@ export async function pendingCashByRider(
     out.set(holder, prev)
   }
   return out
+}
+
+/**
+ * Every rider still holding cash from a delivery, whoever they are and
+ * whatever day it was: the Riders board lists them even when they have since
+ * been switched off, or their cash would drop out of every total.
+ */
+export async function ridersHoldingCash(ctx: AuthContext): Promise<string[]> {
+  const rows = await Order.aggregate<{ _id: mongoose.Types.ObjectId | null }>([
+    {
+      $match: outletScoped(ctx, {
+        tenantId: ctx.tenantId,
+        status: 'DELIVERED',
+        paymentMode: 'COD',
+        'delivery.codSettledAt': null,
+        'delivery.deliveredAt': { $gte: COD_WALLET_FROM },
+        ratingOrder: { $ne: true },
+      }),
+    },
+    { $group: { _id: { $ifNull: ['$delivery.collectedBy', { $arrayElemAt: ['$delivery.agentIds', 0] }] } } },
+  ])
+  return rows.map((r) => r._id).filter((v): v is mongoose.Types.ObjectId => Boolean(v)).map(String)
 }
 
 /** One delivered COD order whose cash a rider still holds. */
@@ -137,28 +176,10 @@ export async function lastSettlementFor(
   ctx: AuthContext,
   riderId: mongoose.Types.ObjectId,
 ): Promise<{ at: string; paise: number; orders: number } | null> {
-  const holder = {
-    tenantId: ctx.tenantId,
-    $or: [
-      { 'delivery.collectedBy': riderId },
-      { 'delivery.collectedBy': null, 'delivery.agentIds.0': riderId },
-    ],
-  }
-  const latest = await Order.findOne(outletScoped(ctx, { ...holder, 'delivery.codSettledAt': { $ne: null } }))
-    .sort({ 'delivery.codSettledAt': -1 })
-    .select('delivery.codSettledAt')
-    .lean()
-  const at = latest?.delivery?.codSettledAt
-  if (!at) return null
-
-  const batch = await Order.find(outletScoped(ctx, { ...holder, 'delivery.codSettledAt': at }))
-    .select('amountPaise delivery.amountCollectedPaise')
-    .lean()
-  return {
-    at: new Date(at).toISOString(),
-    paise: batch.reduce((sum, o) => sum + cashOf(o), 0),
-    orders: batch.length,
-  }
+  // The same records as the history, so a part payment reads as what was
+  // actually handed in, not as the whole order.
+  const [last] = await collectionHistory(ctx, [riderId], { limit: 1 })
+  return last ? { at: last.at, paise: last.paise, orders: last.orders } : null
 }
 
 /**
@@ -309,54 +330,89 @@ export async function collectionHistory(
   if (opts.from) at.$gte = opts.from
   if (opts.to) at.$lt = opts.to
 
-  const rows = await Order.aggregate<{
-    _id: { rider: mongoose.Types.ObjectId; at: Date; sid: string | null }
-    by: mongoose.Types.ObjectId | null
-    orders: number
-    paise: number
-    orderIds: mongoose.Types.ObjectId[]
-  }>([
-    {
-      $match: outletScoped(ctx, {
-        tenantId: ctx.tenantId,
-        'delivery.codSettledAt': Object.keys(at).length ? at : { $ne: null },
-        $or: [
-          { 'delivery.collectedBy': { $in: ids } },
-          { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: ids } },
-        ],
-      }),
-    },
-    {
-      $group: {
-        _id: {
-          rider: { $ifNull: ['$delivery.collectedBy', { $arrayElemAt: ['$delivery.agentIds', 0] }] },
-          at: '$delivery.codSettledAt',
-          sid: { $ifNull: ['$delivery.codSettlementId', null] },
-        },
-        by: { $first: '$delivery.codSettledBy' },
-        orders: { $sum: 1 },
-        paise: { $sum: { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] } },
-        orderIds: { $push: '$_id' },
+  const idStrings = ids.map(String)
+  const holder = { $ifNull: ['$delivery.collectedBy', { $arrayElemAt: ['$delivery.agentIds', 0] }] }
+  const ACTIONS = ['COD_SETTLED', 'COD_PART_PAID']
+  type Row = { _id: { rider: string; at: Date; sid: string | null }; by: mongoose.Types.ObjectId | null; paise: number; orderIds: mongoose.Types.ObjectId[] }
+  // Newest first, then one per rider or the first N, inside each pipeline so
+  // neither returns more than the page needs.
+  const tail = (riderKey: string) =>
+    opts.latestPerRider
+      ? [{ $sort: { '_id.at': -1 as const } }, { $group: { _id: riderKey, last: { $first: '$$ROOT' } } }, { $replaceRoot: { newRoot: '$last' } }]
+      : [{ $sort: { '_id.at': -1 as const } }, { $limit: opts.limit ?? 50 }]
+
+  const [recorded, legacy] = await Promise.all([
+    // Handovers read from the records on each order's event log, not from
+    // the orders' totals: a handover can pay part of an order (COD_PART_PAID)
+    // and finish it another day, and only the record says how much changed
+    // hands when. A record without the amount (older) was a whole order.
+    Order.aggregate<Row>([
+      {
+        $match: outletScoped(ctx, {
+          tenantId: ctx.tenantId,
+          'events.meta.action': { $in: ACTIONS },
+          $or: [{ 'delivery.collectedBy': { $in: ids } }, { 'delivery.agentIds': { $in: ids } }],
+        }),
       },
-    },
-    { $sort: { '_id.at': -1 } },
-    // One global limit would drop exactly the rider worth chasing: the one
-    // whose last handover is older than everyone else's recent ones. For
-    // "when did each last hand in", keep each rider's newest and no limit.
-    ...(opts.latestPerRider
-      ? [
-          { $group: { _id: '$_id.rider', last: { $first: '$$ROOT' } } },
-          { $replaceRoot: { newRoot: '$last' } },
-          { $sort: { '_id.at': -1 as const } },
-        ]
-      : [{ $limit: opts.limit ?? 50 }]),
+      { $unwind: '$events' },
+      { $match: { 'events.meta.action': { $in: ACTIONS }, ...(Object.keys(at).length ? { 'events.createdAt': at } : {}) } },
+      {
+        $addFields: {
+          _rider: { $ifNull: ['$events.meta.riderId', { $toString: holder }] },
+          _paise: { $ifNull: ['$events.meta.amountPaise', { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] }] },
+        },
+      },
+      { $match: { _rider: { $in: idStrings } } },
+      {
+        $group: {
+          _id: { rider: '$_rider', at: '$events.createdAt', sid: { $ifNull: ['$events.meta.settlementId', null] } },
+          by: { $first: '$events.userId' },
+          paise: { $sum: '$_paise' },
+          orderIds: { $addToSet: '$_id' },
+        },
+      },
+      ...tail('$_id.rider'),
+    ]),
+    // Orders settled with no record on their log (marked by hand, or from
+    // before the records): the whole order's cash, as before.
+    Order.aggregate<Row>([
+      {
+        $match: outletScoped(ctx, {
+          tenantId: ctx.tenantId,
+          'delivery.codSettledAt': Object.keys(at).length ? at : { $ne: null },
+          'events.meta.action': { $nin: ACTIONS },
+          $or: [
+            { 'delivery.collectedBy': { $in: ids } },
+            { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: ids } },
+          ],
+        }),
+      },
+      {
+        $group: {
+          _id: { rider: { $toString: holder }, at: '$delivery.codSettledAt', sid: { $ifNull: ['$delivery.codSettlementId', null] } },
+          by: { $first: '$delivery.codSettledBy' },
+          paise: { $sum: { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] } },
+          orderIds: { $push: '$_id' },
+        },
+      },
+      ...tail('$_id.rider'),
+    ]),
   ])
+
+  // One list, newest first; one per rider when that is what was asked.
+  let rows = [...recorded, ...legacy].sort((a, b) => b._id.at.getTime() - a._id.at.getTime())
+  if (opts.latestPerRider) {
+    const seen = new Set<string>()
+    rows = rows.filter((r) => (seen.has(r._id.rider) ? false : (seen.add(r._id.rider), true)))
+  } else {
+    rows = rows.slice(0, opts.limit ?? 50)
+  }
   return rows.map((r) => ({
     id: r._id.sid ?? `${r._id.rider}-${r._id.at.getTime()}`,
     riderId: String(r._id.rider),
     at: r._id.at.toISOString(),
     receivedById: r.by ? String(r.by) : null,
-    orders: r.orders,
+    orders: r.orderIds.length,
     paise: r.paise,
     orderIds: r.orderIds.map(String),
   }))
