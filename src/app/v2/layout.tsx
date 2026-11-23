@@ -5,6 +5,10 @@ import { countUnread } from '@/lib/repo/whatsappRepo'
 import { countPendingReturns } from '@/lib/repo/rtoRepo'
 import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
 import type { AlertItem } from '@/components/v2/NotificationsBell'
+import type { StatusIssue } from '@/components/v2/StatusIcon'
+import { isSimulatedProvider } from '@/lib/train'
+import { trainFeedHealth } from '@/lib/train/service'
+import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { countLive } from '@/lib/board'
 import { Shell } from '@/components/v2/Shell'
 import { filterNav, navFor } from '@/lib/v2/nav'
@@ -42,6 +46,23 @@ export default async function V2Layout({ children }: { children: React.ReactNode
     ...(unparsed ? [{ id: 'inbox', title: `${unparsed} email${unparsed === 1 ? '' : 's'} did not become orders`, sub: 'Review them in the Inbox', href: '/v2/inbox', tone: 'info' as const }] : []),
   ]
 
+  // Problems with the system itself, for the warning icon in the top bar.
+  // Riders never see the shell; the email check is the owner's business.
+  const [feed, ingest] = await Promise.all([
+    isSimulatedProvider() ? Promise.resolve(null) : trainFeedHealth(),
+    isAdmin ? checkIngestStaleness(new Date(), ctx.tenantId) : Promise.resolve(null),
+  ])
+  const issues: StatusIssue[] = [
+    ...(isSimulatedProvider()
+      ? [{ id: 'train-practice', level: 'amber' as const, title: 'Train times are practice times', detail: 'They are not real. Do not send riders by them.' }]
+      : feed && feed.failing && feed.failingTrains.length >= feed.trainsTried
+        ? [{ id: 'train-down', level: 'red' as const, title: 'Live train times are not working', detail: 'Times shown are from the timetable, so trains may be later. Check with the station before sending a rider.' }]
+        : []),
+    ...(ingest?.stale
+      ? [{ id: 'email-stopped', level: 'red' as const, title: 'Orders from email stopped coming in', detail: 'New orders may be missing. Add urgent ones by hand and check the emails page.', action: { label: 'Check emails', href: '/v2/inbox' } }]
+      : []),
+  ]
+
   const user = await getSessionUser()
   const company = user?.tenantName ?? ''
   const outletLabel = isAdmin
@@ -61,6 +82,7 @@ export default async function V2Layout({ children }: { children: React.ReactNode
       ]}
       outletLabel={outletLabel}
       alerts={alerts}
+      issues={issues}
     >
       {children}
     </Shell>

@@ -39,15 +39,10 @@ export const OVERALL_LABEL: Record<OverallStatus, string> = {
 
 /**
  * Every closing status that is not a delivery counts as cancelled: the
- * passenger did not get the food, whoever's doing that was. FAILED and
- * MISSED_DELIVERY are here by the business's own rule; MISDELIVERY because
- * the bag reached the wrong person; LOST and REFUNDED because no sale stood.
- * RATING_ORDER is a decoy that was never a real order, and counts with them
- * rather than inflating the delivered figure.
+ * passenger did not get the food, whoever's doing that was: FAILED by the
+ * business's own rule, LOST because no sale stood.
  */
-export const OVERALL_CANCELLED_STATUSES = [
-  'CANCELLED', 'FAILED', 'MISSED_DELIVERY', 'MISDELIVERY', 'LOST', 'REFUNDED', 'RATING_ORDER',
-] as const
+export const OVERALL_CANCELLED_STATUSES = ['CANCELLED', 'FAILED', 'LOST'] as const
 
 /** Statuses still in the works. A custom admin status is in the works too. */
 export const OVERALL_PROCESSING_STATUSES = [
@@ -143,7 +138,7 @@ export function riderStatus(order: Viewable): RiderStatus {
   const rto = order.delivery?.rto?.status
   if (rto === 'PENDING') return 'RETURN_PENDING'
   if (rto === 'RETURNED') return 'RETURNED'
-  if (s === 'FAILED' || s === 'MISSED_DELIVERY' || s === 'MISDELIVERY') return 'NOT_DELIVERED'
+  if (s === 'FAILED') return 'NOT_DELIVERED'
   return 'CANCELLED'
 }
 

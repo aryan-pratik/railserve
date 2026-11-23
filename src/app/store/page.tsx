@@ -45,7 +45,7 @@ const STATUS_FILTERS: { key: string; label: string; statuses: OrderStatus[] }[] 
   {
     key: 'returned',
     label: 'Cancelled / Returned',
-    statuses: ['CANCELLED', 'FAILED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'],
+    statuses: ['CANCELLED', 'FAILED', 'LOST'],
   },
   { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
 ]

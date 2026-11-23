@@ -227,11 +227,16 @@ export async function countByStatus(ctx: AuthContext, filter: QueryFilter<OrderD
 }
 
 /**
- * Statuses a telecaller (or admin) can move an order to that take it off
- * LIVE_STATUSES without it going through DELIVERED/FAILED first — see
- * `recentCancellations` below for why that matters.
+ * Statuses that can take an order off the kitchen's live board while it is
+ * still being cooked: a cancel, or "not delivered" recorded by the call desk
+ * because the train left before the food did. See `recentCancellations`.
+ * A FAILED from a rider on the platform is not news to the kitchen, so only
+ * one reached while the food was still at the counter raises an alert
+ * (KITCHEN_STAGES).
  */
-const ALERT_STATUSES = ['CANCELLED', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED', 'RATING_ORDER']
+const ALERT_STATUSES = ['CANCELLED', 'FAILED']
+// Ready on the shelf counts too: the kitchen is holding that bag.
+const KITCHEN_STAGES = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']
 
 /**
  * Orders recently moved to one of `ALERT_STATUSES`, for the live alert (see
@@ -299,7 +304,12 @@ export async function recentCancellations(
               $filter: {
                 input: '$events',
                 as: 'e',
-                cond: { $in: ['$$e.toStatus', ALERT_STATUSES] },
+                cond: {
+                  $or: [
+                    { $eq: ['$$e.toStatus', 'CANCELLED'] },
+                    { $and: [{ $eq: ['$$e.toStatus', 'FAILED'] }, { $in: ['$$e.fromStatus', KITCHEN_STAGES] }] },
+                  ],
+                },
               },
             },
             -1,
@@ -310,6 +320,8 @@ export async function recentCancellations(
     {
       $match: {
         'alertEvent.createdAt': { $gte: opts.since },
+        // The order is still in the status the alert is about.
+        $expr: { $eq: ['$status', '$alertEvent.toStatus'] },
         // A rider re-filing a finished order as cancelled is a correction of
         // the record, made after the food left: nothing for a kitchen to stop.
         'alertEvent.meta.via': { $ne: 'rider-correction' },
@@ -838,14 +850,14 @@ export async function outletAnalytics(
   range: { from: string; to: string },
 ): Promise<OutletStats[]> {
   return Order.aggregate<OutletStats>([
-    // RATING_ORDER orders are decoys run purely to prompt an app-store
-    // rating, not real business — excluded from the denominator here, not
-    // just skipped in the per-status sums below, or a day with one fewer
-    // real order would misread as a day with one fewer *successful* order.
+    // Rating orders are decoys run purely to prompt an app-store rating, not
+    // real business: excluded from the denominator here, not just skipped in
+    // the per-status sums below, or a day with one fewer real order would
+    // misread as a day with one fewer *successful* order.
     {
       $match: scoped(ctx, {
         serviceDate: { $gte: range.from, $lte: range.to },
-        status: { $ne: 'RATING_ORDER' },
+        ratingOrder: { $ne: true },
       }),
     },
     {
@@ -937,12 +949,12 @@ export async function dailyCounts(
   range: { from: string; to: string },
 ): Promise<{ serviceDate: string; orders: number; delivered: number }[]> {
   return Order.aggregate([
-    // See outletAnalytics above: RATING_ORDER decoys are excluded from the
+    // See outletAnalytics above: rating-order decoys are excluded from the
     // denominator, not just from the delivered count.
     {
       $match: scoped(ctx, {
         serviceDate: { $gte: range.from, $lte: range.to },
-        status: { $ne: 'RATING_ORDER' },
+        ratingOrder: { $ne: true },
       }),
     },
     {

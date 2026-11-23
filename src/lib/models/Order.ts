@@ -9,6 +9,7 @@ import {
   TIMING_SOURCES,
 } from '../orderEnums'
 import { RTO_STATUSES } from '../rto'
+import { REFUND_PAYERS, REFUND_REASONS } from '../orderStatus'
 import { DIETS } from '../diet'
 
 const OrderItemSchema = new Schema(
@@ -217,6 +218,26 @@ const OrderSchema = new Schema(
     // Money in paise, integer. No floats anywhere. (§2 conventions)
     amountPaise: { type: Number, default: null, min: 0 },
     paymentMode: { type: String, default: null, enum: [...PAYMENT_MODES, null] },
+    // A refund recorded by the call desk or an admin. Not a status: the order
+    // keeps whatever really happened (delivered, not delivered, cancelled),
+    // and this says money went back, how much, why and who paid it.
+    refund: {
+      type: new Schema(
+        {
+          amountPaise: { type: Number, required: true, min: 0 },
+          reason: { type: String, required: true, enum: Object.keys(REFUND_REASONS) },
+          payer: { type: String, default: null, enum: [...Object.keys(REFUND_PAYERS), null] },
+          note: { type: String, default: null, trim: true, maxlength: 300 },
+          at: { type: Date, required: true },
+          byId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    // A decoy order run only to prompt an app-store rating. A tag, so the
+    // order keeps its real status; reports leave these out of takings.
+    ratingOrder: { type: Boolean, default: false },
 
     readyBy: { type: Date, default: null },
     notes: { type: String, default: null },

@@ -16,9 +16,6 @@ const DANGER_STATUSES: readonly OrderStatus[] = [
   'CANCELLED',
   'FAILED',
   'LOST',
-  'MISDELIVERY',
-  'MISSED_DELIVERY',
-  'REFUNDED',
 ]
 
 export type AdminStatusOption = { to: OrderStatus; label: string; danger: boolean }

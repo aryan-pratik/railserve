@@ -1,11 +1,11 @@
 'use client'
 
+import { reportIssue } from './statusBus'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { Volume2, VolumeX } from 'lucide-react'
 import { useNowMs } from '@/components/useNow'
 import { REFRESH_SECONDS } from '@/lib/liveDay'
-import { Notice } from './Table'
 import { cx, v2Focus } from './ui'
 
 /*
@@ -97,9 +97,12 @@ export function KitchenLive({
   renderedAt,
   seconds = REFRESH_SECONDS,
   dark = false,
+  compact = false,
 }: {
   renderedAt: string
   seconds?: number
+  /** Icon only: the screen's header has no room for words that rarely change. */
+  compact?: boolean
   /** On the wall: light text on the dark board. */
   dark?: boolean
 }) {
@@ -179,6 +182,40 @@ export function KitchenLive({
   }, [])
 
   const muted = dark ? 'text-white/70' : 'text-v2-muted'
+  if (compact) {
+    // Quiet when all is well: only the bell. A problem shows as words, since
+    // that is the one time somebody needs to read it.
+    return (
+      <div className="flex items-center gap-2 text-xs font-semibold">
+        {stale || !connected ? (
+          <span className={cx('inline-flex items-center gap-1.5', stale ? 'text-v2-urgent' : 'text-v2-soon')}>
+            <span aria-hidden className={cx('inline-block h-2 w-2 rounded-full', stale ? 'bg-v2-urgent' : 'bg-v2-soon')} />
+            {stale ? 'Not updating, refresh the page' : 'Reconnecting…'}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={toggleSound}
+          aria-pressed={soundOn}
+          aria-label={soundOn ? 'Ring on new order is on. Turn off' : 'Ring on new order is off. Turn on'}
+          title={soundOn ? 'Rings on new orders. Tap to mute.' : 'Ring when a new order arrives'}
+          className={cx(
+            'grid h-10 w-10 place-items-center rounded-full border transition-colors',
+            soundOn ? 'border-v2-brand bg-v2-brand-soft text-v2-brand' : 'border-v2-line-strong text-v2-muted hover:bg-v2-surface-2',
+            v2Focus,
+          )}
+        >
+          {/* A speaker, not a bell: the bell in the top bar is notifications. */}
+          {soundOn ? <Volume2 size={18} aria-hidden /> : <VolumeX size={18} aria-hidden />}
+        </button>
+        {lastEvent ? (
+          <span role="status" className="sr-only">
+            {lastEvent}
+          </span>
+        ) : null}
+      </div>
+    )
+  }
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
       <span
@@ -226,11 +263,19 @@ export function KitchenLive({
 /** The loud half of the stale state, in the body where the times it doubts are. */
 export function KitchenStaleNotice({ renderedAt, seconds = REFRESH_SECONDS }: { renderedAt: string; seconds?: number }) {
   const stale = useStale(renderedAt, seconds)
-  if (!stale) return null
-  return (
-    <Notice tone="warn">
-      This screen has not updated since <strong className="tabular-nums">{stamp(renderedAt)}</strong>. Arrival times and order statuses below may be out of date. Check the
-      connection; it keeps retrying.
-    </Notice>
-  )
+  // Shown by the warning icon in the top bar, not as a banner on the page.
+  useEffect(() => {
+    reportIssue(
+      'stale-screen',
+      stale
+        ? {
+            level: 'amber',
+            title: 'This screen stopped updating',
+            detail: `Last updated at ${stamp(renderedAt)}. Times and statuses may be old. It keeps trying; refreshing the page usually fixes it.`,
+          }
+        : null,
+    )
+    return () => reportIssue('stale-screen', null)
+  }, [stale, renderedAt])
+  return null
 }

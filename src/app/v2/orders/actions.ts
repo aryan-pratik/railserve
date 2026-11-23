@@ -5,6 +5,8 @@ import { acceptRun, generateRunKot, handRunToRiderAction, markRunPrepared } from
 import { updateOrderStatusAction, type ActionState } from '@/app/admin/orders/actions'
 import { markReturnedAction, type ReturnActionState } from '@/app/actions/returns'
 import { parseBulkPick, type BulkKind } from '@/lib/v2/orders'
+import { markManyReturned } from '@/lib/repo/rtoRepo'
+import { requireRole } from '@/lib/session'
 
 /*
  * Thin v2 wrappers. Every mutation is still the v1 action (which is the one
@@ -71,4 +73,23 @@ export async function markReturnedV2(prev: ReturnActionState, formData: FormData
   const result = await markReturnedAction(prev, formData)
   if (result.ok) revalidatePath('/v2/orders')
   return result
+}
+
+/** A rider's bags back at once: every id goes through the same rules as one. */
+export async function markManyReturnedV2(prev: ReturnActionState, formData: FormData): Promise<ReturnActionState> {
+  const ctx = await requireRole('STORE_MANAGER', 'ADMIN')
+  const ids = String(formData.get('orderIds') ?? '').split(',').filter(Boolean)
+  const note = String(formData.get('note') ?? '').trim() || null
+  if (ids.length === 0) return { error: 'Nothing picked.' }
+  let r: { marked: number; errors: string[] }
+  try {
+    r = await markManyReturned(ctx, ids, note)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not record the returns.' }
+  }
+  revalidatePath('/v2/orders')
+  revalidatePath('/store')
+  revalidatePath('/admin')
+  if (r.marked === 0) return { error: r.errors[0] ?? 'None of them could be marked.' }
+  return { ok: `${r.marked} bag${r.marked === 1 ? '' : 's'} marked returned.${r.errors.length ? ` Not marked: ${r.errors.join(' ')}` : ''}` }
 }

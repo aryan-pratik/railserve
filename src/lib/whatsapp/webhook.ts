@@ -22,6 +22,11 @@ export type InboundEvent = {
   /** The quick-reply button or list option the passenger tapped, if that is what this is. */
   button: string | null
   mediaUrl: string | null
+  /**
+   * WhatsApp's id for the file, when the webhook sends one. WhatsApp itself
+   * sends only this (no link); fetching the file needs the provider's key.
+   */
+  mediaId?: string | null
   mediaCaption: string | null
   /** WhatsApp's own word for the attachment (image, video, audio, document…). */
   mediaType?: string | null
@@ -138,7 +143,13 @@ function parseInbound(body: Json, phone: string, messages: unknown): InboundEven
   const text = str(body.text) ?? metaText ?? textFromContent ?? button
 
   const media = MEDIA_TYPES.has(contentType)
-  const mediaUrl = media ? str(body.url) ?? str((first?.[contentType] as Json | undefined)?.link) : null
+  // The link may sit in any of these, depending on the webhook version; the
+  // raw WhatsApp object carries only an id.
+  const metaMedia = (first?.[contentType] as Json | undefined) ?? null
+  const mediaUrl = media
+    ? str(body.url) ?? str(body.mediaUrl) ?? str(body.media_url) ?? str(body.fileUrl) ?? str(body.file_url) ?? str(body.link) ?? str(metaMedia?.link) ?? str(metaMedia?.url)
+    : null
+  const mediaId = media ? str(metaMedia?.id) ?? str(body.mediaId) ?? str(body.media_id) : null
   const mediaCaption = media
     ? str(body.caption) ?? str(body.filename) ?? str((first?.[contentType] as Json | undefined)?.caption)
     : null
@@ -160,6 +171,7 @@ function parseInbound(body: Json, phone: string, messages: unknown): InboundEven
     text,
     button,
     mediaUrl,
+    mediaId,
     mediaCaption,
     mediaType: media ? contentType : null,
     at: when(body),

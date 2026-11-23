@@ -100,7 +100,7 @@ export function statusChip(status: string): { tone: ChipTone; label: string } {
     case 'PREPARED':
       return { tone: 'ok', label: 'Ready' }
     case 'DISPATCHED':
-      return { tone: 'out', label: 'Out for delivery' }
+      return { tone: 'out', label: 'With rider' }
     case 'DELIVERED':
       return { tone: 'ok', label: 'Delivered' }
     case 'FAILED':
@@ -108,19 +108,11 @@ export function statusChip(status: string): { tone: ChipTone; label: string } {
     case 'CANCELLED':
       return { tone: 'bad', label: 'Cancelled' }
     case 'LOST':
-      return { tone: 'grey', label: 'Lost' }
+      return { tone: 'grey', label: 'Not booked' }
     case 'ENQUIRY':
       return { tone: 'grey', label: 'Enquiry' }
     case 'QUOTED':
       return { tone: 'info', label: 'Quoted' }
-    case 'MISDELIVERY':
-      return { tone: 'bad', label: 'Misdelivery' }
-    case 'MISSED_DELIVERY':
-      return { tone: 'bad', label: 'Missed' }
-    case 'REFUNDED':
-      return { tone: 'bad', label: 'Refunded' }
-    case 'RATING_ORDER':
-      return { tone: 'grey', label: 'Rating order' }
     default:
       return { tone: 'grey', label: status.replace(/_/g, ' ').toLowerCase() }
   }

@@ -3,7 +3,7 @@ import { Restaurant, Station } from '@/lib/models'
 import { naturalKey } from '@/lib/tenancy/primary'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
 import { ORDER_TYPES } from '@/lib/orderEnums'
-import { EXCLUDED_STATUS } from '@/lib/analytics'
+import { NOT_DECOY } from '@/lib/analytics'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { distinctStatuses } from './orderRepo'
 import { andClause, riderClause, riderOptions, type RiderOption } from './riderFilter'
@@ -118,7 +118,11 @@ export async function orderFilterClause(ctx: AuthContext, f: OrderFilters): Prom
   if (f.stations.length) clause.stationCode = { $in: f.stations }
   // Rating decoys are not business: left out unless asked for by name, so
   // this list's total is the same day total Analytics and the board show.
-  clause.status = f.status ? f.status : { $ne: EXCLUDED_STATUS }
+  if (f.status === 'RATING_ORDER') clause.ratingOrder = true
+  else {
+    if (f.status) clause.status = f.status
+    Object.assign(clause, NOT_DECOY)
+  }
   const { from, to } = resolveDateRange(f.mode, { month: f.month, from: f.from, to: f.to })
   if (from || to) {
     const range: Record<string, string> = {}

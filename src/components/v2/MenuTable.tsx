@@ -11,7 +11,6 @@ import { formatIST } from '@/lib/format'
 import { confirmSuggested, deleteMenuItem, tagMenuItem, type TagResult } from '@/app/admin/menu/actions'
 import { forgetMenuPage } from '@/app/v2/menu/actions'
 import { Button, Chip, VegMark, cx, v2Focus } from './ui'
-import { Sub, Table, Td, Th, rowClass } from './Table'
 import { MenuConfirmDialog } from './MenuConfirmDialog'
 
 /**
@@ -57,7 +56,7 @@ export function MenuTable({
   const router = useRouter()
   const seq = useRef(0)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const tableRef = useRef<HTMLTableElement>(null)
+  const tableRef = useRef<HTMLUListElement>(null)
   const mounted = useRef(true)
 
   useEffect(() => {
@@ -207,115 +206,99 @@ export function MenuTable({
         ) : suggestedOnPage.length > 0 ? (
           <>
             <span>
-              <span className="font-semibold text-v2-ink tabular-nums">{suggestedOnPage.length}</span> suggested on this page
+              <span className="font-semibold text-v2-ink tabular-nums">{suggestedOnPage.length}</span> on this page were guessed from the name
             </span>
             <Button size="sm" variant="soft" onClick={() => confirmRows(suggestedOnPage)}>
-              Confirm {suggestedOnPage.length} suggested
+              They look right: confirm all {suggestedOnPage.length}
             </Button>
           </>
         ) : (
-          <span>Tick rows to confirm their suggested tags together.</span>
+          <span>Tick dishes to confirm several at once.</span>
         )}
       </div>
 
-      <Table ref={tableRef} tabIndex={-1} className="min-w-[52rem] outline-none">
-        <thead>
-          <tr>
-            <Th className="w-10">
+      <ul ref={tableRef} tabIndex={-1} className="outline-none">
+        <li className="flex items-center gap-3 border-b border-v2-line bg-v2-surface-2 px-4 py-2 text-[12px] font-bold uppercase tracking-[0.08em] text-v2-muted">
+          <input
+            type="checkbox"
+            aria-label="Select every dish on this page"
+            checked={allPicked}
+            onChange={toggleAll}
+            className={cx('h-4 w-4 rounded accent-v2-brand', v2Focus)}
+          />
+          <span className="flex-1">Dish</span>
+          <span className="hidden sm:block">Veg or non-veg</span>
+          <span className="w-8" aria-hidden />
+        </li>
+        {merged.map((r) => {
+          const isSelected = selected.has(r.id)
+          const busy = overrides[r.id]?.pending
+          const detail = [menuCategory(r.name), r.orderCount ? `${r.orderCount} order${r.orderCount === 1 ? '' : 's'}` : 'not ordered yet'].join(' · ')
+          return (
+            <li
+              key={r.id}
+              className={cx(
+                'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-v2-line px-4 py-3 last:border-b-0 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]',
+                isSelected && 'bg-v2-brand-soft',
+              )}
+            >
               <input
                 type="checkbox"
-                aria-label="Select every row on this page"
-                checked={allPicked}
-                onChange={toggleAll}
+                aria-label={`Select ${r.name}`}
+                checked={isSelected}
+                onChange={() => toggle(r.id)}
                 className={cx('h-4 w-4 rounded accent-v2-brand', v2Focus)}
               />
-            </Th>
-            <Th>Dish</Th>
-            {showSource ? <Th>Aggregator</Th> : null}
-            <Th>Section</Th>
-            <Th align="right">Orders</Th>
-            <Th>Last ordered</Th>
-            <Th>Veg / non-veg</Th>
-            {/* relative: the sr-only label is absolutely positioned, and without a
-                positioned ancestor it escapes the TableFrame's scroll box and widens
-                the page on a phone. */}
-            <Th className="relative w-12">
-              <span className="sr-only">Delete</span>
-            </Th>
-          </tr>
-        </thead>
-        <tbody>
-          {merged.map((r) => {
-            const isSelected = selected.has(r.id)
-            const busy = overrides[r.id]?.pending
-            return (
-              <tr key={r.id} className={rowClass(isSelected)}>
-                <Td>
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${r.name}`}
-                    checked={isSelected}
-                    onChange={() => toggle(r.id)}
-                    className={cx('h-4 w-4 rounded accent-v2-brand', v2Focus)}
-                  />
-                </Td>
-                <Td className="whitespace-normal">
-                  <span className="flex min-w-[14rem] max-w-[18rem] items-start gap-1.5 whitespace-normal font-semibold">
-                    <span className="mt-1.5"><VegMark diet={r.diet} /></span>
-                    <span className="[overflow-wrap:anywhere]">{r.name}</span>
+              <div className="min-w-0">
+                <div className="flex items-start gap-2">
+                  <span className="mt-1.5 shrink-0">
+                    <VegMark diet={r.diet} />
                   </span>
-                </Td>
-                {showSource ? (
-                  <Td>
-                    <Link href={sourceHref[r.source] ?? '#'} className={cx('rounded text-v2-muted hover:text-v2-brand hover:underline', v2Focus)}>
+                  <span className="text-[15px] font-semibold [overflow-wrap:anywhere]">{r.name}</span>
+                  {r.diet === null ? (
+                    <Chip tone="grey">Not tagged</Chip>
+                  ) : !r.reviewed ? (
+                    <span title="Guessed from the dish name. Tap the right one to confirm; until then it prints on the kitchen ticket with a ? after its mark." className="shrink-0 cursor-help">
+                      <Chip tone="info">Please check</Chip>
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 pl-[22px] text-[13px] text-v2-muted" title={r.lastOrderedAt ? `Last ordered ${formatIST(r.lastOrderedAt)}` : undefined}>
+                  {showSource ? (
+                    <Link href={sourceHref[r.source] ?? '#'} className={cx('rounded hover:text-v2-brand hover:underline', v2Focus)}>
                       {sourceLabel[r.source] ?? r.source}
                     </Link>
-                  </Td>
-                ) : null}
-                <Td className="text-v2-muted">{menuCategory(r.name)}</Td>
-                <Td align="right" className="font-mono tabular-nums">
-                  {r.orderCount || <span className="text-v2-faint">0</span>}
-                  <Sub>{r.qty ? `${r.qty} qty` : '–'}</Sub>
-                </Td>
-                <Td className="font-mono text-xs tabular-nums text-v2-muted">
-                  {r.lastOrderedAt ? formatIST(r.lastOrderedAt) : <span className="text-v2-faint">never</span>}
-                </Td>
-                <Td className="py-1.5">
-                  <span className="flex items-center gap-2">
-                    <span className={cx('inline-flex rounded-full border border-v2-line p-0.5', busy && 'opacity-60')} role="group" aria-label={`Tag for ${r.name}`}>
-                      <TagButton active={r.diet === 'VEG'} diet="VEG" onClick={() => tag(r, 'VEG')} name={r.name} />
-                      <TagButton active={r.diet === 'NON_VEG'} diet="NON_VEG" onClick={() => tag(r, 'NON_VEG')} name={r.name} />
-                    </span>
-                    {r.diet === null ? (
-                      <Chip tone="grey">Not tagged</Chip>
-                    ) : !r.reviewed ? (
-                      <span title="Filled in from the item name. Click the right tag to confirm it; until then it prints on the KOT with a ? after its mark." className="cursor-help">
-                        <Chip tone="info">Suggested</Chip>
-                      </span>
-                    ) : null}
-                  </span>
-                  {errors[r.id] ? (
-                    <p role="alert" className="mt-1 text-[11px] font-semibold text-v2-bad">
-                      {errors[r.id]}
-                    </p>
                   ) : null}
-                </Td>
-                <Td align="right" className="py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setDeleting(r)}
-                    aria-label={`Delete ${r.name}`}
-                    title="Delete this item"
-                    className={cx('inline-flex h-8 w-8 items-center justify-center rounded-full text-v2-faint hover:bg-v2-bad-bg hover:text-v2-bad', v2Focus)}
-                  >
-                    <Trash2 size={15} aria-hidden />
-                  </button>
-                </Td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </Table>
+                  {showSource ? ' · ' : ''}
+                  {detail}
+                </p>
+                {errors[r.id] ? (
+                  <p role="alert" className="mt-1 pl-[22px] text-[12px] font-semibold text-v2-bad">
+                    {errors[r.id]}
+                  </p>
+                ) : null}
+              </div>
+              <span
+                className={cx('col-start-2 inline-flex w-fit rounded-full border border-v2-line-strong p-0.5 sm:col-start-auto', busy && 'opacity-60')}
+                role="group"
+                aria-label={`Tag for ${r.name}`}
+              >
+                <TagButton active={r.diet === 'VEG'} diet="VEG" onClick={() => tag(r, 'VEG')} name={r.name} />
+                <TagButton active={r.diet === 'NON_VEG'} diet="NON_VEG" onClick={() => tag(r, 'NON_VEG')} name={r.name} />
+              </span>
+              <button
+                type="button"
+                onClick={() => setDeleting(r)}
+                aria-label={`Delete ${r.name}`}
+                title="Delete this dish"
+                className={cx('col-start-3 row-start-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-v2-faint hover:bg-v2-bad-bg hover:text-v2-bad sm:col-start-auto sm:row-start-auto', v2Focus)}
+              >
+                <Trash2 size={15} aria-hidden />
+              </button>
+            </li>
+          )
+        })}
+      </ul>
 
       {deleting ? (
         <MenuConfirmDialog
@@ -347,7 +330,7 @@ function TagButton({ active, diet, onClick, name }: { active: boolean; diet: Die
       aria-label={`Tag ${name} as ${label}`}
       onClick={onClick}
       className={cx(
-        'inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold whitespace-nowrap transition-colors',
+        'inline-flex h-8 items-center rounded-full px-3.5 text-[13px] font-semibold whitespace-nowrap transition-colors',
         active ? (diet === 'VEG' ? 'bg-v2-brand text-white' : 'bg-v2-bad text-white') : 'text-v2-muted hover:bg-v2-surface-2 hover:text-v2-ink',
         v2Focus,
       )}

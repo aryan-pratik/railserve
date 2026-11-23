@@ -6,6 +6,7 @@ import { CompanyTab } from './CompanyTab'
 import { StationsTab } from './StationsTab'
 import { OutletsTab } from './OutletsTab'
 import { RoutingTab } from './RoutingTab'
+import { MailTab } from './MailTab'
 import { StaffTab } from './StaffTab'
 import { IntegrationsTab } from './IntegrationsTab'
 import { RolesTab } from './RolesTab'
@@ -63,6 +64,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <StationsTab base={base} kitchens={kitchens} now={now} />
           ) : tab === 'outlets' ? (
             <OutletsTab ctx={ctx} base={base} kitchens={kitchens} paging={paging} />
+          ) : tab === 'mail' ? (
+            <MailTab ctx={ctx} />
           ) : tab === 'routing' ? (
             <RoutingTab ctx={ctx} base={base} />
           ) : tab === 'staff' ? (

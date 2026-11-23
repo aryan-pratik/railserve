@@ -37,7 +37,7 @@ import { opsDayOf, opsDayRange, opsDaysRange } from '../opsDay'
  * reported beside the day's figures as "in hand", never inside them.
  */
 
-const NOT_DELIVERED = ['FAILED', 'MISSED_DELIVERY', 'MISDELIVERY']
+const NOT_DELIVERED = ['FAILED']
 
 /** Closed within [from, to), for orders with and without `delivery.closedAt`. */
 export function closedBetween(from: Date, to: Date): QueryFilter<OrderDoc> {
@@ -193,6 +193,8 @@ export async function riderDays(
     {
       $match: outletScoped(ctx, {
         tenantId: ctx.tenantId,
+        // Rating-order decoys are left out of every figure, the rider's included.
+        ratingOrder: { $ne: true },
         $and: [riderDoneFilter('all'), onClosedRecord(riderIds), closedBetween(range.from, range.to)],
       }),
     },
@@ -311,6 +313,8 @@ export async function ridersDayTotal(
     {
       $match: outletScoped(ctx, {
         tenantId: ctx.tenantId,
+        // Rating-order decoys are left out of every figure, the rider's included.
+        ratingOrder: { $ne: true },
         $and: [riderDoneFilter('all'), onClosedRecord(riderIds), closedBetween(range.from, range.to)],
       }),
     },

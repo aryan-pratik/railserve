@@ -49,7 +49,7 @@ describe('the 3am reporting day', () => {
 describe('one order, three readings', () => {
   it('reports failed and missed deliveries as cancelled overall', () => {
     expect(overallStatus('DELIVERED')).toBe('DELIVERED')
-    for (const s of ['FAILED', 'MISSED_DELIVERY', 'MISDELIVERY', 'CANCELLED', 'LOST', 'REFUNDED']) {
+    for (const s of ['FAILED', 'CANCELLED', 'LOST']) {
       expect(overallStatus(s)).toBe('CANCELLED')
     }
     for (const s of ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED', 'DISPATCHED', 'REFUND_PENDING']) {
@@ -323,11 +323,9 @@ describe('rider record: one source for the app and the office', () => {
       await expect(adminOverrideStatus({ ctx: admin, orderId: o, to: 'FAILED' })).rejects.toBeInstanceOf(ConflictError)
     })
 
-    it('still accepts a custom status, and leaves the record alone', async () => {
+    it('refuses a typed-in status, and leaves the record alone', async () => {
       const o = String((await ready())._id)
-      const out = await adminOverrideStatus({ ctx: admin, orderId: o, to: 'REFUND_PENDING' })
-      expect(out.status).toBe('REFUND_PENDING')
-      expect(out.delivery.closedAt ?? null).toBeNull()
+      await expect(adminOverrideStatus({ ctx: admin, orderId: o, to: 'REFUND_PENDING' })).rejects.toBeInstanceOf(ConflictError)
     })
   })
 

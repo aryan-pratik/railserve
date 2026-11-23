@@ -7,6 +7,7 @@ import 'react-day-picker/style.css'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useNavTransition } from '@/components/navPending'
 import { CALENDAR_VARS, Popover, fromYMD, toYMD } from './DateFilter'
+import { insideFloating } from './Floating'
 import { cx, v2Focus } from './ui'
 
 /**
@@ -45,7 +46,7 @@ export function DayPicker({
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false)
+      if (!root.current?.contains(e.target as Node) && !insideFloating(e.target)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     document.addEventListener('mousedown', onDown)

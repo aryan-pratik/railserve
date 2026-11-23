@@ -25,26 +25,33 @@ export type NavCounts = {
 export function navFor(role: Role, c: NavCounts): V2NavSection[] {
   switch (role) {
     case 'ADMIN':
+      // Grouped by how often an owner opens them: the day's work first, then
+      // money, then the things set up once in a while. The full activity log
+      // sits in Settings; each order already shows its own history.
       return [
         {
-          label: 'Operations',
+          label: 'Every day',
           items: [
             { href: '/v2/admin', label: 'Today', icon: 'today', count: c.live },
             { href: '/v2/orders', label: 'Orders', icon: 'orders' },
-            { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
+            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
             { href: '/v2/chat', label: 'WhatsApp', icon: 'chat', count: c.unread },
+            { href: '/v2/inbox', label: 'Emails to check', icon: 'inbox', count: c.unparsed, alert: true },
           ],
         },
         {
-          label: 'Check and manage',
+          label: 'Money',
           items: [
-            { href: '/v2/inbox', label: 'Emails to check', icon: 'inbox', count: c.unparsed, alert: true },
-            { href: '/v2/orders?view=enquiries', label: 'Group bookings', icon: 'enquiries' },
-            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
+            { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
+          ],
+        },
+        {
+          label: 'Business',
+          items: [
+            { href: '/v2/orders?view=enquiries', label: 'Group bookings', icon: 'enquiries' },
             { href: '/v2/menu', label: 'Menu', icon: 'menu', count: c.menuToCheck },
             { href: '/v2/analytics', label: 'Reports', icon: 'analytics' },
-            { href: '/v2/activity', label: 'History', icon: 'activity' },
           ],
         },
         { label: 'Setup', items: [{ href: '/v2/settings', label: 'Settings', icon: 'settings' }] },
@@ -55,7 +62,6 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
           label: 'Kitchen',
           items: [
             { href: '/v2/kitchen', label: 'Kitchen', icon: 'kitchen', count: c.live },
-            { href: '/v2/orders', label: 'Orders', icon: 'orders' },
             { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
             { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },

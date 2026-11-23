@@ -166,7 +166,6 @@ function WallTicket({
           <div className="truncate font-mono text-[24px] font-semibold leading-none tabular-nums">{seat}</div>
           <div className="mt-1.5 truncate text-[18px] text-white/70">
             {o.contactName ?? o.externalOrderId}
-            {o.pax ? ` · ${o.pax} pax` : ''}
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -178,7 +177,6 @@ function WallTicket({
       </div>
 
       <ul className="grid gap-1.5 text-[18px] leading-snug">
-        {o.pax && o.itemNames.length === 0 ? <li className="font-semibold">{o.pax} pax thali</li> : null}
         {o.itemNames.map((name, i) => (
           <li key={`${name}-${i}`} className="flex items-start gap-2">
             {i === 0 ? <KitchenDietMarks diet={o.diet} className="mt-[7px]" /> : <span className="w-[14px] shrink-0" aria-hidden />}

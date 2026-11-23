@@ -28,7 +28,7 @@ export const KITCHEN_STATUS_FILTERS: { key: string; label: string; statuses: Ord
   {
     key: 'returned',
     label: 'Cancelled / returned',
-    statuses: ['CANCELLED', 'FAILED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'],
+    statuses: ['CANCELLED', 'FAILED', 'LOST'],
   },
   { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
 ]

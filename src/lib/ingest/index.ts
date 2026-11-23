@@ -18,9 +18,13 @@ import { FoodOnTrainsParser } from './parsers/foodontrains'
 import { OrderNotificationParser } from './parsers/orderNotification'
 import { matchOutlet } from './outletMatch'
 import { isAllowedSender, senderAddress } from './senders'
+import { readMailAuth, type MailAuth } from './mailAuth'
+import { listsSender, loadMailSources, trustFor, type MailSourceRow } from './mailSources'
+import { runTemplate, templateMatches } from './templates/engine'
+import { SOURCE_LABEL, type OrderSource } from '../orderEnums'
 import { PAYMENT_PARSERS, recordPayment } from './payments'
 import { warmTrainStatus } from '../train/service'
-import type { OrderParser, ParsedOrder } from './types'
+import type { OrderParser, ParsedOrder, ParseResult } from './types'
 
 export const PARSERS: OrderParser[] = [
   new YatriRestroParser(),
@@ -58,6 +62,13 @@ export type IngestSource = {
    * parsed. Absent or empty means every sender. See ./senders.ts.
    */
   allowedSenders?: readonly string[]
+  /**
+   * Only the Gmail sync passes this. `enforceSenders` is the company's "only
+   * known senders" switch; `authResults` is Gmail's own
+   * Authentication-Results header (see ./mailAuth.ts). A pasted email has
+   * neither and is parsed as before: an admin pasted it on purpose.
+   */
+  mailbox?: { enforceSenders: boolean; authResults: string | null }
 }
 
 /**
@@ -92,43 +103,107 @@ export type IngestOutcome =
 export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   await connectDb()
 
+  const sender = senderAddress(input.from)
+  const auth = input.mailbox ? readMailAuth(input.mailbox.authResults, sender) : null
   const rawPayload = {
     body: input.body,
     subject: input.subject ?? null,
     from: input.from ?? null,
     receivedAt: input.receivedAt,
+    ...(auth ? { auth } : {}),
   }
+  const enforce = input.mailbox?.enforceSenders === true
+  const sources = await loadMailSources(input.tenantId)
+  const unparsed = (fields: Omit<Parameters<typeof recordUnparsed>[1], 'rawPayload' | 'gmailMessageId'>) =>
+    recordUnparsed(input.tenantId, { ...fields, rawPayload, gmailMessageId: input.gmailMessageId ?? null })
 
   // Bank credit alerts arrive in the same mailbox and are not orders. They
   // are recognised first, so they never reach the order parsers and never get
   // filed as "an order nobody is cooking".
-  const paymentOutcome = await tryIngestPayment(input, rawPayload)
+  const paymentOutcome = await tryIngestPayment(input, rawPayload, enforce ? { sources, sender, auth } : null)
   if (paymentOutcome) return paymentOutcome
 
-  // Checked after payments, so a bank alert never needs its sender listed,
-  // and before the parsers, so mail from anyone else never becomes an inbox
-  // row. A listed sender's mail that fails to parse still lands there below.
-  if (!isAllowedSender(input.from, input.allowedSenders ?? [])) {
-    return { status: 'IGNORED', from: senderAddress(input.from) }
+  // A layout an admin taught reads only mail from its own senders (any
+  // pasted mail, which has none), so it is checked before everything else.
+  const taught = findTaught(sources, input.body, input.mailbox ? { sender, auth } : null)
+  if (taught) {
+    const result = runTemplate(input.body, taught.rules!, (taught.source ?? 'OTHER') as OrderSource, input.receivedAt)
+    return finishParsed(input, taught.source ?? 'OTHER', result, rawPayload)
+  }
+
+  if (!enforce) {
+    // Checked after payments, so a bank alert never needs its sender listed,
+    // and before the parsers, so mail from anyone else never becomes an inbox
+    // row. A listed sender's mail that fails to parse still lands there below.
+    if (!isAllowedSender(input.from, input.allowedSenders ?? [])) {
+      return { status: 'IGNORED', from: sender }
+    }
   }
 
   const parser = PARSERS.find((p) => p.matches(input.body))
 
   if (!parser) {
-    return recordUnparsed(input.tenantId, {
-      source: 'UNKNOWN',
-      rawPayload,
-      reason: 'PARSE_FAILED',
-      detail: 'no parser recognised this email',
-      gmailMessageId: input.gmailMessageId ?? null,
-    })
+    // With "only known senders" on, mail from a stranger that looks like no
+    // order is skipped without a row; from a listed sender it means their
+    // layout changed, which someone needs to see.
+    if (enforce && !sources.some((r) => r.active && listsSender(r.senders, sender))) {
+      return { status: 'IGNORED', from: sender }
+    }
+    return unparsed({ source: 'UNKNOWN', reason: 'PARSE_FAILED', detail: 'no parser recognised this email' })
   }
 
-  const result = parser.parse(input.body, input.receivedAt)
+  if (enforce) {
+    const label = SOURCE_LABEL[parser.source] ?? parser.source
+    const row = sources.find((r) => r.kind === 'BUILTIN' && r.key === parser.source)
+    const trust = trustFor(row, label, sender, auth)
+    if (!trust.ok) {
+      // Read it anyway, so the waiting row shows what the order would be.
+      const peek = parser.parse(input.body, input.receivedAt)
+      const partial = peek.ok ? peek.order : (peek.partial ?? null)
+      return unparsed({
+        source: parser.source,
+        reason: 'SENDER_NOT_TRUSTED',
+        detail: trust.why,
+        partial,
+        externalOrderId: partial?.externalOrderId ?? null,
+      })
+    }
+  }
 
+  return finishParsed(input, parser.source, parser.parse(input.body, input.receivedAt), rawPayload)
+}
+
+/**
+ * The taught layout that should read this mail, if any. From the mailbox,
+ * only layouts that list the sender (and, when they ask for it, mail Gmail
+ * verified); for pasted mail, any layout whose markers are in the text.
+ */
+function findTaught(
+  sources: MailSourceRow[],
+  body: string,
+  mailbox: { sender: string | null; auth: MailAuth | null } | null,
+): MailSourceRow | null {
+  for (const row of sources) {
+    if (row.kind !== 'TAUGHT' || !row.active || !row.rules) continue
+    if (mailbox) {
+      if (!listsSender(row.senders, mailbox.sender)) continue
+      if (row.requireVerified && !mailbox.auth?.verified) continue
+    }
+    if (templateMatches(body, row.rules)) return row
+  }
+  return null
+}
+
+/** A parse result to an order, or to a waiting row that says what went wrong. */
+async function finishParsed(
+  input: IngestSource,
+  source: string,
+  result: ParseResult,
+  rawPayload: unknown,
+): Promise<IngestOutcome> {
   if (!result.ok) {
     return recordUnparsed(input.tenantId, {
-      source: parser.source,
+      source,
       rawPayload,
       reason: result.reason,
       detail: result.detail,
@@ -144,7 +219,7 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
   const outlet = await matchOutlet(input.tenantId, parsed.outletName, parsed.stationCode, parsed.source)
   if (!outlet.ok) {
     return recordUnparsed(input.tenantId, {
-      source: parser.source,
+      source,
       rawPayload,
       reason: 'UNKNOWN_OUTLET',
       detail: outlet.detail,
@@ -158,6 +233,26 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
 }
 
 /**
+ * Reads an email an admin is fixing by hand (re-ingesting a waiting row):
+ * a taught layout first, then the built-in readers. No sender check, since
+ * the admin is vouching for this one email. Null when nothing recognises it.
+ */
+export async function parseForAdmin(
+  tenantId: Types.ObjectId,
+  text: string,
+  receivedAt: Date,
+  from: string | null,
+): Promise<{ source: string; result: ParseResult } | null> {
+  const sources = await loadMailSources(tenantId)
+  const sender = senderAddress(from)
+  const own = sources.filter((r) => r.kind === 'TAUGHT' && listsSender(r.senders, sender))
+  const taught = findTaught(own.length ? own : sources, text, null)
+  if (taught) return { source: taught.source ?? 'OTHER', result: runTemplate(text, taught.rules!, (taught.source ?? 'OTHER') as OrderSource, receivedAt) }
+  const parser = PARSERS.find((p) => p.matches(text))
+  return parser ? { source: parser.source, result: parser.parse(text, receivedAt) } : null
+}
+
+/**
  * Records a bank alert, or returns null if this email is not one.
  *
  * A parser that matched but could not parse still lands in the unparsed inbox
@@ -168,9 +263,26 @@ export async function ingestEmail(input: IngestSource): Promise<IngestOutcome> {
 async function tryIngestPayment(
   input: IngestSource,
   rawPayload: unknown,
+  check: { sources: MailSourceRow[]; sender: string | null; auth: MailAuth | null } | null,
 ): Promise<IngestOutcome | null> {
   const parser = PAYMENT_PARSERS.find((p) => p.matches(input.body))
   if (!parser) return null
+
+  // A forged credit alert would put money in the ledger that never arrived,
+  // so with "only known senders" on, a bank alert needs its sender listed too.
+  if (check) {
+    const row = check.sources.find((r) => r.kind === 'PAYMENT' && r.key === `PAY:${parser.provider}`)
+    const trust = trustFor(row, `${parser.provider} bank alert`, check.sender, check.auth)
+    if (!trust.ok) {
+      return recordUnparsed(input.tenantId, {
+        source: parser.provider,
+        rawPayload,
+        reason: 'SENDER_NOT_TRUSTED',
+        detail: trust.why,
+        gmailMessageId: input.gmailMessageId ?? null,
+      })
+    }
+  }
 
   const result = parser.parse(input.body, input.receivedAt)
 
@@ -300,7 +412,7 @@ export function isDuplicateKeyError(err: unknown): boolean {
 async function recordUnparsed(tenantId: Types.ObjectId, input: {
   source: string
   rawPayload: unknown
-  reason: 'UNKNOWN_OUTLET' | 'MISSING_FIELD' | 'PARSE_FAILED'
+  reason: 'UNKNOWN_OUTLET' | 'MISSING_FIELD' | 'PARSE_FAILED' | 'SENDER_NOT_TRUSTED'
   detail: string
   partial?: unknown
   externalOrderId?: string | null

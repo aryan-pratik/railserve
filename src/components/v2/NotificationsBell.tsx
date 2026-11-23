@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Bell } from 'lucide-react'
 import { cx, v2Focus } from './ui'
+import { FloatingPanel, insideFloating } from './Floating'
 
 export type AlertItem = { id: string; title: string; sub: string; href: string; tone: 'bad' | 'warn' | 'info' }
 
@@ -15,10 +16,11 @@ export type AlertItem = { id: string; title: string; sub: string; href: string; 
 export function NotificationsBell({ items }: { items: AlertItem[] }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const getAnchor = useCallback(() => root.current, [])
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false)
+      if (!root.current?.contains(e.target as Node) && !insideFloating(e.target)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     document.addEventListener('mousedown', onDown)
@@ -45,7 +47,8 @@ export function NotificationsBell({ items }: { items: AlertItem[] }) {
         {items.length ? <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-v2-bad ring-2 ring-v2-surface" aria-hidden /> : null}
       </button>
       {open ? (
-        <div role="dialog" aria-label="Needs attention" className="absolute right-0 top-full z-50 mt-2 w-[340px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface shadow-v2-pop">
+        <FloatingPanel getAnchor={getAnchor} align="end" label="Needs attention">
+        <div className="w-[340px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface shadow-v2-pop">
           <div className="flex items-center justify-between border-b border-v2-line px-4 py-2.5">
             <span className="text-sm font-bold">Needs attention</span>
             <span className="font-mono text-xs text-v2-muted">{items.length}</span>
@@ -68,6 +71,7 @@ export function NotificationsBell({ items }: { items: AlertItem[] }) {
             </ul>
           )}
         </div>
+        </FloatingPanel>
       ) : null}
     </div>
   )

@@ -2,11 +2,12 @@ import mongoose, { type QueryFilter } from 'mongoose'
 import { Order, type OrderDoc } from '../models'
 import type { AuthContext } from '../authContext'
 import {
-  EXCLUDED_STATUS, NO_OUTLET, NO_PAYMENT, OUTCOME_STATUSES, isOutcome,
+  NOT_DECOY, NO_OUTLET, NO_PAYMENT, OUTCOME_STATUSES, isOutcome,
   type AnalyticsFilters, type CountRow, type Dimension,
 } from '../analytics'
 import { scoped } from './orderRepo'
 import { riderClause } from './riderFilter'
+import { COD_WALLET_FROM } from '../riderRecords'
 
 /**
  * The queries behind the admin Analytics screen and its export.
@@ -28,7 +29,7 @@ const KNOWN_STATUSES = Object.values(OUTCOME_STATUSES).flat()
 export function analyticsMatch(f: AnalyticsFilters, opts: { status?: boolean } = {}): QueryFilter<OrderDoc> {
   const and: Record<string, unknown>[] = [
     { serviceDate: { $gte: f.from, $lte: f.to } },
-    { status: { $ne: EXCLUDED_STATUS } },
+    NOT_DECOY,
   ]
   if (f.outlet === NO_OUTLET) and.push({ restaurantId: null })
   else if (f.outlet) and.push({ restaurantId: new mongoose.Types.ObjectId(f.outlet) })
@@ -129,9 +130,15 @@ export type CodSummary = {
  */
 export async function codSummary(ctx: AuthContext, match: QueryFilter<OrderDoc>): Promise<CodSummary> {
   const cash = { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] }
+  const partPaid = { $ifNull: ['$delivery.codPartPaidPaise', 0] }
   const delivered = { $eq: ['$status', 'DELIVERED'] }
-  const settled = { $and: [delivered, { $ne: [{ $ifNull: ['$delivery.codSettledAt', null] }, null] }] }
-  const pending = { $and: [delivered, { $eq: [{ $ifNull: ['$delivery.codSettledAt', null] }, null] }] }
+  // The same rules as the riders' wallets (riderCashRepo): cash delivered
+  // before the wallet started was settled by hand, so it counts as settled;
+  // a part already handed in is settled and only the rest is still out.
+  const beforeWallet = { $lt: [{ $ifNull: ['$delivery.deliveredAt', null] }, COD_WALLET_FROM] }
+  const settledAt = { $ne: [{ $ifNull: ['$delivery.codSettledAt', null] }, null] }
+  const settled = { $and: [delivered, { $or: [settledAt, beforeWallet] }] }
+  const pending = { $and: [delivered, { $not: [settledAt] }, { $not: [beforeWallet] }] }
   const [row] = await Order.aggregate<CodSummary>([
     { $match: scoped(ctx, { $and: [match, { paymentMode: 'COD' }] } as QueryFilter<OrderDoc>) },
     {
@@ -141,9 +148,9 @@ export async function codSummary(ctx: AuthContext, match: QueryFilter<OrderDoc>)
         billedPaise: { $sum: { $ifNull: ['$amountPaise', 0] } },
         deliveredOrders: { $sum: { $cond: [delivered, 1, 0] } },
         collectedPaise: { $sum: { $cond: [delivered, cash, 0] } },
-        settledPaise: { $sum: { $cond: [settled, cash, 0] } },
+        settledPaise: { $sum: { $cond: [settled, cash, { $cond: [pending, partPaid, 0] }] } },
         pendingOrders: { $sum: { $cond: [pending, 1, 0] } },
-        pendingPaise: { $sum: { $cond: [pending, cash, 0] } },
+        pendingPaise: { $sum: { $cond: [pending, { $max: [0, { $subtract: [cash, partPaid] }] }, 0] } },
       },
     },
     { $project: { _id: 0 } },

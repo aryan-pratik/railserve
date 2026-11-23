@@ -105,6 +105,19 @@ describe('MSG91 webhook parser', () => {
     expect(ev).toMatchObject({ type: 'inbound', kind: 'MEDIA', mediaUrl: 'https://cdn.example/x.jpg', mediaCaption: 'my seat' })
   })
 
+  it('keeps the WhatsApp media id when a photo comes with no link', () => {
+    const ev = parseMsg91Webhook({
+      ...inboundNew, contentType: 'image', text: '', url: '', direction: '0',
+      messages: '[{"from":"917748847990","id":"wamid.IMG1","timestamp":"1756115753","type":"image","image":{"id":"1234567890","mime_type":"image/jpeg","caption":"coach photo"}}]',
+    })
+    expect(ev).toMatchObject({ type: 'inbound', kind: 'MEDIA', mediaUrl: null, mediaId: '1234567890', mediaCaption: 'coach photo' })
+  })
+
+  it('finds a media link under the other field names MSG91 uses', () => {
+    const ev = parseMsg91Webhook({ ...inboundNew, contentType: 'document', text: '', url: '', mediaUrl: 'https://cdn.example/bill.pdf', filename: 'bill.pdf', messages: '', direction: '0' })
+    expect(ev).toMatchObject({ kind: 'MEDIA', mediaUrl: 'https://cdn.example/bill.pdf', mediaType: 'document' })
+  })
+
   it('reads a quick-reply button tap as the passenger saying the button label', () => {
     const tap = parseMsg91Webhook({ ...inboundNew, contentType: 'button', text: '', button: 'Confirm', messages: '[{"from":"917748847990","id":"wamid.BTN1","timestamp":"1756115753","type":"button","button":{"text":"Confirm","payload":"Confirm"}}]' })
     expect(tap).toMatchObject({ type: 'inbound', kind: 'TEXT', text: 'Confirm', button: 'Confirm', providerMessageId: 'wamid.BTN1' })

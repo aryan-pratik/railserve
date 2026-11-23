@@ -167,20 +167,22 @@ describe('transitionOrder', () => {
     expect(allowedNextStatuses('DELIVERED', 'ADMIN')).toEqual([])
   })
 
-  it('the support-outcome edges (misdelivery/missed delivery/refunded) are telecaller only', () => {
-    for (const to of ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const) {
-      expect(allowedNextStatuses('RECEIVED', 'STORE_MANAGER')).not.toContain(to)
-      expect(allowedNextStatuses('RECEIVED', 'DELIVERY_AGENT')).not.toContain(to)
-      expect(allowedNextStatuses('RECEIVED', 'ADMIN')).not.toContain(to)
-      expect(allowedNextStatuses('RECEIVED', 'TELECALLER')).toContain(to)
-    }
+  it('marking not delivered from the kitchen stages is the call desk\'s alone', () => {
+    expect(allowedNextStatuses('RECEIVED', 'STORE_MANAGER')).not.toContain('FAILED')
+    expect(allowedNextStatuses('RECEIVED', 'ADMIN')).not.toContain('FAILED')
+    expect(allowedNextStatuses('RECEIVED', 'TELECALLER')).toContain('FAILED')
   })
 
   describe('adminOverrideStatus', () => {
     it('allows a jump the TRANSITIONS allow-list would reject', async () => {
       const id = await newOrder()
-      const updated = await adminOverrideStatus({ ctx: admin, orderId: id, to: 'REFUND_PENDING' })
-      expect(updated.status).toBe('REFUND_PENDING')
+      const updated = await adminOverrideStatus({ ctx: admin, orderId: id, to: 'PREPARED' })
+      expect(updated.status).toBe('PREPARED')
+    })
+
+    it('refuses a typed-in status: only the fixed list', async () => {
+      const id = await newOrder()
+      await expect(adminOverrideStatus({ ctx: admin, orderId: id, to: 'REFUND_PENDING' })).rejects.toThrow(/order statuses/)
     })
 
     it('records an audit event tagged as an admin override', async () => {
@@ -188,12 +190,12 @@ describe('transitionOrder', () => {
       const updated = await adminOverrideStatus({
         ctx: admin,
         orderId: id,
-        to: 'VIP',
+        to: 'KOT_PRINTED',
         meta: { via: 'admin-orders-list' },
       })
       const evt = updated.events.at(-1)!
       expect(evt.fromStatus).toBe('RECEIVED')
-      expect(evt.toStatus).toBe('VIP')
+      expect(evt.toStatus).toBe('KOT_PRINTED')
       expect(evt.meta).toMatchObject({ via: 'admin-override' })
     })
 
@@ -213,7 +215,7 @@ describe('transitionOrder', () => {
 
     it('does not disturb the guided pipeline — a later normal transition still works', async () => {
       const id = await newOrder()
-      await adminOverrideStatus({ ctx: admin, orderId: id, to: 'RECEIVED_BUT_FLAGGED' })
+      await adminOverrideStatus({ ctx: admin, orderId: id, to: 'PREPARED' })
       // Nothing stops an admin from setting it straight back to a real status.
       const back = await adminOverrideStatus({ ctx: admin, orderId: id, to: 'RECEIVED' })
       expect(back.status).toBe('RECEIVED')

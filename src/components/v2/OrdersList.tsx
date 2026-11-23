@@ -15,6 +15,7 @@ import { Countdown } from './Countdown'
 import { RunHeader, type RunHeaderProps } from './RunHeader'
 import { useRunFold } from './KitchenBits'
 import { useLongPress } from './useLongPress'
+import { DishList } from './DishList'
 import { OrdersStatusPopover } from './OrdersStatusPopover'
 
 /** One order as the table lists it. Plain values only: this crosses to the client. */
@@ -47,6 +48,10 @@ export type OrdersRow = {
   /** The booked time as text, for closed orders where a countdown would be a frozen guess. */
   bookedLabel: string | null
   amountPaise: number | null
+  /** Money paid back, if any; the order keeps its status. */
+  refundPaise: number | null
+  /** A decoy placed only to get an app-store rating. */
+  ratingOrder: boolean
   paymentMode: string | null
   rider: string | null
   pax: number | null
@@ -66,7 +71,7 @@ export type OrdersListProps = {
   rows: OrdersRow[]
   groups: OrdersGroup[]
   serverNowMs: number
-  columns: { outlet: boolean; amount: boolean; called: boolean; date: boolean }
+  columns: { outlet: boolean; amount: boolean; called: boolean; date: boolean; orderNo: boolean }
   /** Tick boxes and the bulk bar; only for roles whose actions exist (admin, store). */
   canBulk: boolean
   /** The inline status override; admin only. */
@@ -175,7 +180,7 @@ function TrainOrderRow({ o, cols, selected, onToggle }: { o: OrdersRow; cols: Co
           {o.rider ? <span className="text-xs text-v2-muted">· with {o.rider}</span> : null}
         </span>
         <span className="mt-1 block text-[14.5px] leading-snug text-v2-ink-2">
-          {o.pax ? <span className="font-semibold">{o.pax} people (thali)</span> : o.itemNames.length ? o.itemNames.join(', ') : <span className="text-v2-faint">No dishes listed</span>}
+          <DishList items={o.itemNames} note={o.note} max={3} />
         </span>
         {o.handoverPoint ? <span className="mt-0.5 block text-[12.5px] font-semibold text-v2-ink-2">Hand over at: {o.handoverPoint}</span> : null}
         {o.note ? <span className="mt-1.5 block rounded-v2-sm bg-v2-info-bg px-2 py-1 text-[13.5px] font-semibold text-v2-info">Note: {o.note}</span> : null}
@@ -193,6 +198,7 @@ function TrainOrderRow({ o, cols, selected, onToggle }: { o: OrdersRow; cols: Co
               <Mono className="text-[15px] font-semibold text-v2-muted">{formatRupees(o.amountPaise)}</Mono>
             </span>
           )}
+          {o.refundPaise ? <span className="mt-1 block text-[12px] font-semibold text-v2-bad">Refunded {formatRupees(o.refundPaise)}</span> : null}
         </span>
       ) : null}
     </li>
@@ -294,7 +300,7 @@ function OrdersTable({
   }
 
   return (
-    <Table className={cols.compact ? 'min-w-[760px]' : 'min-w-[980px]'}>
+    <Table className={cols.compact ? 'min-w-[860px]' : 'min-w-[1080px]'}>
       <thead>
         <tr>
           {cols.select ? (
@@ -311,10 +317,11 @@ function OrdersTable({
               />
             </Th>
           ) : null}
-          <Th>Order</Th>
+          {cols.orderNo ? <Th>Order</Th> : null}
           {cols.compact ? null : <Th>Train</Th>}
           <Th>Seat</Th>
           <Th>Passenger</Th>
+          <Th>Dishes</Th>
           {cols.outlet ? <Th>Outlet</Th> : null}
           <Th>Status</Th>
           {cols.compact ? null : <Th>Arrives</Th>}
@@ -341,6 +348,7 @@ function OrdersTable({
                   />
                 </Td>
               ) : null}
+              {cols.orderNo ? (
               <Td>
                 <span className="flex items-center gap-1.5">
                   <Link href={href} className={cx('rounded font-mono text-[13px] font-semibold hover:underline', v2Focus)}>
@@ -358,11 +366,12 @@ function OrdersTable({
                   ) : null}
                 </span>
                 <Sub>
-                  {[cols.date ? o.dateLabel : null, o.placedLabel, o.source ? sourceLabel(o.source) : null, o.pax ? `${o.pax} pax` : null]
+                  {[cols.date ? o.dateLabel : null, o.placedLabel, o.source ? sourceLabel(o.source) : null]
                     .filter(Boolean)
                     .join(' · ')}
                 </Sub>
               </Td>
+              ) : null}
               {cols.compact ? null : (
                 <Td>
                   {o.trainNo ? (
@@ -387,6 +396,9 @@ function OrdersTable({
               <Td>
                 <span className="block max-w-[11rem] truncate font-medium">{o.contactName ?? <span className="text-v2-faint">—</span>}</span>
                 {o.phoneMasked ? <Sub className="font-mono tabular-nums">{o.phoneMasked}</Sub> : null}
+              </Td>
+              <Td className="min-w-[14rem] max-w-[18rem] !whitespace-normal">
+                <DishList items={o.itemNames} note={o.note} className="text-[13.5px] leading-snug" />
               </Td>
               {cols.outlet ? (
                 <Td>
@@ -418,6 +430,8 @@ function OrdersTable({
                     <span className="inline-flex flex-col items-end gap-1">
                       <Mono className="font-semibold">{formatRupees(o.amountPaise)}</Mono>
                       {o.paymentMode === 'COD' ? <Chip tone="cod">Cash</Chip> : null}
+                      {o.refundPaise ? <Chip tone="bad">Refunded {formatRupees(o.refundPaise)}</Chip> : null}
+                      {o.ratingOrder ? <Chip tone="grey">Rating order</Chip> : null}
                     </span>
                   )}
                 </Td>

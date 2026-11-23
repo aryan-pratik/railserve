@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { IconCheck, IconCopy } from './Icons'
 import { IconButton } from './ui'
+import { copyText } from '@/lib/copyText'
 
 /**
  * Copies `text` to the clipboard on click and flashes a checkmark for a
@@ -28,12 +29,9 @@ export function CopyButton({
   async function copy(e: React.MouseEvent) {
     e.stopPropagation()
     e.preventDefault()
-    try {
-      await navigator.clipboard.writeText(text)
+    if (await copyText(text)) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard access denied or unavailable; nothing useful to recover into.
     }
   }
 

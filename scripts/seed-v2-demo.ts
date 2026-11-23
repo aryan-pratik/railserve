@@ -433,7 +433,7 @@ async function main() {
         return
       case 'MISSED':
         await dispatch()
-        await transitionOrder({ ctx: telecallerCtx, orderId: id, to: 'MISSED_DELIVERY', meta: { reason: 'Train left before the rider reached the coach' } })
+        await transitionOrder({ ctx: telecallerCtx, orderId: id, to: 'FAILED', meta: { reason: 'Missed the train' }, apply: { failureReason: 'MISSED_TRAIN' } })
         return
       case 'RATING':
         await kitchenTo(key, id, 'ACCEPTED')

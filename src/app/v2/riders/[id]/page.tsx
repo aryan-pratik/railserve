@@ -26,7 +26,7 @@ import { riderInputClass } from '@/lib/v2/ridersShared'
 export const metadata = { title: 'Rider · RailServe' }
 export const dynamic = 'force-dynamic'
 
-const NOT_DELIVERED = ['FAILED', 'MISSED_DELIVERY', 'MISDELIVERY']
+const NOT_DELIVERED = ['FAILED']
 const WAITING = ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']
 const BUCKETS = {
   waiting: 'Waiting for pickup',

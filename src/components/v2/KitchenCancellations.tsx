@@ -23,10 +23,7 @@ export type KitchenCancellation = {
 
 const HEADLINE: Record<string, string> = {
   CANCELLED: 'Cancelled: do not cook or dispatch',
-  MISDELIVERY: 'Misdelivery: reached the wrong seat or passenger',
-  MISSED_DELIVERY: 'Missed delivery: never reached the passenger',
-  REFUNDED: 'Refunded',
-  RATING_ORDER: 'Flagged as a rating order, not a real order',
+  FAILED: 'Not delivered: the train left before the food did',
 }
 
 /** Dismissals survive a reload; a banner that comes back after "Got it" is noise. */

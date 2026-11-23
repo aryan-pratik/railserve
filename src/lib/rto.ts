@@ -16,11 +16,10 @@ export type RtoStatus = (typeof RTO_STATUSES)[number]
 /**
  * Leaving DISPATCHED for one of these opens a return. Only DISPATCHED: a
  * cancel while the order is still cooking, or sitting ready on the shelf,
- * never left the counter and has nothing to bring back. MISSED_DELIVERY is
- * here because the rider missed the train with the bag still in hand;
- * MISDELIVERY is not, because the bag went to the wrong passenger and is gone.
+ * never left the counter and has nothing to bring back. FAILED covers a
+ * rider who missed the train with the bag still in hand.
  */
-export const RTO_OPENING_STATUSES: readonly OrderStatus[] = ['CANCELLED', 'FAILED', 'MISSED_DELIVERY']
+export const RTO_OPENING_STATUSES: readonly OrderStatus[] = ['CANCELLED', 'FAILED']
 
 export function opensReturn(from: OrderStatus, to: OrderStatus): boolean {
   return from === 'DISPATCHED' && RTO_OPENING_STATUSES.includes(to)
@@ -49,7 +48,7 @@ export function rtoReasonLabel(reason: string): string {
       return 'Cancelled on the way'
     case 'FAILED':
       return 'Not delivered'
-    case 'MISSED_DELIVERY':
+    case 'MISSED_DELIVERY': // returns opened before the status clean-up
       return 'Missed the train'
     default:
       return reason.replace(/_/g, ' ').toLowerCase()

@@ -17,7 +17,7 @@ const UnparsedInboxSchema = new Schema(
     reason: {
       type: String,
       required: true,
-      enum: ['UNKNOWN_OUTLET', 'MISSING_FIELD', 'PARSE_FAILED'],
+      enum: ['UNKNOWN_OUTLET', 'MISSING_FIELD', 'PARSE_FAILED', 'SENDER_NOT_TRUSTED'],
     },
     detail: { type: String, default: null },
     /** Whatever the parser did understand, so a human is not starting cold. */

@@ -9,6 +9,7 @@ import { Chip, Mono, Seat, cx, statusChip, v2Focus } from './ui'
 import { KitchenCheckNowButton, KitchenCopyButton, KitchenDietMarks, KitchenNoteHint, useRunFold } from './KitchenBits'
 import { KitchenRunActions, type RunActionContext } from './KitchenRunActions'
 import { useLongPress } from './useLongPress'
+import { DishList } from './DishList'
 
 /**
  * One train on the desk: the departure-board strip, every order on it as a
@@ -124,7 +125,7 @@ export function KitchenRun({
         summary={summary || null}
         className={cx('!rounded-none !border-x-0 !border-t-0', open ? '!border-b !border-v2-line' : '!border-b-0')}
         fold={{ open, onToggle: () => setOpen(!open), controls: rowsId }}
-        actions={<TrainMore run={run} />}
+        actions={<TrainTools run={run} />}
       />
       <div id={rowsId} hidden={!open}>
         {/* The one next step for this train, big and first: what the kitchen does now. */}
@@ -153,31 +154,16 @@ export function KitchenRun({
 }
 
 /**
- * The rare things for one train, out of the way: check the live time now,
- * or copy the train's details. The common step is the button, not in here.
+ * Two small tools for one train: ask the railway for the live time now, and
+ * copy the train's details to paste elsewhere. Icons, so they stay out of
+ * the way of the one big step on the card.
  */
-function TrainMore({ run }: { run: KitchenRunData }) {
+function TrainTools({ run }: { run: KitchenRunData }) {
   return (
-    <details className="group relative">
-      <summary
-        className={cx(
-          'flex h-9 cursor-pointer list-none items-center gap-1 rounded-full border border-v2-line-strong px-3 text-[13px] font-semibold text-v2-ink-2 hover:bg-v2-surface-2 [&::-webkit-details-marker]:hidden',
-          v2Focus,
-        )}
-      >
-        More
-      </summary>
-      <div className="absolute right-0 top-11 z-20 grid min-w-[14rem] gap-0.5 rounded-v2-md border border-v2-line bg-v2-surface p-1.5 shadow-v2-pop">
-        {!run.local && run.trainNo && run.orders[0] ? (
-          <span className="px-1">
-            <KitchenCheckNowButton orderId={run.orders[0].id} />
-          </span>
-        ) : null}
-        <span className="flex items-center gap-2 px-3 py-1 text-sm font-semibold">
-          <KitchenCopyButton text={kitchenRunText(run)} label="Copy train details" /> Copy train details
-        </span>
-      </div>
-    </details>
+    <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      {!run.local && run.trainNo && run.orders[0] ? <KitchenCheckNowButton orderId={run.orders[0].id} /> : null}
+      <KitchenCopyButton text={kitchenRunText(run)} label="Copy train details" />
+    </span>
   )
 }
 
@@ -233,7 +219,7 @@ function OrderRow({
         <span className="mt-1 flex items-start gap-1.5 text-[14.5px] leading-snug text-v2-ink-2">
           <KitchenDietMarks diet={o.diet} className="mt-1" />
           <span className="min-w-0">
-            {o.pax ? <span className="font-semibold">{o.pax} people (thali)</span> : o.itemNames.length > 0 ? o.itemNames.join(', ') : <span className="text-v2-faint">No dishes listed</span>}
+            <DishList items={o.itemNames} note={o.note} max={3} />
           </span>
         </span>
         {o.note ? <span className="mt-1.5 block rounded-v2-sm bg-v2-info-bg px-2 py-1 text-[13.5px] font-semibold text-v2-info">Note: {o.note}</span> : null}

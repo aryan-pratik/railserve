@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { cx, v2Focus } from './ui'
+import { copyText } from '@/lib/copyText'
 
 /** Copies `text` and flashes a tick so there is proof it worked. */
 export function CallsCopyButton({ text, label, className }: { text: string; label: string; className?: string }) {
@@ -10,12 +11,9 @@ export function CallsCopyButton({ text, label, className }: { text: string; labe
   async function copy(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    try {
-      await navigator.clipboard.writeText(text)
+    if (await copyText(text)) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard denied or unavailable; nothing useful to recover into.
     }
   }
   return (

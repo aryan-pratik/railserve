@@ -310,6 +310,7 @@ const TENANT_INDEXES: Record<string, Spec[]> = {
   riderlocations: [{ name: 'tenant', index: { key: { tenantId: 1 } }, why: 'tenant scope' }],
   counters: [{ name: 'tenant', index: { key: { tenantId: 1 } }, why: 'tenant scope' }],
   ingeststates: [{ name: 'tenant', index: { key: { tenantId: 1 } }, why: 'tenant scope' }],
+  mailsources: [{ name: 'tenant_key_unique', index: { key: { tenantId: 1, key: 1 }, unique: true }, why: 'one row per mail source, per tenant' }],
   tenants: [{ name: 'slug_unique', index: { key: { slug: 1 }, unique: true }, why: 'tenant handle' }],
 }
 

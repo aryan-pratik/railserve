@@ -29,7 +29,6 @@ describe('foodOnTrainsStatusFor', () => {
     ['KOT_PRINTED', null],
     ['PREPARED', null],
     ['FAILED', null],
-    ['RATING_ORDER', null],
   ])('maps %s to %s', (status, expected) => {
     expect(foodOnTrainsStatusFor({ externalOrderId: 'FT-123456', status })).toBe(expected)
   })

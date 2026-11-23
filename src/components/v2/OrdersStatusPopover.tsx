@@ -1,27 +1,24 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState } from 'react'
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { TERMINAL_STATUSES } from '@/lib/orderStatus'
 import { setOrderStatusV2 } from '@/app/v2/orders/actions'
 import type { ActionState } from '@/app/admin/orders/actions'
 import { Button, Chip, Mono, cx, statusChip, v2Focus } from './ui'
-import { ordersFieldClass } from '@/lib/v2/ordersShared'
 import { Select } from './Select'
+import { FloatingPanel, insideFloating } from './Floating'
 
-const OTHER = '__other__'
 const WIDTH = 288
 const INITIAL: ActionState = {}
 
 /**
  * The admin's "set any status" on a table row: a pencil beside the chip that
- * opens a small panel with a dropdown (every known status, plus whatever the
- * admin wants to type), an explicit Save, and a second step for anything
+ * opens a small panel with a dropdown of the order statuses, an explicit Save, and a second step for anything
  * terminal, because a closed order drops off the kitchen's board at once.
  *
- * Fixed-positioned from the button's own rectangle rather than hung inside
- * the cell: every table here scrolls sideways in a TableFrame, which would
- * clip an absolutely positioned panel to its row.
+ * Drawn on the page (Floating.tsx) rather than hung inside the cell: every
+ * table here scrolls sideways in a TableFrame, which would clip it.
  */
 export function OrdersStatusPopover({
   orderId,
@@ -35,9 +32,7 @@ export function OrdersStatusPopover({
   options: string[]
 }) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState({ top: 0, left: 0 })
   const [choice, setChoice] = useState(current)
-  const [custom, setCustom] = useState('')
   const [confirming, setConfirming] = useState(false)
   // Saved: the row re-renders with the new chip, so the panel closes itself.
   const [state, formAction, pending] = useActionState(async (prev: ActionState, fd: FormData) => {
@@ -48,7 +43,8 @@ export function OrdersStatusPopover({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  const to = choice === OTHER ? custom.trim() : choice
+  const to = choice
+  const getAnchor = useCallback(() => buttonRef.current, [])
   const terminal = (TERMINAL_STATUSES as readonly string[]).includes(to)
   const changed = Boolean(to) && to !== current
 
@@ -56,7 +52,7 @@ export function OrdersStatusPopover({
     if (!open) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node
-      if (panelRef.current?.contains(t) || buttonRef.current?.contains(t)) return
+      if (panelRef.current?.contains(t) || buttonRef.current?.contains(t) || insideFloating(e.target)) return
       setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
@@ -71,10 +67,7 @@ export function OrdersStatusPopover({
   }, [open])
 
   const show = () => {
-    const r = buttonRef.current?.getBoundingClientRect()
-    if (r) setPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - WIDTH - 8)) })
     setChoice(current)
-    setCustom('')
     setConfirming(false)
     setOpen(true)
   }
@@ -97,13 +90,12 @@ export function OrdersStatusPopover({
       </button>
 
       {open ? (
+        <FloatingPanel getAnchor={getAnchor} gap={6} label={`Status of ${externalOrderId}`}>
         <div
           ref={panelRef}
-          role="dialog"
-          aria-label={`Status of ${externalOrderId}`}
-          style={{ position: 'fixed', top: pos.top, left: pos.left, width: WIDTH }}
+          style={{ width: WIDTH }}
           onClick={(e) => e.stopPropagation()}
-          className="z-50 grid gap-3 whitespace-normal rounded-v2-md border border-v2-line bg-v2-surface p-3.5 text-left shadow-v2-pop"
+          className="grid gap-3 whitespace-normal rounded-v2-md border border-v2-line bg-v2-surface p-3.5 text-left shadow-v2-pop"
         >
           <form action={formAction} className="grid gap-3">
             <input type="hidden" name="orderId" value={orderId} />
@@ -136,19 +128,9 @@ export function OrdersStatusPopover({
                     value={choice}
                     onChange={setChoice}
                     buttonClassName="h-9 text-[13px]"
-                    options={[...options.map((s) => ({ value: s, label: statusChip(s).label })), { value: OTHER, label: 'Other…' }]}
+                    options={options.map((s) => ({ value: s, label: statusChip(s).label }))}
                   />
                 </label>
-                {choice === OTHER ? (
-                  <input
-                    value={custom}
-                    onChange={(e) => setCustom(e.target.value)}
-                    placeholder="e.g. Refund pending"
-                    aria-label="New status name"
-                    className={cx(ordersFieldClass, 'h-9 text-[13px]')}
-                    autoFocus
-                  />
-                ) : null}
                 <div className="flex justify-end gap-2">
                   <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
                     Cancel
@@ -172,6 +154,7 @@ export function OrdersStatusPopover({
             ) : null}
           </form>
         </div>
+        </FloatingPanel>
       ) : null}
     </>
   )

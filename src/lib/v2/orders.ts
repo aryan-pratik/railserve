@@ -3,7 +3,7 @@ import type { DateFilterMode } from '@/lib/dateFilter'
 import { todayIST } from '@/lib/format'
 import { todayBoardFilter } from '@/lib/board'
 import { ORDER_STATUSES } from '@/lib/orderStatus'
-import { EXCLUDED_STATUS } from '@/lib/analytics'
+import { NOT_DECOY } from '@/lib/analytics'
 
 /*
  * The saved views of the v2 Orders table, and the pure helpers its page and
@@ -24,7 +24,11 @@ export const VIEW_LABEL: Record<OrderView, string> = {
 }
 
 export const ENQUIRY_STATUSES = ['ENQUIRY', 'QUOTED', 'LOST'] as const
-export const CANCELLED_STATUSES = ['FAILED', 'CANCELLED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const
+export const CANCELLED_STATUSES = ['FAILED', 'CANCELLED'] as const
+
+/** Group-booking stages live on Group bookings only, never in the order lists. */
+const NOT_GROUP_STAGE = { status: { $nin: [...ENQUIRY_STATUSES] } }
+const ORDER_LIST_STATUSES = ORDER_STATUSES.filter((s) => !(ENQUIRY_STATUSES as readonly string[]).includes(s))
 
 export function readView(raw: string | string[] | undefined): OrderView {
   const v = Array.isArray(raw) ? raw[0] : raw
@@ -66,9 +70,9 @@ export function viewClause(view: OrderView, now: Date = new Date()): Clause {
     case 'today':
       // Every status today, plus last night's open orders on a train still
       // due: the kitchen's own rule, so this board never disagrees with it.
-      return todayBoardFilter(now, ORDER_STATUSES.filter((s) => s !== EXCLUDED_STATUS))
+      return { $and: [todayBoardFilter(now, ORDER_LIST_STATUSES), NOT_DECOY] }
     case 'upcoming':
-      return { serviceDate: { $gt: today }, status: { $ne: EXCLUDED_STATUS } }
+      return { serviceDate: { $gt: today }, ...NOT_DECOY, ...NOT_GROUP_STAGE }
     case 'enquiries':
       return { status: { $in: [...ENQUIRY_STATUSES] } }
     case 'cancelled':
@@ -77,7 +81,7 @@ export function viewClause(view: OrderView, now: Date = new Date()): Clause {
       // listReturns adds the RTO condition itself.
       return {}
     case 'all':
-      return {}
+      return NOT_GROUP_STAGE
   }
 }
 

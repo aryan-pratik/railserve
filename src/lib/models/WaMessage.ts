@@ -41,6 +41,9 @@ const WaMessageSchema = new Schema(
     // WhatsApp's word for it (image, video, audio, document, sticker,
     // voice), so the thread knows how to preview it. Absent on older lines.
     mediaType: { type: String, default: null },
+    // WhatsApp's id for the file, kept when no link came with it, so it can
+    // be fetched once the provider's download call is wired in.
+    mediaId: { type: String, default: null },
     templateName: { type: String, default: null },
 
     status: { type: String, required: true, enum: WA_STATUSES },

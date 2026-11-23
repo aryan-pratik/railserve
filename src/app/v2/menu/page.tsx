@@ -8,8 +8,8 @@ import {
   MENU_TAGS, MENU_TAG_LABEL, hasMenuFilters, matchesTag, menuCounts, menuHref, needsCheck, readMenuFilters, sortMenu,
 } from '@/lib/v2/menu'
 import { QueryForm } from '@/components/QueryForm'
-import { Button, ButtonLink, cx } from '@/components/v2/ui'
-import { EmptyState, PageHeader, Pagination, PillTabs, TableFrame, readPaging } from '@/components/v2/Table'
+import { ButtonLink } from '@/components/v2/ui'
+import { EmptyState, PageHeader, Pagination, PillTabs, readPaging } from '@/components/v2/Table'
 import { Input } from '@/components/v2/AnalyticsField'
 import { AutoSelect } from '@/components/v2/AnalyticsAutoSelect'
 import { MenuTable } from '@/components/v2/MenuTable'
@@ -60,86 +60,91 @@ export default async function V2MenuPage(props: PageProps<'/v2/menu'>) {
   const inScope = (tag: (typeof MENU_TAGS)[number]) => scoped.filter((r) => matchesTag(r, tag)).length
   const filtering = hasMenuFilters(f)
 
+  // The tabs people use; "Not tagged" only while there is something in it.
+  const tabs = MENU_TAGS.filter((t) => t !== 'untagged' || counts.untagged > 0 || f.tag === 'untagged')
+
   return (
     <div className="grid gap-[18px]">
       <PageHeader
         title="Menu"
-        note="Every dish each aggregator sends, tagged veg or non-veg. Non-veg prints on its own KOT; a tag that is not confirmed prints with a ? after its mark."
+        note="Tag every dish veg or non-veg. Non-veg prints on its own kitchen ticket."
+        actions={<MenuAddForm sources={sources} />}
       />
 
-      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 xl:grid-cols-5">
-        <Stat label="Dishes" value={counts.all} href={menuHref(f, { tag: 'all' })} active={f.tag === 'all'} className="col-span-2 sm:col-span-1" />
-        <Stat label="To check" value={counts.check} href={menuHref(f, { tag: 'check' })} active={f.tag === 'check'} note={counts.check ? 'suggested or not tagged' : 'all confirmed'} />
-        <Stat label="Not tagged" value={counts.untagged} href={menuHref(f, { tag: 'untagged' })} active={f.tag === 'untagged'} />
-        <Stat label="Veg" value={counts.VEG} href={menuHref(f, { tag: 'VEG' })} active={f.tag === 'VEG'} />
-        <Stat label="Non-veg" value={counts.NON_VEG} href={menuHref(f, { tag: 'NON_VEG' })} active={f.tag === 'NON_VEG'} />
-      </div>
+      {counts.check > 0 && f.tag !== 'check' ? (
+        <Link
+          href={menuHref(f, { tag: 'check' })}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-v2-lg border border-v2-warn/40 bg-v2-warn-bg px-4 py-3 text-[14px] hover:brightness-[0.98]"
+        >
+          <span>
+            <b className="font-bold">{counts.check} dish{counts.check === 1 ? '' : 'es'} need a quick check.</b>{' '}
+            <span className="text-v2-ink-2">Their veg or non-veg was guessed from the name.</span>
+          </span>
+          <span className="font-semibold text-v2-brand">Check them →</span>
+        </Link>
+      ) : null}
 
-      <section className="grid gap-3.5 rounded-v2-lg border border-v2-line bg-v2-surface p-[18px]">
-        <QueryForm key={menuHref(f)} action="/v2/menu" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,15rem)_minmax(0,14rem)_minmax(0,1fr)_auto]">
-          {f.tag !== 'all' ? <input type="hidden" name="tag" value={f.tag} /> : null}
-          <AutoSelect
-            name="source"
-            defaultValue={f.source}
-            aria-label="Aggregator"
-            options={[
-              { value: '', label: `All aggregators (${counts.all})` },
-              ...sources.map((s) => {
-                const c = perSource.get(s.id)
-                return { value: s.id, label: `${s.label} (${c?.all ?? 0}${c?.check ? `, ${c.check} to check` : ''})` }
-              }),
-            ]}
-          />
-          <AutoSelect
-            name="section"
-            defaultValue={f.section}
-            aria-label="Menu section"
-            options={[
-              { value: '', label: 'All sections' },
-              ...MENU_CATEGORIES.flatMap((c) => {
-                const n = sectionCount(c)
-                return n > 0 || c === f.section ? [{ value: c, label: `${c} (${n})` }] : []
-              }),
-            ]}
-          />
-          <label className="relative block min-w-0">
-            <span className="sr-only">Search dishes</span>
-            <Search size={15} aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-v2-faint" />
-            <Input name="q" type="search" defaultValue={f.q} placeholder="Search dishes" autoComplete="off" className="pl-9" />
-          </label>
-          <div className="flex gap-2">
-            <Button type="submit" className="flex-1 sm:flex-none">
-              Search
-            </Button>
-            {filtering ? (
-              <ButtonLink href="/v2/menu" variant="ghost">
-                Reset
-              </ButtonLink>
-            ) : null}
-          </div>
-        </QueryForm>
+      <QueryForm key={menuHref(f)} action="/v2/menu" className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)_minmax(0,13rem)]">
+        {f.tag !== 'all' ? <input type="hidden" name="tag" value={f.tag} /> : null}
+        <label className="relative block min-w-0">
+          <span className="sr-only">Search dishes</span>
+          <Search size={15} aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-v2-faint" />
+          <Input name="q" type="search" defaultValue={f.q} placeholder="Search dishes, then press Enter" autoComplete="off" className="pl-9" />
+        </label>
+        <AutoSelect
+          name="source"
+          defaultValue={f.source}
+          aria-label="Aggregator"
+          options={[
+            { value: '', label: 'All aggregators' },
+            ...sources.flatMap((s) => {
+              const c = perSource.get(s.id)
+              return c?.all || s.id === f.source ? [{ value: s.id, label: `${s.label} (${c?.all ?? 0})` }] : []
+            }),
+          ]}
+        />
+        <AutoSelect
+          name="section"
+          defaultValue={f.section}
+          aria-label="Menu section"
+          options={[
+            { value: '', label: 'All sections' },
+            ...MENU_CATEGORIES.flatMap((c) => {
+              const n = sectionCount(c)
+              return n > 0 || c === f.section ? [{ value: c, label: `${c} (${n})` }] : []
+            }),
+          ]}
+        />
+      </QueryForm>
+
+      <div className="flex flex-wrap items-center gap-2">
         <PillTabs
-          tabs={MENU_TAGS.map((t) => ({
+          tabs={tabs.map((t) => ({
             href: menuHref(f, { tag: t }),
             label: MENU_TAG_LABEL[t],
             count: inScope(t),
             active: f.tag === t,
           }))}
         />
-      </section>
+        {filtering ? (
+          <ButtonLink href="/v2/menu" variant="ghost" size="sm">
+            Clear filters
+          </ButtonLink>
+        ) : null}
+      </div>
 
       {visible.length === 0 ? (
         <EmptyState
           title={filtering ? 'No dishes match' : 'No dishes yet'}
           note={
             filtering
-              ? 'Try another aggregator, section or tag, or clear the search.'
-              : 'Dishes appear here with the first order from each aggregator, or add one below.'
+              ? 'Try another aggregator, section or tab, or clear the search.'
+              : 'Dishes appear here with the first order from each aggregator, or add one with "Add a dish".'
           }
           action={filtering ? <ButtonLink href="/v2/menu">Show every dish</ButtonLink> : undefined}
         />
       ) : (
-        <TableFrame>
+        <section className="overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface">
           <MenuTable rows={visible} asOf={asOf} sourceLabel={sourceLabel} sourceHref={sourceHref} showSource={!f.source} />
           <Pagination
             page={current}
@@ -148,29 +153,8 @@ export default async function V2MenuPage(props: PageProps<'/v2/menu'>) {
             buildHref={(t) => menuHref(f, {}, t)}
             className="border-t border-v2-line"
           />
-        </TableFrame>
+        </section>
       )}
-
-      <MenuAddForm sources={sources} />
     </div>
-  )
-}
-
-/** One figure, and the link that narrows the table to it. */
-function Stat({ label, value, href, active, note, className }: { label: string; value: number; href: string; active: boolean; note?: string; className?: string }) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? 'true' : undefined}
-      className={cx(
-        'grid content-start gap-2 rounded-v2-lg border p-[18px] transition-colors',
-        className,
-        active ? 'border-v2-brand bg-v2-brand-soft' : 'border-v2-line bg-v2-surface hover:bg-v2-surface-2',
-      )}
-    >
-      <span className="text-[13px] font-semibold text-v2-ink-2">{label}</span>
-      <span className="text-[34px] font-bold leading-none tracking-[-0.04em] tabular-nums">{value.toLocaleString('en-IN')}</span>
-      {note ? <span className="text-xs text-v2-muted">{note}</span> : null}
-    </Link>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { DayPicker as Calendar, type DateRange } from 'react-day-picker'
 import 'react-day-picker/style.css'
@@ -8,6 +8,7 @@ import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { DateFilterMode } from '@/lib/dateFilter'
 import { useNavTransition } from '@/components/navPending'
 import { Button, cx, v2Focus } from './ui'
+import { FloatingPanel, insideFloating } from './Floating'
 
 /*
  * The one date filter for every v2 list: All time (optional) · Today ·
@@ -51,33 +52,22 @@ export const CALENDAR_VARS = {
 } as CSSProperties
 
 export function Popover({ children, className, style, align = 'auto' }: { children: ReactNode; className?: string; style?: CSSProperties; align?: 'auto' | 'left' | 'right' }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ right: boolean; up: boolean }>({ right: align === 'right', up: false })
-  // Measured after the first paint: flip to the right edge when the panel
-  // would leave the window, and open upward when there is more room above.
-  useLayoutEffect(() => {
-    const el = ref.current
-    const anchor = el?.parentElement?.getBoundingClientRect()
-    if (!el || !anchor) return
-    const right = align === 'auto' ? anchor.left + el.offsetWidth > window.innerWidth - 16 : align === 'right'
-    const below = window.innerHeight - anchor.bottom - 12
-    const up = below < el.offsetHeight && anchor.top - 12 > below
-    setPos({ right, up })
-  }, [align])
+  // Placed beside its parent (the button's wrapper), drawn on the page so no
+  // card or scrolling box around the filter can cut it off. See Floating.tsx.
+  const marker = useRef<HTMLSpanElement>(null)
+  const getAnchor = useCallback(() => marker.current?.parentElement ?? null, [])
   return (
-    <div
-      ref={ref}
-      role="dialog"
-      className={cx(
-        'absolute z-50 max-h-[min(80vh,calc(100dvh-2rem))] max-w-[calc(100vw-2rem)] overflow-auto rounded-v2-lg border border-v2-line bg-v2-surface p-3 text-v2-ink shadow-v2-pop',
-        pos.up ? 'bottom-full mb-2' : 'top-full mt-2',
-        pos.right ? 'right-0' : 'left-0',
-        className,
-      )}
-      style={style}
-    >
-      {children}
-    </div>
+    <>
+      <span ref={marker} hidden />
+      <FloatingPanel
+        getAnchor={getAnchor}
+        align={align === 'right' ? 'end' : 'start'}
+        className={cx('rounded-v2-lg border border-v2-line bg-v2-surface p-3 text-v2-ink shadow-v2-pop', className)}
+        style={style}
+      >
+        {children}
+      </FloatingPanel>
+    </>
   )
 }
 
@@ -134,7 +124,7 @@ export function DateFilter({
   useEffect(() => {
     if (!panel) return
     const onDown = (e: MouseEvent) => {
-      if (!root.current?.contains(e.target as Node)) setPanel(null)
+      if (!root.current?.contains(e.target as Node) && !insideFloating(e.target)) setPanel(null)
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPanel(null)
     document.addEventListener('mousedown', onDown)

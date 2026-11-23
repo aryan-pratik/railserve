@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requirePermission } from '@/lib/session'
+import { NOT_BOOKED_REASONS } from '@/lib/orderStatus'
 import { deleteOrder } from '@/lib/repo/orderRepo'
 import { transitionOrder } from '@/lib/repo/transitionOrder'
 import type { OrderStatus } from '@/lib/orderStatus'
@@ -72,9 +73,8 @@ export const handRunToRiderV2 = wrap(store.handRunToRiderAction)
 export const cancelOrderV2 = wrap(calls.cancelOrder)
 export const markDeliveredV2 = wrap(calls.markDelivered)
 export const markNotDeliveredV2 = wrap(calls.markNotDelivered)
-export const markMisdeliveryV2 = wrap(calls.markMisdelivery)
-export const markMissedDeliveryV2 = wrap(calls.markMissedDelivery)
-export const markRefundedV2 = wrap(calls.markRefunded)
+export const recordRefundV2 = wrap(calls.recordRefundAction)
+export const clearRefundV2 = wrap(calls.clearRefundAction)
 export const flagRatingOrderV2 = wrap(calls.flagRatingOrder)
 export const requestCancellationV2 = wrap(requestCancellationAction)
 export const decideCancellationV2 = wrap(decideCancellationAction)
@@ -119,11 +119,21 @@ export async function adminOutcomeV2(_prev: WorkspaceState, formData: FormData):
 export async function markLostV2(_prev: WorkspaceState, formData: FormData): Promise<WorkspaceState> {
   const ctx = await requirePermission('orders.overrideStatus')
   const orderId = String(formData.get('orderId') ?? '')
-  const reason = String(formData.get('reason') ?? '').trim()
+  const text = String(formData.get('reason') ?? '').trim()
+  const code = String(formData.get('reasonCode') ?? '')
+  const known = code in NOT_BOOKED_REASONS
+  if (!known && text.length < 3) return { error: 'Pick why they did not book.' }
+  const label = known ? NOT_BOOKED_REASONS[code as keyof typeof NOT_BOOKED_REASONS] : text
   try {
-    await transitionOrder({ ctx, orderId, to: 'LOST', meta: reason ? { via: 'enquiry', reason } : { via: 'enquiry' } })
+    await transitionOrder({
+      ctx,
+      orderId,
+      to: 'LOST',
+      meta: { via: 'enquiry', reason: label, ...(known && text ? { note: text } : {}) },
+      apply: { failureReason: known ? code : text },
+    })
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Could not mark the enquiry lost.' }
+    return { error: err instanceof Error ? err.message : 'Could not mark it not booked.' }
   }
   revalidateV2(orderId)
   revalidatePath('/admin/enquiries')

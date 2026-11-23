@@ -4,7 +4,7 @@ import { connectDb } from '../db'
 import { UnparsedInbox } from '../models'
 import { ForbiddenError, type AuthContext } from '../authContext'
 import { findMany } from './orderRepo'
-import { PARSERS, createOrderFromParsed } from '../ingest'
+import { createOrderFromParsed, parseForAdmin } from '../ingest'
 import { toParseableText } from '../ingest/gmail/client'
 import { PAYMENT_PARSERS, recordPayment } from '../ingest/payments'
 import { matchOutlet } from '../ingest/outletMatch'
@@ -130,7 +130,13 @@ export async function reopenInboxRows(
 export async function reingestInboxRows(ctx: AuthContext, target: InboxTarget): Promise<BulkReingestResult> {
   assertAdmin(ctx)
   await connectDb()
-  const query = targetQuery(ctx, target, false)
+  // Mail held back for an unknown sender is never re-read in bulk: clearing
+  // a backlog must not turn a stranger's lookalike into a live order. Each
+  // one is trusted (or dismissed) on its own, from the email itself.
+  const base = targetQuery(ctx, target, false)
+  // $and, not a spread: the admin's own reason filter must still apply.
+  const held = await UnparsedInbox.countDocuments({ $and: [base, { reason: 'SENDER_NOT_TRUSTED' as const }] })
+  const query = { $and: [base, { reason: { $ne: 'SENDER_NOT_TRUSTED' as const } }] }
   const total = await UnparsedInbox.countDocuments(query)
   // Oldest first: the order that has been waiting longest is the most urgent.
   const rows = await UnparsedInbox.find(query)
@@ -155,6 +161,7 @@ export async function reingestInboxRows(ctx: AuthContext, target: InboxTarget): 
   if (bulkActionId && resolved > 0) {
     await UnparsedInbox.updateMany({ bulkActionId, tenantId: ctx.tenantId }, { $set: { bulkActionCount: resolved } })
   }
+  if (held > 0) errors.push(`${held} email${held === 1 ? '' : 's'} from unknown senders skipped: open each one to trust or dismiss it.`)
   return {
     resolved,
     failed,
@@ -219,10 +226,10 @@ export async function reingestInboxRow(
     }
   }
 
-  const parser = PARSERS.find((p) => p.matches(text))
-  if (!parser) return { error: 'No parser recognises this email.' }
+  const found = await parseForAdmin(ctx.tenantId, text, receivedAt, (row.rawPayload as { from?: string | null } | null)?.from ?? null)
+  if (!found) return { error: 'No parser recognises this email.' }
 
-  const parsed = parser.parse(text, receivedAt)
+  const parsed = found.result
   if (!parsed.ok) return { error: `Still not parseable: ${parsed.detail}` }
 
   const outlet = await matchOutlet(ctx.tenantId, parsed.order.outletName, parsed.order.stationCode, parsed.order.source)

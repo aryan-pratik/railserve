@@ -37,7 +37,7 @@ type Closable = {
   events?: { toStatus?: string | null; createdAt?: Date | null }[] | null
 }
 
-const CLOSING = new Set(['DELIVERED', 'FAILED', 'CANCELLED', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED', 'LOST'])
+const CLOSING = new Set(['DELIVERED', 'FAILED', 'CANCELLED', 'LOST'])
 
 /**
  * When the order first closed.

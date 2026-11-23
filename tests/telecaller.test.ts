@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disconnectDb } from '../src/lib/db'
 import { findById, recentCancellations } from '../src/lib/repo/orderRepo'
-import { flagRatingOrder, transitionOrder } from '../src/lib/repo/transitionOrder'
+import { clearRefund, flagRatingOrder, recordRefund, transitionOrder } from '../src/lib/repo/transitionOrder'
 import { createManualOrder } from '../src/lib/repo/createOrder'
 import { latestBalance, setPaymentRemark } from '../src/lib/repo/paymentRepo'
 import { dispatchRun } from '../src/lib/repo/runRepo'
@@ -107,39 +107,27 @@ describe('telecaller', () => {
     })
 
     it('exactly these outcomes are open to a telecaller, per status', () => {
-      const outcomes = ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED']
+      // In the kitchen: cancel, or "not delivered" when the train left first.
       for (const from of ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED'] as const) {
-        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(
-          [...outcomes, 'CANCELLED'].sort(),
-        )
+        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(['CANCELLED', 'FAILED'])
       }
-      // Once the food is ready, the passenger can also tell them how the
-      // delivery went.
+      // Once the food is ready, the passenger can also say it arrived.
       for (const from of ['PREPARED', 'DISPATCHED'] as const) {
-        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(
-          [...outcomes, 'CANCELLED', 'DELIVERED', 'FAILED'].sort(),
-        )
+        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(['CANCELLED', 'DELIVERED', 'FAILED'])
       }
-      // The bulk head of the pipeline never had a CANCELLED edge for them
-      // (an admin owns it), but the three support outcomes are open everywhere
-      // non-terminal.
+      // Group enquiries belong to an admin.
       for (const from of ['ENQUIRY', 'QUOTED'] as const) {
-        expect(allowedNextStatuses(from, 'TELECALLER').sort()).toEqual(outcomes.sort())
+        expect(allowedNextStatuses(from, 'TELECALLER')).toEqual([])
       }
     })
 
-    it('the support outcomes refuse once an order is terminal', async () => {
+    it('no outcome is open once an order is closed', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
       await assignRider(id, agentId)
       await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
       await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
-
-      for (const to of ['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const) {
-        await expect(transitionOrder({ ctx: telecaller, orderId: id, to })).rejects.toThrow(
-          ForbiddenError,
-        )
-      }
+      await expect(transitionOrder({ ctx: telecaller, orderId: id, to: 'FAILED' })).rejects.toThrow(ForbiddenError)
     })
   })
 
@@ -199,38 +187,56 @@ describe('telecaller', () => {
     })
   })
 
-  describe('support outcomes', () => {
-    it.each(['MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'] as const)(
-      'records %s from a non-terminal state, with the reason',
-      async (to) => {
-        const id = await newOrder()
-        await advanceTo(id, 'PREPARED')
-        await assignRider(id, agentId)
-        await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
-
-        const out = await transitionOrder({
-          ctx: telecaller,
-          orderId: id,
-          to,
-          meta: { via: 'telecaller-call', reason: 'Passenger says it never arrived' },
-        })
-        expect(out.status).toBe(to)
-        const last = out.events.at(-1)!
-        expect(last.fromStatus).toBe('DISPATCHED')
-        expect(last.meta).toMatchObject({ reason: 'Passenger says it never arrived' })
-      },
-    )
+  describe('not delivered, with a reason', () => {
+    it('food that missed its train in the kitchen is not delivered, reason kept', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'KOT_PRINTED')
+      const out = await transitionOrder({
+        ctx: telecaller,
+        orderId: id,
+        to: 'FAILED',
+        meta: { via: 'telecaller-call', reason: 'Missed the train' },
+        apply: { failureReason: 'MISSED_TRAIN' },
+      })
+      expect(out.status).toBe('FAILED')
+      expect(out.delivery?.failureReason).toBe('MISSED_TRAIN')
+    })
   })
 
-  describe('rating order', () => {
-    it('is offered to a telecaller and nobody else', () => {
-      expect(canFlagRatingOrder('TELECALLER')).toBe(true)
-      expect(canFlagRatingOrder('STORE_MANAGER')).toBe(false)
-      expect(canFlagRatingOrder('DELIVERY_AGENT')).toBe(false)
-      expect(canFlagRatingOrder('ADMIN')).toBe(false)
+  describe('refunds are recorded on the order, not as a status', () => {
+    it('records a partial refund and keeps the order delivered', async () => {
+      const id = await newOrder()
+      await advanceTo(id, 'PREPARED')
+      await assignRider(id, agentId)
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DISPATCHED' })
+      await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
+
+      const out = await recordRefund({ ctx: telecaller, orderId: id, amountPaise: 8000, reason: 'WRONG_OR_MISSING_ITEM', payer: 'AGGREGATOR', note: 'Raita missing' })
+      expect(out.status).toBe('DELIVERED')
+      expect(out.refund).toMatchObject({ amountPaise: 8000, reason: 'WRONG_OR_MISSING_ITEM', payer: 'AGGREGATOR', note: 'Raita missing' })
+      expect(out.events.at(-1)!.meta).toMatchObject({ via: 'refund', amountPaise: 8000 })
+
+      await clearRefund({ ctx: telecaller, orderId: id })
+      expect((await findById(telecaller, id))!.refund).toBeNull()
     })
 
-    it('flags an order from any status, including a terminal one', async () => {
+    it('refuses more than the order total, and refuses a kitchen or rider', async () => {
+      const id = await newOrder()
+      await expect(recordRefund({ ctx: telecaller, orderId: id, amountPaise: 10_000_000, reason: 'LATE', payer: null })).rejects.toThrow(/more than the order total/)
+      await expect(recordRefund({ ctx: manager, orderId: id, amountPaise: 100, reason: 'LATE', payer: null })).rejects.toThrow(ForbiddenError)
+      await expect(recordRefund({ ctx: agent, orderId: id, amountPaise: 100, reason: 'LATE', payer: null })).rejects.toThrow(ForbiddenError)
+    })
+  })
+
+  describe('rating order is a tag, not a status', () => {
+    it('is offered to the call desk and admins only', () => {
+      expect(canFlagRatingOrder('TELECALLER')).toBe(true)
+      expect(canFlagRatingOrder('ADMIN')).toBe(true)
+      expect(canFlagRatingOrder('STORE_MANAGER')).toBe(false)
+      expect(canFlagRatingOrder('DELIVERY_AGENT')).toBe(false)
+    })
+
+    it('tags an order in any status, which keeps its status, and can be taken back', async () => {
       const id = await newOrder()
       await advanceTo(id, 'PREPARED')
       await assignRider(id, agentId)
@@ -238,11 +244,15 @@ describe('telecaller', () => {
       await transitionOrder({ ctx: agent, orderId: id, to: 'DELIVERED' })
 
       const out = await flagRatingOrder({ ctx: telecaller, orderId: id })
-      expect(out.status).toBe('RATING_ORDER')
-      expect(out.events.at(-1)!.meta).toMatchObject({ via: 'telecaller-rating-flag' })
+      expect(out.status).toBe('DELIVERED')
+      expect(out.ratingOrder).toBe(true)
+      expect(out.events.at(-1)!.meta).toMatchObject({ via: 'rating-flag' })
+
+      const back = await flagRatingOrder({ ctx: telecaller, orderId: id, on: false })
+      expect(back.ratingOrder).toBe(false)
     })
 
-    it('refuses for any role but telecaller', async () => {
+    it('refuses a kitchen or rider', async () => {
       const id = await newOrder()
       await expect(flagRatingOrder({ ctx: manager, orderId: id })).rejects.toThrow(ForbiddenError)
       await expect(flagRatingOrder({ ctx: agent, orderId: id })).rejects.toThrow(ForbiddenError)
@@ -250,9 +260,7 @@ describe('telecaller', () => {
 
     it('is outlet-scoped like every other telecaller action', async () => {
       const id = await newOrder()
-      await expect(flagRatingOrder({ ctx: otherTelecaller, orderId: id })).rejects.toThrow(
-        NotFoundError,
-      )
+      await expect(flagRatingOrder({ ctx: otherTelecaller, orderId: id })).rejects.toThrow(NotFoundError)
     })
   })
 

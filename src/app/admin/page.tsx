@@ -30,18 +30,19 @@ import { orderDietsFor } from '@/lib/repo/menuRepo'
 export const metadata = { title: 'Orders · RailServe' }
 
 const TABS = [
-  { key: '', label: 'All', statuses: null as string[] | null },
-  { key: 'kitchen', label: 'Preparing', statuses: ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'] },
-  { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'] },
+  { key: '', label: 'All', statuses: null as string[] | null, rating: false },
+  { key: 'kitchen', label: 'Preparing', statuses: ['ACCEPTED', 'KOT_PRINTED', 'PREPARED'], rating: false },
+  { key: 'delivered', label: 'Delivered', statuses: ['DELIVERED'], rating: false },
   {
     key: 'issues',
     label: 'Cancelled',
-    statuses: ['FAILED', 'CANCELLED', 'LOST', 'MISDELIVERY', 'MISSED_DELIVERY', 'REFUNDED'],
+    statuses: ['FAILED', 'CANCELLED', 'LOST'],
+    rating: false,
   },
   // Decoy orders run purely to prompt an app-store rating — kept out of every
   // other tab (and out of analytics, see orderRepo's outletAnalytics) so they
   // never get mistaken for real business, but still reachable for an audit.
-  { key: 'rating', label: 'Rating orders', statuses: ['RATING_ORDER'] },
+  { key: 'rating', label: 'Rating orders', statuses: null, rating: true },
 ]
 
 export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
@@ -128,9 +129,10 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   ]
   const riders = riderDocs.map((r) => ({ id: String(r._id), name: r.name }))
 
-  const visible = tab.statuses
-    ? dayOrders.filter((o) => tab.statuses!.includes(o.status))
-    : dayOrders
+  // Rating-order decoys are a tag: only their own tab shows them.
+  const inTab = (t: (typeof TABS)[number]) => (o: (typeof dayOrders)[number]) =>
+    t.rating ? o.ratingOrder === true : o.ratingOrder !== true && (!t.statuses || t.statuses.includes(o.status))
+  const visible = dayOrders.filter(inTab(tab))
 
   const [timings, diets] = await Promise.all([timingForOrders(visible), orderDietsFor(ctx.tenantId, visible)])
   const outletName = new Map(outlets.map((o) => [String(o._id), o.name]))
@@ -215,7 +217,7 @@ export default async function AdminOrdersPage(props: PageProps<'/admin'>) {
   const counts = new Map(
     TABS.map((t) => [
       t.key,
-      t.statuses ? dayOrders.filter((o) => t.statuses!.includes(o.status)).length : dayOrders.length,
+      dayOrders.filter(inTab(t)).length,
     ]),
   )
 

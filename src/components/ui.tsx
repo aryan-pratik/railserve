@@ -454,6 +454,8 @@ const STATUS_LABEL: Record<string, string> = {
   KOT_PRINTED: 'KOT sent',
   PREPARED: 'Ready',
   DISPATCHED: 'On platform',
+  FAILED: 'Not delivered',
+  LOST: 'Not booked',
 }
 
 export function statusLabel(status: string) {

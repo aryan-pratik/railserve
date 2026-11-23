@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Building2, MapPin, Store, Route, Users, ShieldCheck, Plug, TrainFront, SunMoon, type LucideIcon } from 'lucide-react'
+import { Building2, MapPin, Store, Route, Users, ShieldCheck, Plug, TrainFront, SunMoon, Mail, History, type LucideIcon } from 'lucide-react'
 import { Card, cx, v2Focus } from './ui'
 import { SettingsRailScroll } from './SettingsRailScroll'
 
@@ -12,7 +12,8 @@ export const SETTINGS_TABS = [
   { key: 'company', label: 'Company', icon: Building2, note: 'Your company details, plan and what you are connected to.' },
   { key: 'stations', label: 'Stations', icon: MapPin, note: 'Each station you serve: its default kitchen and its printer.' },
   { key: 'outlets', label: 'Outlets', icon: Store, note: 'Your own kitchens, one per station per brand.' },
-  { key: 'routing', label: 'Routing', icon: Route, note: 'Which mail is read, and which kitchen cooks for each storefront name an aggregator uses.' },
+  { key: 'mail', label: 'Order emails', icon: Mail, note: 'Which addresses may send you orders, and email layouts you teach by hand.' },
+  { key: 'routing', label: 'Routing', icon: Route, note: 'Which kitchen cooks for each storefront name an aggregator uses.' },
   { key: 'staff', label: 'Staff', icon: Users, note: 'Everyone who signs in: managers, riders, telecallers and admins.' },
   { key: 'roles', label: 'Roles & access', icon: ShieldCheck, note: 'What store managers and telecallers are allowed to do.' },
   { key: 'screen', label: 'Screen', icon: SunMoon, note: 'Light or dark colours on this device.' },
@@ -57,6 +58,15 @@ export function SettingsRail({ active, counts }: { active: SettingsTabKey; count
             </Link>
           )
         })}
+        {/* The full activity log: rarely needed day to day (every order shows
+            its own history), so it lives here rather than in the sidebar. */}
+        <Link
+          href="/v2/activity"
+          className={cx('flex shrink-0 items-center gap-2.5 rounded-full px-3 py-2 text-[13.5px] font-semibold text-v2-ink-2 transition-colors hover:bg-v2-surface-2 xl:rounded-v2-md', v2Focus)}
+        >
+          <History size={16} strokeWidth={2.1} aria-hidden className="text-v2-muted" />
+          <span className="flex-1">Activity history</span>
+        </Link>
       </nav>
       <SettingsRailScroll navId="settings-rail" />
     </Card>

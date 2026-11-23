@@ -1,11 +1,10 @@
 import Link from 'next/link'
 import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { checkIngestStaleness } from '@/lib/ingest/gmail/sync'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
 import { inboxFilterParams, isFiltered, readInboxFilter, type InboxFilter, type InboxReason } from '@/lib/inbox'
 import { REASON_SHORT, loadInboxPage } from '@/lib/v2/inbox'
-import { EmptyState, Notice, PageHeader, Pagination, PillTabs, readPaging } from '@/components/v2/Table'
+import { EmptyState, PageHeader, Pagination, PillTabs, readPaging } from '@/components/v2/Table'
 import { Card, cx } from '@/components/v2/ui'
 import { InboxFilterBar } from '@/components/v2/InboxFilterBar'
 import { InboxQueue } from '@/components/v2/InboxQueue'
@@ -30,12 +29,8 @@ export default async function V2InboxPage(props: PageProps<'/v2/inbox'>) {
   const { page, pageSize, skip } = readPaging(sp)
 
   await connectDb()
-  const [data, ingest] = await Promise.all([
-    loadInboxPage(ctx, filter, { skip, pageSize }),
-    // A lapsed Gmail watch stops ingestion outright and raises no error
-    // anywhere; this page is where ingestion health belongs.
-    checkIngestStaleness(new Date(), ctx.tenantId),
-  ])
+  // A stalled mailbox is shown by the warning icon in the top bar.
+  const data = await loadInboxPage(ctx, filter, { skip, pageSize })
 
   // The queue's "all matching" query reads from/to as readInboxFilter does;
   // the page's own links carry the mode instead, so a reload shows the chip.
@@ -70,15 +65,9 @@ export default async function V2InboxPage(props: PageProps<'/v2/inbox'>) {
   return (
     <div className="grid gap-[18px]">
       <PageHeader
-        title="Inbox"
-        note="Emails that could not become orders. Nothing here was discarded: this is the net that catches an aggregator changing its template, an outlet the system does not know, or a field a parser could not find."
+        title="Emails to check"
+        note="Order emails the system could not read on its own. Open each one and add the order by hand if it is real."
       />
-
-      {ingest.stale ? (
-        <Notice tone="warn">
-          Email ingestion needs attention: {humanIngestMessage(ingest.message)}. New orders may not be arriving; this list will look quiet rather than wrong.
-        </Notice>
-      ) : null}
 
       <div className="grid gap-2.5">
         <PillTabs
@@ -132,19 +121,6 @@ export default async function V2InboxPage(props: PageProps<'/v2/inbox'>) {
       <InboxPasteCard />
     </div>
   )
-}
-
-/**
- * The staleness check reports a lapsed watch as a negative "expires in"; on
- * a screen a lapse reads better as how long ago it happened.
- */
-function humanIngestMessage(message: string | null): string {
-  if (!message) return 'the last check gave no detail'
-  return message.replace(/Gmail watch expires in -([\d.]+)h/, (_, h: string) => {
-    const hours = Number(h)
-    const ago = hours >= 48 ? `${Math.round(hours / 24)} days ago` : `${Math.round(hours)} hours ago`
-    return `the Gmail watch lapsed ${ago} and has not been renewed`
-  })
 }
 
 /** `warm` paints a non-zero count red: open rows are a problem, resolved ones are history. */
