@@ -131,6 +131,7 @@ export async function StaffTab({
                       <span className="flex flex-wrap gap-1">
                         <Chip tone={u.role === 'ADMIN' ? 'info' : 'grey'}>{lead ? 'Rider team leader' : ROLE_LABEL[u.role]}</Chip>
                         {u.role === 'STORE_MANAGER' && u.canCollectReturns ? <Chip tone="ok">collects returns</Chip> : null}
+                        {u.hiddenPages.length ? <Chip tone="warn">{u.hiddenPages.length} page{u.hiddenPages.length === 1 ? '' : 's'} off</Chip> : null}
                         {receivesCash ? <Chip tone="cod">receives cash</Chip> : null}
                       </span>
                     </Td>
@@ -165,6 +166,7 @@ export async function StaffTab({
                             role: u.role,
                             restaurantIds: u.restaurantIds,
                             canCollectReturns: u.canCollectReturns,
+                            hiddenPages: u.hiddenPages,
                             isTeamLead: u.isTeamLead,
                             teamLeadId: u.teamLeadId,
                             canReceiveCash: u.canReceiveCash,

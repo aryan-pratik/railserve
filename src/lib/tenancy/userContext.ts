@@ -14,6 +14,8 @@ export type LoadedUser = {
   name: string
   role: Role
   restaurantIds: string[]
+  /** Pages an admin switched off for this person (lib/pageAccess.ts). */
+  hiddenPages: string[]
   tenantId: string
   tenantName: string
   /** One of our own super admins (PLATFORM_ADMIN_PHONES, on the primary tenant). */
@@ -34,7 +36,7 @@ export async function loadUser(userId: string): Promise<LoadedUser | null> {
   await connectDb()
   const user = await User.findOne({ _id: userId, active: true })
     .setOptions({ allTenants: true })
-    .select('name phone role restaurantIds tenantId')
+    .select('name phone role restaurantIds tenantId hiddenPages')
     .lean()
   if (!user?.tenantId) return null
 
@@ -46,6 +48,7 @@ export async function loadUser(userId: string): Promise<LoadedUser | null> {
     name: user.name ?? '',
     role: user.role as Role,
     restaurantIds: (user.restaurantIds ?? []).map(String),
+    hiddenPages: (user.hiddenPages ?? []).map(String),
     tenantId: String(user.tenantId),
     tenantName: tenant.settings?.displayName || tenant.name,
     platformAdmin: Boolean(tenant.primary) && platformAdminPhones().has(String(user.phone ?? '')),

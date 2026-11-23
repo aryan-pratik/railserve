@@ -1,6 +1,6 @@
+import { requirePage, requirePermission } from '@/lib/session'
 import Link from 'next/link'
 import { Download } from 'lucide-react'
-import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { findPayments, latestBalance, paymentTotals } from '@/lib/repo/paymentRepo'
 import { findMany } from '@/lib/repo/orderRepo'
@@ -22,6 +22,7 @@ export const metadata = { title: 'Payments · RailServe' }
  */
 export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
   const ctx = await requirePermission('payments.view')
+  await requirePage('payments')
   const sp = await props.searchParams
   const one = (v: string | string[] | undefined) => ((Array.isArray(v) ? v[0] : v) ?? '').trim()
 

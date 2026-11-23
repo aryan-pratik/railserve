@@ -284,9 +284,10 @@ export function RiderBoard({
           }
         />
       ) : (
-        // One fixed height for map and roster on a desktop: the roster scrolls inside its card, so a long list never makes the two blocks uneven.
-        <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-[minmax(0,4.5fr)_minmax(0,7.5fr)]">
-          <div ref={mapPane} className="min-h-0 min-w-0 scroll-mt-4 xl:h-full">
+        // The roster across the full width first (it is what people work from),
+        // the live map below it.
+        <div className="grid grid-cols-1 gap-3.5">
+          <div ref={mapPane} className="order-2 min-h-0 min-w-0 scroll-mt-4">
             <MapCard riders={riders} counts={counts} selectedId={selectedId} focusRequest={focusRequest} onSelect={selectFromMap} />
           </div>
 
@@ -313,7 +314,7 @@ export function RiderBoard({
                 </Button>
               </div>
             }
-            className="min-h-0 min-w-0 xl:grid-rows-[auto_auto_auto_minmax(0,1fr)_auto]"
+            className="order-1 min-h-0 min-w-0"
           >
             <div role="group" aria-label="Filter by status" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-0.5 [scrollbar-width:none]">
               {(['ALL', ...BOARD_STATUS] as Filter[]).map((f) => {
@@ -529,7 +530,7 @@ function MapCard({
         ) : null}
       </header>
       {/* `isolate`: Leaflet's panes carry z-indexes in the hundreds. */}
-      <div className={cx('relative isolate border-t border-v2-line', fullscreen ? 'min-h-0 flex-1' : 'h-[380px] xl:h-auto xl:min-h-[360px] xl:flex-1')}>
+      <div className={cx('relative isolate border-t border-v2-line', fullscreen ? 'min-h-0 flex-1' : 'h-[380px] xl:h-[460px]')}>
         <RiderMap riders={riders} selectedId={selectedId} focusRequest={focusRequest} onSelect={onSelect} />
         <ul aria-label="Map key" className="absolute bottom-3 left-3 z-[500] flex max-w-[calc(100%-1.5rem)] flex-wrap gap-x-3.5 gap-y-1 rounded-full border border-v2-line bg-v2-surface/95 px-3.5 py-1.5 backdrop-blur">
           {BOARD_STATUS.map((s) => (

@@ -1,8 +1,8 @@
+import { requirePage, requirePermission } from '@/lib/session'
 import Link from 'next/link'
 import type { QueryFilter } from 'mongoose'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Pencil, Phone } from 'lucide-react'
-import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { Restaurant, RiderLocation, User, type OrderDoc } from '@/lib/models'
 import { countOrders, findMany, onClosedRecord, onRiderRecord } from '@/lib/repo/orderRepo'
@@ -79,6 +79,7 @@ export default async function V2RiderDetailPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const ctx = await requirePermission('riders.manage')
+  await requirePage('riders')
   const { id } = await props.params
   if (!(await canSeeRider(ctx, id))) notFound()
   const isAdmin = ctx.role === 'ADMIN'

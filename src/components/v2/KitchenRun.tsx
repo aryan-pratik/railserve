@@ -7,7 +7,7 @@ import { kitchenRunText, runAnchor, type KitchenOrder, type KitchenRun as Kitche
 import { RunHeader } from './RunHeader'
 import { Chip, Mono, Seat, cx, statusChip, v2Focus } from './ui'
 import { KitchenCheckNowButton, KitchenCopyButton, KitchenDietMarks, KitchenNoteHint, useRunFold } from './KitchenBits'
-import { KitchenRunActions, type RunActionContext } from './KitchenRunActions'
+import { KitchenOrderStep, KitchenRunActions, type RunActionContext } from './KitchenRunActions'
 import { useLongPress } from './useLongPress'
 import { DishList } from './DishList'
 
@@ -128,8 +128,17 @@ export function KitchenRun({
         actions={<TrainTools run={run} />}
       />
       <div id={rowsId} hidden={!open}>
-        {/* The one next step for this train, big and first: what the kitchen does now. */}
-        <div className="border-b border-v2-line px-4 py-3">
+        <ul className="divide-y divide-v2-line">
+          {run.orders.map((o) => (
+            <OrderRow key={o.id} o={o} run={ctx} selected={selected.has(o.id)} onToggle={() => toggle(o.id)} onHold={() => (selected.has(o.id) ? null : toggle(o.id))} showOutlet={showOutlet} />
+          ))}
+        </ul>
+        {/* The step for the whole train, after its orders: read them, then act. Each
+            row also has its own button for one order. */}
+        {/* The train's button only when it saves taps: two or more orders on the
+            same next step, or some ticked. One order is done from its own row. */}
+        {selected.size > 0 || sameStepCount(run.orders) > 1 ? (
+        <div className="border-t border-v2-line bg-v2-surface-2 px-4 py-3">
           <KitchenRunActions
             run={ctx}
             counts={run.statusCounts}
@@ -137,17 +146,13 @@ export function KitchenRun({
             onClear={clear}
           />
           <p className="mt-1.5 text-[12.5px] text-v2-muted">
-            {selected.size > 0 ? 'The button acts on the ticked orders only.' : 'Acts on the whole train. Tick or hold an order to pick only some.'}{' '}
+            {selected.size > 0 ? 'This button acts on the ticked orders only.' : 'This button acts on the whole train. For one order, use the button on its row.'}{' '}
             <button type="button" className="font-semibold text-v2-brand underline-offset-2 hover:underline" onClick={() => setAll(!allTicked)}>
               {allTicked ? 'Untick all' : 'Tick all'}
             </button>
           </p>
         </div>
-        <ul className="divide-y divide-v2-line">
-          {run.orders.map((o) => (
-            <OrderRow key={o.id} o={o} selected={selected.has(o.id)} onToggle={() => toggle(o.id)} onHold={() => (selected.has(o.id) ? null : toggle(o.id))} showOutlet={showOutlet} />
-          ))}
-        </ul>
+        ) : null}
       </div>
     </section>
   )
@@ -174,12 +179,14 @@ function TrainTools({ run }: { run: KitchenRunData }) {
  */
 function OrderRow({
   o,
+  run,
   selected,
   onToggle,
   onHold,
   showOutlet,
 }: {
   o: KitchenOrder
+  run: RunActionContext
   selected: boolean
   onToggle: () => void
   onHold: () => void
@@ -192,8 +199,9 @@ function OrderRow({
     <li
       {...hold}
       className={cx(
-        'grid select-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 [-webkit-touch-callout:none] sm:grid-cols-[auto_minmax(0,1fr)_auto]',
-        selected && 'bg-v2-brand-soft',
+        'grid select-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 transition-colors [-webkit-touch-callout:none] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:items-center',
+        // A light shade under the pointer, so it is clear which order you are on.
+        selected ? 'bg-v2-brand-soft' : 'hover:bg-v2-surface-2',
       )}
     >
       <div className="flex items-start gap-3">
@@ -212,6 +220,7 @@ function OrderRow({
       <Link href={`/v2/orders/${o.id}`} className={cx('min-w-0 rounded-v2-sm', v2Focus)}>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-[15px] font-semibold">{o.contactName ?? 'Passenger'}</span>
+          <span className="font-mono text-[12px] text-v2-muted">{o.externalOrderId}</span>
           <Chip tone={status.tone}>{status.label}</Chip>
           {showOutlet && o.outletName ? <span className="text-xs text-v2-muted">{o.outletName}</span> : null}
           <KitchenNoteHint count={o.callNoteCount} hint={o.callNoteHint} />
@@ -240,6 +249,20 @@ function OrderRow({
           </span>
         )}
       </span>
+
+      {/* This order's own next step, on the same line, so one order needs no ticking. */}
+      <span className="col-start-2 flex sm:col-start-auto sm:justify-end" onPointerDown={(e) => e.stopPropagation()}>
+        <KitchenOrderStep run={run} orderId={o.id} status={o.status} />
+      </span>
     </li>
   )
+}
+
+/** How many orders share the train's next step (the earliest one any order is on). */
+function sameStepCount(orders: { status: string }[]): number {
+  for (const st of ['RECEIVED', 'ACCEPTED', 'KOT_PRINTED', 'PREPARED']) {
+    const n = orders.filter((o) => o.status === st).length
+    if (n > 0) return n
+  }
+  return 0
 }

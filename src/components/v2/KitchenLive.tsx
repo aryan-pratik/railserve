@@ -22,19 +22,25 @@ import { cx, v2Focus } from './ui'
 /** A screen this many refresh cycles old is no longer showing current data. */
 const STALE_AFTER_CYCLES = 2
 
-const SOUND_KEY = 'railserve.v2.kitchenSound'
+/*
+ * The ring on a new order is always on. Muting it only pauses it, for at
+ * most PAUSE_MS, then it rings again by itself: a kitchen screen left muted
+ * is how a new order sits unseen. The pause end is shared by every tab.
+ */
+const PAUSE_KEY = 'railserve.v2.kitchenPausedUntil'
+const PAUSE_MS = 5 * 60_000
 const soundListeners = new Set<() => void>()
 
-function readSound(): boolean {
+function readPause(): number {
   try {
-    return localStorage.getItem(SOUND_KEY) === '1'
+    return Number(localStorage.getItem(PAUSE_KEY)) || 0
   } catch {
-    return false
+    return 0
   }
 }
-function writeSound(on: boolean) {
+function writePause(until: number) {
   try {
-    localStorage.setItem(SOUND_KEY, on ? '1' : '0')
+    localStorage.setItem(PAUSE_KEY, String(until))
   } catch {
     // Then it is remembered for this page view only.
   }
@@ -48,7 +54,13 @@ function subscribeSound(cb: () => void) {
     window.removeEventListener('storage', cb)
   }
 }
-const serverSound = () => false
+const serverPause = () => 0
+
+/** "4:32" left on a pause. */
+function mmss(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
 
 function stamp(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })
@@ -108,21 +120,28 @@ export function KitchenLive({
 }) {
   const router = useRouter()
   const stale = useStale(renderedAt, seconds)
-  const soundOn = useSyncExternalStore(subscribeSound, readSound, serverSound)
+  const pausedUntil = useSyncExternalStore(subscribeSound, readPause, serverPause)
+  // Ticks once a second while paused, so the countdown moves and the ring
+  // comes back on by itself the moment the pause runs out.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (pausedUntil <= Date.now()) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [pausedUntil])
+  const paused = pausedUntil > now
+  // Browsers stay silent until the page has been touched once.
+  const [unlocked, setUnlocked] = useState(false)
   const [connected, setConnected] = useState(false)
   const [lastEvent, setLastEvent] = useState<string | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
-  // The stream handler reads this; it must not re-subscribe on every toggle.
-  const soundRef = useRef(soundOn)
-  useEffect(() => {
-    soundRef.current = soundOn
-  }, [soundOn])
 
   // Browsers refuse to make noise until the page has been touched. With
   // sound remembered on, the first touch of the page is the unlock.
   useEffect(() => {
     const unlock = () => {
-      if (!audioRef.current && soundRef.current) audioRef.current = makeAudio()
+      if (!audioRef.current) audioRef.current = makeAudio()
+      if (audioRef.current) setUnlocked(true)
     }
     const opts = { passive: true } as const
     document.addEventListener('pointerdown', unlock, opts)
@@ -147,7 +166,8 @@ export function KitchenLive({
       }
       if (newOrders > 0) {
         setLastEvent(`${newOrders} new order${newOrders === 1 ? '' : 's'}`)
-        if (soundRef.current) chime(audioRef.current)
+        // Read the pause fresh: the countdown state may lag by a second.
+        if (readPause() <= Date.now()) chime(audioRef.current)
       }
       router.refresh()
     })
@@ -171,17 +191,32 @@ export function KitchenLive({
     }
   }, [router, seconds])
 
+  // On: pause for five minutes. Paused, or not yet allowed to make sound:
+  // ring now (the tap is the gesture the browser wants) and stay on.
   const toggleSound = useCallback(() => {
-    const next = !soundRef.current
-    if (next) {
-      // Created inside the click, which is the gesture the browser wants.
-      if (!audioRef.current) audioRef.current = makeAudio()
+    if (!audioRef.current) audioRef.current = makeAudio()
+    if (audioRef.current) setUnlocked(true)
+    if (readPause() > Date.now() || !unlocked) {
+      writePause(0)
       chime(audioRef.current)
+    } else {
+      writePause(Date.now() + PAUSE_MS)
     }
-    writeSound(next)
-  }, [])
+  }, [unlocked])
 
   const muted = dark ? 'text-white/70' : 'text-v2-muted'
+  // Three states: ringing; paused, with the time left; or not yet allowed to
+  // make sound, which needs one tap on the page.
+  const state: 'needsTap' | 'paused' | 'on' = !unlocked ? 'needsTap' : paused ? 'paused' : 'on'
+  const left = mmss(pausedUntil - now)
+  const words =
+    state === 'needsTap' ? 'Tap to turn on the ring' : state === 'paused' ? `Ring paused · ${left}` : 'Ring on new order'
+  const hint =
+    state === 'needsTap'
+      ? 'The browser stays silent until the page is tapped once. Tap here so new orders ring.'
+      : state === 'paused'
+        ? `Paused for ${left} more. Tap to ring again now.`
+        : 'Rings on every new order. Tap to pause for 5 minutes.'
   if (compact) {
     // Quiet when all is well: only the bell. A problem shows as words, since
     // that is the one time somebody needs to read it.
@@ -196,17 +231,22 @@ export function KitchenLive({
         <button
           type="button"
           onClick={toggleSound}
-          aria-pressed={soundOn}
-          aria-label={soundOn ? 'Ring on new order is on. Turn off' : 'Ring on new order is off. Turn on'}
-          title={soundOn ? 'Rings on new orders. Tap to mute.' : 'Ring when a new order arrives'}
+          aria-pressed={state === 'on'}
+          aria-label={`${words}. ${hint}`}
+          title={hint}
           className={cx(
-            'grid h-10 w-10 place-items-center rounded-full border transition-colors',
-            soundOn ? 'border-v2-brand bg-v2-brand-soft text-v2-brand' : 'border-v2-line-strong text-v2-muted hover:bg-v2-surface-2',
+            'inline-flex h-10 items-center justify-center gap-1.5 rounded-full border transition-colors',
+            state === 'on' ? 'w-10 border-v2-brand bg-v2-brand-soft text-v2-brand' : 'px-3',
+            state === 'paused' && 'border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2',
+            state === 'needsTap' && 'border-v2-warn/50 bg-v2-warn-bg text-v2-warn',
             v2Focus,
           )}
         >
           {/* A speaker, not a bell: the bell in the top bar is notifications. */}
-          {soundOn ? <Volume2 size={18} aria-hidden /> : <VolumeX size={18} aria-hidden />}
+          {state === 'on' ? <Volume2 size={18} aria-hidden /> : <VolumeX size={18} aria-hidden />}
+          {/* Words only when something is off: a pause counting down, or no sound yet. */}
+          {state === 'paused' ? <span className="font-mono text-[13px] tabular-nums">{left}</span> : null}
+          {state === 'needsTap' ? <span className="text-[13px]">Tap for sound</span> : null}
         </button>
         {lastEvent ? (
           <span role="status" className="sr-only">
@@ -234,10 +274,10 @@ export function KitchenLive({
       <button
         type="button"
         onClick={toggleSound}
-        aria-pressed={soundOn}
+        aria-pressed={state === 'on'}
         className={cx(
           'inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-[14px] transition-colors',
-          soundOn
+          state === 'on'
             ? dark
               ? 'border-v2-mint/40 bg-v2-mint/15 text-v2-mint'
               : 'border-v2-brand bg-v2-brand-soft text-v2-brand'
@@ -246,10 +286,10 @@ export function KitchenLive({
               : 'border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2',
           v2Focus,
         )}
-        title={soundOn ? 'Chimes on new orders. Click to mute.' : 'Chime when a new order arrives'}
+        title={hint}
       >
-        {soundOn ? <Volume2 size={14} aria-hidden /> : <VolumeX size={14} aria-hidden />}
-        {soundOn ? 'Ring on new order: on' : 'Ring on new order: off'}
+        {state === 'on' ? <Volume2 size={14} aria-hidden /> : <VolumeX size={14} aria-hidden />}
+        <span className="tabular-nums">{words}</span>
       </button>
       {lastEvent ? (
         <span role="status" className={dark ? 'text-v2-mint' : 'text-v2-brand'}>

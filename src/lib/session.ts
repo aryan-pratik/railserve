@@ -6,6 +6,7 @@ import type { AuthContext } from './authContext'
 import { can } from './access'
 import type { Permission } from './permissions'
 import { ROLE_HOME, type Role } from './roles'
+import type { PageKey } from './pageAccess'
 
 /**
  * Turns the request's session into an AuthContext.
@@ -72,6 +73,23 @@ export async function requirePermission(permission: Permission): Promise<AuthCon
   const ctx = await requireAuth()
   if (!(await can(ctx, permission))) redirect(ROLE_HOME[ctx.role])
   return ctx
+}
+
+/**
+ * Redirects home when an admin has switched this page off for the caller
+ * (Settings → Staff). Read fresh each request, like role and outlets, so a
+ * change takes effect on the next click. Admins are never restricted.
+ */
+export async function requirePage(page: PageKey): Promise<void> {
+  const user = await getFreshUser()
+  if (!user) return redirectToLogin()
+  if (user.role !== 'ADMIN' && user.hiddenPages.includes(page)) redirect(ROLE_HOME[user.role])
+}
+
+/** The pages switched off for the caller, for the sidebar. */
+export async function hiddenPagesForCaller(): Promise<string[]> {
+  const user = await getFreshUser()
+  return user && user.role !== 'ADMIN' ? user.hiddenPages : []
 }
 
 /** Our own super admins only; everyone else gets a 404, not a hint that the page exists. */

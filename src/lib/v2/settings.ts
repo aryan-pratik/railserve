@@ -186,6 +186,8 @@ export type StaffRow = {
   restaurantIds: string[]
   active: boolean
   canCollectReturns: boolean
+  /** Pages an admin switched off for this person (lib/pageAccess.ts). */
+  hiddenPages: string[]
   isTeamLead: boolean
   teamLeadId: string | null
   canReceiveCash: boolean | null
@@ -219,6 +221,7 @@ export async function loadStaff(ctx: AuthContext, filter: StaffFilter, paging: {
     restaurantIds: (u.restaurantIds ?? []).map(String),
     active: u.active !== false,
     canCollectReturns: u.canCollectReturns === true,
+    hiddenPages: (u.hiddenPages ?? []).map(String),
     isTeamLead: u.isTeamLead === true,
     teamLeadId: u.teamLeadId ? String(u.teamLeadId) : null,
     canReceiveCash: u.canReceiveCash ?? null,

@@ -153,9 +153,9 @@ function TrainOrderRow({ o, cols, selected, onToggle }: { o: OrdersRow; cols: Co
     <li
       {...(cols.select ? hold : {})}
       className={cx(
-        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]',
+        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]',
         cols.select && 'select-none [-webkit-touch-callout:none]',
-        selected && 'bg-v2-brand-soft',
+        selected ? 'bg-v2-brand-soft' : 'hover:bg-v2-surface-2',
       )}
     >
       <div className="flex items-start gap-3">

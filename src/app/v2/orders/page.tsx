@@ -1,10 +1,10 @@
+import { requirePage, requirePermission } from '@/lib/session'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Download, LayoutList, Plus, Search, TrainFront } from 'lucide-react'
 import { trackingNoteFor } from '@/lib/v2/kitchenView'
 import { foodItemLabels } from '@/lib/orderView'
 import { DateFilter } from '@/components/v2/DateFilter'
-import { requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { findRunsWhere } from '@/lib/repo/runRepo'
@@ -40,6 +40,7 @@ import { OrdersFilterBar } from '@/components/v2/OrdersFilterBar'
 import { OrdersMarkReturned } from '@/components/v2/OrdersMarkReturned'
 import { ordersFieldClass } from '@/lib/v2/ordersShared'
 import { OrdersList, type OrdersGroup, type OrdersRow } from '@/components/v2/OrdersList'
+import { RememberList } from '@/components/v2/ListMemory'
 
 export const metadata = { title: 'Orders · RailServe' }
 
@@ -69,6 +70,8 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   // train, by day and by stage. The list itself is not theirs, however the
   // address is typed; only "Bags coming back" (view=returns) lives here.
   if (role === 'STORE_MANAGER' && requested !== 'returns') redirect('/v2/kitchen')
+  // An admin can switch off this list, or Bags coming back, per person.
+  await requirePage(requested === 'returns' ? 'returns' : 'orders')
   // The date row above the search decides the day now, so "Today" is the
   // all-orders view on today's date, and "Coming days" (upcoming) gives way
   // as soon as a date is picked. Returns and group bookings have their own
@@ -153,7 +156,11 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
       : formatDateRange(range.from || today, range.to || today)
   const filtered = hasOrderFilters(filters) || Boolean(payment) || Boolean(called)
 
+  // Every view starts with this header, so the list remembers where it was
+  // here (see ListMemory): back from an order returns to the same day and filters.
   const header = (note: string) => (
+    <>
+    <RememberList />
     <PageHeader
       title={view === 'returns' ? 'Bags coming back' : view === 'enquiries' ? 'Group bookings' : 'Orders'}
       note={note}
@@ -184,6 +191,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
         </>
       }
     />
+    </>
   )
 
   // The date row: the one obvious place to change the day, above the search.

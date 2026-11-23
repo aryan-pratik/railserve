@@ -14,6 +14,7 @@ import { KitchenCancellations } from '@/components/v2/KitchenCancellations'
 import { KitchenFilters } from '@/components/v2/KitchenFilters'
 import { DayPicker } from '@/components/v2/DayPicker'
 import { MenuButton } from '@/components/v2/Floating'
+import { RememberList } from '@/components/v2/ListMemory'
 
 export const metadata = { title: 'Kitchen · RailServe' }
 
@@ -88,6 +89,7 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
 
   return (
     <div className="grid gap-[18px]">
+      <RememberList />
       {/* Two short rows: the day and the few controls, then what to show. */}
       <div className="grid gap-3">
         <div className="flex items-center gap-3">

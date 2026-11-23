@@ -7,6 +7,8 @@ import { SettingsDialog } from './SettingsDialog'
 import { CheckRow, Field, FormNote, checkboxClass, inputClass } from './SettingsForm'
 import { Select } from './Select'
 import { saveStaff, type UserState } from '@/app/v2/settings/actions'
+import { pagesFor } from '@/lib/pageAccess'
+import type { Role } from '@/lib/roles'
 
 export type StaffFormValues = {
   id?: string
@@ -15,6 +17,7 @@ export type StaffFormValues = {
   role?: string
   restaurantIds?: string[]
   canCollectReturns?: boolean
+  hiddenPages?: string[]
   isTeamLead?: boolean
   teamLeadId?: string | null
   /** Null when nobody has decided: a manager then may, a team leader may not. */
@@ -145,6 +148,20 @@ function StaffForm({
             note="May mark an order as back at the counter when a rider brings it back cancelled or undelivered."
             defaultChecked={values.canCollectReturns ?? false}
           />
+        ) : null}
+
+        {pagesFor(role as Role).length ? (
+          <fieldset className="grid gap-2">
+            <legend className="mb-1 text-[14px] font-semibold">Pages they can open</legend>
+            <p className="-mt-1 text-[12.5px] text-v2-muted">
+              {role === 'STORE_MANAGER' ? 'Kitchen is always on.' : 'Calls to make is always on.'} A page you untick is gone from their menu, and its address takes them back home.
+            </p>
+            {/* Tells the save that the boxes were on the form, so none ticked means all off. */}
+            <input type="hidden" name="pagesShown" value="1" />
+            {pagesFor(role as Role).map((p) => (
+              <CheckRow key={p.key} name="pages" value={p.key} title={p.label} defaultChecked={!(values.hiddenPages ?? []).includes(p.key)} />
+            ))}
+          </fieldset>
         ) : null}
 
         {role === 'DELIVERY_AGENT' && !isLead ? (

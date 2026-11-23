@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { MoreHorizontal, Printer } from 'lucide-react'
+import { Printer } from 'lucide-react'
 import { shouldWarnAboutDelay } from '@/lib/train/policy'
 import { formatTimeIST } from '@/lib/format'
 import { formatDelay } from '@/lib/v2/kitchenView'
@@ -11,7 +11,6 @@ import { Select } from './Select'
 import { Button, cx, v2Focus } from './ui'
 import { ActionNote, KitchenConfirm, KitchenSubmit } from './KitchenBits'
 import { KitchenReprintButton } from './KitchenReprintButton'
-import { MenuButton } from './Floating'
 
 const initial: KitchenActionState = {}
 
@@ -46,6 +45,7 @@ function PrintForm({
   size,
   className,
   dark,
+  variant = 'primary',
 }: {
   run: RunActionContext
   ids: string[]
@@ -55,6 +55,8 @@ function PrintForm({
   size: 'sm' | 'md' | 'lg'
   className?: string
   dark?: boolean
+  /** The row buttons are quieter than the train's one big step. */
+  variant?: 'primary' | 'secondary'
 }) {
   const [state, action] = useActionState(generateRunKotV2, initial)
   const [confirming, setConfirming] = useState(false)
@@ -68,7 +70,7 @@ function PrintForm({
     <form action={action} className="contents">
       <input type="hidden" name="runKey" value={run.runKey} />
       <SelectedIds ids={ids} />
-      <KitchenSubmit variant="primary" size={size} className={className}>
+      <KitchenSubmit variant={variant} size={size} className={className}>
         <Printer size={size === 'lg' ? 18 : 15} aria-hidden />
         {label}
       </KitchenSubmit>
@@ -86,7 +88,7 @@ function PrintForm({
 
   return (
     <>
-      <Button type="button" variant="primary" size={size} className={className} onClick={() => setConfirming(true)}>
+      <Button type="button" variant={variant} size={size} className={className} onClick={() => setConfirming(true)}>
         <Printer size={size === 'lg' ? 18 : 15} aria-hidden />
         {label}
       </Button>
@@ -141,6 +143,7 @@ function HandForm({
   onDone,
   size,
   dark,
+  variant = 'primary',
 }: {
   run: RunActionContext
   ids: string[]
@@ -148,6 +151,8 @@ function HandForm({
   onDone?: () => void
   size: 'sm' | 'md' | 'lg'
   dark?: boolean
+  /** The row buttons are quieter than the train's one big step. */
+  variant?: 'primary' | 'secondary'
 }) {
   const [state, action] = useActionState(handRunToRiderV2, initial)
   const [riderId, setRiderId] = useState('')
@@ -188,7 +193,7 @@ function HandForm({
         buttonClassName={cx(SELECT_CLASS, size === 'lg' && 'h-12 text-base', dark && DARK_SELECT_CLASS, missing && 'border-v2-bad')}
         options={run.riders.map((r) => ({ value: r.id, label: r.name }))}
       />
-      <KitchenSubmit variant="primary" size={size}>
+      <KitchenSubmit variant={variant} size={size}>
         Give {count > 1 ? `${count} orders ` : ''}to rider
       </KitchenSubmit>
       {missing ? (
@@ -211,6 +216,7 @@ function StepForm({
   size,
   className,
   dark,
+  variant = 'primary',
 }: {
   action: typeof acceptRunV2
   run: RunActionContext
@@ -220,6 +226,8 @@ function StepForm({
   size: 'sm' | 'md' | 'lg'
   className?: string
   dark?: boolean
+  /** The row buttons are quieter than the train's one big step. */
+  variant?: 'primary' | 'secondary'
 }) {
   const [state, action] = useActionState(serverAction, initial)
   useEffect(() => {
@@ -229,7 +237,7 @@ function StepForm({
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="runKey" value={run.runKey} />
       <SelectedIds ids={ids} />
-      <KitchenSubmit variant="primary" size={size} className={className}>
+      <KitchenSubmit variant={variant} size={size} className={className}>
         {label}
       </KitchenSubmit>
       <ActionNote state={state} dark={dark} />
@@ -305,18 +313,12 @@ export function KitchenRunActions({
       ) : null}
 
       {previewable > 0 ? (
-        <span className="ml-auto">
-          <MenuButton
-            label={<MoreHorizontal size={16} aria-hidden />}
-            ariaLabel="KOT preview and reprint"
-            buttonClassName="grid h-8 w-8 place-items-center rounded-full border border-v2-line-strong text-v2-ink-2 hover:bg-v2-surface-2"
-            panelClassName="min-w-[13rem] gap-1"
-          >
-            <Link href={run.kotHref} className={cx('rounded-v2-sm px-3 py-2 text-sm font-semibold hover:bg-v2-surface-2', v2Focus)}>
-              Preview {previewable} KOT{previewable === 1 ? '' : 's'}
-            </Link>
-            {printed > 0 ? <KitchenReprintButton runKey={run.runKey} count={printed} menu /> : null}
-          </MenuButton>
+        <span className="ml-auto flex flex-wrap items-center gap-1.5">
+          {/* Labelled, not behind "⋯": a mystery menu next to the order buttons looked like a copy of them. */}
+          <Link href={run.kotHref} className={cx('inline-flex h-8 items-center rounded-full border border-v2-line px-3 text-[13px] font-semibold text-v2-ink-2 hover:bg-v2-surface-2', v2Focus)}>
+            Preview {previewable} KOT{previewable === 1 ? '' : 's'}
+          </Link>
+          {printed > 0 ? <KitchenReprintButton runKey={run.runKey} count={printed} /> : null}
         </span>
       ) : null}
     </div>
@@ -356,3 +358,16 @@ export function KitchenTicketAction({ run, order }: { run: RunActionContext; ord
   }
 }
 
+/**
+ * One order's own next step, on its row: accept it, print its ticket, mark
+ * it ready, or give it to a rider, without ticking it first. The train's
+ * button at the bottom of the card still acts on all of them at once.
+ */
+export function KitchenOrderStep({ run, orderId, status }: { run: RunActionContext; orderId: string; status: string }) {
+  const ids = [orderId]
+  if (status === 'RECEIVED') return <StepForm action={acceptRunV2} run={run} ids={ids} size="sm" variant="secondary" label="Accept" />
+  if (status === 'ACCEPTED') return <PrintForm run={run} ids={ids} count={1} size="sm" variant="secondary" label="Print KOT" />
+  if (status === 'KOT_PRINTED') return <StepForm action={markRunPreparedV2} run={run} ids={ids} size="sm" variant="secondary" label="Food ready" />
+  if (status === 'PREPARED') return <HandForm run={run} ids={ids} count={1} size="sm" variant="secondary" />
+  return null
+}

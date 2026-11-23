@@ -19,6 +19,7 @@ import { HandToRider, MarkReturnedButton, RefreshTrainButton, RidersChecklist } 
 import { CallLog, DecideCancelRequest, OpenChatButton, OutcomeButtons, RefundAndTag } from '@/components/v2/OrderCalls'
 import { DeleteOrderButton, EditOrderDetails, PaymentModeForm, StatusOverride } from '@/components/v2/OrderAdmin'
 import { ConfirmEnquiryForm, MarkLostButton, QuoteForm } from '@/components/v2/OrderQuote'
+import { BackToList } from '@/components/v2/ListMemory'
 
 type Role = 'ADMIN' | 'STORE_MANAGER' | 'TELECALLER'
 type Tab = 'quote' | 'kitchen' | 'delivery' | 'calls' | 'money' | 'history'
@@ -78,10 +79,10 @@ export default async function V2OrderWorkspace(props: PageProps<'/v2/orders/[id]
 
   return (
     <div className="grid gap-[18px]">
-      <Link href={role === 'STORE_MANAGER' ? '/v2/kitchen' : '/v2/orders'} className="inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold text-v2-muted hover:text-v2-ink">
+      <BackToList href={role === 'STORE_MANAGER' ? '/v2/kitchen' : '/v2/orders'} className="inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold text-v2-muted hover:text-v2-ink">
         <ArrowLeft size={14} aria-hidden />
         {role === 'STORE_MANAGER' ? 'Kitchen' : 'Orders'}
-      </Link>
+      </BackToList>
 
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
