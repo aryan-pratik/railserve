@@ -311,7 +311,10 @@ describe('simulator', () => {
   it('is deterministic, so a demo and a test agree', async () => {
     const a = await p.getStatus('12506', '2026-08-27', 'CNB')
     const b = await p.getStatus('12506', '2026-08-27', 'CNB')
-    expect(a).toEqual(b)
+    // The reading is deterministic; the moment it was taken is the real clock,
+    // and two calls can fall in different milliseconds.
+    const reading = ({ providerUpdatedAt: _t, ...rest }: typeof a) => (void _t, rest)
+    expect(reading(a)).toEqual(reading(b))
   })
 
   it('varies by train, date and station', async () => {
