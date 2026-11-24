@@ -1,4 +1,4 @@
-import { requirePermission } from '@/lib/session'
+import { requirePage, requirePermission } from '@/lib/session'
 import { opsDayCaption, opsDayOf } from '@/lib/opsDay'
 import { PING_INTERVAL_SECONDS } from '@/lib/riderLocation'
 import { formatServiceDate } from '@/lib/format'
@@ -21,6 +21,7 @@ export const dynamic = 'force-dynamic'
  */
 export default async function V2RidersPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const ctx = await requirePermission('riders.manage')
+  await requirePage('riders')
   const sp = await props.searchParams
   const today = opsDayOf()
   const day = readOpsDay(sp.date, today)

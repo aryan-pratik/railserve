@@ -9,6 +9,7 @@ import mongoose from 'mongoose'
 import { Payment, UnparsedInbox, User } from '@/lib/models'
 import { countOrdersRecordingUser } from '@/lib/repo/orderRepo'
 import { ROLES } from '@/lib/roles'
+import { cleanHiddenPages, pagesFor } from '@/lib/pageAccess'
 
 const UserInput = z
   .object({
@@ -25,6 +26,8 @@ const UserInput = z
     isTeamLead: z.literal('true').optional(),
     teamLeadId: z.string().optional(),
     canReceiveCash: z.literal('true').optional(),
+    // Present when the page boxes were on the form (Settings → Staff).
+    pagesShown: z.literal('1').optional(),
   })
   .superRefine((v, ctx) => {
     // Every scoped role needs at least one outlet: a manager or telecaller
@@ -94,7 +97,7 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Check the form.' }
   }
-  const { id, password, restaurantIds, canCollectReturns, isTeamLead, teamLeadId, canReceiveCash, ...rest } = parsed.data
+  const { id, password, restaurantIds, canCollectReturns, isTeamLead, teamLeadId, canReceiveCash, pagesShown, ...rest } = parsed.data
 
   await connectDb()
 
@@ -119,6 +122,16 @@ export async function saveUser(_prev: UserState, formData: FormData): Promise<Us
     // manager editing a rider cannot post it (the box is not rendered), and
     // a forged post is dropped here; a role change away from manager clears it.
     canCollectReturns: ctx.role === 'ADMIN' && rest.role === 'STORE_MANAGER' && canCollectReturns === 'true',
+  }
+  // Which pages this person may open: an admin's call. The form lists the
+  // ones they may open; everything else for their role is switched off. A
+  // role with nothing to switch, or a save without the boxes, leaves it be.
+  if (ctx.role === 'ADMIN' && pagesShown === '1') {
+    const allowed = new Set(formData.getAll('pages').map(String))
+    doc.hiddenPages = cleanHiddenPages(rest.role, pagesFor(rest.role).map((p) => p.key).filter((k) => !allowed.has(k)))
+  } else if (ctx.role === 'ADMIN' && pagesFor(rest.role).length === 0) {
+    // A role with nothing to switch (rider, admin) keeps nothing switched off.
+    doc.hiddenPages = []
   }
   // Teams and who may receive cash are an admin's to arrange. A store
   // manager saving one of their riders posts none of this (the fields are not

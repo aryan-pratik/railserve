@@ -1,4 +1,4 @@
-import { requirePermission } from '@/lib/session'
+import { requirePage, requirePermission } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { ChatShell } from '@/components/v2/chat/ChatShell'
 import { ChatList } from '@/components/v2/chat/ChatList'
@@ -14,6 +14,7 @@ export const metadata = { title: 'WhatsApp · RailServe' }
  */
 export default async function V2ChatPage(props: PageProps<'/v2/chat'>) {
   const ctx = await requirePermission('chat.use')
+  await requirePage('chat')
   const sp = await props.searchParams
   await connectDb()
   return <ChatShell simulated={await isWhatsAppSimulatedFor(ctx.tenantId)} threadOpen={false} list={<ChatList ctx={ctx} params={sp} />} thread={<ChatThreadPlaceholder />} />

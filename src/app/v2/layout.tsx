@@ -1,4 +1,4 @@
-import { getSessionUser, requireAuth } from '@/lib/session'
+import { getSessionUser, hiddenPagesForCaller, requireAuth } from '@/lib/session'
 import { connectDb } from '@/lib/db'
 import { MenuItem, Restaurant, UnparsedInbox } from '@/lib/models'
 import { countUnread } from '@/lib/repo/whatsappRepo'
@@ -76,7 +76,7 @@ export default async function V2Layout({ children }: { children: React.ReactNode
   return (
     <Shell
       nav={[
-        ...filterNav(navFor(ctx.role, { live, unread, returns, unparsed, menuToCheck }), await permissionsOf(ctx)),
+        ...filterNav(navFor(ctx.role, { live, unread, returns, unparsed, menuToCheck }), await permissionsOf(ctx), await hiddenPagesForCaller()),
         // Our own super admins also see the platform console.
         ...(user?.platformAdmin ? [{ label: 'Platform', items: [{ href: '/platform', label: 'Companies', icon: 'platform' as const }] }] : []),
       ]}

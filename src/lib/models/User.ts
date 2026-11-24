@@ -24,6 +24,8 @@ const UserSchema = new Schema(
     // per role: one manager at an outlet owns that counter, the others need
     // not. Meaningless on any other role; an admin always may.
     canCollectReturns: { type: Boolean, default: false },
+    // Pages an admin switched off for this person (lib/pageAccess.ts).
+    hiddenPages: { type: [String], default: [] },
     // A rider who leads a team of riders. A team leader is still a rider:
     // they sign in to the same app and carry orders, and additionally see the
     // record of every rider placed under them. Kept as a mark on the rider

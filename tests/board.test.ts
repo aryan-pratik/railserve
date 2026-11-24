@@ -67,7 +67,10 @@ describe('the live board, seen by each role', () => {
   })
 
   // Cache-only, as the call desk reads it: no provider is involved in a test.
-  const board = (ctx: AuthContext) => loadRunBoard(ctx, 'today', { allowFetch: false })
+  // Read at a fixed 8 pm, before every train here is due: on the real clock a
+  // run just before midnight saw the trains as already passed, and passed
+  // trains sort differently, so the order flipped.
+  const board = (ctx: AuthContext) => loadRunBoard(ctx, 'today', { allowFetch: false, now: ist(today, '20:00') })
 
   it('shows the store manager and the telecaller the same trains in the same order', async () => {
     const [m, t] = await Promise.all([board(manager), board(telecaller)])
