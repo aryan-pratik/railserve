@@ -124,15 +124,7 @@ export async function teamView(
         due: dues.get(id) ?? NO_DUE,
         dueOrders: dueOrders
           .filter((o) => o.riderId === id)
-          .map((o) => ({
-            id: o.id,
-            externalOrderId: o.externalOrderId,
-            trainNo: o.trainNo,
-            partPaidPaise: o.partPaidPaise,
-            contactName: o.contactName,
-            paise: o.paise,
-            deliveredAt: o.deliveredAt,
-          })),
+          .map(({ riderId, ...o }) => (void riderId, o)),
         lastCollection: last
           ? {
               at: last.at,

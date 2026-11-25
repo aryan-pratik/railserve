@@ -22,7 +22,7 @@ export function PaymentsFilterBar({ q, mode, month, from, to, hasFilters }: { q:
         <input type="search" name="q" defaultValue={q} placeholder="Payer, RRN or remark" autoComplete="off" spellCheck={false} className={cx(FIELD, 'w-full pl-9')} />
       </label>
 
-      <DateFilter key={`${mode}|${month}|${from}|${to}`} mode={mode} month={month} from={from} to={to} allowAll autoSubmit />
+      <DateFilter key={`${mode}|${month}|${from}|${to}`} mode={mode} month={month} from={from} to={to} allowAll quick autoSubmit />
 
       <button type="submit" className="sr-only">
         Search

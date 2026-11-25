@@ -149,6 +149,10 @@ const DeliverySchema = new Schema(
     proofType: { type: String, default: null, enum: [...PROOF_TYPES, null] },
     proofValue: { type: String, default: null },
     amountCollectedPaise: { type: Number, default: null, min: 0 },
+    // The bill as it stood when a COD order was delivered: what the rider
+    // owes, whatever they typed as collected and whatever the bill is edited
+    // to later. Missing on deliveries from before it existed (lib/codCash).
+    billAtDoorPaise: { type: Number, default: null, min: 0 },
     failureReason: { type: String, default: null },
     // When the order first closed (delivered, not delivered, cancelled…).
     // Written once and never moved: a rider's 30-hour correction window and
@@ -172,6 +176,9 @@ const DeliverySchema = new Schema(
     // who gives ₹1,500 of ₹2,240 clears the oldest orders and leaves the rest
     // here on the one that was only part covered. Never set once settled.
     codPartPaidPaise: { type: Number, default: 0, min: 0 },
+    // Paid straight into the company account (UPI and the like) instead of
+    // in cash, as recorded by the office. The rider does not owe this part.
+    codOnlinePaise: { type: Number, default: 0, min: 0 },
     rto: { type: ReturnToOriginSchema, default: null },
   },
   { _id: false },

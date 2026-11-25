@@ -1,3 +1,4 @@
+import { CASH_DUE_EXPR } from '../codCash'
 import mongoose, { type QueryFilter } from 'mongoose'
 import { Order, type OrderDoc } from '../models'
 import { connectDb } from '../db'
@@ -162,7 +163,8 @@ const ATTRIBUTE_CLOSED = [
   },
 ]
 
-const CASH = { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] }
+// Cash a delivery brings in: the bill, less any part paid online (lib/codCash).
+const CASH = CASH_DUE_EXPR
 const BILL = { $ifNull: ['$amountPaise', 0] }
 const IS = (status: string | string[]) =>
   Array.isArray(status) ? { $in: ['$status', status] } : { $eq: ['$status', status] }

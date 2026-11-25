@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { ArrowRight, CheckCircle2, Plus } from 'lucide-react'
 import { requireRole } from '@/lib/session'
 import { connectDb } from '@/lib/db'
-import { UnparsedInbox } from '@/lib/models'
+import { MenuItem, UnparsedInbox } from '@/lib/models'
 import { listPendingCancelRequests } from '@/lib/repo/cancelRequestRepo'
 import { countPendingReturns } from '@/lib/repo/rtoRepo'
 import { riderBoard } from '@/lib/repo/riderLocationRepo'
@@ -38,12 +38,14 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
   const day = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && rawDate !== today ? rawDate : today
   const isToday = day === today
 
-  const [{ board }, cancelRequests, returnsPending, riders, emailsToCheck] = await Promise.all([
+  const [{ board }, cancelRequests, returnsPending, riders, emailsToCheck, dishesToCheck] = await Promise.all([
     isToday ? loadToday(ctx) : loadDay(ctx, day),
     listPendingCancelRequests(ctx, { limit: 5 }),
     countPendingReturns(ctx),
     riderBoard(ctx, { now }),
     UnparsedInbox.countDocuments({ tenantId: ctx.tenantId, resolved: false }),
+    // Menu lives in Settings now; what needs checking there is told here.
+    MenuItem.countDocuments({ tenantId: ctx.tenantId, removedAt: null, $or: [{ diet: null }, { reviewed: false }] }),
   ])
 
   const orders = board.runs.flatMap((r) => r.orders)
@@ -55,7 +57,7 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
   const withRiders = riders.riders.filter((r) => r.work.duePaise + r.work.earlierDuePaise > 0)
   const riderCashPaise = withRiders.reduce((n, r) => n + r.work.duePaise + r.work.earlierDuePaise, 0)
 
-  const waiting = cancelRequests.length + (returnsPending ? 1 : 0) + (emailsToCheck ? 1 : 0)
+  const waiting = cancelRequests.length + (returnsPending ? 1 : 0) + (emailsToCheck ? 1 : 0) + (dishesToCheck ? 1 : 0)
 
   const trains = board.runs
     .filter((run) => !isToday || run.orders.some((o) => LIVE.has(o.status) || o.status === 'DISPATCHED'))
@@ -129,7 +131,7 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
                 href="/v2/orders?view=returns"
                 title={`${returnsPending} bag${returnsPending === 1 ? ' is' : 's are'} coming back`}
                 detail="Not delivered or cancelled. Check them in when they reach the counter."
-                action="See bags"
+                action="See returns"
               />
             ) : null}
             {emailsToCheck ? (
@@ -137,6 +139,14 @@ export default async function V2AdminDashboard(props: PageProps<'/v2/admin'>) {
                 href="/v2/inbox"
                 title={`${emailsToCheck} email${emailsToCheck === 1 ? '' : 's'} did not become an order`}
                 detail="Look at each one and add the order by hand if it is real."
+                action="Check"
+              />
+            ) : null}
+            {dishesToCheck ? (
+              <WaitRow
+                href="/v2/menu?tag=check"
+                title={`${dishesToCheck} dish${dishesToCheck === 1 ? '' : 'es'} need a quick check`}
+                detail="Their veg or non-veg was guessed from the name. A wrong one prints on the wrong kitchen ticket."
                 action="Check"
               />
             ) : null}

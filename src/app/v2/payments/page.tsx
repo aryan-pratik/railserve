@@ -5,12 +5,13 @@ import { connectDb } from '@/lib/db'
 import { findPayments, latestBalance, paymentTotals } from '@/lib/repo/paymentRepo'
 import { findMany } from '@/lib/repo/orderRepo'
 import { resolveDateRange, type DateFilterMode } from '@/lib/dateFilter'
-import { formatDateRange, formatIST, formatMoney, formatShortDate, formatTimeIST } from '@/lib/format'
+import { formatDateRange, formatIST, formatMoney, formatRupees, formatShortDate, formatTimeIST } from '@/lib/format'
 import { EmptyState, PageHeader, Pagination, Sub, Table, TableFrame, Td, Th, readPaging, rowClass } from '@/components/v2/Table'
 import { Card, Chip, Mono, buttonClass, cx } from '@/components/v2/ui'
 import { PaymentsFilterBar } from '@/components/v2/PaymentsFilterBar'
 import { PaymentsLive } from '@/components/v2/PaymentsLive'
 import { PaymentsRemark } from '@/components/v2/PaymentsRemark'
+import { MoneyTabs } from '@/components/v2/MoneyTabs'
 
 export const metadata = { title: 'Payments · RailServe' }
 
@@ -74,9 +75,10 @@ export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
 
   return (
     <div className="grid gap-[18px]">
+      {isAdmin ? <MoneyTabs active="payments" /> : null}
       <PageHeader
-        title="Payments"
-        note="Money received in the bank account, read from the credit alerts. Nothing here is an order; the remark is how a payment is tied to one today."
+        title={isAdmin ? 'Bank payments' : 'Payments'}
+        note="Money that reached the bank account, read from the bank's alerts. Put the order number in a payment's remark to link the two."
         actions={
           <>
             <PaymentsLive />
@@ -91,9 +93,15 @@ export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
       />
 
       <div className={cx('grid grid-cols-1 gap-3.5 sm:grid-cols-2', balance ? 'xl:grid-cols-3' : '')}>
-        <Stat label="Received" value={formatMoney(totals.totalPaise)} note={periodLabel} hero />
+        <Stat label="Received" value={money(totals.totalPaise)} note={periodLabel} hero />
         <Stat label="Payments" value={totals.count.toLocaleString('en-IN')} note={periodLabel} />
-        {balance ? <Stat label="Available balance" value={formatMoney(balance.balancePaise)} note={`as of ${formatIST(balance.asOf)}, from the latest alert`} /> : null}
+        {balance ? (
+          <Stat
+            label="Bank balance"
+            value={money(balance.balancePaise)}
+            note={`after the last money came in, ${formatIST(balance.asOf)}. Spending since then is not shown.`}
+          />
+        ) : null}
       </div>
 
       <Card>
@@ -143,7 +151,7 @@ export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
                       </span>
                     </Td>
                     <Td align="right">
-                      <Mono className="font-semibold">{formatMoney(p.amountPaise)}</Mono>
+                      <Mono className="font-semibold">{money(p.amountPaise)}</Mono>
                     </Td>
                     <Td>
                       <Mono className="text-[12.5px] text-v2-ink-2">{p.rrn}</Mono>
@@ -179,6 +187,11 @@ export default async function V2PaymentsPage(props: PageProps<'/v2/payments'>) {
       )}
     </div>
   )
+}
+
+/** Whole rupees as "₹1,940", like the rest of the app; paise only when there are some. */
+function money(paise: number): string {
+  return paise % 100 === 0 ? formatRupees(paise) : formatMoney(paise)
 }
 
 /**

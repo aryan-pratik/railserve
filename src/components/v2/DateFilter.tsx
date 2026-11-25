@@ -86,6 +86,7 @@ export function DateFilter({
   carryUnchanged = true,
   size = 'md',
   simple = false,
+  quick = false,
   inactive = false,
   extra,
   className,
@@ -101,6 +102,8 @@ export function DateFilter({
   size?: 'sm' | 'md' | 'lg'
   /** Only the everyday choices (All time, Today, Yesterday, Pick dates): no month picking. */
   simple?: boolean
+  /** Today, Yesterday, This week, This month and Custom: the quick periods an owner thinks in. */
+  quick?: boolean
   /** Nothing shown as picked: the page is on a choice this control does not own (e.g. "Coming days"). */
   inactive?: boolean
   /** Extra choices drawn inside the same group, after the built-in ones. */
@@ -160,11 +163,12 @@ export function DateFilter({
     ...(allowAll ? [{ value: 'all' as const, label: 'All time' }] : []),
     { value: 'today', label: 'Today' },
     { value: 'yesterday', label: 'Yesterday' },
-    ...(simple ? [] : [{ value: 'month' as const, label: 'This month' }]),
+    ...(quick ? [{ value: 'week' as const, label: 'This week' }] : []),
+    ...(simple && !quick ? [] : [{ value: 'month' as const, label: 'This month' }]),
   ]
   const monthLabel = mode === 'custom-month' && month ? `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}` : 'Month'
   const datesLabel =
-    mode === 'range' && from ? (to && to !== from ? `${fmtDay(from)} – ${fmtDay(to)}` : fmtDay(from)) : 'Pick dates'
+    mode === 'range' && from ? (to && to !== from ? `${fmtDay(from)} – ${fmtDay(to)}` : fmtDay(from)) : quick ? 'Custom' : 'Pick dates'
   const pending: DateRange | undefined = mode === 'range' && (from || to) ? { from: fromYMD(from), to: fromYMD(to) } : undefined
 
   const seg = (active: boolean) =>
@@ -183,7 +187,7 @@ export function DateFilter({
         </button>
       ))}
 
-      <span className={cx('relative', simple && 'hidden')}>
+      <span className={cx('relative', (simple || quick) && 'hidden')}>
         <button type="button" aria-pressed={mode === 'custom-month'} aria-haspopup="dialog" aria-expanded={panel === 'month'} onClick={() => setPanel((p) => (p === 'month' ? null : 'month'))} className={seg(mode === 'custom-month')}>
           {monthLabel}
         </button>

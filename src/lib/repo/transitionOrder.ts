@@ -280,7 +280,11 @@ function deliveredFields(
   amountCollectedPaise: number | undefined,
 ): Record<string, unknown> {
   const holder = rider ?? current.delivery?.pickedUpBy ?? current.delivery?.agentIds?.[0] ?? null
-  const fields: Record<string, unknown> = { 'delivery.collectedBy': holder }
+  const fields: Record<string, unknown> = {
+    'delivery.collectedBy': holder,
+    // What the rider owes on a cash order: the bill now, at the door.
+    'delivery.billAtDoorPaise': current.paymentMode === 'COD' ? (current.delivery?.billAtDoorPaise ?? current.amountPaise ?? null) : null,
+  }
   // The rider charged with the cash is the rider whose delivery it is. An
   // order closed without a pickup would otherwise sit on the record of
   // everyone it was offered to; and when the office names a different rider
@@ -371,7 +375,7 @@ export async function adminOverrideStatus(params: {
           'The outlet has already taken this order back as a return, so it cannot be marked delivered',
         )
       }
-      if (from === 'DELIVERED' && (current.delivery?.codSettledAt || (current.delivery?.codPartPaidPaise ?? 0) > 0) && current.paymentMode === 'COD') {
+      if (from === 'DELIVERED' && (current.delivery?.codSettledAt || (current.delivery?.codPartPaidPaise ?? 0) > 0 || (current.delivery?.codOnlinePaise ?? 0) > 0) && current.paymentMode === 'COD') {
         throw new ConflictError(
           'The cash for this delivery has already been received from the rider, so it cannot stop being a delivery',
         )
@@ -393,6 +397,7 @@ export async function adminOverrideStatus(params: {
         // No longer a delivery, so no cash changed hands on it.
         $set['delivery.deliveredAt'] = null
         $set['delivery.amountCollectedPaise'] = null
+        $set['delivery.billAtDoorPaise'] = null
         $set['delivery.collectedBy'] = null
         consequences.cashCleared = true
       }
@@ -628,7 +633,7 @@ export async function correctRiderOutcome(params: {
       if (!correctableUntil(closedAt, now)) {
         throw new ForbiddenError('This order closed more than 30 hours ago and can no longer be changed')
       }
-      if (current.delivery?.codSettledAt || (current.delivery?.codPartPaidPaise ?? 0) > 0) {
+      if (current.delivery?.codSettledAt || (current.delivery?.codPartPaidPaise ?? 0) > 0 || (current.delivery?.codOnlinePaise ?? 0) > 0) {
         throw new ForbiddenError('The cash for this order has been handed over, so it can no longer be changed')
       }
       if (from === 'CANCELLED' && !wasCancelledBy(current, ctx.userId)) {
@@ -664,6 +669,7 @@ export async function correctRiderOutcome(params: {
         if (!current.delivery?.pickedUpBy) $set['delivery.pickedUpBy'] = ctx.userId
         $set['delivery.amountCollectedPaise'] =
           current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
+        $set['delivery.billAtDoorPaise'] = current.paymentMode === 'COD' ? (current.amountPaise ?? null) : null
         if (receivedBy) {
           $set['delivery.proofType'] = 'SIGNATURE'
           $set['delivery.proofValue'] = receivedBy
@@ -674,6 +680,7 @@ export async function correctRiderOutcome(params: {
         $set['delivery.deliveredAt'] = null
         $set['delivery.failureReason'] = reason
         $set['delivery.amountCollectedPaise'] = null
+        $set['delivery.billAtDoorPaise'] = null
         $set['delivery.collectedBy'] = null
         $set['delivery.proofType'] = null
         $set['delivery.proofValue'] = null

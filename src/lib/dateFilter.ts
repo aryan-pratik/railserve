@@ -9,7 +9,7 @@
 
 import { shiftServiceDate, todayIST } from './format'
 
-export type DateFilterMode = 'all' | 'today' | 'yesterday' | 'month' | 'custom-month' | 'range'
+export type DateFilterMode = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom-month' | 'range'
 
 export const DATE_FILTER_OPTIONS: { value: DateFilterMode; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -48,6 +48,12 @@ export function resolveDateRange(
       // hours after midnight IST, which is when yesterday is most looked at.
       const day = shiftServiceDate(today, -1)
       return { from: day, to: day, month: day.slice(0, 7) }
+    }
+    case 'week': {
+      // Monday of this week to today, in IST calendar days.
+      const weekday = new Date(`${today}T12:00:00+05:30`).getUTCDay() // 0 = Sunday
+      const monday = shiftServiceDate(today, -((weekday + 6) % 7))
+      return { from: monday, to: today, month: currentMonth }
     }
     case 'month':
       return { ...monthBounds(currentMonth), month: currentMonth }
