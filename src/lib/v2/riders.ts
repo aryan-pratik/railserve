@@ -25,6 +25,10 @@ export type DueOrder = {
   contactName: string | null
   paise: number
   partPaidPaise: number
+  billPaise: number
+  onlinePaise: number
+  /** The rider said they got this much less than the bill; still owed. */
+  shortPaise: number
   deliveredAt: string | null
 }
 
@@ -120,7 +124,7 @@ export async function loadRiderRoster(ctx: AuthContext, opts: { serviceDate?: st
       canReceiveCash: a.canReceiveCash ?? null,
       dueOrders: due
         .filter((o) => o.riderId === id)
-        .map((o) => ({ id: o.id, externalOrderId: o.externalOrderId, trainNo: o.trainNo, contactName: o.contactName, paise: o.paise, partPaidPaise: o.partPaidPaise, deliveredAt: o.deliveredAt })),
+        .map((o) => ({ id: o.id, externalOrderId: o.externalOrderId, trainNo: o.trainNo, contactName: o.contactName, paise: o.paise, partPaidPaise: o.partPaidPaise, billPaise: o.billPaise, onlinePaise: o.onlinePaise, shortPaise: o.shortPaise, deliveredAt: o.deliveredAt })),
       lastHandover: l
         ? { at: l.at, paise: l.paise, orders: l.orders, receivedBy: l.receivedById ? (receivers.get(l.receivedById)?.name ?? null) : null }
         : null,

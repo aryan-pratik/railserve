@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Building2, MapPin, Store, Route, Users, ShieldCheck, Plug, TrainFront, SunMoon, Mail, History, type LucideIcon } from 'lucide-react'
+import { Building2, MapPin, Store, Route, Users, ShieldCheck, Plug, TrainFront, SunMoon, Mail, History, UtensilsCrossed, type LucideIcon } from 'lucide-react'
 import { Card, cx, v2Focus } from './ui'
 import { SettingsRailScroll } from './SettingsRailScroll'
 
@@ -58,8 +58,15 @@ export function SettingsRail({ active, counts }: { active: SettingsTabKey; count
             </Link>
           )
         })}
-        {/* The full activity log: rarely needed day to day (every order shows
-            its own history), so it lives here rather than in the sidebar. */}
+        {/* Menu and the full activity log: set up or looked at now and then,
+            so they live here rather than in the sidebar. */}
+        <Link
+          href="/v2/menu"
+          className={cx('flex shrink-0 items-center gap-2.5 rounded-full px-3 py-2 text-[13.5px] font-semibold text-v2-ink-2 transition-colors hover:bg-v2-surface-2 xl:rounded-v2-md', v2Focus)}
+        >
+          <UtensilsCrossed size={16} strokeWidth={2.1} aria-hidden className="text-v2-muted" />
+          <span className="flex-1">Menu</span>
+        </Link>
         <Link
           href="/v2/activity"
           className={cx('flex shrink-0 items-center gap-2.5 rounded-full px-3 py-2 text-[13.5px] font-semibold text-v2-ink-2 transition-colors hover:bg-v2-surface-2 xl:rounded-v2-md', v2Focus)}

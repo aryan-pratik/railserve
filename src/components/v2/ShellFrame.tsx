@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { SidebarNav, type V2NavSection } from './SidebarNav'
 import { cx, v2Focus } from './ui'
+import { NavLoadingPill, useShowLoading } from './NavLoading'
 
 import { V2_SIDEBAR_COOKIE } from '@/lib/v2/sidebar'
 
@@ -33,6 +34,7 @@ export function ShellFrame({
   children: ReactNode
 }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed)
+  const loading = useShowLoading()
 
   function toggle() {
     const next = !collapsed
@@ -98,9 +100,19 @@ export function ShellFrame({
         {/* The two child selectors let each page's own grid shrink to the
             panel: a grid track sizes to its widest item unless the items may
             shrink, which let one long line widen the whole page on a phone. */}
-        <main id="main" className="relative min-h-0 min-w-0 rounded-v2-xl [&>*]:min-w-0 [&>*>*]:min-w-0 border border-v2-line bg-v2-surface p-4 sm:p-[22px] lg:overflow-y-auto lg:[overscroll-behavior:contain]">
+        <main
+          id="main"
+          aria-busy={loading || undefined}
+          className={cx(
+            'relative min-h-0 min-w-0 rounded-v2-xl [&>*]:min-w-0 [&>*>*]:min-w-0 border border-v2-line bg-v2-surface p-4 sm:p-[22px] lg:overflow-y-auto lg:[overscroll-behavior:contain]',
+            // While a filter or date change loads, the old page fades a little.
+            '[&>*]:transition-opacity [&>*]:duration-200',
+            loading && '[&>*]:opacity-50',
+          )}
+        >
           {children}
         </main>
+        <NavLoadingPill show={loading} />
       </div>
     </div>
   )

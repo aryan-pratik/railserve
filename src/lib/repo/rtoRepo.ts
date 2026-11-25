@@ -314,3 +314,31 @@ export async function listReturns(
 export async function countPendingReturns(ctx: AuthContext): Promise<number> {
   return Order.countDocuments(scoped(ctx, { 'delivery.rto.status': 'PENDING' }))
 }
+
+/**
+ * Sales lost to returns between two instants (by when the bag started coming
+ * back): a cash order that came back never brought its money in; a prepaid
+ * one only costs what was refunded on it. Rating-order decoys are left out.
+ * The admin's figure at the top of Returns.
+ */
+export async function lostToReturns(ctx: AuthContext, from: Date, to: Date): Promise<{ paise: number; orders: number }> {
+  const [row] = await Order.aggregate<{ paise: number; orders: number }>([
+    { $match: scoped(ctx, { 'delivery.rto.openedAt': { $gte: from, $lt: to }, ratingOrder: { $ne: true } }) },
+    {
+      $group: {
+        _id: null,
+        orders: { $sum: 1 },
+        paise: {
+          $sum: {
+            $cond: [
+              { $eq: ['$paymentMode', 'COD'] },
+              { $ifNull: ['$amountPaise', 0] },
+              { $ifNull: ['$refund.amountPaise', 0] },
+            ],
+          },
+        },
+      },
+    },
+  ])
+  return row ? { paise: row.paise, orders: row.orders } : { paise: 0, orders: 0 }
+}

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { requirePage, requirePermission } from '@/lib/session'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -8,7 +9,7 @@ import { DateFilter } from '@/components/v2/DateFilter'
 import { connectDb } from '@/lib/db'
 import { countOrders, findMany } from '@/lib/repo/orderRepo'
 import { findRunsWhere } from '@/lib/repo/runRepo'
-import { countPendingReturns, listReturns, mayCollectReturns, returnFilterClause, returnRiders, type ReturnFilters } from '@/lib/repo/rtoRepo'
+import { countPendingReturns, listReturns, lostToReturns, mayCollectReturns, returnFilterClause, returnRiders, type ReturnFilters } from '@/lib/repo/rtoRepo'
 import { ReturnAge, ReturnsMarkAll } from '@/components/v2/ReturnsMarkAll'
 import { Select } from '@/components/v2/Select'
 import { riderNamesFor } from '@/lib/repo/riderFilter'
@@ -37,6 +38,7 @@ import {
 import { ButtonLink, Chip, Mono, cx, statusChip } from '@/components/v2/ui'
 import { EmptyState, PageHeader, Pagination, PillTabs, Sub, Table, TableFrame, Td, Th, readPaging, rowClass } from '@/components/v2/Table'
 import { OrdersFilterBar } from '@/components/v2/OrdersFilterBar'
+import { QueryForm } from '@/components/QueryForm'
 import { OrdersMarkReturned } from '@/components/v2/OrdersMarkReturned'
 import { ordersFieldClass } from '@/lib/v2/ordersShared'
 import { OrdersList, type OrdersGroup, type OrdersRow } from '@/components/v2/OrdersList'
@@ -68,9 +70,9 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
   const requested = readView(sp.view)
   // A store manager works from Kitchen, which already shows their orders by
   // train, by day and by stage. The list itself is not theirs, however the
-  // address is typed; only "Bags coming back" (view=returns) lives here.
+  // address is typed; only Returns (view=returns) lives here.
   if (role === 'STORE_MANAGER' && requested !== 'returns') redirect('/v2/kitchen')
-  // An admin can switch off this list, or Bags coming back, per person.
+  // An admin can switch off this list, or Returns, per person.
   await requirePage(requested === 'returns' ? 'returns' : 'orders')
   // The date row above the search decides the day now, so "Today" is the
   // all-orders view on today's date, and "Coming days" (upcoming) gives way
@@ -158,14 +160,15 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
 
   // Every view starts with this header, so the list remembers where it was
   // here (see ListMemory): back from an order returns to the same day and filters.
-  const header = (note: string) => (
+  const header = (note: string, extra?: ReactNode) => (
     <>
     <RememberList />
     <PageHeader
-      title={view === 'returns' ? 'Bags coming back' : view === 'enquiries' ? 'Group bookings' : 'Orders'}
+      title={view === 'returns' ? 'Returns' : view === 'enquiries' ? 'Group bookings' : 'Orders'}
       note={note}
       actions={
         <>
+          {extra}
           {view !== 'returns' && view !== 'enquiries' ? (
             <span className="inline-flex rounded-full border border-v2-line p-0.5" role="group" aria-label="Layout">
               <ModeLink href={qs({ group: false })} active={!grouped} icon={<LayoutList size={14} aria-hidden />} label="List" />
@@ -236,14 +239,29 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
     const why = one(sp.why) === 'CANCELLED' || one(sp.why) === 'FAILED' ? (one(sp.why) as 'CANCELLED' | 'FAILED') : null
     const rf: ReturnFilters = { riderId: one(sp.rider) || null, outletId: one(sp.outlet) || null, reason: why, q: one(sp.q) || null }
     const rtoStatus = collected ? 'RETURNED' : 'PENDING'
-    const [rclause, riders] = await Promise.all([returnFilterClause(ctx, rf), returnRiders(ctx, rtoStatus)])
-    const { rows, total } = await listReturns(ctx, { status: rtoStatus, limit: pageSize, skip, where: rclause })
-    const anyFilter = Boolean(rf.riderId || rf.outletId || rf.reason || rf.q)
+    // Dates pick by the day the bag started coming back. All time by
+    // default: a bag is out until it is on the counter, whatever day it left.
+    const span = resolveDateRange(filters.mode, filters)
+    const fromAt = span.from ? new Date(`${span.from}T00:00:00+05:30`) : null
+    const toAt = span.to ? new Date(new Date(`${span.to}T00:00:00+05:30`).getTime() + 86_400_000) : null
+    const openedIn = fromAt || toAt ? { 'delivery.rto.openedAt': { ...(fromAt ? { $gte: fromAt } : {}), ...(toAt ? { $lt: toAt } : {}) } } : null
+    const [baseClause, riders] = await Promise.all([returnFilterClause(ctx, rf), returnRiders(ctx, rtoStatus)])
+    const rclause = openedIn ? { $and: [baseClause, openedIn] } : baseClause
+    const LOST_LABEL: Record<string, string> = { all: 'Lost, all time', today: 'Lost today', yesterday: 'Lost yesterday', week: 'Lost this week', month: 'Lost this month' }
+    const lostLabel = LOST_LABEL[filters.mode] ?? 'Lost in these dates'
+    const [{ rows, total }, lost] = await Promise.all([
+      listReturns(ctx, { status: rtoStatus, limit: pageSize, skip, where: rclause }),
+      isAdmin ? lostToReturns(ctx, fromAt ?? new Date(0), toAt ?? now) : Promise.resolve(null),
+    ])
+    const anyFilter = Boolean(rf.riderId || rf.outletId || rf.reason || rf.q || filters.mode !== 'all')
     const rHref = (over: { rto?: string; page?: number; pageSize?: number; clear?: boolean } = {}) => {
       const u = new URLSearchParams({ view: 'returns' })
       const rto = over.rto ?? (collected ? 'collected' : '')
       if (rto) u.set('rto', rto)
       if (!over.clear) {
+        if (filters.mode !== 'all') u.set('mode', filters.mode)
+        if (filters.from) u.set('from', filters.from)
+        if (filters.to) u.set('to', filters.to)
         if (rf.riderId) u.set('rider', rf.riderId)
         if (rf.outletId) u.set('outlet', rf.outletId)
         if (rf.reason) u.set('why', rf.reason)
@@ -257,8 +275,19 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
       <div className="grid gap-[18px]">
         {header(
           canCollect
-            ? 'Bags coming back from a rider. Mark one returned once it is on the counter.'
-            : `Bags coming back from a rider. ${role === 'STORE_MANAGER' ? 'An admin can allow you to mark returns on your staff record.' : 'The outlet marks them returned.'}`,
+            ? 'Bags a rider is bringing back, not delivered or cancelled. Mark each one returned once it is on the counter.'
+            : `Bags a rider is bringing back, not delivered or cancelled. ${role === 'STORE_MANAGER' ? 'An admin can allow you to mark returns on your staff record.' : 'The outlet marks them returned.'}`,
+          // Admins only: what returns cost this month.
+          lost ? (
+            <span
+              className="mr-1 grid text-right leading-tight"
+              title="For the dates picked: cash orders that came back (their money never came in), plus refunds given on prepaid orders that came back."
+            >
+              <span className="text-[12px] font-semibold text-v2-muted">{lostLabel}</span>
+              <span className="font-mono text-[20px] font-bold text-v2-bad tabular-nums">{formatRupees(lost.paise)}</span>
+              <span className="text-[12px] text-v2-muted">{lost.orders} order{lost.orders === 1 ? '' : 's'} came back</span>
+            </span>
+          ) : null,
         )}
         <PillTabs
           tabs={[
@@ -266,8 +295,22 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
             { href: rHref({ rto: 'collected' }), label: 'Collected', active: collected },
           ]}
         />
-        <form action="/v2/orders" className="flex flex-wrap items-center gap-2">
+        <DateFilter
+          key={`returns|${filters.mode}|${filters.from}|${filters.to}`}
+          mode={filters.mode}
+          month={filters.month}
+          from={filters.from}
+          to={filters.to}
+          allowAll
+          quick
+          autoSubmit
+          className="w-fit"
+        />
+        <QueryForm action="/v2/orders" className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="view" value="returns" />
+          {filters.mode !== 'all' ? <input type="hidden" name="mode" value={filters.mode} /> : null}
+          {filters.from ? <input type="hidden" name="from" value={filters.from} /> : null}
+          {filters.to ? <input type="hidden" name="to" value={filters.to} /> : null}
           {collected ? <input type="hidden" name="rto" value="collected" /> : null}
           <Select
             name="rider"
@@ -319,7 +362,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
               Clear
             </ButtonLink>
           ) : null}
-        </form>
+        </QueryForm>
         {!collected && canCollect && rf.riderId && rows.length > 1 ? (
           <ReturnsMarkAll ids={rows.map((r) => r.id)} rider={riders.find((r) => r.id === rf.riderId)?.name ?? 'this rider'} />
         ) : null}
@@ -331,7 +374,9 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                 ? 'Try clearing them, or widen the dates.'
                 : collected
                   ? 'Returns marked as back at the counter are listed here.'
-                  : 'When a rider cannot deliver an order, or it is cancelled on the way, it shows here until the outlet takes the bag back.'
+                  : filters.mode !== 'all'
+                    ? 'No bag started coming back in these dates. Pick "All time" to see every bag still out.'
+                    : 'When a rider cannot deliver an order, or it is cancelled on the way, it shows here until the outlet takes the bag back.'
             }
             action={anyFilter ? <ButtonLink href={rHref({ clear: true })}>Clear filters</ButtonLink> : null}
           />
@@ -343,7 +388,6 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                   <Th>Order</Th>
                   <Th>{showOutlet ? 'Rider · outlet' : 'Rider'}</Th>
                   <Th>{collected ? 'Returned' : 'Out since'}</Th>
-                  {!isTelecaller ? <Th align="right">Cash</Th> : null}
                   {/* relative: the sr-only label is absolutely positioned, and without a
                       positioned ancestor it escapes the TableFrame's scroll box and widens
                       the page on a phone. */}
@@ -380,18 +424,6 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
                         <Mono className="text-xs text-v2-muted">{formatIST(collected ? r.returnedAt : r.openedAt)}</Mono>
                         {!collected ? <ReturnAge openedAt={r.openedAt} nowMs={serverNowMs} /> : null}
                       </Td>
-                      {!isTelecaller ? (
-                        <Td align="right" className="align-top">
-                          {r.codPaise !== null ? (
-                            <span className="inline-flex flex-col items-end gap-1">
-                              <Mono className="font-semibold">{formatRupees(r.codPaise)}</Mono>
-                              <Chip tone="cod">not collected</Chip>
-                            </span>
-                          ) : (
-                            <span className="text-v2-faint">—</span>
-                          )}
-                        </Td>
-                      ) : null}
                       <Td align="right" className="align-top">
                         {collected ? (
                           <span className="text-xs text-v2-muted">{r.returnedBy ?? '—'}</span>

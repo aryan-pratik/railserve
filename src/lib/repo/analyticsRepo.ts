@@ -1,3 +1,4 @@
+import { CASH_DUE_EXPR, PART_EXPR } from '../codCash'
 import mongoose, { type QueryFilter } from 'mongoose'
 import { Order, type OrderDoc } from '../models'
 import type { AuthContext } from '../authContext'
@@ -124,13 +125,13 @@ export type CodSummary = {
 }
 
 /**
- * Where the cash-on-delivery money in view stands. Cash per order is what the
- * rider recorded, or the bill when nobody recorded it: the same reading the
- * rider cash screens use, so the two never disagree about a rupee.
+ * Where the cash-on-delivery money in view stands. Cash per order is the bill, less
+ * anything paid online: the same reading the rider cash screens use, so the two never disagree about a rupee.
  */
 export async function codSummary(ctx: AuthContext, match: QueryFilter<OrderDoc>): Promise<CodSummary> {
-  const cash = { $ifNull: ['$delivery.amountCollectedPaise', { $ifNull: ['$amountPaise', 0] }] }
-  const partPaid = { $ifNull: ['$delivery.codPartPaidPaise', 0] }
+  // The bill less any part paid online: the cash that should reach the store (lib/codCash).
+  const cash = CASH_DUE_EXPR
+  const partPaid = PART_EXPR
   const delivered = { $eq: ['$status', 'DELIVERED'] }
   // The same rules as the riders' wallets (riderCashRepo): cash delivered
   // before the wallet started was settled by hand, so it counts as settled;

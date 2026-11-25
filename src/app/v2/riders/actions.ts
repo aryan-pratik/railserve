@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole, requirePermission } from '@/lib/session'
-import { settleRiderCash } from '@/lib/repo/riderCashRepo'
+import { markPaidOnline, recordHandIn, settleRiderCash } from '@/lib/repo/riderCashRepo'
 import { setTeam } from '@/lib/repo/teamRepo'
 import { saveUser, toggleUserActive, type UserState } from '@/app/admin/setup/staffActions'
 import { formatRupees } from '@/lib/format'
@@ -16,6 +16,7 @@ import { formatRupees } from '@/lib/format'
 export type FormState = { error?: string; ok?: string }
 
 function revalidateRiders() {
+  revalidatePath('/v2/money')
   revalidatePath('/v2/riders')
   revalidatePath('/v2/riders/teams')
   revalidatePath('/v2/riders/[id]', 'page')
@@ -72,5 +73,35 @@ export async function setTeamV2(_prev: FormState, formData: FormData): Promise<F
     return { ok: `${r.moved} rider${r.moved === 1 ? '' : 's'} moved.` }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Could not move those riders.' }
+  }
+}
+
+/** The passenger paid this cash order online (UPI): the rider no longer owes it. */
+export async function markPaidOnlineV2(_prev: FormState, formData: FormData): Promise<FormState> {
+  const ctx = await requirePermission('riders.collectCash')
+  const orderId = String(formData.get('orderId') ?? '')
+  try {
+    const r = await markPaidOnline({ ctx, orderId })
+    revalidateRiders()
+    revalidatePath('/v2/orders/[id]', 'page')
+    return { ok: `${formatRupees(r.paise)} marked as paid online.` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not record that.' }
+  }
+}
+
+/** The owner received cash a store manager or team leader was holding. */
+export async function recordHandInV2(_prev: FormState, formData: FormData): Promise<FormState> {
+  const ctx = await requireRole('ADMIN')
+  const fromUserId = String(formData.get('fromUserId') ?? '')
+  const rupees = String(formData.get('rupees') ?? '').trim()
+  const paise = Math.round(Number(rupees) * 100)
+  if (!rupees || !Number.isFinite(paise) || paise <= 0) return { error: 'Enter the amount received, in rupees.' }
+  try {
+    const r = await recordHandIn({ ctx, fromUserId, paise, note: String(formData.get('note') ?? '') })
+    revalidatePath('/v2/money')
+    return { ok: `Received ${formatRupees(r.paise)}.${r.leftPaise > 0 ? ` ${formatRupees(r.leftPaise)} is still with them.` : ''}` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not record that.' }
   }
 }

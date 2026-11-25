@@ -1,9 +1,11 @@
 import mongoose from 'mongoose'
-import { Order, User } from '../models'
+import { CashHandIn, Order, User } from '../models'
+import { billOf, owedOf, shortOf } from '../codCash'
 import { ConflictError, ForbiddenError, type AuthContext } from '../authContext'
 import { COD_WALLET_FROM } from '../riderRecords'
 import { canReceiveCash, receiverLabel } from '../collections'
 import { outletScoped } from './orderRepo'
+import { connectDb } from '../db'
 
 /**
  * Cash a rider is carrying for the store, and the handover that clears it.
@@ -59,15 +61,8 @@ function pendingFilter(tenantId: mongoose.Types.ObjectId, riderIds: mongoose.Typ
   }
 }
 
-/** Cash per order: what the rider recorded, or the bill when nobody recorded it. */
-function cashOf(o: { amountPaise?: number | null; delivery?: { amountCollectedPaise?: number | null } | null }) {
-  return o.delivery?.amountCollectedPaise ?? o.amountPaise ?? 0
-}
-
-/** What is still in the rider's hand for one order: its cash minus any part already handed in. */
-function dueOf(o: { amountPaise?: number | null; delivery?: { amountCollectedPaise?: number | null; codPartPaidPaise?: number | null } | null }) {
-  return Math.max(0, cashOf(o) - (o.delivery?.codPartPaidPaise ?? 0))
-}
+/** What the rider still owes on one order: the bill, less cash handed in and anything paid online (lib/codCash). */
+const dueOf = owedOf
 
 function holderOf(o: { delivery?: { collectedBy?: unknown; agentIds?: unknown[] | null } | null }) {
   return String(o.delivery?.collectedBy ?? o.delivery?.agentIds?.[0] ?? '')
@@ -90,7 +85,7 @@ export async function pendingCashByRider(
   if (ids.length === 0) return out
 
   const orders = await Order.find(outletScoped(ctx, pendingFilter(ctx.tenantId, ids, span)))
-    .select('amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.collectedBy delivery.agentIds')
+    .select('amountPaise delivery.billAtDoorPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.codOnlinePaise delivery.collectedBy delivery.agentIds')
     .lean()
 
   for (const o of orders) {
@@ -137,6 +132,11 @@ export type PendingCashOrder = {
   paise: number
   /** Already handed in against this order by an earlier partial collection. */
   partPaidPaise: number
+  /** The bill, and what was paid online instead of cash. */
+  billPaise: number
+  onlinePaise: number
+  /** The rider said they got this much less than the bill. Still owed. */
+  shortPaise: number
   deliveredAt: string | null
 }
 
@@ -152,7 +152,7 @@ export async function pendingCashOrders(
   const ids = riderIds.map((r) => new mongoose.Types.ObjectId(String(r)))
   if (ids.length === 0) return []
   const orders = await Order.find(outletScoped(ctx, pendingFilter(ctx.tenantId, ids)))
-    .select('externalOrderId trainNo contactName amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
+    .select('externalOrderId trainNo contactName amountPaise delivery.billAtDoorPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.codOnlinePaise delivery.collectedBy delivery.agentIds delivery.deliveredAt')
     .sort({ 'delivery.deliveredAt': 1 })
     .lean()
   return orders.map((o) => ({
@@ -163,6 +163,9 @@ export async function pendingCashOrders(
     contactName: o.contactName ?? null,
     paise: dueOf(o),
     partPaidPaise: o.delivery?.codPartPaidPaise ?? 0,
+    billPaise: billOf(o),
+    onlinePaise: o.delivery?.codOnlinePaise ?? 0,
+    shortPaise: shortOf(o),
     deliveredAt: o.delivery?.deliveredAt ? new Date(o.delivery.deliveredAt).toISOString() : null,
   }))
 }
@@ -243,7 +246,7 @@ export async function settleRiderCash(params: {
     let result: { orders: number; paise: number; partial: { orderId: string; paidPaise: number; leftPaise: number } | null } = { orders: 0, paise: 0, partial: null }
     await session.withTransaction(async () => {
       const mine = await Order.find(filter, null, { session })
-        .select('status amountPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.deliveredAt')
+        .select('status amountPaise delivery.billAtDoorPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.codOnlinePaise delivery.deliveredAt')
         .sort({ 'delivery.deliveredAt': 1 })
         .lean()
       if (mine.length === 0) throw new ConflictError('This cash has already been collected')
@@ -380,7 +383,7 @@ export async function collectionHistory(
         $match: outletScoped(ctx, {
           tenantId: ctx.tenantId,
           'delivery.codSettledAt': Object.keys(at).length ? at : { $ne: null },
-          'events.meta.action': { $nin: ACTIONS },
+          'events.meta.action': { $nin: [...ACTIONS, 'COD_PAID_ONLINE'] },
           $or: [
             { 'delivery.collectedBy': { $in: ids } },
             { 'delivery.collectedBy': null, 'delivery.agentIds.0': { $in: ids } },
@@ -427,4 +430,157 @@ export async function receiversOf(
   if (ids.length === 0) return new Map()
   const users = await User.find({ _id: { $in: ids }, tenantId: ctx.tenantId }).select('name role isTeamLead').lean()
   return new Map(users.map((u) => [String(u._id), { name: u.name, label: receiverLabel(u) }]))
+}
+
+/**
+ * The passenger paid (part of) a cash order straight into the company
+ * account, UPI or the like, so the rider does not owe that part. Recorded
+ * by an admin or a store manager, on the order's log. When it covers what
+ * was still owed, the order leaves the rider's wallet as settled, but it is
+ * never counted as cash handed in.
+ */
+export async function markPaidOnline(params: { ctx: AuthContext; orderId: string; paise?: number; now?: Date }): Promise<{ paise: number; cleared: boolean }> {
+  const { ctx, orderId, now = new Date() } = params
+  if (ctx.role !== 'ADMIN' && ctx.role !== 'STORE_MANAGER') throw new ForbiddenError('Only an admin or a store manager can record this')
+  if (!mongoose.isValidObjectId(orderId)) throw new ConflictError('That order does not exist')
+  await connectDb()
+  if (params.paise !== undefined && (!Number.isInteger(params.paise) || params.paise <= 0)) {
+    throw new ConflictError('Enter the amount paid online, in whole rupees')
+  }
+  const o = await Order.findOne(
+    outletScoped(ctx, {
+      _id: new mongoose.Types.ObjectId(orderId),
+      tenantId: ctx.tenantId,
+      status: 'DELIVERED',
+      paymentMode: 'COD',
+      'delivery.codSettledAt': null,
+    }),
+  )
+    .select('status amountPaise delivery.billAtDoorPaise delivery.amountCollectedPaise delivery.codPartPaidPaise delivery.codOnlinePaise delivery.collectedBy delivery.agentIds')
+    .lean()
+  if (!o) throw new ConflictError('This order has no cash left to collect')
+  const due = owedOf(o)
+  const paise = params.paise ?? due
+  if (paise > due) throw new ConflictError(`Only ₹${(due / 100).toFixed(0)} is still owed on this order`)
+  const cleared = paise === due
+  const settlementId = new mongoose.Types.ObjectId().toString()
+  const res = await Order.updateOne(
+    { _id: o._id, tenantId: ctx.tenantId, 'delivery.codSettledAt': null, 'delivery.codOnlinePaise': o.delivery?.codOnlinePaise ?? 0 },
+    {
+      $inc: { 'delivery.codOnlinePaise': paise },
+      ...(cleared ? { $set: { 'delivery.codSettledAt': now, 'delivery.codSettledBy': ctx.userId, 'delivery.codSettlementId': settlementId } } : {}),
+      $push: {
+        events: {
+          fromStatus: o.status,
+          toStatus: o.status,
+          userId: ctx.userId,
+          meta: { action: 'COD_PAID_ONLINE', riderId: holderOf(o) || null, amountPaise: paise },
+          createdAt: now,
+        },
+      },
+    },
+  )
+  if (res.matchedCount === 0) throw new ConflictError('Someone else just changed this order. Try again.')
+  return { paise, cleared }
+}
+
+/** Cash a store manager or team leader took from riders and has not yet passed to the owner. */
+export type StaffCash = {
+  userId: string
+  name: string
+  label: string
+  receivedPaise: number
+  handedInPaise: number
+  holdingPaise: number
+  lastReceivedAt: string | null
+}
+
+/**
+ * Who holds cash that came off riders, admin only. Read from the handover
+ * records on the orders (what each receiver took), less what they handed in
+ * (CashHandIn). Cash an admin received themselves is already with the owner,
+ * so admins are left out. Only handovers with a record count: older ones,
+ * from before the records, were squared by hand.
+ */
+export async function cashWithStaff(ctx: AuthContext): Promise<StaffCash[]> {
+  if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin can see this')
+  await connectDb()
+  const ACTIONS = ['COD_SETTLED', 'COD_PART_PAID']
+  const [received, handed] = await Promise.all([
+    Order.aggregate<{ _id: mongoose.Types.ObjectId; paise: number; last: Date }>([
+      { $match: { tenantId: ctx.tenantId, 'events.meta.action': { $in: ACTIONS } } },
+      { $unwind: '$events' },
+      { $match: { 'events.meta.action': { $in: ACTIONS }, 'events.meta.amountPaise': { $type: 'number' } } },
+      { $group: { _id: '$events.userId', paise: { $sum: '$events.meta.amountPaise' }, last: { $max: '$events.createdAt' } } },
+    ]),
+    CashHandIn.aggregate<{ _id: mongoose.Types.ObjectId; paise: number }>([
+      { $match: { tenantId: ctx.tenantId } },
+      { $group: { _id: '$fromUserId', paise: { $sum: '$amountPaise' } } },
+    ]),
+  ])
+  const ids = received.map((r) => r._id).filter(Boolean)
+  if (ids.length === 0) return []
+  const users = await User.find({ _id: { $in: ids }, tenantId: ctx.tenantId }).select('name role isTeamLead').lean()
+  const userOf = new Map(users.map((u) => [String(u._id), u]))
+  const handedOf = new Map(handed.map((h) => [String(h._id), h.paise]))
+  return received
+    .map((r) => {
+      const u = userOf.get(String(r._id))
+      if (!u || u.role === 'ADMIN') return null
+      const handedInPaise = handedOf.get(String(r._id)) ?? 0
+      return {
+        userId: String(r._id),
+        name: u.name,
+        label: receiverLabel(u),
+        receivedPaise: r.paise,
+        handedInPaise,
+        holdingPaise: Math.max(0, r.paise - handedInPaise),
+        lastReceivedAt: r.last ? new Date(r.last).toISOString() : null,
+      }
+    })
+    .filter((x): x is StaffCash => Boolean(x))
+    .sort((a, b) => b.holdingPaise - a.holdingPaise || a.name.localeCompare(b.name))
+}
+
+/** What one staff member holds, for their own screen. */
+export async function cashHeldBy(ctx: AuthContext): Promise<number> {
+  const ACTIONS = ['COD_SETTLED', 'COD_PART_PAID']
+  const me = new mongoose.Types.ObjectId(String(ctx.userId))
+  await connectDb()
+  const [[got], [gave]] = await Promise.all([
+    Order.aggregate<{ paise: number }>([
+      { $match: { tenantId: ctx.tenantId, events: { $elemMatch: { userId: me, 'meta.action': { $in: ACTIONS } } } } },
+      { $unwind: '$events' },
+      { $match: { 'events.userId': me, 'events.meta.action': { $in: ACTIONS }, 'events.meta.amountPaise': { $type: 'number' } } },
+      { $group: { _id: null, paise: { $sum: '$events.meta.amountPaise' } } },
+    ]),
+    CashHandIn.aggregate<{ paise: number }>([
+      { $match: { tenantId: ctx.tenantId, fromUserId: me } },
+      { $group: { _id: null, paise: { $sum: '$amountPaise' } } },
+    ]),
+  ])
+  return Math.max(0, (got?.paise ?? 0) - (gave?.paise ?? 0))
+}
+
+/** The owner records cash a staff member handed them. Never more than that person holds. */
+export async function recordHandIn(params: { ctx: AuthContext; fromUserId: string; paise: number; note?: string | null; now?: Date }): Promise<{ paise: number; leftPaise: number }> {
+  const { ctx, fromUserId, paise, now = new Date() } = params
+  if (ctx.role !== 'ADMIN') throw new ForbiddenError('Only an admin can record this')
+  if (!Number.isInteger(paise) || paise <= 0) throw new ConflictError('Enter the amount received, in whole rupees')
+  await connectDb()
+  const holding = (await cashWithStaff(ctx)).find((s) => s.userId === fromUserId)
+  if (!holding || holding.holdingPaise <= 0) throw new ConflictError('This person is not holding any cash')
+  if (paise > holding.holdingPaise) throw new ConflictError(`${holding.name.split(/\s+/)[0]} holds only ₹${(holding.holdingPaise / 100).toFixed(0)}`)
+  await CashHandIn.create({ tenantId: ctx.tenantId, fromUserId, amountPaise: paise, byUserId: ctx.userId, at: now, note: params.note?.trim() || null })
+  return { paise, leftPaise: holding.holdingPaise - paise }
+}
+
+/** Recent hand-ins to the owner, newest first. */
+export async function recentHandIns(ctx: AuthContext, limit = 10) {
+  if (ctx.role !== 'ADMIN') return []
+  await connectDb()
+  const rows = await CashHandIn.find({ tenantId: ctx.tenantId }).sort({ at: -1 }).limit(limit).lean()
+  const users = await User.find({ _id: { $in: [...new Set(rows.flatMap((r) => [r.fromUserId, r.byUserId]).map(String))] }, tenantId: ctx.tenantId }).select('name').lean()
+  const nameOf = new Map(users.map((u) => [String(u._id), u.name]))
+  return rows.map((r) => ({ id: String(r._id), from: nameOf.get(String(r.fromUserId)) ?? 'Someone', by: nameOf.get(String(r.byUserId)) ?? 'Someone', paise: r.amountPaise, at: r.at.toISOString(), note: r.note ?? null }))
 }

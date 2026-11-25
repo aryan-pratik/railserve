@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveDateRange } from '../src/lib/dateFilter'
+import { todayIST } from '../src/lib/format'
 
 /**
  * "Yesterday" is the IST calendar day before today, whatever UTC thinks.
@@ -38,5 +39,18 @@ describe('resolveDateRange: yesterday', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-21T19:00:00Z'))
     expect(resolveDateRange('today', {}).from).toBe('2026-09-22')
+  })
+})
+
+describe('this week', () => {
+  it('runs from Monday of this week to today, in IST', () => {
+    const r = resolveDateRange('week', {})
+    const today = todayIST()
+    expect(r.to).toBe(today)
+    // A Monday, and no more than six days back.
+    expect(new Date(`${r.from}T12:00:00+05:30`).getUTCDay()).toBe(1)
+    const days = (new Date(`${r.to}T00:00:00Z`).getTime() - new Date(`${r.from}T00:00:00Z`).getTime()) / 86_400_000
+    expect(days).toBeGreaterThanOrEqual(0)
+    expect(days).toBeLessThanOrEqual(6)
   })
 })

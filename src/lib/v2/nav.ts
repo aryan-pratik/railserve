@@ -26,36 +26,25 @@ export type NavCounts = {
 export function navFor(role: Role, c: NavCounts): V2NavSection[] {
   switch (role) {
     case 'ADMIN':
-      // Grouped by how often an owner opens them: the day's work first, then
-      // money, then the things set up once in a while. The full activity log
-      // sits in Settings; each order already shows its own history.
+      // Nine plain words, most used first. What needs the owner's attention
+      // (emails that did not become orders, dishes to check, cancel requests)
+      // reaches them on Today and in the bell, not as more sidebar items.
+      // Bank payments sit inside Money; Menu and the activity log in Settings.
       return [
         {
-          label: 'Every day',
+          label: '',
           items: [
             { href: '/v2/admin', label: 'Today', icon: 'today', count: c.live },
-            { href: '/v2/orders', label: 'Orders', icon: 'orders' },
-            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
-            { href: '/v2/chat', label: 'WhatsApp', icon: 'chat', count: c.unread },
-            { href: '/v2/inbox', label: 'Emails to check', icon: 'inbox', count: c.unparsed, alert: true },
-          ],
-        },
-        {
-          label: 'Money',
-          items: [
-            { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
-            { href: '/v2/payments', label: 'Payments', icon: 'payments' },
-          ],
-        },
-        {
-          label: 'Business',
-          items: [
+            { href: '/v2/orders', label: 'Orders', icon: 'orders', also: ['/v2/inbox'] },
+            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
             { href: '/v2/orders?view=enquiries', label: 'Group bookings', icon: 'enquiries' },
-            { href: '/v2/menu', label: 'Menu', icon: 'menu', count: c.menuToCheck },
+            { href: '/v2/chat', label: 'WhatsApp', icon: 'chat', count: c.unread },
+            { href: '/v2/riders', label: 'Riders', icon: 'riders' },
+            { href: '/v2/money', label: 'Money', icon: 'money', also: ['/v2/payments'] },
             { href: '/v2/analytics', label: 'Reports', icon: 'analytics' },
+            { href: '/v2/settings', label: 'Settings', icon: 'settings', also: ['/v2/menu', '/v2/activity'] },
           ],
         },
-        { label: 'Setup', items: [{ href: '/v2/settings', label: 'Settings', icon: 'settings' }] },
       ]
     case 'STORE_MANAGER':
       return [
@@ -63,7 +52,7 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
           label: 'Kitchen',
           items: [
             { href: '/v2/kitchen', label: 'Kitchen', icon: 'kitchen', count: c.live },
-            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
+            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
             { href: '/v2/riders', label: 'Riders and cash', icon: 'riders' },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
           ],
@@ -77,7 +66,7 @@ export function navFor(role: Role, c: NavCounts): V2NavSection[] {
             { href: '/v2/calls', label: 'Calls to make', icon: 'calls', count: c.live },
             { href: '/v2/orders', label: 'Orders', icon: 'orders' },
             { href: '/v2/chat', label: 'WhatsApp', icon: 'chat', count: c.unread },
-            { href: '/v2/orders?view=returns', label: 'Bags coming back', icon: 'returns', count: c.returns },
+            { href: '/v2/orders?view=returns', label: 'Returns', icon: 'returns', count: c.returns },
             { href: '/v2/payments', label: 'Payments', icon: 'payments' },
           ],
         },
@@ -92,6 +81,7 @@ const NAV_PERMISSION: [prefix: string, permission: Permission][] = [
   ['/v2/orders', 'orders.view'],
   ['/v2/kitchen', 'kitchen.operate'],
   ['/v2/riders', 'riders.manage'],
+  ['/v2/money', 'riders.collectCash'],
   ['/v2/chat', 'chat.use'],
   ['/v2/calls', 'calls.operate'],
   ['/v2/inbox', 'inbox.review'],

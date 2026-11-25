@@ -1,8 +1,8 @@
 'use client'
 
 import { useActionState, useEffect, useMemo, useState } from 'react'
-import { collectRiderCashV2, type FormState } from '@/app/v2/riders/actions'
-import { formatRupees, formatTimeIST } from '@/lib/format'
+import { collectRiderCashV2, markPaidOnlineV2, type FormState } from '@/app/v2/riders/actions'
+import { formatIST, formatRupees } from '@/lib/format'
 import type { DueOrder } from '@/lib/v2/riders'
 import { Button, Mono, cx } from './ui'
 import { RiderDialog, RiderFormNote } from './RiderDialog'
@@ -18,7 +18,7 @@ const initial: FormState = {}
  */
 export function RiderCashDialog({
   rider,
-  orders,
+  orders: allOrders,
   onClose,
   onSettled,
 }: {
@@ -30,8 +30,18 @@ export function RiderCashDialog({
 }) {
   const [state, action, pending] = useActionState(collectRiderCashV2, initial)
   const [confirming, setConfirming] = useState(false)
+  // Orders marked paid online while the dialog is open drop out at once.
+  const [online, setOnline] = useState<Set<string>>(() => new Set())
+  const orders = useMemo(() => allOrders.filter((o) => !online.has(o.id)), [allOrders, online])
   const total = orders.reduce((a, o) => a + o.paise, 0)
   const [rupees, setRupees] = useState(() => String(Math.round(total / 100)))
+  const [lastTotal, setLastTotal] = useState(total)
+  if (lastTotal !== total) {
+    // The list shrank: keep "everything" meaning everything that is left.
+    setLastTotal(total)
+    if (Math.round((Number(rupees) || 0) * 100) >= lastTotal || Math.round((Number(rupees) || 0) * 100) > total) setRupees(String(Math.round(total / 100)))
+  }
+  const shortTotal = orders.reduce((a, o) => a + o.shortPaise, 0)
   const first = rider.name.split(/\s+/)[0]
 
   useEffect(() => {
@@ -147,6 +157,12 @@ export function RiderCashDialog({
             )}
           </div>
 
+          {shortTotal > 0 && !confirming ? (
+            <p className="rounded-v2-md bg-v2-bad-bg px-4 py-3 text-sm font-medium text-v2-bad">
+              {first} said they got {formatRupees(shortTotal)} less than the bill on some orders below. It is still counted as owed. If the passenger paid that part online, press &ldquo;Paid by UPI&rdquo; on the order.
+            </p>
+          ) : null}
+
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-[12.5px] font-semibold text-v2-ink-2">Orders behind the amount · oldest first</span>
             <span className="font-mono text-[22px] font-bold tabular-nums tracking-[-0.02em]">{formatRupees(total)}</span>
@@ -160,10 +176,16 @@ export function RiderCashDialog({
                   <span className="min-w-0">
                     <Mono className="block truncate font-semibold">{o.externalOrderId ?? o.id}</Mono>
                     <span className="block truncate text-xs text-v2-muted">
-                      {[o.trainNo ? `Train ${o.trainNo}` : null, o.contactName, o.deliveredAt ? `delivered ${formatTimeIST(o.deliveredAt)}` : null, o.partPaidPaise ? `${formatRupees(o.partPaidPaise)} already handed in` : null]
+                      {[o.trainNo ? `Train ${o.trainNo}` : null, o.contactName, o.deliveredAt ? `delivered ${formatIST(o.deliveredAt)}` : null, o.partPaidPaise ? `${formatRupees(o.partPaidPaise)} already handed in` : null, o.onlinePaise ? `${formatRupees(o.onlinePaise)} paid online` : null]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
+                    {o.shortPaise > 0 ? (
+                      <span className="block text-xs font-semibold text-v2-bad">
+                        {first} said {formatRupees(o.billPaise - o.shortPaise)} · {formatRupees(o.shortPaise)} short
+                      </span>
+                    ) : null}
+                    {!confirming ? <PaidOnlineButton orderId={o.id} paise={o.paise} onDone={() => { setOnline((s) => new Set(s).add(o.id)); onSettled() }} /> : null}
                   </span>
                   <span className="text-right">
                     <Mono className="block font-semibold">{formatRupees(o.paise)}</Mono>
@@ -178,5 +200,38 @@ export function RiderCashDialog({
         </div>
       )}
     </RiderDialog>
+  )
+}
+
+/**
+ * "The passenger paid this one online": two taps, then the order leaves the
+ * rider's cash. For UPI paid into the company account instead of cash.
+ */
+function PaidOnlineButton({ orderId, paise, onDone }: { orderId: string; paise: number; onDone: () => void }) {
+  const [state, action, pending] = useActionState(markPaidOnlineV2, initial)
+  const [asking, setAsking] = useState(false)
+  useEffect(() => {
+    if (state.ok) onDone()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.ok])
+  if (!asking) {
+    return (
+      <button type="button" onClick={() => setAsking(true)} className="mt-1 text-xs font-semibold text-v2-brand underline-offset-2 hover:underline">
+        Paid by UPI?
+      </button>
+    )
+  }
+  return (
+    <form action={action} className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+      <input type="hidden" name="orderId" value={orderId} />
+      <span className="font-medium text-v2-ink-2">Check the bank first. Passenger paid {formatRupees(paise)} online?</span>
+      <Button type="submit" size="sm" variant="primary" disabled={pending}>
+        {pending ? 'Saving…' : 'Yes, paid online'}
+      </Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setAsking(false)} disabled={pending}>
+        No
+      </Button>
+      {state.error ? <span className="w-full font-semibold text-v2-bad">{state.error}</span> : null}
+    </form>
   )
 }

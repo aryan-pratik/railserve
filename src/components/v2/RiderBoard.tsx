@@ -244,7 +244,8 @@ export function RiderBoard({
   const carriedParts = [
     c.openOrders ? `${c.openOrders} order${c.openOrders === 1 ? '' : 's'} still out from earlier days` : null,
     c.staleOrders ? `${c.staleOrders} older handed over and never closed` : null,
-    c.cashOrders ? `${formatRupees(c.cashPaise)} COD from earlier days not yet received (${c.cashOrders} order${c.cashOrders === 1 ? '' : 's'})` : null,
+    // Today the headline already counts every day's cash; a past day shows it here.
+    !isToday && c.cashOrders ? `${formatRupees(c.cashPaise)} cash from before this day still with riders (${c.cashOrders} order${c.cashOrders === 1 ? '' : 's'})` : null,
   ].filter(Boolean)
 
   return (
@@ -260,8 +261,18 @@ export function RiderBoard({
         <Stat icon={<Users size={18} strokeWidth={1.8} aria-hidden />} label={isToday ? 'Riders online' : 'Riders'} value={String(isToday ? online : counts.ALL)} note={isToday ? `${counts.ON_DELIVERY} delivering · ${counts.ALL} on the roster` : `${riders.filter((r) => r.work.done > 0).length} worked this day`} />
         <Stat icon={<PackageCheck size={18} strokeWidth={1.8} aria-hidden />} label="Finished" value={String(t.done)} note="delivered, not delivered or cancelled" />
         <Stat icon={<Bike size={18} strokeWidth={1.8} aria-hidden />} label="Delivered" value={String(t.delivered)} note={`${t.notDelivered} not delivered · ${t.cancelled} cancelled`} />
-        <Stat icon={<Banknote size={18} strokeWidth={1.8} aria-hidden />} label="COD collected" value={formatRupees(t.codPaise)} note={`from ${t.codOrders} order${t.codOrders === 1 ? '' : 's'}`} />
-        <Stat icon={<Wallet size={18} strokeWidth={1.8} aria-hidden />} label="COD to receive" value={formatRupees(t.duePaise)} note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} from this day`} warm={t.duePaise > 0} />
+        <Stat icon={<Banknote size={18} strokeWidth={1.8} aria-hidden />} label="Cash orders delivered" value={formatRupees(t.codPaise)} note={`${t.codOrders} order${t.codOrders === 1 ? '' : 's'} paid in cash at the door`} />
+        {isToday ? (
+          <Stat
+            icon={<Wallet size={18} strokeWidth={1.8} aria-hidden />}
+            label="Cash with riders"
+            value={formatRupees(t.duePaise + c.cashPaise)}
+            note={`${t.dueOrders + c.cashOrders} order${t.dueOrders + c.cashOrders === 1 ? '' : 's'} · ${formatRupees(t.duePaise)} from today`}
+            warm={t.duePaise + c.cashPaise > 0}
+          />
+        ) : (
+          <Stat icon={<Wallet size={18} strokeWidth={1.8} aria-hidden />} label="Still unpaid from this day" value={formatRupees(t.duePaise)} note={`${t.dueOrders} order${t.dueOrders === 1 ? '' : 's'} not yet handed in`} warm={t.duePaise > 0} />
+        )}
       </div>
       {carriedParts.length ? (
         <p className="-mt-2 text-[12.5px] text-v2-muted">
@@ -391,8 +402,8 @@ export function RiderBoard({
                       <Th>Status</Th>
                       <Th>Carrying</Th>
                       <Th align="right">Finished</Th>
-                      <Th align="right">COD collected</Th>
-                      <Th align="right">Cash in hand</Th>
+                      <Th align="right">Cash orders</Th>
+                      <Th align="right">{isToday ? 'Cash with them' : 'Still unpaid'}</Th>
                       <Th>Last delivered</Th>
                       <Th align="right" className="pr-[18px] last:rounded-none">
                         <span className="sr-only">Actions</span>
@@ -589,6 +600,7 @@ function RosterRow({
   const status = boardStatusOf(rider)
   const placed = rider.position !== null && rider.presence !== 'NEVER'
   const due = rider.dueOrders.reduce((a, o) => a + o.paise, 0)
+  const short = rider.dueOrders.reduce((a, o) => a + o.shortPaise, 0)
 
   return (
     <tr
@@ -658,8 +670,20 @@ function RosterRow({
         </Sub>
       </Td>
       <Td align="right">
-        <Mono className={cx('font-semibold', due > 0 && 'text-v2-cod')}>{formatRupees(due)}</Mono>
-        {w.earlierDuePaise > 0 ? <Sub>incl. {formatRupees(w.earlierDuePaise)} earlier</Sub> : null}
+        {isToday ? (
+          <>
+            <Mono className={cx('font-semibold', due > 0 && 'text-v2-cod')}>{formatRupees(due)}</Mono>
+            {due > 0 ? <Sub>{w.duePaise > 0 ? `${formatRupees(w.duePaise)} from today` : 'all from earlier days'}</Sub> : null}
+            {short > 0 ? <Sub className="font-semibold text-v2-bad">{formatRupees(short)} short</Sub> : null}
+          </>
+        ) : (
+          <>
+            {/* A past day: only that day's cash still not handed in. Today's
+                total and the Collect button live on today's board. */}
+            <Mono className={cx('font-semibold', w.duePaise > 0 && 'text-v2-cod')}>{formatRupees(w.duePaise)}</Mono>
+            {w.dueOrders > 0 ? <Sub>{w.dueOrders} order{w.dueOrders === 1 ? '' : 's'}</Sub> : null}
+          </>
+        )}
         {rider.lastHandover ? (
           <Sub>
             Last handed in {formatIST(rider.lastHandover.at)}
@@ -672,7 +696,7 @@ function RosterRow({
       </Td>
       <Td align="right" className="pr-[18px]">
         <span className="inline-flex items-center justify-end gap-1">
-          {mayReceive && due > 0 ? (
+          {mayReceive && isToday && due > 0 ? (
             <Button size="sm" variant="soft" onClick={() => onCollect(rider)} aria-label={`Collect ${formatRupees(due)} from ${rider.name}`}>
               <HandCoins size={14} strokeWidth={2} aria-hidden />
               Collect

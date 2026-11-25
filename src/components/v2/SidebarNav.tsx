@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import {
+  Wallet,
   LayoutGrid,
   ListOrdered,
   ChefHat,
@@ -29,6 +30,8 @@ export type V2NavItem = {
   count?: number
   /** A red badge: something is wrong, not merely waiting. */
   alert?: boolean
+  /** Other pages that belong under this item, so it stays lit on them. */
+  also?: string[]
 }
 
 export type V2NavSection = { label: string; items: V2NavItem[] }
@@ -43,6 +46,7 @@ const ICONS = {
   enquiries: Users,
   inbox: Inbox,
   payments: CreditCard,
+  money: Wallet,
   returns: Undo2,
   menu: UtensilsCrossed,
   analytics: BarChart3,
@@ -57,7 +61,8 @@ export function SidebarNav({ sections, collapsed = false }: { sections: V2NavSec
   const search = useSearchParams()
   // An item that names a view (`?view=returns`) is active only on that view,
   // and the plain item for the same path is active on every other view.
-  const isActive = (href: string, siblings: V2NavItem[]) => {
+  const isActive = (href: string, siblings: V2NavItem[], also: string[] = []) => {
+    if (also.some((p) => pathname.startsWith(p))) return true
     const [path, query] = href.split('?')
     if (query) {
       const wanted = new URLSearchParams(query)
@@ -72,7 +77,8 @@ export function SidebarNav({ sections, collapsed = false }: { sections: V2NavSec
     <nav className="grid content-start gap-0.5" aria-label="Main">
       {sections.map((section) => (
         <div key={section.label} className="grid gap-0.5">
-          {collapsed ? (
+          {/* A section without a label is the whole list: no heading, no divider. */}
+          {!section.label ? null : collapsed ? (
             <span className="mx-4 my-2 block border-t border-v2-line" aria-hidden />
           ) : (
             <span className="px-[22px] pb-1.5 pt-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-v2-faint">
@@ -81,7 +87,7 @@ export function SidebarNav({ sections, collapsed = false }: { sections: V2NavSec
           )}
           {section.items.map((item) => {
             const Icon = ICONS[item.icon]
-            const active = isActive(item.href, sections.flatMap((x) => x.items))
+            const active = isActive(item.href, sections.flatMap((x) => x.items), item.also)
             return (
               <Link
                 key={item.href}

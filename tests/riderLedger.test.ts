@@ -6,7 +6,7 @@ import { findById } from '../src/lib/repo/orderRepo'
 import {
   adminOverrideStatus, assignAgents, assignRiders, correctRiderOutcome, transitionOrder,
 } from '../src/lib/repo/transitionOrder'
-import { collectionHistory, pendingCashFor, settleRiderCash } from '../src/lib/repo/riderCashRepo'
+import { cashHeldBy, cashWithStaff, collectionHistory, markPaidOnline, pendingCashFor, pendingCashOrders, recordHandIn, settleRiderCash } from '../src/lib/repo/riderCashRepo'
 import { riderDays, ridersDayTotal, opsSpan } from '../src/lib/repo/riderLedgerRepo'
 import { andClause, riderClause } from '../src/lib/repo/riderFilter'
 import { riderBoard } from '../src/lib/repo/riderLocationRepo'
@@ -249,6 +249,50 @@ describe('rider record: one source for the app and the office', () => {
       await transitionOrder({ ctx: a, orderId: o, to: 'DISPATCHED' })
       await transitionOrder({ ctx: a, orderId: o, to: 'DELIVERED' })
       expect((await get(o)).delivery.amountCollectedPaise).toBeNull()
+    })
+
+    async function deliveredBy(rider: AuthContext, riderId: Id, bill: number, typed?: number) {
+      const o = String((await ready({ amountPaise: bill }))._id)
+      await assignRiders({ ctx: manager, orderId: o, riderIds: [String(riderId)] })
+      await transitionOrder({ ctx: rider, orderId: o, to: 'DISPATCHED' })
+      await transitionOrder({ ctx: rider, orderId: o, to: 'DELIVERED', apply: typed === undefined ? {} : { amountCollectedPaise: typed } })
+      return o
+    }
+
+    it('keeps the whole bill owed when the rider types less, and flags the gap as short', async () => {
+      const o = await deliveredBy(a, aId, 50000, 10000)
+      const row = (await pendingCashOrders(manager, [aId])).find((r) => r.id === o)!
+      expect(row.paise).toBe(50000)
+      expect(row.shortPaise).toBe(40000)
+    })
+
+    it('takes an order paid by UPI off the rider, without counting it as cash handed in', async () => {
+      const o = await deliveredBy(a, aId, 30000)
+      const before = await pendingCashFor(manager, aId)
+      await expect(markPaidOnline({ ctx: telecaller, orderId: o })).rejects.toBeInstanceOf(ForbiddenError)
+      const r = await markPaidOnline({ ctx: manager, orderId: o })
+      expect(r).toEqual({ paise: 30000, cleared: true })
+      const after = await pendingCashFor(manager, aId)
+      expect(before.paise - after.paise).toBe(30000)
+      const handovers = await collectionHistory(manager, [aId], { limit: 50 })
+      expect(handovers.some((h) => h.orderIds.includes(o))).toBe(false)
+      // Paid online: it can no longer stop being a delivery.
+      await expect(adminOverrideStatus({ ctx: admin, orderId: o, to: 'FAILED' })).rejects.toBeTruthy()
+    })
+
+    it('shows cash a manager took from a rider until the owner records receiving it', async () => {
+      const o = await deliveredBy(b, bId, 20000)
+      const held = async () => (await cashWithStaff(admin)).find((x) => x.userId === String(managerId))?.holdingPaise ?? 0
+      const start = await held()
+      await settleRiderCash({ ctx: manager, riderId: String(bId), orderIds: [o] })
+      expect(await held()).toBe(start + 20000)
+      expect(await cashHeldBy(manager)).toBe(start + 20000)
+
+      await expect(recordHandIn({ ctx: manager, fromUserId: String(managerId), paise: 100 })).rejects.toBeInstanceOf(ForbiddenError)
+      await expect(recordHandIn({ ctx: admin, fromUserId: String(managerId), paise: start + 20001 })).rejects.toBeInstanceOf(ConflictError)
+      const r = await recordHandIn({ ctx: admin, fromUserId: String(managerId), paise: 15000 })
+      expect(r.leftPaise).toBe(start + 5000)
+      expect(await held()).toBe(start + 5000)
     })
   })
 

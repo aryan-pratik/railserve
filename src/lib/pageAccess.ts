@@ -8,7 +8,7 @@ import type { Role } from './roles'
  * restricted: they set this.
  */
 export const PAGES = [
-  { key: 'returns', label: 'Bags coming back', roles: ['STORE_MANAGER', 'TELECALLER'] },
+  { key: 'returns', label: 'Returns', roles: ['STORE_MANAGER', 'TELECALLER'] },
   { key: 'riders', label: 'Riders and cash', roles: ['STORE_MANAGER'] },
   { key: 'payments', label: 'Payments', roles: ['STORE_MANAGER', 'TELECALLER'] },
   { key: 'orders', label: 'Orders', roles: ['TELECALLER'] },
