@@ -2,122 +2,36 @@ import type { AuthContext } from '@/lib/authContext'
 import { can } from '@/lib/access'
 import { loadCompany } from '@/lib/repo/companyRepo'
 import { CompanyForm } from '@/components/v2/CompanyForm'
-import { Card, Chip, Mono } from '@/components/v2/ui'
-import { KeyValue, Notice } from '@/components/v2/Table'
-import { loadIntegrations, type OutletRow, type loadSetupBase } from '@/lib/v2/settings'
-
-type Base = Awaited<ReturnType<typeof loadSetupBase>>
+import { Card, Chip } from '@/components/v2/ui'
 
 /**
- * The company's own page: its details (editable with company.manage), its
- * plan and how much of it is used, what it serves, and what it is connected to.
+ * Business details: the name and phone an owner recognises, and the plan.
+ * What the business is connected to lives under Connections; the counts of
+ * kitchens and staff are on the Settings home.
  */
-export async function CompanyTab({ ctx, base, kitchens, staffCount }: { ctx: AuthContext; base: Base; kitchens: OutletRow[]; staffCount: number; now: Date }) {
-  const [integrations, company, canEdit] = await Promise.all([loadIntegrations(ctx), loadCompany(ctx), can(ctx, 'company.manage')])
-  const activeKitchens = kitchens.filter((k) => k.active)
-  const sources = [...new Set(base.listings.filter((l) => l.active && l.source).map((l) => l.source as string))].sort()
-
-  const ingestion = !integrations.gmail.configured
-    ? 'Not connected'
-    : integrations.gmail.address
-      ? `Orders arrive at ${integrations.gmail.address}`
-      : 'Connected (mailbox address not named in the environment)'
-
+export async function CompanyTab({ ctx }: { ctx: AuthContext }) {
+  const [company, canEdit] = await Promise.all([loadCompany(ctx), can(ctx, 'company.manage')])
   return (
-    <div className="grid gap-3.5">
-      <div className="grid gap-3.5 xl:grid-cols-[1.2fr_1fr]">
-        <div className="grid gap-3.5">
-          <CompanyForm
-            canEdit={canEdit}
-            values={{
-              name: company.name,
-              displayName: company.settings.displayName,
-              contactPhone: company.settings.contactPhone,
-              contactEmail: company.settings.contactEmail,
-            }}
-          />
-          <Card title="Plan and usage" action={<Chip tone="grey">{company.plan.code}</Chip>}>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <UsageMeter label="Active outlets" used={company.usage.outlets} limit={company.plan.maxOutlets} />
-              <UsageMeter label="Active staff accounts" used={company.usage.users} limit={company.plan.maxUsers} />
-              <div className="grid content-start gap-1">
-                <span className="text-[12.5px] font-semibold text-v2-ink-2">Orders this month</span>
-                <span className="font-mono text-2xl font-bold tabular-nums">{company.usage.ordersThisMonth}</span>
-              </div>
-            </div>
-          </Card>
-          <Card title="What you serve">
-            <KeyValue
-              rows={[
-                {
-                  label: 'Stations',
-                  value: (
-                    <span className="flex flex-wrap gap-1.5">
-                      {base.stations.map((s) => (
-                        <Chip key={s.code} tone="grey">
-                          <Mono>{s.code}</Mono>
-                          {s.name ? <span className="font-normal text-v2-muted">{s.name}</span> : null}
-                        </Chip>
-                      ))}
-                      {base.stations.length === 0 ? <span className="text-v2-muted">none yet</span> : null}
-                    </span>
-                  ),
-                },
-                {
-                  label: 'Outlets',
-                  value: `${activeKitchens.length} active kitchen${activeKitchens.length === 1 ? '' : 's'}${kitchens.length > activeKitchens.length ? ` · ${kitchens.length - activeKitchens.length} inactive` : ''}`,
-                },
-                { label: 'Staff', value: `${staffCount} active account${staffCount === 1 ? '' : 's'}` },
-                { label: 'Aggregators', value: sources.length ? sources.join(', ') : 'none recorded yet' },
-                { label: 'Timezone', value: 'Asia/Kolkata (IST)' },
-              ]}
-            />
-          </Card>
+    <div className="grid max-w-[760px] gap-3.5">
+      <CompanyForm
+        canEdit={canEdit}
+        values={{
+          name: company.name,
+          displayName: company.settings.displayName,
+          contactPhone: company.settings.contactPhone,
+          contactEmail: company.settings.contactEmail,
+        }}
+      />
+      <Card title="Your plan" action={<Chip tone="grey">{company.plan.code}</Chip>}>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <UsageMeter label="Kitchens" used={company.usage.outlets} limit={company.plan.maxOutlets} />
+          <UsageMeter label="Staff accounts" used={company.usage.users} limit={company.plan.maxUsers} />
+          <div className="grid content-start gap-1">
+            <span className="text-[12.5px] font-semibold text-v2-ink-2">Orders this month</span>
+            <span className="font-mono text-2xl font-bold tabular-nums">{company.usage.ordersThisMonth}</span>
+          </div>
         </div>
-
-        <Card title="Connected to">
-          <KeyValue
-            rows={[
-              {
-                label: 'Order mail',
-                value: (
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span>{ingestion}</span>
-                    <Chip tone={integrations.gmail.configured ? (integrations.gmail.stale ? 'bad' : 'ok') : 'grey'}>
-                      {integrations.gmail.configured ? (integrations.gmail.stale ? 'Stalled' : 'Gmail') : 'Off'}
-                    </Chip>
-                  </span>
-                ),
-              },
-              {
-                label: 'WhatsApp',
-                value: (
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span>{integrations.whatsapp.simulated ? 'Simulator (no real messages are sent)' : `MSG91${integrations.whatsapp.numberMasked ? ` · ${integrations.whatsapp.numberMasked}` : ''}`}</span>
-                    <Chip tone={integrations.whatsapp.simulated ? 'grey' : 'ok'}>{integrations.whatsapp.simulated ? 'Simulator' : 'Live'}</Chip>
-                  </span>
-                ),
-              },
-              {
-                label: 'Train status',
-                value: (
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="capitalize">{integrations.train.provider}</span>
-                    <Chip tone={integrations.train.simulated ? 'grey' : integrations.train.failing ? 'bad' : 'ok'}>
-                      {integrations.train.simulated ? 'Simulated' : integrations.train.failing ? 'Failing' : 'Live'}
-                    </Chip>
-                  </span>
-                ),
-              },
-              { label: 'Proof photos', value: integrations.storage.configured ? `Bucket ${integrations.storage.bucket}` : 'No bucket configured; photo capture is off' },
-            ]}
-          />
-        </Card>
-      </div>
-
-      <Notice>
-        Company name, logo, KOT header, default walk-to-platform minutes and the inbound mail address become editable per company in the next phase (multi-tenant). Today they are read from the environment of this installation.
-      </Notice>
+      </Card>
     </div>
   )
 }
