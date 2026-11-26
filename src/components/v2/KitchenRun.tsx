@@ -1,15 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { formatRupees, formatTimeIST } from '@/lib/format'
 import { kitchenRunText, runAnchor, type KitchenOrder, type KitchenRun as KitchenRunData } from '@/lib/v2/kitchenView'
-import { RunHeader } from './RunHeader'
-import { Chip, Mono, Seat, cx, statusChip, v2Focus } from './ui'
-import { KitchenCheckNowButton, KitchenCopyButton, KitchenDietMarks, KitchenNoteHint, useRunFold } from './KitchenBits'
+import { TrainCard } from './TrainCard'
+import { RunOrdersTable, type RunTableRow } from './RunOrdersTable'
+import { KitchenCheckNowButton, KitchenCopyButton, useRunFold } from './KitchenBits'
 import { KitchenOrderStep, KitchenRunActions, type RunActionContext } from './KitchenRunActions'
-import { useLongPress } from './useLongPress'
-import { DishList } from './DishList'
 
 /**
  * One train on the desk: the departure-board strip, every order on it as a
@@ -104,35 +101,38 @@ export function KitchenRun({
     .join(' · ')
 
   return (
-    <section
+    <TrainCard
       id={runAnchor(run.key)}
-      className="grid scroll-mt-4 gap-0 overflow-hidden rounded-v2-xl border border-v2-line bg-v2-surface shadow-[0_1px_2px_rgba(16,24,20,0.04),0_10px_28px_-16px_rgba(16,24,20,0.18)] target:ring-2 target:ring-v2-brand target:ring-offset-4 target:ring-offset-v2-surface"
-      aria-label={`${run.trainLabel} ${run.trainName ?? ''}`}
+      label={`${run.trainLabel} ${run.trainName ?? ''}`}
+      open={open}
+      onToggle={() => setOpen(!open)}
+      bodyId={rowsId}
+      actions={<TrainTools run={run} />}
+      header={{
+        trainLabel: run.trainLabel,
+        trainName: run.local ? 'Local orders' : run.trainName,
+        stationCode: run.stationCode,
+        startDateLabel: run.startDateLabel,
+        trackingNote: run.trackingNote,
+        etaIso: run.etaIso,
+        bookedIso: run.bookedIso,
+        platform: run.platform,
+        delayMinutes: run.delayMinutes,
+        arrived: run.arrived,
+        serverNowMs,
+        counts: run.counts,
+        summary: summary || null,
+      }}
     >
-      <RunHeader
-        trainLabel={run.trainLabel}
-        trainName={run.local ? 'Local orders' : run.trainName}
-        stationCode={run.stationCode}
-        startDateLabel={run.startDateLabel}
-        trackingNote={run.trackingNote}
-        etaIso={run.etaIso}
-        bookedIso={run.bookedIso}
-        platform={run.platform}
-        delayMinutes={run.delayMinutes}
-        arrived={run.arrived}
-        serverNowMs={serverNowMs}
-        counts={run.counts}
-        summary={summary || null}
-        className={cx('!rounded-none !border-x-0 !border-t-0', open ? '!border-b !border-v2-line' : '!border-b-0')}
-        fold={{ open, onToggle: () => setOpen(!open), controls: rowsId }}
-        actions={<TrainTools run={run} />}
-      />
-      <div id={rowsId} hidden={!open}>
-        <ul className="divide-y divide-v2-line">
-          {run.orders.map((o) => (
-            <OrderRow key={o.id} o={o} run={ctx} selected={selected.has(o.id)} onToggle={() => toggle(o.id)} onHold={() => (selected.has(o.id) ? null : toggle(o.id))} showOutlet={showOutlet} />
-          ))}
-        </ul>
+        <RunOrdersTable
+          rows={run.orders.map(toRow)}
+          trainText={`${run.trainLabel} ${run.trainName ?? ''}`.trim()}
+          selected={selected}
+          onToggle={toggle}
+          onToggleAll={setAll}
+          showOutlet={showOutlet}
+          action={(o) => <KitchenOrderStep run={ctx} orderId={o.id} status={o.status} />}
+        />
         {/* The step for the whole train, after its orders: read them, then act. Each
             row also has its own button for one order. */}
         {/* The train's button only when it saves taps: two or more orders on the
@@ -153,8 +153,7 @@ export function KitchenRun({
           </p>
         </div>
         ) : null}
-      </div>
-    </section>
+    </TrainCard>
   )
 }
 
@@ -172,90 +171,29 @@ function TrainTools({ run }: { run: KitchenRunData }) {
   )
 }
 
-/**
- * One order as the kitchen reads it: where it goes (seat), who it is for,
- * what to cook, how it is paid, and where it is now. Tapping it opens the
- * order. The order number and phone stay on the order page.
- */
-function OrderRow({
-  o,
-  run,
-  selected,
-  onToggle,
-  onHold,
-  showOutlet,
-}: {
-  o: KitchenOrder
-  run: RunActionContext
-  selected: boolean
-  onToggle: () => void
-  onHold: () => void
-  showOutlet: boolean
-}) {
-  const status = statusChip(o.status)
-  const cash = o.paymentMode === 'COD'
-  const hold = useLongPress(onHold)
-  return (
-    <li
-      {...hold}
-      className={cx(
-        'grid select-none grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 transition-colors [-webkit-touch-callout:none] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:items-center',
-        // A light shade under the pointer, so it is clear which order you are on.
-        selected ? 'bg-v2-brand-soft' : 'hover:bg-v2-surface-2',
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <input type="checkbox" aria-label={`Pick ${o.contactName ?? 'this order'}`} checked={selected} onChange={onToggle} className="mt-2 size-5 cursor-pointer accent-v2-brand" />
-        <span className="grid min-w-[4.5rem] place-items-center rounded-v2-md bg-v2-surface-2 px-2 py-1.5 text-center">
-          {o.handoverPoint ? (
-            <span className="max-w-[7rem] truncate text-[12px] font-semibold" title={o.handoverPoint}>
-              {o.handoverPoint}
-            </span>
-          ) : (
-            <Seat coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
-          )}
-        </span>
-      </div>
-
-      <Link href={`/v2/orders/${o.id}`} className={cx('min-w-0 rounded-v2-sm', v2Focus)}>
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-[15px] font-semibold">{o.contactName ?? 'Passenger'}</span>
-          <span className="font-mono text-[12px] text-v2-muted">{o.externalOrderId}</span>
-          <Chip tone={status.tone}>{status.label}</Chip>
-          {showOutlet && o.outletName ? <span className="text-xs text-v2-muted">{o.outletName}</span> : null}
-          <KitchenNoteHint count={o.callNoteCount} hint={o.callNoteHint} />
-        </span>
-        <span className="mt-1 flex items-start gap-1.5 text-[14.5px] leading-snug text-v2-ink-2">
-          <KitchenDietMarks diet={o.diet} className="mt-1" />
-          <span className="min-w-0">
-            <DishList items={o.itemNames} note={o.note} max={3} />
-          </span>
-        </span>
-        {o.note ? <span className="mt-1.5 block rounded-v2-sm bg-v2-info-bg px-2 py-1 text-[13.5px] font-semibold text-v2-info">Note: {o.note}</span> : null}
-      </Link>
-
-      <span className="col-start-2 sm:col-start-auto sm:text-right">
-        {cash && o.amountPaise == null ? (
-          <Chip tone="bad">Cash, amount missing</Chip>
-        ) : cash ? (
-          <span className="inline-flex flex-col items-start gap-0.5 sm:items-end">
-            <span className="text-[12px] font-semibold text-v2-cod">Collect cash</span>
-            <Mono className="text-[17px] font-bold">{formatRupees(o.amountPaise)}</Mono>
-          </span>
-        ) : (
-          <span className="inline-flex flex-col items-start gap-0.5 sm:items-end">
-            <span className="text-[12px] font-semibold text-v2-ok">Paid online</span>
-            <Mono className="text-[15px] font-semibold text-v2-muted">{formatRupees(o.amountPaise)}</Mono>
-          </span>
-        )}
-      </span>
-
-      {/* This order's own next step, on the same line, so one order needs no ticking. */}
-      <span className="col-start-2 flex sm:col-start-auto sm:justify-end" onPointerDown={(e) => e.stopPropagation()}>
-        <KitchenOrderStep run={run} orderId={o.id} status={o.status} />
-      </span>
-    </li>
-  )
+/** A kitchen order in the shared train table's shape. */
+function toRow(o: KitchenOrder): RunTableRow {
+  return {
+    id: o.id,
+    externalOrderId: o.externalOrderId,
+    source: o.source,
+    status: o.status,
+    contactName: o.contactName,
+    phone: o.contactPhone,
+    coach: o.coach,
+    berth: o.berth,
+    rawSeat: o.rawSeat,
+    handoverPoint: o.handoverPoint,
+    diet: o.diet,
+    itemNames: o.itemNames,
+    note: o.note,
+    amountPaise: o.amountPaise,
+    paymentMode: o.paymentMode,
+    placedLabel: o.placedLabel,
+    outletName: o.outletName,
+    callNoteCount: o.callNoteCount,
+    callNoteHint: o.callNoteHint,
+  }
 }
 
 /** How many orders share the train's next step (the earliest one any order is on). */

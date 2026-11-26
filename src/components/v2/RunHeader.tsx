@@ -29,6 +29,8 @@ export type RunHeaderProps = {
   href?: string
   /** Makes the whole card a fold toggle: tap anywhere on it to open or close the orders under it. */
   fold?: { open: boolean; onToggle: () => void; controls: string }
+  /** Inside a TrainCard: no countdown band or border of its own (the card draws them). */
+  bare?: boolean
   className?: string
 }
 
@@ -74,13 +76,13 @@ export function RunHeader(p: RunHeaderProps) {
       aria-controls={fold ? fold.controls : undefined}
       title={fold ? (fold.open ? 'Tap to hide the orders' : 'Tap to show the orders') : undefined}
       className={cx(
-        'grid min-w-0 grid-cols-[64px_minmax(0,1fr)] overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface sm:grid-cols-[76px_minmax(0,1fr)]',
+        p.bare ? 'block min-w-0' : 'grid min-w-0 grid-cols-[64px_minmax(0,1fr)] overflow-hidden rounded-v2-lg border border-v2-line bg-v2-surface sm:grid-cols-[76px_minmax(0,1fr)]',
         (p.href || fold) && 'cursor-pointer transition-colors hover:bg-v2-surface-2',
         fold && 'select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-brand',
         p.className,
       )}
     >
-      <CountdownBand targetIso={p.etaIso} arrived={p.arrived} serverNowMs={p.serverNowMs} className="min-h-full" />
+      {p.bare ? null : <CountdownBand targetIso={p.etaIso} arrived={p.arrived} serverNowMs={p.serverNowMs} className="min-h-full" />}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 md:grid-cols-[minmax(0,1.6fr)_minmax(150px,auto)_auto]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">

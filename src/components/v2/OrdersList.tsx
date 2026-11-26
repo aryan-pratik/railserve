@@ -9,10 +9,13 @@ import { ORDER_TYPE_LABEL, sourceLabel, type OrderType } from '@/lib/orderEnums'
 import { formatRupees } from '@/lib/format'
 import { BULK_ACTIONS, bulkPick, isLive, type BulkKind } from '@/lib/v2/ordersShared'
 import { bulkOrdersAction, type BulkState } from '@/app/v2/orders/actions'
-import { Button, Chip, Mono, Seat, VegMark, cx, statusChip, v2Focus } from './ui'
+import { Chip, Mono, Seat, VegMark, cx, statusChip, v2Focus } from './ui'
 import { Table, TableFrame, Td, Th, rowClass, Sub } from './Table'
 import { Countdown } from './Countdown'
-import { RunHeader, type RunHeaderProps } from './RunHeader'
+import { type RunHeaderProps } from './RunHeader'
+import { TrainCard } from './TrainCard'
+import { useUrgencyOrder } from './useUrgencyOrder'
+import { RunOrdersTable, type RunTableRow } from './RunOrdersTable'
 import { useRunFold } from './KitchenBits'
 import { useLongPress } from './useLongPress'
 import { DishList } from './DishList'
@@ -80,6 +83,8 @@ export type OrdersListProps = {
   riders: { id: string; name: string }[]
   /** Below the rows: the pager. */
   footer?: ReactNode
+  /** Trains in urgency order (the default sort), kept in step with their strips' clock. */
+  urgencyOrder?: boolean
 }
 
 const INITIAL: BulkState = {}
@@ -91,6 +96,8 @@ const INITIAL: BulkState = {}
  */
 export function OrdersList(p: OrdersListProps) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
+  const byUrgency = useUrgencyOrder(p.groups, (g) => g.header.etaIso ?? null, p.serverNowMs)
+  const orderedGroups = p.urgencyOrder ? byUrgency : p.groups
   const all = useMemo(() => (p.mode === 'flat' ? p.rows : p.groups.flatMap((g) => g.rows)), [p.mode, p.rows, p.groups])
   const byId = useMemo(() => new Map(all.map((r) => [r.id, r])), [all])
   // Rows leave the page after an action or a refresh; a tick on one of them must not keep counting.
@@ -124,7 +131,7 @@ export function OrdersList(p: OrdersListProps) {
         </TableFrame>
       ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
-          {p.groups.map((g) => (
+          {orderedGroups.map((g) => (
             <TrainGroup key={g.header.trainLabel + g.header.stationCode + g.rows[0]?.runKey} group={g} list={p} cols={cols} selected={selected} toggle={toggle} setMany={setMany} />
           ))}
           {p.footer ? <TableFrame>{p.footer}</TableFrame> : null}
@@ -140,70 +147,6 @@ export function OrdersList(p: OrdersListProps) {
 
 type Cols = OrdersListProps['columns'] & { select: boolean; compact: boolean }
 
-/**
- * One order inside a train card, laid out as on the kitchen list: seat, who,
- * what to cook, how it is paid. Tap opens the order; tick or hold to pick it
- * for the action bar.
- */
-function TrainOrderRow({ o, cols, selected, onToggle }: { o: OrdersRow; cols: Cols; selected: boolean; onToggle: () => void }) {
-  const hold = useLongPress(() => (selected ? undefined : onToggle()))
-  const status = statusChip(o.status)
-  const cash = o.paymentMode === 'COD'
-  return (
-    <li
-      {...(cols.select ? hold : {})}
-      className={cx(
-        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]',
-        cols.select && 'select-none [-webkit-touch-callout:none]',
-        selected ? 'bg-v2-brand-soft' : 'hover:bg-v2-surface-2',
-      )}
-    >
-      <div className="flex items-start gap-3">
-        {cols.select ? (
-          <input type="checkbox" aria-label={`Pick ${o.contactName ?? 'this order'}`} checked={selected} onChange={onToggle} className="mt-2 size-5 cursor-pointer accent-v2-brand" />
-        ) : null}
-        <span className="grid min-w-[4.5rem] place-items-center rounded-v2-md bg-v2-surface-2 px-2 py-1.5 text-center">
-          {o.handoverPoint ? (
-            <span className="max-w-[7rem] truncate text-[12px] font-semibold" title={o.handoverPoint}>
-              Group
-            </span>
-          ) : (
-            <Seat coach={o.coach} berth={o.berth} rawSeat={o.rawSeat} />
-          )}
-        </span>
-      </div>
-      <Link href={`/v2/orders/${o.id}`} className={cx('min-w-0 rounded-v2-sm', v2Focus)}>
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-[15px] font-semibold">{o.contactName ?? 'Passenger'}</span>
-          <Chip tone={status.tone}>{status.label}</Chip>
-          {cols.outlet && o.outletName ? <span className="text-xs text-v2-muted">{o.outletName}</span> : null}
-          {o.rider ? <span className="text-xs text-v2-muted">· with {o.rider}</span> : null}
-        </span>
-        <span className="mt-1 block text-[14.5px] leading-snug text-v2-ink-2">
-          <DishList items={o.itemNames} note={o.note} max={3} />
-        </span>
-        {o.handoverPoint ? <span className="mt-0.5 block text-[12.5px] font-semibold text-v2-ink-2">Hand over at: {o.handoverPoint}</span> : null}
-        {o.note ? <span className="mt-1.5 block rounded-v2-sm bg-v2-info-bg px-2 py-1 text-[13.5px] font-semibold text-v2-info">Note: {o.note}</span> : null}
-      </Link>
-      {cols.amount ? (
-        <span className="col-start-2 sm:col-start-auto sm:text-right">
-          {cash ? (
-            <span className="inline-flex flex-col items-start gap-0.5 sm:items-end">
-              <span className="text-[12px] font-semibold text-v2-cod">Collect cash</span>
-              <Mono className="text-[17px] font-bold">{formatRupees(o.amountPaise)}</Mono>
-            </span>
-          ) : (
-            <span className="inline-flex flex-col items-start gap-0.5 sm:items-end">
-              <span className="text-[12px] font-semibold text-v2-ok">Paid online</span>
-              <Mono className="text-[15px] font-semibold text-v2-muted">{formatRupees(o.amountPaise)}</Mono>
-            </span>
-          )}
-          {o.refundPaise ? <span className="mt-1 block text-[12px] font-semibold text-v2-bad">Refunded {formatRupees(o.refundPaise)}</span> : null}
-        </span>
-      ) : null}
-    </li>
-  )
-}
 
 /** A table row you can also press and hold to tick, as on the kitchen list. */
 function HoldRow({
@@ -250,27 +193,51 @@ function TrainGroup({
   const [open, setOpen] = useRunFold('orders', key, !allDone)
   const rowsId = `orders-run-${key.replace(/[^a-zA-Z0-9]/g, '-')}`
   return (
-    <section className="grid grid-cols-[minmax(0,1fr)] overflow-hidden rounded-v2-xl border border-v2-line bg-v2-surface shadow-[0_1px_2px_rgba(16,24,20,0.04),0_10px_28px_-16px_rgba(16,24,20,0.18)]">
-      <RunHeader
-        className={cx('!rounded-none !border-x-0 !border-t-0', open ? '!border-b !border-v2-line' : '!border-b-0')}
-        {...g.header}
-        serverNowMs={p.serverNowMs}
-        fold={{ open, onToggle: () => setOpen(!open), controls: rowsId }}
-        actions={
-          p.canBulk && open ? (
-            <Button size="sm" variant="ghost" onClick={() => setMany(g.rows.map((r) => r.id), !g.rows.every((r) => selected.has(r.id)))}>
-              {g.rows.every((r) => selected.has(r.id)) ? 'Untick train' : 'Tick train'}
-            </Button>
-          ) : null
-        }
+    <TrainCard
+      open={open}
+      onToggle={() => setOpen(!open)}
+      bodyId={rowsId}
+      label={`${g.header.trainLabel} ${g.header.trainName ?? ''}`}
+      header={{ ...g.header, serverNowMs: p.serverNowMs }}
+    >
+      <RunOrdersTable
+        rows={g.rows.map(toRunRow)}
+        trainText={`${g.header.trainLabel} ${g.header.trainName ?? ''}`.trim()}
+        selected={cols.select ? selected : undefined}
+        onToggle={cols.select ? toggle : undefined}
+        onToggleAll={(on) => setMany(g.rows.map((r) => r.id), on)}
+        showOutlet={cols.outlet}
       />
-      <ul id={rowsId} hidden={!open} className="divide-y divide-v2-line">
-        {g.rows.map((o) => (
-          <TrainOrderRow key={o.id} o={o} cols={cols} selected={selected.has(o.id)} onToggle={() => toggle(o.id)} />
-        ))}
-      </ul>
-    </section>
+    </TrainCard>
   )
+}
+
+/** An Orders row in the shared train table's shape. */
+function toRunRow(o: OrdersRow): RunTableRow {
+  return {
+    id: o.id,
+    externalOrderId: o.externalOrderId,
+    source: o.source,
+    status: o.status,
+    contactName: o.contactName,
+    phone: o.phoneMasked,
+    coach: o.coach,
+    berth: o.berth,
+    rawSeat: o.rawSeat,
+    handoverPoint: o.handoverPoint,
+    diet: o.diet,
+    itemNames: o.itemNames,
+    note: o.note,
+    amountPaise: o.amountPaise,
+    paymentMode: o.paymentMode,
+    refundPaise: o.refundPaise,
+    // The train card already says the day; the row only needs the time.
+    placedLabel: o.placedLabel,
+    outletName: o.outletName,
+    rider: o.rider,
+    callNoteCount: o.callNoteCount,
+    callNoteHint: o.callNoteHint,
+  }
 }
 
 function OrdersTable({
