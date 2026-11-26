@@ -223,9 +223,12 @@ export default async function V2OrderWorkspace(props: PageProps<'/v2/orders/[id]
               ) : null}
             </div>
           </Card>
-          <Card title="Journey" action={tab !== 'history' ? <Link href={href('history')} className="text-xs font-semibold text-v2-brand">All</Link> : null}>
-            <OrderTimeline entries={o.journey} compact />
-          </Card>
+          {/* The short journey, beside every tab but History, which shows the whole of it. */}
+          {tab !== 'history' ? (
+            <Card title="Journey" action={<Link href={href('history')} className="text-xs font-semibold text-v2-brand">All</Link>}>
+              <OrderTimeline entries={o.journey} compact />
+            </Card>
+          ) : null}
         </aside>
       </div>
     </div>
