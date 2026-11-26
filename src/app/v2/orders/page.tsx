@@ -666,6 +666,7 @@ export default async function V2OrdersPage(props: PageProps<'/v2/orders'>) {
       ) : (
         <OrdersList
           mode={grouped ? 'grouped' : 'flat'}
+          urgencyOrder={sort !== 'newest'}
           rows={rows}
           groups={groups}
           serverNowMs={serverNowMs}

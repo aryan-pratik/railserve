@@ -1,7 +1,7 @@
 'use client'
 
 import { useNowMs } from '@/components/useNow'
-import { bandLabel, countdownLabel, minutesUntil, urgencyFor, URGENCY_FILL } from '@/lib/v2/urgency'
+import { countdownLabel, minutesUntil, stripStyle, urgencyFor, URGENCY_FILL } from '@/lib/v2/urgency'
 import { cx } from './ui'
 
 /**
@@ -51,15 +51,22 @@ export function CountdownClock({ targetIso, serverNowMs }: { targetIso: string |
  * The coloured band at the head of a run: the countdown in large type on the
  * urgency colour, the way the v1 train card showed it. Live on the client.
  */
-export function CountdownBand({ targetIso, arrived = false, serverNowMs, className }: { targetIso: string | null; arrived?: boolean; serverNowMs: number; className?: string }) {
+export function CountdownBand({ targetIso, serverNowMs, className, size = 'md' }: { targetIso: string | null; arrived?: boolean; serverNowMs: number; className?: string; size?: 'md' | 'lg' }) {
   const now = useNowMs(15_000) ?? serverNowMs
   const minutes = minutesUntil(targetIso, now)
-  const urgency = urgencyFor(minutes, arrived)
-  const [big, small] = bandLabel(minutes, arrived)
+  const { fill, big, small } = stripStyle(minutes)
   return (
-    <div className={cx('grid content-center justify-items-center gap-0.5 px-2 text-center', URGENCY_FILL[urgency].replace(' v2-pulse', ''), className)}>
-      <span className="font-mono text-[17px] font-semibold leading-tight tabular-nums">{big}</span>
-      <span className="text-[10px] font-bold uppercase tracking-[0.12em] opacity-85">{small}</span>
+    <div className={cx('grid content-center justify-items-center gap-0.5 px-2 text-center', fill, className)} role="img" aria-label={spokenStrip(minutes)}>
+      <span className={cx('font-mono font-bold leading-tight tabular-nums', big === 'now' && 'uppercase', size === 'lg' ? 'text-[26px]' : 'text-[17px]')}>{big}</span>
+      <span className={cx('font-bold uppercase tracking-[0.12em] opacity-85', size === 'lg' ? 'text-[12px]' : 'text-[10px]')}>{small}</span>
     </div>
   )
+}
+
+/** What a screen reader says for the strip, so it does not hear "23, min" out of context. */
+function spokenStrip(minutes: number | null): string {
+  if (minutes === null) return 'Arrival time unknown'
+  if (minutes === 0) return 'Train due now'
+  if (minutes < 0) return `Train arrived ${-minutes} minutes ago`
+  return `Arrives in ${minutes} minutes`
 }

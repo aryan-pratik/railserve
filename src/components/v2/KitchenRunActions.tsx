@@ -183,7 +183,8 @@ function HandForm({
         id={`rider-${run.runKey}-${ids[0] ?? 'all'}`}
         name="riderId"
         aria-label="Rider taking it"
-        placeholder="Choose a rider"
+        // A row's own button is small: "Rider" fits where "Choose a rider" would be cut.
+        placeholder={size === 'sm' ? 'Rider' : 'Choose a rider'}
         value={riderId}
         onChange={(v) => {
           setRiderId(v)

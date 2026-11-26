@@ -7,7 +7,7 @@ import { kitchenHref, loadKitchenBoard, parseKitchenQuery } from '@/lib/v2/kitch
 import { KITCHEN_STATUS_FILTERS } from '@/lib/v2/kitchenView'
 import { ButtonLink, cx } from '@/components/v2/ui'
 import { EmptyState, Pagination, readPaging } from '@/components/v2/Table'
-import { KitchenRun } from '@/components/v2/KitchenRun'
+import { KitchenRunList } from '@/components/v2/KitchenRunList'
 import { KitchenWall } from '@/components/v2/KitchenWall'
 import { KitchenLive, KitchenStaleNotice } from '@/components/v2/KitchenLive'
 import { KitchenCancellations } from '@/components/v2/KitchenCancellations'
@@ -176,18 +176,13 @@ export default async function KitchenBoardPage(props: { searchParams: Promise<Re
           />
         )
       ) : (
-        <div className="grid gap-5">
-          {pageRuns.map((run) => (
-            <KitchenRun
-              key={run.key}
-              run={run}
-              riders={board.riders}
-              serverNowMs={board.serverNowMs}
-              delayThresholdMinutes={env.KOT_DELAY_THRESHOLD_MINUTES}
-              showOutlet={board.showOutlet}
-            />
-          ))}
-        </div>
+        <KitchenRunList
+          runs={pageRuns}
+          riders={board.riders}
+          serverNowMs={board.serverNowMs}
+          delayThresholdMinutes={env.KOT_DELAY_THRESHOLD_MINUTES}
+          showOutlet={board.showOutlet}
+        />
       )}
 
       {total > 0 ? (
