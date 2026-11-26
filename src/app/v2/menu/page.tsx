@@ -9,6 +9,7 @@ import {
 } from '@/lib/v2/menu'
 import { QueryForm } from '@/components/QueryForm'
 import { ButtonLink } from '@/components/v2/ui'
+import { BackToSettings } from '@/components/v2/BackToSettings'
 import { EmptyState, PageHeader, Pagination, PillTabs, readPaging } from '@/components/v2/Table'
 import { Input } from '@/components/v2/AnalyticsField'
 import { AutoSelect } from '@/components/v2/AnalyticsAutoSelect'
@@ -65,6 +66,7 @@ export default async function V2MenuPage(props: PageProps<'/v2/menu'>) {
 
   return (
     <div className="grid gap-[18px]">
+      <BackToSettings role={ctx.role} />
       <PageHeader
         title="Menu"
         note="Tag every dish veg or non-veg. Non-veg prints on its own kitchen ticket."

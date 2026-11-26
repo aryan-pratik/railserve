@@ -32,6 +32,7 @@ export async function StaffTab({
   const { rows, total, leads } = await loadStaff(ctx, { q, role: roleFilter }, { skip: paging.skip, limit: paging.pageSize })
   const leadName = new Map(leads.map((l) => [l.id, l.name]))
   const outletById = new Map(base.outlets.map((o) => [o.id, o]))
+  const activeKitchenIds = new Set(base.outlets.filter((o) => o.active).map((o) => o.id))
   const me = String(ctx.userId)
 
   // The picker offers active outlets, plus any an edited person already holds
@@ -97,7 +98,7 @@ export async function StaffTab({
                 <Th>Person</Th>
                 <Th>Phone</Th>
                 <Th>Role</Th>
-                <Th>Outlets</Th>
+                <Th>Kitchens</Th>
                 <Th>Status</Th>
                 <Th align="right">
                   <span className="sr-only">Actions</span>
@@ -136,18 +137,20 @@ export async function StaffTab({
                       </span>
                     </Td>
                     <Td className="max-w-[24ch] whitespace-normal">
-                      {u.role === 'ADMIN' ? (
-                        <span className="text-xs text-v2-faint">All outlets</span>
+                      {/* Short, so a row stays one line: "All kitchens", or two names and a count. */}
+                      {u.role === 'ADMIN' || (activeKitchenIds.size > 1 && [...activeKitchenIds].every((id) => u.restaurantIds.includes(id))) ? (
+                        <span className="text-[13px] font-medium text-v2-ink-2">All kitchens</span>
                       ) : outlets.length === 0 ? (
-                        <span className="text-xs text-v2-bad">none</span>
+                        <span className="text-xs font-semibold text-v2-bad">No kitchen yet</span>
                       ) : (
-                        <span className="flex flex-wrap gap-1">
-                          {outlets.map((o) => (
-                            <span key={o.id} className="inline-flex items-center gap-1 rounded-full bg-v2-surface-2 px-2 py-0.5 text-xs ring-1 ring-inset ring-v2-line">
+                        <span className="flex flex-wrap items-center gap-1" title={outlets.map((o) => `${o.stationCode} ${o.name}`).join('\n')}>
+                          {outlets.slice(0, 2).map((o) => (
+                            <span key={o.id} className="inline-flex max-w-full items-center gap-1 rounded-full bg-v2-surface-2 px-2 py-0.5 text-xs ring-1 ring-inset ring-v2-line">
                               <Mono className="text-[11px] font-semibold text-v2-muted">{o.stationCode}</Mono>
-                              {o.name}
+                              <span className="truncate">{o.name}</span>
                             </span>
                           ))}
+                          {outlets.length > 2 ? <span className="text-xs font-semibold text-v2-muted">+{outlets.length - 2} more</span> : null}
                         </span>
                       )}
                     </Td>

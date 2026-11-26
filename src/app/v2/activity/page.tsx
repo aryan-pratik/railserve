@@ -9,6 +9,7 @@ import { ROLE_LABEL, type Role } from '@/lib/roles'
 import { activityHref, hasActivityFilters, readActivityParams } from '@/lib/v2/activity'
 import { QueryForm } from '@/components/QueryForm'
 import { Button, ButtonLink, Card } from '@/components/v2/ui'
+import { BackToSettings } from '@/components/v2/BackToSettings'
 import { EmptyState, PageHeader, Pagination, PillTabs, readPaging } from '@/components/v2/Table'
 import { Input } from '@/components/v2/AnalyticsField'
 import { AutoSelect } from '@/components/v2/AnalyticsAutoSelect'
@@ -60,6 +61,7 @@ export default async function V2ActivityPage(props: PageProps<'/v2/activity'>) {
 
   return (
     <div className="grid gap-[18px]">
+      <BackToSettings role={ctx.role} />
       <PageHeader
         title="Activity"
         note={`${formatDateRange(p.fromDay, p.toDay)} · ${allCount.toLocaleString('en-IN')} event${allCount === 1 ? '' : 's'} · every recorded action on an order, from every screen, newest first`}

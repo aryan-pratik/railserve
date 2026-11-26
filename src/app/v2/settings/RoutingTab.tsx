@@ -1,30 +1,26 @@
-import { Card, Chip, Mono } from '@/components/v2/ui'
+import { Card, Mono } from '@/components/v2/ui'
 import { EmptyState } from '@/components/v2/Table'
-import { ListingRoute, SenderAllowlist, StationKitchenSelect } from '@/components/v2/SettingsRouting'
+import { ListingRoute, StationKitchenSelect } from '@/components/v2/SettingsRouting'
 import { ActiveToggle } from '@/components/v2/SettingsRowActions'
-import { loadAllowedSenders, orderCountsForListings, type loadSetupBase } from '@/lib/v2/settings'
+import { orderCountsForListings, type loadSetupBase } from '@/lib/v2/settings'
 import { setListingActive } from './actions'
 import type { AuthContext } from '@/lib/authContext'
 
 type Base = Awaited<ReturnType<typeof loadSetupBase>>
 
 /**
- * v1 "Aggregators": which mail is read, and which kitchen cooks for each
- * storefront name. One card per station, the fallback underneath its
+ * Which kitchen cooks for each storefront name. (The older sender list that
+ * sat here now shows under Order emails, and only while it holds addresses.) One card per station, the fallback underneath its
  * storefronts, because a fallback only makes sense once you can see what it
  * is a fallback for.
  */
 export async function RoutingTab({ ctx, base }: { ctx: AuthContext; base: Base }) {
-  const [senders, listingCounts] = await Promise.all([loadAllowedSenders(ctx), orderCountsForListings(ctx, base.listings)])
+  const listingCounts = await orderCountsForListings(ctx, base.listings)
   const outletById = new Map(base.outlets.map((o) => [o.id, o]))
   const codes = [...new Set(base.listings.map((l) => l.stationCode))].sort()
 
   return (
     <div className="grid gap-3.5">
-      <Card title="Older sender list" action={<Chip tone={senders.length ? 'ok' : 'warn'}>{senders.length ? `${senders.length} listed` : 'All senders'}</Chip>}>
-        <SenderAllowlist senders={senders} />
-      </Card>
-
       {codes.length === 0 ? (
         <EmptyState title="No storefronts recorded yet" note="A storefront is the name a kitchen trades under on an aggregator. They appear here as orders arrive." />
       ) : null}
