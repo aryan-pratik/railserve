@@ -10,5 +10,7 @@ import { V2_HOME } from '@/lib/v2/nav'
 export default async function Home() {
   const user = await getSessionUser()
   if (!user) return redirectToLogin()
+  // A company still joining has only the onboarding screen.
+  if (user.onboarding) redirect('/onboarding')
   redirect(V2_HOME[user.role])
 }

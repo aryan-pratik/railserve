@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { env } from '@/lib/env'
-import { isGmailConfigured } from '@/lib/ingest/gmail/client'
-import { syncGmailHistory } from '@/lib/ingest/gmail/sync'
+import { isGmailAppConfigured, isGmailConfigured } from '@/lib/ingest/gmail/client'
+import { syncForPush } from '@/lib/ingest/gmail/sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic'
  * inbox and the staleness alert can surface them.
  */
 export async function POST(request: Request) {
-  if (!isGmailConfigured()) {
+  if (!isGmailConfigured() && !isGmailAppConfigured()) {
     return NextResponse.json({ ok: false, reason: 'gmail not configured' }, { status: 503 })
   }
 
@@ -31,8 +31,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const summary = await syncGmailHistory()
-    return NextResponse.json({ ok: true, ...summary })
+    // The push names the mailbox it is about: a company's linked Gmail is
+    // read for that company; anything else is the server mailbox, as before.
+    const body = await request.json().catch(() => null)
+    const { mailbox, summary } = await syncForPush(body)
+    return NextResponse.json({ ok: true, mailbox, ...summary })
   } catch (err) {
     console.error('[gmail-webhook]', err)
     // Acknowledge anyway — see above.

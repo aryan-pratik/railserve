@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { requirePlatformAdmin } from '@/lib/session'
 import { listTenants } from '@/lib/repo/platformRepo'
+import { listApplications, loadBilling } from '@/lib/repo/onboardingRepo'
+import { BillingForm } from '@/components/v2/PlatformOnboarding'
 import { formatIST } from '@/lib/format'
 import { Button, Card, Chip, Mono } from '@/components/v2/ui'
 import { PageHeader, Table, TableFrame, Td, Th } from '@/components/v2/Table'
@@ -17,7 +19,9 @@ export const dynamic = 'force-dynamic'
  */
 export default async function PlatformPage() {
   await requirePlatformAdmin()
-  const tenants = await listTenants()
+  const [all, applications, billing] = await Promise.all([listTenants(), listApplications(), loadBilling()])
+  // Companies still joining are reviewed under Applications, not switched on here.
+  const tenants = all.filter((t) => t.status !== 'ONBOARDING')
   const active = tenants.filter((t) => t.status === 'ACTIVE').length
   const orders = tenants.reduce((a, t) => a + t.orders30d, 0)
 
@@ -36,6 +40,34 @@ export default async function PlatformPage() {
           <Stat label="Active" value={active} />
           <Stat label="Orders, last 30 days" value={orders} />
         </div>
+
+        <Card title="Applications" action={<span className="text-[12.5px] text-v2-muted">Companies that applied to join</span>}>
+          {applications.length ? (
+            <ul className="divide-y divide-v2-line">
+              {applications.map((a) => (
+                <li key={a.tenantId}>
+                  <Link href={`/platform/applications/${a.tenantId}`} className="flex flex-wrap items-center justify-between gap-3 py-3 hover:bg-v2-surface-2">
+                    <span className="min-w-0">
+                      <span className="block font-semibold">{a.name}</span>
+                      <span className="block text-[12.5px] text-v2-muted">
+                        {a.ownerName}
+                        {a.phone ? ` · ${a.phone}` : ''} · applied {formatIST(a.appliedAt).split(',')[0]}
+                      </span>
+                    </span>
+                    <span className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
+                      <Chip tone={a.progress.documents.state === 'done' ? 'ok' : 'grey'}>Documents {a.progress.documents.accepted}/5</Chip>
+                      <Chip tone={a.progress.gmail.state === 'done' ? 'ok' : 'grey'}>Gmail</Chip>
+                      <Chip tone={a.paymentStatus === 'PAID' ? 'ok' : a.paymentStatus === 'CLAIMED' ? 'warn' : 'grey'}>{a.paymentStatus === 'PAID' ? 'Paid' : a.paymentStatus === 'CLAIMED' ? 'Says paid' : 'Not paid'}</Chip>
+                      {a.toReview ? <Chip tone="warn">{a.toReview} to check</Chip> : null}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[14px] text-v2-muted">No company is waiting. New ones apply at /signup.</p>
+          )}
+        </Card>
 
         <Card title="Companies">
           <TableFrame>
@@ -93,6 +125,10 @@ export default async function PlatformPage() {
               </tbody>
             </Table>
           </TableFrame>
+        </Card>
+
+        <Card title="Joining fee and how to pay" action={<span className="text-[12.5px] text-v2-muted">Shown to every applicant</span>}>
+          <BillingForm fee={billing.feePaise != null ? String(billing.feePaise / 100) : ''} upiId={billing.upiId ?? ''} bankDetails={billing.bankDetails ?? ''} />
         </Card>
 
         <PlatformCreateTenant />

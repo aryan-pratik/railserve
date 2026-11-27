@@ -20,6 +20,8 @@ export type LoadedUser = {
   tenantName: string
   /** One of our own super admins (PLATFORM_ADMIN_PHONES, on the primary tenant). */
   platformAdmin: boolean
+  /** Their company is still joining: only the onboarding screen is theirs (lib/session). */
+  onboarding: boolean
 }
 
 /**
@@ -41,7 +43,10 @@ export async function loadUser(userId: string): Promise<LoadedUser | null> {
   if (!user?.tenantId) return null
 
   const tenant = await Tenant.findById(user.tenantId).select('name status primary settings.displayName').lean()
-  if (!tenant || tenant.status !== 'ACTIVE') return null
+  // A company still joining keeps its owner signed in, for the onboarding
+  // screen only; session.ts keeps them out of everything else.
+  const onboarding = tenant?.status === 'ONBOARDING' && user.role === 'ADMIN'
+  if (!tenant || (tenant.status !== 'ACTIVE' && !onboarding)) return null
 
   return {
     id: String(user._id),
@@ -52,6 +57,7 @@ export async function loadUser(userId: string): Promise<LoadedUser | null> {
     tenantId: String(user.tenantId),
     tenantName: tenant.settings?.displayName || tenant.name,
     platformAdmin: Boolean(tenant.primary) && platformAdminPhones().has(String(user.phone ?? '')),
+    onboarding,
   }
 }
 

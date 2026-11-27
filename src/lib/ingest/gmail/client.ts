@@ -20,6 +20,23 @@ export function gmailClient(): gmail_v1.Gmail {
   return google.gmail({ version: 'v1', auth })
 }
 
+/** The OAuth app is set up (client id and secret): companies can link their own Gmail. */
+export function isGmailAppConfigured(): boolean {
+  return Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET)
+}
+
+/** A Gmail client for a mailbox a company linked from the app, from its own token. */
+export function gmailClientFor(refreshToken: string): gmail_v1.Gmail {
+  const auth = new google.auth.OAuth2(env.GMAIL_CLIENT_ID, env.GMAIL_CLIENT_SECRET)
+  auth.setCredentials({ refresh_token: refreshToken })
+  return google.gmail({ version: 'v1', auth })
+}
+
+/** The OAuth client for the "Link Gmail" sign-in, sending people back to `redirectUri`. */
+export function gmailOAuth(redirectUri: string) {
+  return new google.auth.OAuth2(env.GMAIL_CLIENT_ID, env.GMAIL_CLIENT_SECRET, redirectUri)
+}
+
 /**
  * Extracts the plain-text body from a Gmail message payload.
  *

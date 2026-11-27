@@ -66,7 +66,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         ) : tab === 'outlets' ? (
           <OutletsTab ctx={ctx} base={base} kitchens={kitchens} paging={paging} />
         ) : tab === 'mail' ? (
-          <MailTab ctx={ctx} />
+          <MailTab ctx={ctx} query={{ gmail: one(sp.gmail), reason: one(sp.reason) }} />
         ) : tab === 'routing' ? (
           <RoutingTab ctx={ctx} base={base} />
         ) : tab === 'staff' ? (

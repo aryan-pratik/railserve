@@ -16,7 +16,11 @@ import { google } from 'googleapis'
 
 const PORT = 53_682
 const REDIRECT_URI = `http://localhost:${PORT}/callback`
-const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+// `--send` makes the separate SENDING token (messages to companies that are
+// joining): send-only, and kept apart from the reading token so issuing it
+// never touches how orders are read.
+const SEND = process.argv.includes('--send')
+const SCOPES = SEND ? ['https://www.googleapis.com/auth/gmail.send'] : ['https://www.googleapis.com/auth/gmail.readonly']
 
 function fail(message: string): never {
   console.error(`\n✗ ${message}\n`)
@@ -64,7 +68,7 @@ Then re-run: npm run gmail:setup
 
   console.log(`
 Opening this in your browser (or paste it there manually) — sign in as the
-Gmail account that receives order emails:
+Gmail account that ${SEND ? 'should SEND messages to companies joining RailServe' : 'receives order emails'}:
 
 ${authUrl}
 `)
@@ -97,6 +101,18 @@ ${authUrl}
         'authorized this client without offline access — remove it at ' +
         'https://myaccount.google.com/permissions and run this script again.',
     )
+  }
+
+  if (SEND) {
+    console.log(`
+✓ Done. Add this to .env.local; for production the owner adds it to
+/root/railserve/.env.production (docs/DEPLOY.md):
+
+GMAIL_SEND_REFRESH_TOKEN=${tokens.refresh_token}
+
+Messages to companies that are joining are then emailed from this account.
+`)
+    return
   }
 
   console.log(`
