@@ -122,8 +122,12 @@ export async function createTenant(input: NewTenantInput): Promise<{ tenantId: s
 /** Suspending signs every one of the tenant's users out at their next request. */
 export async function setTenantStatus(id: string, status: TenantStatus, reason: string | null): Promise<void> {
   await connectDb()
-  const t = await Tenant.findById(id).select('primary').lean()
+  const t = await Tenant.findById(id).select('primary status onboarding.appliedAt onboarding.approvedAt').lean()
   if (!t) throw new PlatformInputError('No such company.')
+  // A declined application has no account left to switch back on.
+  if (t.onboarding?.appliedAt && !t.onboarding.approvedAt) throw new PlatformInputError('This application was declined. They can apply again.')
+  // A company still joining is let in by finishing its steps (repo/onboardingRepo), never by a status switch.
+  if (t.status === 'ONBOARDING') throw new PlatformInputError('This company is still joining. Review it under Applications.')
   if (t.primary && status !== 'ACTIVE') throw new PlatformInputError('The primary company cannot be suspended.')
   await Tenant.updateOne(
     { _id: id },

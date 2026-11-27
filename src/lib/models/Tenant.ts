@@ -10,7 +10,10 @@ import { registerModel } from './registerModel'
  * the MSG91 number), and it keeps legacy unprefixed keys for counters and the
  * menu so an older image can still run on migrated data after a rollback.
  */
-export const TENANT_STATUSES = ['ACTIVE', 'SUSPENDED', 'ARCHIVED'] as const
+// ONBOARDING: signed up on their own and not yet approved. Its admin can sign
+// in, but sees only the onboarding screen (lib/session.ts) until documents
+// are accepted, Gmail is linked and payment is received (lib/onboarding.ts).
+export const TENANT_STATUSES = ['ACTIVE', 'ONBOARDING', 'SUSPENDED', 'ARCHIVED'] as const
 export type TenantStatus = (typeof TENANT_STATUSES)[number]
 
 const TenantSchema = new Schema(
@@ -39,6 +42,77 @@ const TenantSchema = new Schema(
     roleOverrides: { type: Schema.Types.Mixed, default: {} },
     suspendedAt: { type: Date, default: null },
     suspendedReason: { type: String, default: null },
+    // A company that applied through /signup: its documents, payment and the
+    // record of every decision. Null on companies created from /platform.
+    onboarding: {
+      type: new Schema(
+        {
+          appliedAt: { type: Date, required: true },
+          ownerName: { type: String, default: null, trim: true },
+          ownerEmail: { type: String, default: null, trim: true, lowercase: true },
+          documents: {
+            type: [
+              new Schema(
+                {
+                  kind: { type: String, required: true },
+                  status: { type: String, required: true, enum: ['MISSING', 'PENDING', 'ACCEPTED', 'REJECTED'], default: 'MISSING' },
+                  fileId: { type: Schema.Types.ObjectId, ref: 'TenantFile', default: null },
+                  fileName: { type: String, default: null },
+                  uploadedAt: { type: Date, default: null },
+                  reason: { type: String, default: null, trim: true, maxlength: 300 },
+                  reviewedAt: { type: Date, default: null },
+                  reviewedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+                },
+                { _id: false },
+              ),
+            ],
+            default: [],
+          },
+          payment: {
+            status: { type: String, enum: ['DUE', 'CLAIMED', 'PAID'], default: 'DUE' },
+            amountPaise: { type: Number, default: null, min: 0 },
+            reference: { type: String, default: null, trim: true, maxlength: 80 },
+            claimedAt: { type: Date, default: null },
+            paidAt: { type: Date, default: null },
+            markedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+            note: { type: String, default: null, trim: true, maxlength: 200 },
+          },
+          // Messages owed to the applicant (decisions, access granted). Sent
+          // by email once sending is set up; always shown on their screen.
+          notices: {
+            type: [
+              new Schema(
+                {
+                  at: { type: Date, required: true },
+                  // REVIEW notices gather every decision made in one sitting.
+                  kind: { type: String, default: null },
+                  subject: { type: String, required: true },
+                  body: { type: String, required: true },
+                  // Last change: a review message is rewritten while its
+                  // sitting lasts, and emailed once it has been quiet.
+                  updatedAt: { type: Date, default: null },
+                  emailedAt: { type: Date, default: null },
+                  emailError: { type: String, default: null },
+                  attempts: { type: Number, default: 0 },
+                },
+                { _id: false },
+              ),
+            ],
+            default: [],
+          },
+          approvedAt: { type: Date, default: null },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    // On the primary tenant only: what a new company pays, and how.
+    // Edited on /platform, shown on every applicant's payment step.
+    billing: {
+      feePaise: { type: Number, default: null, min: 0 },
+      upiId: { type: String, default: null, trim: true },
+      bankDetails: { type: String, default: null, trim: true, maxlength: 500 },
+    },
   },
   { timestamps: true, strict: true, strictQuery: true },
 )

@@ -23,6 +23,9 @@ export const TENANT_COLLECTIONS = [
   'ingeststates',
   'stations',
   'mailsources',
+  'cashhandins',
+  'tenantfiles',
+  'mailboxes',
 ] as const
 
 let done: Promise<void> | null = null

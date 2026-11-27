@@ -127,6 +127,9 @@ Changes take effect on container **restart**, not rebuild:
 | `TRAIN_API_KEY` / `TRAIN_API_HOST` | no | `TRAIN_API_HOST` applies to the `rapidapi` provider only; the `railkit` adapter takes just the key and ignores it. |
 | `R2_ACCOUNT_ID` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | no | Delivery photo storage. All blank ⇒ photo capture does not appear and delivery still works. |
 | `GMAIL_*` | no | Email ingestion. All blank ⇒ orders are pasted or entered by hand. |
+| `APP_URL` | for Link Gmail | Public address, e.g. `https://bitestation.elvo.in`. Google returns companies to `$APP_URL/api/gmail/link/callback` after Link Gmail. Blank ⇒ taken from the request. |
+| `MAILBOX_TOKEN_KEY` | recommended | 32+ random characters. Encrypts each company's linked-Gmail token in the database. Blank ⇒ derived from `AUTH_SECRET`. **Never change it once set**: every linked Gmail would have to be linked again. |
+| `GMAIL_SEND_REFRESH_TOKEN` | for emails | Send-only Google token for messages to companies that are joining (`npm run gmail:setup -- --send`). Separate from `GMAIL_REFRESH_TOKEN`, which only reads orders. Blank ⇒ messages are shown on their screen only. |
 | `DISPATCH_BUFFER_MINUTES` / `KOT_DELAY_THRESHOLD_MINUTES` | no | Defaults 5 and 45. |
 
 **Do not set `BASE_PATH`.** It exists for an nginx sub-path deployment and here
@@ -247,6 +250,41 @@ the poll is what catches up if a push notification is ever dropped.
 
 Keep the one-minute poll running alongside push — they are idempotent on
 `gmailMessageId`, and the poll is what catches a dropped notification.
+
+## Companies joining, and Link Gmail
+
+New companies apply at `/signup`, upload five documents, link their Gmail
+and pay; a platform admin reviews them on `/platform`. These have to be set
+up once, outside the code:
+
+0. **`TENANT_GUARD=throw`** in `/root/railserve/.env.production` (and in the
+   staging site's Vercel env). With a second company on the server, a query
+   that forgets its company must fail rather than read everyone's rows
+   (docs/TENANCY.md). Until it is set, `/signup` refuses with "New companies
+   cannot join this server yet", by design.
+1. **Google Cloud project `bitestation-507214`** (account
+   `bitestation0001@gmail.com`), APIs & Services:
+   - Credentials → the existing OAuth client → *Authorized redirect URIs*:
+     add `https://bitestation.elvo.in/api/gmail/link/callback` and, for
+     local work, `http://localhost:3000/api/gmail/link/callback`.
+   - OAuth consent screen → *Publishing status* → **In production**. In
+     "Testing", every linked Gmail stops working after 7 days. Until Google
+     verifies the app (the Gmail read permission is "restricted"), people see
+     an "unverified app" warning and at most 100 can link.
+2. **Settings** (`APP_URL`, `MAILBOX_TOKEN_KEY`, `GMAIL_SEND_REFRESH_TOKEN`)
+   go into `/root/railserve/.env.production`, which only the owner edits
+   (see "A new environment variable"). All three are optional: without them
+   the app starts as before, Link Gmail uses the request's address, and
+   messages are shown on screen only.
+3. **nginx** on the box: `client_max_body_size 6m;` for the site, so a PDF
+   up to 5 MB can be uploaded (photos are shrunk in the browser anyway).
+
+A linked Gmail is read exactly like the server mailbox: pushed through the
+same Pub/Sub topic (the push names the mailbox), polled every minute by
+`/api/cron/gmail-sync`, and its watch renewed daily by
+`/api/cron/gmail-watch`. Watches are only registered where
+`GMAIL_TOPIC_NAME` is set (production), so linking on staging or locally
+never takes the watch away from production.
 
 ## Retired: Vercel and Atlas
 

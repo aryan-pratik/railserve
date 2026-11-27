@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { checkIngestStaleness, renewGmailWatch } from '@/lib/ingest/gmail/sync'
-import { isGmailConfigured } from '@/lib/ingest/gmail/client'
+import { checkIngestStaleness, renewGmailWatch, renewLinkedWatches } from '@/lib/ingest/gmail/sync'
+import { isGmailAppConfigured, isGmailConfigured } from '@/lib/ingest/gmail/client'
 import { cronAuthFailure } from '@/lib/cronAuth'
 import { env } from '@/lib/env'
 
@@ -26,7 +26,7 @@ async function handle(request: Request) {
   const failure = cronAuthFailure(request)
   if (failure) return NextResponse.json({ error: failure }, { status: 401 })
 
-  if (!isGmailConfigured()) {
+  if (!isGmailConfigured() && !isGmailAppConfigured()) {
     return NextResponse.json({ ok: false, reason: 'gmail not configured' }, { status: 200 })
   }
   if (!env.GMAIL_TOPIC_NAME) {
@@ -38,12 +38,15 @@ async function handle(request: Request) {
 
   try {
     const { expiresAt, historyId } = await renewGmailWatch()
+    // Every mailbox a company linked from the app needs the same daily renewal.
+    const linked = await renewLinkedWatches()
     const health = await checkIngestStaleness()
 
     return NextResponse.json({
       ok: true,
       expiresAt,
       historyId,
+      linked,
       stale: health.stale,
       message: health.message,
       at: new Date().toISOString(),

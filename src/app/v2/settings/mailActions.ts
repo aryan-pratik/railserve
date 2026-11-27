@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import mongoose from 'mongoose'
 import { randomUUID } from 'node:crypto'
-import { requirePermission } from '@/lib/session'
+import { requirePermission, requireRole } from '@/lib/session'
+import { unlinkMailbox } from '@/lib/repo/mailboxRepo'
 import { connectDb } from '@/lib/db'
 import { GMAIL_STATE_ID, IngestState, MailSource, UnparsedInbox } from '@/lib/models'
 import { recentOrderEmails } from '@/lib/repo/mailSourceRepo'
@@ -281,4 +282,12 @@ export async function loadLayout(key: string) {
 export async function sourceChoices(): Promise<{ id: string; label: string }[]> {
   await requirePermission('company.manage')
   return ORDER_SOURCES.filter((s) => s !== 'MANUAL').map((s) => ({ id: s, label: SOURCE_LABEL[s] }))
+}
+
+/** Stops reading orders from the company's linked Gmail. */
+export async function unlinkGmailAction(): Promise<MailActionState> {
+  const ctx = await requireRole('ADMIN')
+  const email = await unlinkMailbox(String(ctx.tenantId))
+  revalidatePath('/v2/settings')
+  return email ? { ok: `${email} is unlinked. No orders will arrive from email until you link a Gmail again.` } : { error: 'No Gmail was linked.' }
 }

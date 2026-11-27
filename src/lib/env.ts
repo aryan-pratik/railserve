@@ -32,6 +32,19 @@ const EnvSchema = z.object({
   GMAIL_TOPIC_NAME: z.string().default(''),
   GMAIL_USER_ID: z.string().default('me'),
   GMAIL_WEBHOOK_TOKEN: z.string().default(''),
+  // Linking a company's own Gmail from the app (Settings → Order emails, and
+  // onboarding). The public address Google sends people back to, e.g.
+  // https://bitestation.elvo.in; its /api/gmail/link/callback must be listed
+  // under the OAuth client's redirect URIs. Blank: taken from the request.
+  APP_URL: z.string().default(''),
+  // Encrypts each linked mailbox's Google token at rest (32+ characters).
+  // Blank: derived from AUTH_SECRET, which works but ties the two together.
+  MAILBOX_TOKEN_KEY: z.string().default(''),
+  // A separate Google token with permission to SEND mail, for messages to
+  // companies that are joining (npm run gmail:setup -- --send). Kept apart
+  // from GMAIL_REFRESH_TOKEN so the token that reads orders is never touched.
+  // Blank: messages are shown on screen only.
+  GMAIL_SEND_REFRESH_TOKEN: z.string().default(''),
   INGEST_STALE_ALERT_HOURS: z.coerce.number().int().min(1).default(6),
 
   // Delivery proof photos (Cloudflare R2, S3 API). All blank means photo

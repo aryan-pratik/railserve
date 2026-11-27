@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { syncGmailHistory } from '@/lib/ingest/gmail/sync'
+import { syncGmailHistory, syncLinkedMailboxes } from '@/lib/ingest/gmail/sync'
+import { sendPendingNotices } from '@/lib/repo/onboardingRepo'
 import { cronAuthFailure } from '@/lib/cronAuth'
 
 export const dynamic = 'force-dynamic'
@@ -21,8 +22,14 @@ async function handle(request: Request) {
   if (failure) return NextResponse.json({ error: failure }, { status: 401 })
 
   try {
+    // The server mailbox exactly as before, then every linked one. A failing
+    // linked mailbox records its own error and does not stop the others.
     const summary = await syncGmailHistory()
-    return NextResponse.json({ ok: true, ...summary, at: new Date().toISOString() })
+    const linked = await syncLinkedMailboxes()
+    // Messages owed to companies that are joining (lib/mailer). Never allowed
+    // to break order reading: a failure here is only reported.
+    const notices = await sendPendingNotices().catch((err) => ({ sent: 0, failed: 0, skipped: err instanceof Error ? err.message : 'failed' }))
+    return NextResponse.json({ ok: true, ...summary, linked: linked.map((l) => ({ email: l.email, created: l.summary.created, errors: l.summary.errors.length })), notices, at: new Date().toISOString() })
   } catch (err) {
     // A Gmail outage must never look like a broken endpoint to the scheduler,
     // or it will retry a failure it cannot fix.

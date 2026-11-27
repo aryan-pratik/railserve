@@ -33,9 +33,14 @@ const getFreshUser = cache(async () => {
   return loadUser(session.user.id)
 })
 
+/**
+ * The caller as the app sees them. An applicant whose company is still
+ * joining has no context: to every page, action and repository they are not
+ * signed in, so nothing beyond the onboarding screen can be reached or used.
+ */
 export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const user = await getFreshUser()
-  return user ? contextOf(user) : null
+  return user && !user.onboarding ? contextOf(user) : null
 })
 
 export const getSessionUser = getFreshUser
@@ -53,8 +58,18 @@ export async function redirectToLogin(): Promise<never> {
 /** Redirects to login when unauthenticated. */
 export async function requireAuth(): Promise<AuthContext> {
   const ctx = await getAuthContext()
-  if (!ctx) return redirectToLogin()
-  return ctx
+  if (ctx) return ctx
+  // Signed in, but their company is still joining: the onboarding screen.
+  if ((await getFreshUser())?.onboarding) redirect('/onboarding')
+  return redirectToLogin()
+}
+
+/** The owner of a company that is still joining. Anyone already let in goes to their home. */
+export async function requireApplicant(): Promise<{ tenantId: string; userId: string; name: string }> {
+  const user = await getFreshUser()
+  if (!user) return redirectToLogin()
+  if (!user.onboarding) redirect('/')
+  return { tenantId: user.tenantId, userId: user.id, name: user.name }
 }
 
 /** Redirects to the caller's own home when they hold the wrong role. */
@@ -83,6 +98,7 @@ export async function requirePermission(permission: Permission): Promise<AuthCon
 export async function requirePage(page: PageKey): Promise<void> {
   const user = await getFreshUser()
   if (!user) return redirectToLogin()
+  if (user.onboarding) redirect('/onboarding')
   if (user.role !== 'ADMIN' && user.hiddenPages.includes(page)) redirect(ROLE_HOME[user.role])
 }
 

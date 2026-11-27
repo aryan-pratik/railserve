@@ -33,7 +33,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const user = await User.findOne({ phone: parsed.data.phone, active: true }).setOptions({ allTenants: true })
         if (!user) return null
         const tenant = await Tenant.findById(user.tenantId).select('status').lean()
-        if (!tenant || tenant.status !== 'ACTIVE') return null
+        // A company still joining may sign in (its owner lands on the
+        // onboarding screen); a suspended or archived one may not.
+        if (!tenant || (tenant.status !== 'ACTIVE' && !(tenant.status === 'ONBOARDING' && user.role === 'ADMIN'))) return null
 
         const ok = await bcrypt.compare(parsed.data.password, user.passwordHash)
         if (!ok) return null

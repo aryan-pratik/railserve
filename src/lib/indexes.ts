@@ -327,6 +327,12 @@ const LEGACY: [string, Spec[]][] = [
   ['listings', LISTING_INDEXES],
   ['waconversations', WA_CONVERSATION_INDEXES],
   ['wamessages', WA_MESSAGE_INDEXES],
+  ['mailboxes', [
+    { name: 'mailbox_per_tenant', index: { key: { tenantId: 1 }, unique: true }, why: 'one linked Gmail per company' },
+    { name: 'mailbox_email_unique', index: { key: { email: 1 }, unique: true }, why: 'a Gmail can feed one company only' },
+  ]],
+  ['tenantfiles', [{ name: 'tenantfile_kind', index: { key: { tenantId: 1, kind: 1, createdAt: -1 } }, why: "a company's uploaded documents" }]],
+  ['cashhandins', [{ name: 'handin_from', index: { key: { tenantId: 1, fromUserId: 1, at: -1 } }, why: 'cash a staff member handed in' }]],
 ]
 
 // Keep the model imports referenced: they register the schemas, and the

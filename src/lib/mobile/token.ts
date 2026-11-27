@@ -85,6 +85,7 @@ export async function contextFromBearer(request: Request): Promise<AuthContext |
   if (!payload) return null
 
   const user = await loadUser(payload.sub)
-  return user ? contextOf(user) : null
+  // The rider app is for companies already let in.
+  return user && !user.onboarding ? contextOf(user) : null
 }
 
